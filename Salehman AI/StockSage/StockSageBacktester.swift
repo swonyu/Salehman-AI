@@ -23,7 +23,7 @@ import Foundation
 
 /// One simulated trade.
 struct BacktestTrade: Sendable, Equatable {
-    enum Outcome: String, Sendable { case target, stop, openAtEnd }
+    enum Outcome: String, Sendable { case target, stop, openAtEnd, timeStop }
     let entryIndex: Int
     let exitIndex: Int
     let entry: Double
@@ -62,6 +62,15 @@ struct BacktestResult: Sendable, Equatable {
                                                   totalR: 0, maxDrawdownR: 0, sharpe: 0, avgHoldBars: 0)
 }
 
+/// How an open position is closed in the backtest. `.allAtTarget` is the original
+/// behavior (ride to the fixed 2:1 target or the stop); the other modes are measured
+/// head-to-head against it via `run(_:exitMode:)`. (chandelierTrail / scaleOutLadder land
+/// in EXIT #2/#3 once their engines are wired — only the cases below are simulated today.)
+enum ExitMode: Sendable, Equatable {
+    case allAtTarget
+    case timeStop(maxBars: Int)
+}
+
 enum StockSageBacktester {
 
     /// Walk forward over `history`. `warmup` bars are skipped so the 200-day trend
@@ -73,7 +82,8 @@ enum StockSageBacktester {
     /// byte-for-byte (existing callers/tests unchanged). Pass e.g.
     /// `StockSageNetEdge.defaultCosts(forSymbol:)` for an asset-class default.
     nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200,
-                                costs: StockSageNetEdge.CostAssumption? = nil) -> BacktestResult {
+                                costs: StockSageNetEdge.CostAssumption? = nil,
+                                exitMode: ExitMode = .allAtTarget) -> BacktestResult {
         let closes = history.closes, opens = history.opens, highs = history.highs, lows = history.lows
         let n = closes.count
         guard n > warmup + 5, opens.count == n, highs.count == n, lows.count == n else { return .empty }
@@ -96,19 +106,10 @@ enum StockSageBacktester {
             guard risk > 0 else { i += 1; continue }
             let target = entry + 2 * risk
 
-            // Walk forward to the first stop/target touch (stop wins ties).
-            var exitIdx = n - 1
-            var exitPrice = closes[n - 1]
-            var outcome: BacktestTrade.Outcome = .openAtEnd
-            var j = entryIdx
-            while j < n {
-                // Adverse-gap honesty: if the bar gapped open BELOW the stop, a stop
-                // order fills at that worse open, not magically at the stop price —
-                // so losers aren't flattered. (Target stays a resting limit at `target`.)
-                if lows[j] <= stop { exitIdx = j; exitPrice = Swift.min(stop, opens[j]); outcome = .stop; break }
-                if highs[j] >= target { exitIdx = j; exitPrice = target; outcome = .target; break }
-                j += 1
-            }
+            // Walk forward to the exit dictated by `exitMode` (stop always wins ties).
+            let (exitIdx, exitPrice, outcome) = simulateExit(
+                entryIdx: entryIdx, stop: stop, target: target,
+                opens: opens, highs: highs, lows: lows, closes: closes, n: n, mode: exitMode)
 
             // Round-trip friction (in price units) eats into the realized R — the very
             // spread/slippage NetEdge models but the equity curve used to ignore.
@@ -119,6 +120,28 @@ enum StockSageBacktester {
             i = exitIdx + 1   // one position at a time — resume after the close
         }
         return summarize(trades)
+    }
+
+    /// Resolve a single trade's exit per `mode`. `.allAtTarget` is the original walk — the
+    /// first stop or 2:1 target touch, stop winning ties, adverse-gap honest (a stop that
+    /// gaps through fills at the worse open, not magically at the stop). `.timeStop(maxBars)`
+    /// adds: if neither level is hit within `maxBars` bars of entry, close at that bar's close.
+    /// `internal` (not private) so the exit logic is unit-tested directly against hand-computed
+    /// fills. For `.allAtTarget` this is byte-for-byte the pre-seam exit-walk.
+    nonisolated static func simulateExit(entryIdx: Int, stop: Double, target: Double,
+                                         opens: [Double], highs: [Double], lows: [Double], closes: [Double],
+                                         n: Int, mode: ExitMode)
+        -> (exitIdx: Int, exitPrice: Double, outcome: BacktestTrade.Outcome) {
+        var j = entryIdx
+        while j < n {
+            if lows[j] <= stop { return (j, Swift.min(stop, opens[j]), .stop) }
+            if highs[j] >= target { return (j, target, .target) }
+            if case let .timeStop(maxBars) = mode, j - entryIdx >= maxBars {
+                return (j, closes[j], .timeStop)
+            }
+            j += 1
+        }
+        return (n - 1, closes[n - 1], .openAtEnd)
     }
 
     /// Contiguous, NON-overlapping test windows that tile the post-warmup region [warmup, n).

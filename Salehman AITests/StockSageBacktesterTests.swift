@@ -65,6 +65,36 @@ struct StockSageBacktesterTests {
         #expect(StockSageBacktester.run(down).trades == 0)
     }
 
+    @Test func exitModeAllAtTargetIsGoldenMaster() {
+        // The seam must not change anything: default run == explicit .allAtTarget, on real-ish series.
+        let up = history((0..<260).map { 100.0 + Double($0) })
+        #expect(StockSageBacktester.run(up, exitMode: .allAtTarget) == StockSageBacktester.run(up))
+        let down = history((0..<260).map { Double(260 - $0) })
+        #expect(StockSageBacktester.run(down, exitMode: .allAtTarget) == StockSageBacktester.run(down))
+        let costed = StockSageNetEdge.CostAssumption(spreadBps: 30, slippageBps: 20, assetClass: "equity")
+        #expect(StockSageBacktester.run(up, costs: costed, exitMode: .allAtTarget) == StockSageBacktester.run(up, costs: costed))
+    }
+
+    @Test func simulateExitResolvesEachMode() {
+        let opens  = [10.0, 10, 10, 10, 10, 10]
+        let highs  = [10.0, 10, 10, 10, 10, 10]   // never reaches target 20
+        let lows   = [10.0, 10, 10, 10, 10, 10]   // never reaches stop 5
+        let closes = [10.0, 10, 11, 12, 13, 14]
+        // allAtTarget: neither level hit → open at the last bar's close.
+        let a = StockSageBacktester.simulateExit(entryIdx: 1, stop: 5, target: 20,
+                    opens: opens, highs: highs, lows: lows, closes: closes, n: 6, mode: .allAtTarget)
+        #expect(a.outcome == .openAtEnd && a.exitIdx == 5 && a.exitPrice == 14)
+        // timeStop(2): exits 2 bars after entry (idx 3), at that close.
+        let t = StockSageBacktester.simulateExit(entryIdx: 1, stop: 5, target: 20,
+                    opens: opens, highs: highs, lows: lows, closes: closes, n: 6, mode: .timeStop(maxBars: 2))
+        #expect(t.outcome == .timeStop && t.exitIdx == 3 && t.exitPrice == 12)
+        // A real stop still wins over the time limit when it triggers first (bar 2 dips to 4 ≤ 5).
+        let lows2 = [10.0, 10, 4, 10, 10, 10]
+        let s = StockSageBacktester.simulateExit(entryIdx: 1, stop: 5, target: 20,
+                    opens: opens, highs: highs, lows: lows2, closes: closes, n: 6, mode: .timeStop(maxBars: 2))
+        #expect(s.outcome == .stop && s.exitIdx == 2 && s.exitPrice == 5)
+    }
+
     @Test func foldRangesTileThePostWarmupRegion() {
         let r = StockSageBacktester.foldRanges(n: 350, warmup: 50, folds: 3)
         #expect(r.count == 3)

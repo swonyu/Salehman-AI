@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 15:33 +03 · Swift files: 246 · Swift LOC: 45908_
+_Generated: 2026-06-22 15:40 +03 · Swift files: 246 · Swift LOC: 45961_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -9021,7 +9021,7 @@ enum StockSageAllocation {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageBacktester.swift (194 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageBacktester.swift (217 lines) =====
 ```swift
 import Foundation
 
@@ -9048,7 +9048,7 @@ import Foundation
 
 /// One simulated trade.
 struct BacktestTrade: Sendable, Equatable {
-    enum Outcome: String, Sendable { case target, stop, openAtEnd }
+    enum Outcome: String, Sendable { case target, stop, openAtEnd, timeStop }
     let entryIndex: Int
     let exitIndex: Int
     let entry: Double
@@ -9087,6 +9087,15 @@ struct BacktestResult: Sendable, Equatable {
                                                   totalR: 0, maxDrawdownR: 0, sharpe: 0, avgHoldBars: 0)
 }
 
+/// How an open position is closed in the backtest. `.allAtTarget` is the original
+/// behavior (ride to the fixed 2:1 target or the stop); the other modes are measured
+/// head-to-head against it via `run(_:exitMode:)`. (chandelierTrail / scaleOutLadder land
+/// in EXIT #2/#3 once their engines are wired — only the cases below are simulated today.)
+enum ExitMode: Sendable, Equatable {
+    case allAtTarget
+    case timeStop(maxBars: Int)
+}
+
 enum StockSageBacktester {
 
     /// Walk forward over `history`. `warmup` bars are skipped so the 200-day trend
@@ -9098,7 +9107,8 @@ enum StockSageBacktester {
     /// byte-for-byte (existing callers/tests unchanged). Pass e.g.
     /// `StockSageNetEdge.defaultCosts(forSymbol:)` for an asset-class default.
     nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200,
-                                costs: StockSageNetEdge.CostAssumption? = nil) -> BacktestResult {
+                                costs: StockSageNetEdge.CostAssumption? = nil,
+                                exitMode: ExitMode = .allAtTarget) -> BacktestResult {
         let closes = history.closes, opens = history.opens, highs = history.highs, lows = history.lows
         let n = closes.count
         guard n > warmup + 5, opens.count == n, highs.count == n, lows.count == n else { return .empty }
@@ -9121,19 +9131,10 @@ enum StockSageBacktester {
             guard risk > 0 else { i += 1; continue }
             let target = entry + 2 * risk
 
-            // Walk forward to the first stop/target touch (stop wins ties).
-            var exitIdx = n - 1
-            var exitPrice = closes[n - 1]
-            var outcome: BacktestTrade.Outcome = .openAtEnd
-            var j = entryIdx
-            while j < n {
-                // Adverse-gap honesty: if the bar gapped open BELOW the stop, a stop
-                // order fills at that worse open, not magically at the stop price —
-                // so losers aren't flattered. (Target stays a resting limit at `target`.)
-                if lows[j] <= stop { exitIdx = j; exitPrice = Swift.min(stop, opens[j]); outcome = .stop; break }
-                if highs[j] >= target { exitIdx = j; exitPrice = target; outcome = .target; break }
-                j += 1
-            }
+            // Walk forward to the exit dictated by `exitMode` (stop always wins ties).
+            let (exitIdx, exitPrice, outcome) = simulateExit(
+                entryIdx: entryIdx, stop: stop, target: target,
+                opens: opens, highs: highs, lows: lows, closes: closes, n: n, mode: exitMode)
 
             // Round-trip friction (in price units) eats into the realized R — the very
             // spread/slippage NetEdge models but the equity curve used to ignore.
@@ -9144,6 +9145,28 @@ enum StockSageBacktester {
             i = exitIdx + 1   // one position at a time — resume after the close
         }
         return summarize(trades)
+    }
+
+    /// Resolve a single trade's exit per `mode`. `.allAtTarget` is the original walk — the
+    /// first stop or 2:1 target touch, stop winning ties, adverse-gap honest (a stop that
+    /// gaps through fills at the worse open, not magically at the stop). `.timeStop(maxBars)`
+    /// adds: if neither level is hit within `maxBars` bars of entry, close at that bar's close.
+    /// `internal` (not private) so the exit logic is unit-tested directly against hand-computed
+    /// fills. For `.allAtTarget` this is byte-for-byte the pre-seam exit-walk.
+    nonisolated static func simulateExit(entryIdx: Int, stop: Double, target: Double,
+                                         opens: [Double], highs: [Double], lows: [Double], closes: [Double],
+                                         n: Int, mode: ExitMode)
+        -> (exitIdx: Int, exitPrice: Double, outcome: BacktestTrade.Outcome) {
+        var j = entryIdx
+        while j < n {
+            if lows[j] <= stop { return (j, Swift.min(stop, opens[j]), .stop) }
+            if highs[j] >= target { return (j, target, .target) }
+            if case let .timeStop(maxBars) = mode, j - entryIdx >= maxBars {
+                return (j, closes[j], .timeStop)
+            }
+            j += 1
+        }
+        return (n - 1, closes[n - 1], .openAtEnd)
     }
 
     /// Contiguous, NON-overlapping test windows that tile the post-warmup region [warmup, n).
@@ -42525,7 +42548,7 @@ struct StockSageBacktestTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageBacktesterTests.swift (104 lines) =====
+===== FILE: Salehman AITests/StockSageBacktesterTests.swift (134 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -42592,6 +42615,36 @@ struct StockSageBacktesterTests {
         // its 200DMA) must never trigger an entry → zero trades.
         let down = history((0..<260).map { Double(260 - $0) })
         #expect(StockSageBacktester.run(down).trades == 0)
+    }
+
+    @Test func exitModeAllAtTargetIsGoldenMaster() {
+        // The seam must not change anything: default run == explicit .allAtTarget, on real-ish series.
+        let up = history((0..<260).map { 100.0 + Double($0) })
+        #expect(StockSageBacktester.run(up, exitMode: .allAtTarget) == StockSageBacktester.run(up))
+        let down = history((0..<260).map { Double(260 - $0) })
+        #expect(StockSageBacktester.run(down, exitMode: .allAtTarget) == StockSageBacktester.run(down))
+        let costed = StockSageNetEdge.CostAssumption(spreadBps: 30, slippageBps: 20, assetClass: "equity")
+        #expect(StockSageBacktester.run(up, costs: costed, exitMode: .allAtTarget) == StockSageBacktester.run(up, costs: costed))
+    }
+
+    @Test func simulateExitResolvesEachMode() {
+        let opens  = [10.0, 10, 10, 10, 10, 10]
+        let highs  = [10.0, 10, 10, 10, 10, 10]   // never reaches target 20
+        let lows   = [10.0, 10, 10, 10, 10, 10]   // never reaches stop 5
+        let closes = [10.0, 10, 11, 12, 13, 14]
+        // allAtTarget: neither level hit → open at the last bar's close.
+        let a = StockSageBacktester.simulateExit(entryIdx: 1, stop: 5, target: 20,
+                    opens: opens, highs: highs, lows: lows, closes: closes, n: 6, mode: .allAtTarget)
+        #expect(a.outcome == .openAtEnd && a.exitIdx == 5 && a.exitPrice == 14)
+        // timeStop(2): exits 2 bars after entry (idx 3), at that close.
+        let t = StockSageBacktester.simulateExit(entryIdx: 1, stop: 5, target: 20,
+                    opens: opens, highs: highs, lows: lows, closes: closes, n: 6, mode: .timeStop(maxBars: 2))
+        #expect(t.outcome == .timeStop && t.exitIdx == 3 && t.exitPrice == 12)
+        // A real stop still wins over the time limit when it triggers first (bar 2 dips to 4 ≤ 5).
+        let lows2 = [10.0, 10, 4, 10, 10, 10]
+        let s = StockSageBacktester.simulateExit(entryIdx: 1, stop: 5, target: 20,
+                    opens: opens, highs: highs, lows: lows2, closes: closes, n: 6, mode: .timeStop(maxBars: 2))
+        #expect(s.outcome == .stop && s.exitIdx == 2 && s.exitPrice == 5)
     }
 
     @Test func foldRangesTileThePostWarmupRegion() {
@@ -49201,7 +49254,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7728 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7736 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -55813,6 +55866,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · EXIT #1 — ExitMode seam in the backtester (the harness exits get measured by)
+**Files:** `StockSage/StockSageBacktester.swift` (+ExitMode enum, +simulateExit, run() gains exitMode), `Salehman AITests/StockSageBacktesterTests.swift` (+2 tests).
+**What:** extracted the per-trade exit-walk into `simulateExit(...)` dispatched by a new `ExitMode` enum, and added `run(_:warmup:costs:exitMode:)` defaulting to `.allAtTarget`. GOLDEN-MASTER: `.allAtTarget` is byte-for-byte the pre-seam walk (first stop/2:1-target touch, stop wins ties, adverse-gap honest) — proven by `run(h) == run(h, exitMode:.allAtTarget)` on up/down/costed series + the existing relational backtester tests. Implemented `.timeStop(maxBars)` as the first alternate mode (close at the bar's close if neither level hit within maxBars). Added a `.timeStop` Outcome case (no exhaustive switch on Outcome anywhere, so additive-safe). chandelierTrail/scaleOutLadder reserved for EXIT #2/#3 (only simulated cases are declared — no silent fall-through).
+**Verify:** typecheck clean; python-verified simulateExit — allAtTarget(no hit)=(5,14,openAtEnd), timeStop(2)=(3,12,timeStop), stop-before-limit=(2,5,stop).
+**Result:** every future exit idea (trailing, scale-out, time-stop) can now be A/B-measured against the all-at-target baseline on REAL history — exits are where most edge is won/lost. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -58364,7 +58425,7 @@ Wiring (exhaustive switch arms all caught by compiler):
 - Ratcheting Chandelier exit engine — small, high-confidence; adds the monotonic up-only ratchet that the existing StockSageTrailingStop deliberately omits, and is the single most-cited discipline (a stop that can only rise removes the #1 blow-up behavior)
 - Pure scale-out simulator — converts the already-tested-but-isolated PartialLadder into a backtestable exit mode so the blended-R claim ('scaling out lowers variance, maybe costs a few bps of expectancy') is checked against real fills, honest in both directions
 
-### ⬜ #1 — ExitMode seam in the backtester (the measurement harness every exit engine needs)  [medium]
+### ✅ DONE (seam + allAtTarget + timeStop) #1 — ExitMode seam in the backtester (the measurement harness every exit engine needs)  [medium]
 **signature:** enum ExitMode: Sendable, Equatable { case allAtTarget; case chandelierTrail(atrMult: Double, period: Int); case scaleOutLadder(rungs: Int); case timeStop(maxBars: Int) }
 
 nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200, costs: StockSageNetEdge.CostAssumption? = nil, exitMode: ExitMode = .allAtTarget) -> BacktestResult

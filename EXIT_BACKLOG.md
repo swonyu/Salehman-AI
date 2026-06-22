@@ -7,7 +7,7 @@
 - Ratcheting Chandelier exit engine — small, high-confidence; adds the monotonic up-only ratchet that the existing StockSageTrailingStop deliberately omits, and is the single most-cited discipline (a stop that can only rise removes the #1 blow-up behavior)
 - Pure scale-out simulator — converts the already-tested-but-isolated PartialLadder into a backtestable exit mode so the blended-R claim ('scaling out lowers variance, maybe costs a few bps of expectancy') is checked against real fills, honest in both directions
 
-### ⬜ #1 — ExitMode seam in the backtester (the measurement harness every exit engine needs)  [medium]
+### ✅ DONE (seam + allAtTarget + timeStop) #1 — ExitMode seam in the backtester (the measurement harness every exit engine needs)  [medium]
 **signature:** enum ExitMode: Sendable, Equatable { case allAtTarget; case chandelierTrail(atrMult: Double, period: Int); case scaleOutLadder(rungs: Int); case timeStop(maxBars: Int) }
 
 nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200, costs: StockSageNetEdge.CostAssumption? = nil, exitMode: ExitMode = .allAtTarget) -> BacktestResult

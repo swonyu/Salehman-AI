@@ -6609,6 +6609,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · EXIT #1 — ExitMode seam in the backtester (the harness exits get measured by)
+**Files:** `StockSage/StockSageBacktester.swift` (+ExitMode enum, +simulateExit, run() gains exitMode), `Salehman AITests/StockSageBacktesterTests.swift` (+2 tests).
+**What:** extracted the per-trade exit-walk into `simulateExit(...)` dispatched by a new `ExitMode` enum, and added `run(_:warmup:costs:exitMode:)` defaulting to `.allAtTarget`. GOLDEN-MASTER: `.allAtTarget` is byte-for-byte the pre-seam walk (first stop/2:1-target touch, stop wins ties, adverse-gap honest) — proven by `run(h) == run(h, exitMode:.allAtTarget)` on up/down/costed series + the existing relational backtester tests. Implemented `.timeStop(maxBars)` as the first alternate mode (close at the bar's close if neither level hit within maxBars). Added a `.timeStop` Outcome case (no exhaustive switch on Outcome anywhere, so additive-safe). chandelierTrail/scaleOutLadder reserved for EXIT #2/#3 (only simulated cases are declared — no silent fall-through).
+**Verify:** typecheck clean; python-verified simulateExit — allAtTarget(no hit)=(5,14,openAtEnd), timeStop(2)=(3,12,timeStop), stop-before-limit=(2,5,stop).
+**Result:** every future exit idea (trailing, scale-out, time-stop) can now be A/B-measured against the all-at-target baseline on REAL history — exits are where most edge is won/lost. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
