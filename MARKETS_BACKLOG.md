@@ -134,7 +134,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Earnings proximity is a trade-timing input — a silently-stale fetch means trading into earnings blind. Add ~4-parallel + 8s timeout + a symbol-keyed cache (like multiTimeframe), and show 'Earnings data stale' on timeout.
 **Files:** Salehman AI/StockSage/StockSageStore.swift:434-440
 
-### ⬜ #23 — FX exposure breakdown: parse the non-USD leg instead of bucketing all pairs as Global  [medium/medium, Allocation/Currency/feature]
+### ✅ DONE #23 — FX exposure breakdown: parse the non-USD leg instead of bucketing all pairs as Global  [medium/medium, Allocation/Currency/feature]
 **What:** currencyForSymbol() maps every '=X' FX pair to USD/Global, so 70% EURUSD + 30% GBPUSD both show as Global, hiding that the book is 70% EUR-exposed. Allocation panel also assumes FX rates are fresh with only a soft 'Rates are snapshots' note.
 **Why:** Currency concentration is hidden risk for a multi-currency book. Extract the non-quote leg (EURUSD=X → EUR) for the breakdown, and stamp the FX rates with a REFRESHED/STALE-as-of-time label so allocation isn't mistaken for hedge sizing.
 **Files:** Salehman AI/StockSage/StockSageCurrency.swift:58; Salehman AI/Views/MarketsView.swift:759-828

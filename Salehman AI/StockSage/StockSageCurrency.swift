@@ -55,7 +55,17 @@ enum StockSageCurrency {
     /// itself, so it surfaces as "unpriced" rather than being silently mislabeled the base.
     nonisolated static func currencyForSymbol(_ symbol: String, base: String = "USD") -> String {
         let s = symbol.uppercased()
-        if s.hasPrefix("^") || s.hasSuffix("=X") || s.hasSuffix("-USD") { return base }
+        if s.hasPrefix("^") || s.hasSuffix("-USD") { return base }   // index level / crypto priced in USD
+        // FX pair "BASEQUOTE=X": holding it is exposure to its NON-base leg (long base vs
+        // quote). EURUSD=X → EUR; USDJPY=X → JPY; a cross (EURGBP=X) → its base.
+        if s.hasSuffix("=X") {
+            let pair = String(s.dropLast(2))
+            guard pair.count == 6 else { return base }
+            let lead = String(pair.prefix(3)), trail = String(pair.suffix(3))
+            if lead == base { return trail }
+            if trail == base { return lead }
+            return lead
+        }
         guard let dot = s.lastIndex(of: "."), s.index(after: dot) < s.endIndex else { return base }
         let suffix = String(s[s.index(after: dot)...])
         return currencyForSuffix[suffix] ?? suffix

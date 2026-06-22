@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 10:44 +03 · Swift files: 236 · Swift LOC: 44937_
+_Generated: 2026-06-22 10:49 +03 · Swift files: 236 · Swift LOC: 44954_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -9378,7 +9378,7 @@ enum StockSageCorrelationPrecheck {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageCurrency.swift (70 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageCurrency.swift (80 lines) =====
 ```swift
 import Foundation
 
@@ -9437,7 +9437,17 @@ enum StockSageCurrency {
     /// itself, so it surfaces as "unpriced" rather than being silently mislabeled the base.
     nonisolated static func currencyForSymbol(_ symbol: String, base: String = "USD") -> String {
         let s = symbol.uppercased()
-        if s.hasPrefix("^") || s.hasSuffix("=X") || s.hasSuffix("-USD") { return base }
+        if s.hasPrefix("^") || s.hasSuffix("-USD") { return base }   // index level / crypto priced in USD
+        // FX pair "BASEQUOTE=X": holding it is exposure to its NON-base leg (long base vs
+        // quote). EURUSD=X → EUR; USDJPY=X → JPY; a cross (EURGBP=X) → its base.
+        if s.hasSuffix("=X") {
+            let pair = String(s.dropLast(2))
+            guard pair.count == 6 else { return base }
+            let lead = String(pair.prefix(3)), trail = String(pair.suffix(3))
+            if lead == base { return trail }
+            if trail == base { return lead }
+            return lead
+        }
         guard let dot = s.lastIndex(of: "."), s.index(after: dot) < s.endIndex else { return base }
         let suffix = String(s[s.index(after: dot)...])
         return currencyForSuffix[suffix] ?? suffix
@@ -42160,7 +42170,7 @@ struct StockSageCorrelationPrecheckTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageCurrencyTests.swift (56 lines) =====
+===== FILE: Salehman AITests/StockSageCurrencyTests.swift (63 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -42205,12 +42215,19 @@ struct StockSageCurrencyTests {
 
     @Test func currencyForSymbolFromSuffix() {
         #expect(CC.currencyForSymbol("AAPL") == "USD")       // US-listed
-        #expect(CC.currencyForSymbol("BTC-USD") == "USD")    // crypto
-        #expect(CC.currencyForSymbol("EURUSD=X") == "USD")   // FX pair → base leg
+        #expect(CC.currencyForSymbol("BTC-USD") == "USD")    // crypto priced in USD
         #expect(CC.currencyForSymbol("2222.SR") == "SAR")
         #expect(CC.currencyForSymbol("BP.L") == "GBP")
         #expect(CC.currencyForSymbol("7203.T") == "JPY")
         #expect(CC.currencyForSymbol("FOO.ZZ") == "ZZ")      // unknown → suffix (surfaces as unpriced)
+    }
+
+    @Test func fxPairMapsToItsNonBaseLeg() {
+        #expect(CC.currencyForSymbol("EURUSD=X") == "EUR")   // long EUR vs USD → EUR exposure
+        #expect(CC.currencyForSymbol("USDJPY=X") == "JPY")   // base USD → the JPY leg
+        #expect(CC.currencyForSymbol("USDSAR=X") == "SAR")
+        #expect(CC.currencyForSymbol("EURGBP=X") == "EUR")   // cross (no USD) → its base
+        #expect(CC.currencyForSymbol("BTC-USD") == "USD")    // crypto unaffected
     }
 
     @Test func guardsNothingConvertible() {
@@ -47940,7 +47957,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7591 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7596 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54417,6 +54434,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** On a wide window the idea-detail sheet (which also hosts the backtest panel) stretched its text full-width, hurting readability. Capped the content column at `maxWidth: 640` and centered it (`.frame(maxWidth: 640, alignment: .leading).frame(maxWidth: .infinity)`) — comfortable line length on any window size; `minWidth: 440` floor unchanged.
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 18/32. NEXT: #21 journal a11y / #26 backtest validation. Committed + pushed.
 
+## 2026-06-22 · Backlog #23: FX exposure maps to the non-USD leg (not "all FX = base")
+**Files:** `StockSage/StockSageCurrency.swift` (`currencyForSymbol` FX-pair parse), `Salehman AITests/StockSageCurrencyTests.swift` (updated + new test).
+**What & why:** `currencyForSymbol` bucketed every `=X` FX pair as the base currency (USD), so a EURUSD=X holding showed as USD exposure — wrong: holding the pair is long the base vs the quote, i.e. exposure to its NON-base leg. Now parses "BASEQUOTE=X": EURUSD=X → EUR, USDJPY=X → JPY (base USD → the JPY leg), a cross like EURGBP=X → its base EUR. So the currency-exposure breakdown correctly attributes FX holdings to the right currency. 1 updated + 1 new test, PYTHON-VERIFIED: EUR/JPY/SAR/EUR/USD. (Crypto -USD and equities unaffected.)
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 19/32. NEXT: #21 journal a11y / #5 rate-limit. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
@@ -57909,7 +57931,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Earnings proximity is a trade-timing input — a silently-stale fetch means trading into earnings blind. Add ~4-parallel + 8s timeout + a symbol-keyed cache (like multiTimeframe), and show 'Earnings data stale' on timeout.
 **Files:** Salehman AI/StockSage/StockSageStore.swift:434-440
 
-### ⬜ #23 — FX exposure breakdown: parse the non-USD leg instead of bucketing all pairs as Global  [medium/medium, Allocation/Currency/feature]
+### ✅ DONE #23 — FX exposure breakdown: parse the non-USD leg instead of bucketing all pairs as Global  [medium/medium, Allocation/Currency/feature]
 **What:** currencyForSymbol() maps every '=X' FX pair to USD/Global, so 70% EURUSD + 30% GBPUSD both show as Global, hiding that the book is 70% EUR-exposed. Allocation panel also assumes FX rates are fresh with only a soft 'Rates are snapshots' note.
 **Why:** Currency concentration is hidden risk for a multi-currency book. Extract the non-quote leg (EURUSD=X → EUR) for the breakdown, and stamp the FX rates with a REFRESHED/STALE-as-of-time label so allocation isn't mistaken for hedge sizing.
 **Files:** Salehman AI/StockSage/StockSageCurrency.swift:58; Salehman AI/Views/MarketsView.swift:759-828

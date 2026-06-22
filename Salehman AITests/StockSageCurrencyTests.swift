@@ -41,12 +41,19 @@ struct StockSageCurrencyTests {
 
     @Test func currencyForSymbolFromSuffix() {
         #expect(CC.currencyForSymbol("AAPL") == "USD")       // US-listed
-        #expect(CC.currencyForSymbol("BTC-USD") == "USD")    // crypto
-        #expect(CC.currencyForSymbol("EURUSD=X") == "USD")   // FX pair → base leg
+        #expect(CC.currencyForSymbol("BTC-USD") == "USD")    // crypto priced in USD
         #expect(CC.currencyForSymbol("2222.SR") == "SAR")
         #expect(CC.currencyForSymbol("BP.L") == "GBP")
         #expect(CC.currencyForSymbol("7203.T") == "JPY")
         #expect(CC.currencyForSymbol("FOO.ZZ") == "ZZ")      // unknown → suffix (surfaces as unpriced)
+    }
+
+    @Test func fxPairMapsToItsNonBaseLeg() {
+        #expect(CC.currencyForSymbol("EURUSD=X") == "EUR")   // long EUR vs USD → EUR exposure
+        #expect(CC.currencyForSymbol("USDJPY=X") == "JPY")   // base USD → the JPY leg
+        #expect(CC.currencyForSymbol("USDSAR=X") == "SAR")
+        #expect(CC.currencyForSymbol("EURGBP=X") == "EUR")   // cross (no USD) → its base
+        #expect(CC.currencyForSymbol("BTC-USD") == "USD")    // crypto unaffected
     }
 
     @Test func guardsNothingConvertible() {

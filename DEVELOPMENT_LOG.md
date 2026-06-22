@@ -6474,6 +6474,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** On a wide window the idea-detail sheet (which also hosts the backtest panel) stretched its text full-width, hurting readability. Capped the content column at `maxWidth: 640` and centered it (`.frame(maxWidth: 640, alignment: .leading).frame(maxWidth: .infinity)`) — comfortable line length on any window size; `minWidth: 440` floor unchanged.
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 18/32. NEXT: #21 journal a11y / #26 backtest validation. Committed + pushed.
 
+## 2026-06-22 · Backlog #23: FX exposure maps to the non-USD leg (not "all FX = base")
+**Files:** `StockSage/StockSageCurrency.swift` (`currencyForSymbol` FX-pair parse), `Salehman AITests/StockSageCurrencyTests.swift` (updated + new test).
+**What & why:** `currencyForSymbol` bucketed every `=X` FX pair as the base currency (USD), so a EURUSD=X holding showed as USD exposure — wrong: holding the pair is long the base vs the quote, i.e. exposure to its NON-base leg. Now parses "BASEQUOTE=X": EURUSD=X → EUR, USDJPY=X → JPY (base USD → the JPY leg), a cross like EURGBP=X → its base EUR. So the currency-exposure breakdown correctly attributes FX holdings to the right currency. 1 updated + 1 new test, PYTHON-VERIFIED: EUR/JPY/SAR/EUR/USD. (Crypto -USD and equities unaffected.)
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 19/32. NEXT: #21 journal a11y / #5 rate-limit. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
