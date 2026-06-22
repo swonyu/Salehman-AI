@@ -6429,6 +6429,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 - **#28 (honesty):** GE margin tooltip "before the 1% GE tax" → "pre-tax — before the 2% GE sell tax (live 2025-05-29)", matching the implemented 0.02 rate.
 **Result:** ✅ `tools/typecheck.sh` clean. 8 backlog items fixed; remaining 24 (partial-ideas rendering, 429 backoff+cache, browse-all-markets sheet, short-side stops, FX-leg parsing, …) queued for the autonomous loop. Committed + pushed.
 
+## 2026-06-22 · Backlog #3: Partial-success Ideas (render what loaded + name + retry the missing)
+**Files:** `StockSage/StockSageStore.swift` (`ideasMissing` + refactor + `retryFailedIdeas` + `buildIdeas` helper), `Views/MarketsView.swift` (partial-coverage line + "Retry failed" in ideasHeader).
+**What & why:** `refreshIdeas` silently dropped symbols whose history failed mid-fetch, so the EV/velocity ranking was computed on a partial universe with no signal — a honesty gap (a missing NVDA biases "best opportunity"). Now: factored the off-main build into a `nonisolated static buildIdeas(defs:histories:)` reused by both paths; `refreshIdeas` keeps the names that priced AND records `ideasMissing` (universe − analyzed); the ideas header shows "⚠︎ N priced · K couldn't be fetched (AAPL, NVDA…) — ranking covers only what loaded" with a **Retry failed** button → `retryFailedIdeas()` re-fetches ONLY the misses and merges+re-ranks (cheap vs a full scan). Total feed failure still errors as before. typecheck clean (Sendable `StockSagePriceHistory` crosses into the detached task fine).
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 10/32 done (1,2,3,4,6,7,8,9,24,28). NEXT: #10 Browse-all-markets sheet (the catalog discovery UI). Committed + pushed.
+
 ---
 
 ## Standing notes / known issues

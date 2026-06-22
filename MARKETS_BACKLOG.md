@@ -34,7 +34,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** A trader who sets $50k sees it revert to $10k after closing the app, making every $/week figure quietly wrong. Fix: migrate both to @AppStorage and add a single header line 'Using: $X account, Y% risk/trade' above the cards so the user sees one edit cascades to three places. Honesty + tiny diff.
 **Files:** Salehman AI/Views/MarketsView.swift:59-60; Salehman AI/Views/MarketsView.swift:2060-2125
 
-### ⬜ #3 — Partial-success Ideas: render what loaded + name what's missing  [high/medium, Data/Ideas/honesty]
+### ✅ DONE (next) #3 — Partial-success Ideas: render what loaded + name what's missing  [high/medium, Data/Ideas/honesty]
 **What:** refreshIdeas() abandons the whole board if histories.isEmpty and the compactMap silently drops symbols that failed mid-fetch. EV/velocity ranking (MarketsView ~1833) is then computed on the partial set, so a missing NVDA biases the entire 'highest EV' ordering with no user signal.
 **Why:** Honesty + money-edge: ranking on an incomplete universe can mislead which bet is 'best'. Compute `failed = universe.count - histories.count`, succeed with partial results, show 'Analyzed N of M (AAPL, NVDA missing)' + a 'Retry failed' button that re-fetches only the misses. Keeps the good 90% on screen honestly.
 **Files:** Salehman AI/StockSage/StockSageStore.swift:135-174; Salehman AI/Views/MarketsView.swift:1832-1887

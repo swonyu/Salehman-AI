@@ -48,6 +48,9 @@ final class StockSageStore: ObservableObject {
     @Published private(set) var isLoadingIdeas = false
     @Published private(set) var ideasUpdated: Date?
     @Published private(set) var ideasError: String?
+    /// Symbols the last analysis couldn't fetch history for (feed miss / rate-limit) —
+    /// surfaced so the board never silently ranks on a partial universe.
+    @Published private(set) var ideasMissing: [String] = []
 
     /// Signal alerts — events (flips, stop/target crossings) detected between
     /// successive Ideas refreshes. Opt-in (off by default); a capped event log.
@@ -148,11 +151,51 @@ final class StockSageStore: ObservableObject {
             ideasError = "Couldn't reach the market feed for analysis — try again."
             return
         }
-        // Heavy: advisor runs every indicator over each symbol's full year. Do it
-        // OFF the main actor (everything it touches is nonisolated + Sendable) so a
-        // ~99-symbol analysis never janks the UI; assign the result back on main.
-        let defs = universe
-        let built: [StockSageIdea] = await Task.detached(priority: .userInitiated) {
+        let built = await Self.buildIdeas(defs: universe, histories: histories)
+        let ranked = built.sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
+        // Detect alert events vs the PREVIOUS snapshot before replacing it.
+        if alertsEnabled, !ideas.isEmpty {
+            let fired = StockSageAlerts.detect(previous: ideas, current: ranked)
+            if !fired.isEmpty { alerts = Array((fired + alerts).prefix(Self.maxAlerts)) }
+        }
+        ideas = ranked
+        // Partial success is honest success: keep the names that priced, and NAME the
+        // ones that didn't so the EV ranking isn't silently computed on a subset.
+        let analyzed = Set(built.map { $0.symbol.uppercased() })
+        ideasMissing = universe.map(\.symbol).filter { !analyzed.contains($0.uppercased()) }
+        ideasUpdated = Date()
+    }
+
+    /// Re-fetch ONLY the symbols the last scan couldn't price and merge them in, re-ranking.
+    /// Cheap relative to a full refresh; user-triggered from the "Retry failed" affordance.
+    func retryFailedIdeas() async {
+        guard !isLoadingIdeas, !ideasMissing.isEmpty else { return }
+        if let reason = ToolPolicy.webToolsDisabledReason() { ideasError = reason; return }
+        isLoadingIdeas = true
+        defer { isLoadingIdeas = false }
+        ideasError = nil
+        let retrySet = Set(ideasMissing.map { $0.uppercased() })
+        let defs = trackedDefs().filter { retrySet.contains($0.symbol.uppercased()) }
+        let histories = await StockSageQuoteService.fetchHistories(for: defs.map(\.symbol))
+        guard !histories.isEmpty else {
+            ideasError = "Still couldn't reach those symbols — try again later."
+            return
+        }
+        let built = await Self.buildIdeas(defs: defs, histories: histories)
+        let newSyms = Set(built.map { $0.symbol.uppercased() })
+        let merged = (ideas.filter { !newSyms.contains($0.symbol.uppercased()) } + built)
+            .sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
+        ideas = merged
+        let analyzed = Set(merged.map { $0.symbol.uppercased() })
+        ideasMissing = trackedDefs().map(\.symbol).filter { !analyzed.contains($0.uppercased()) }
+        ideasUpdated = Date()
+    }
+
+    /// Build ranked ideas off the main actor (the advisor runs every indicator over each
+    /// symbol's full year). Pure over its inputs; everything it touches is Sendable.
+    nonisolated static func buildIdeas(defs: [StockSageSymbol],
+                                       histories: [String: StockSagePriceHistory]) async -> [StockSageIdea] {
+        await Task.detached(priority: .userInitiated) {
             var out: [StockSageIdea] = []
             for sym in defs {
                 guard let history = histories[sym.symbol.uppercased()], let price = history.latestClose else { continue }
@@ -163,14 +206,6 @@ final class StockSageStore: ObservableObject {
             }
             return out
         }.value
-        let ranked = built.sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
-        // Detect alert events vs the PREVIOUS snapshot before replacing it.
-        if alertsEnabled, !ideas.isEmpty {
-            let fired = StockSageAlerts.detect(previous: ideas, current: ranked)
-            if !fired.isEmpty { alerts = Array((fired + alerts).prefix(Self.maxAlerts)) }
-        }
-        ideas = ranked
-        ideasUpdated = Date()
     }
 
     // Risk-parity — inverse-vol target weights across the owner's holdings.

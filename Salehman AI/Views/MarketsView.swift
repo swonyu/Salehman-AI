@@ -1903,6 +1903,19 @@ struct MarketsView: View {
                     .font(.caption2).foregroundStyle(stale ? DS.Palette.warningSoft : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if !store.ideasMissing.isEmpty {
+                let miss = store.ideasMissing
+                HStack(alignment: .top, spacing: 6) {
+                    Text("⚠︎ \(store.ideas.count) priced · \(miss.count) couldn't be fetched (\(miss.prefix(3).joined(separator: ", "))\(miss.count > 3 ? "…" : "")) — ranking covers only what loaded.")
+                        .font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    Button { Task { await store.retryFailedIdeas() } } label: {
+                        Text("Retry failed").font(.caption2.weight(.semibold)).foregroundStyle(DS.Palette.accent)
+                    }
+                    .buttonStyle(.plain).disabled(store.isLoadingIdeas)
+                    .accessibilityLabel("Retry fetching the \(miss.count) symbols that failed")
+                }
+            }
             if let err = store.ideasError {
                 Text(err).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
             }
