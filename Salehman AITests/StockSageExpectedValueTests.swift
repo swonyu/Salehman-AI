@@ -145,6 +145,11 @@ struct StockSageExpectedValueTests {
         #expect(plan.contains("stop"))                       // honesty: always a stop
         #expect(plan.lowercased().contains("estimate"))      // honesty: labeled estimate
         #expect(plan.contains("1.") && plan.contains("2."))  // numbered, ordered
+        #expect(plan.contains("1%/trade"))                   // default fraction → 1% label
+        // The brake LABEL must track the modeled fraction, never drift (honesty floor).
+        let at2 = MoneyVelocitySummary(worstRunLosses: 6, worstRunDrawdownPct: 0.118, riskFraction: 0.02)
+        #expect(EV.playbook(at2).contains("2%/trade"))
+        #expect(!EV.playbook(at2).contains("1%/trade"))
         // Empty summary → just the header + the risk rule, still honest.
         let empty = EV.playbook(MoneyVelocitySummary(bestSymbol: nil, bestEV: nil, fastestSymbol: nil,
                                                      fastestVelocity: nil, weeklyR: nil, worstRunLosses: nil, worstRunDrawdownPct: nil))

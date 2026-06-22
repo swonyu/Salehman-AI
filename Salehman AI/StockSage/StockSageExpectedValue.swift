@@ -44,7 +44,17 @@ struct MoneyVelocitySummary: Sendable, Equatable {
     let weeklyR: Double?          // est. weekly R running the top setups
     let worstRunLosses: Int?      // worst losing streak in the journal (the brake)
     let worstRunDrawdownPct: Double?  // that streak at the modeled risk % → account drawdown
+    let riskFraction: Double      // the per-trade risk the drawdown brake was modeled at (so the label can't drift)
     nonisolated var hasContent: Bool { bestSymbol != nil || fastestSymbol != nil || weeklyR != nil }
+
+    nonisolated init(bestSymbol: String? = nil, bestEV: Double? = nil, fastestSymbol: String? = nil,
+                     fastestVelocity: Double? = nil, weeklyR: Double? = nil, worstRunLosses: Int? = nil,
+                     worstRunDrawdownPct: Double? = nil, riskFraction: Double = 0.01) {
+        self.bestSymbol = bestSymbol; self.bestEV = bestEV
+        self.fastestSymbol = fastestSymbol; self.fastestVelocity = fastestVelocity
+        self.weeklyR = weeklyR; self.worstRunLosses = worstRunLosses
+        self.worstRunDrawdownPct = worstRunDrawdownPct; self.riskFraction = riskFraction
+    }
 }
 
 enum StockSageExpectedValue {
@@ -178,7 +188,8 @@ enum StockSageExpectedValue {
             fastestVelocity: fastest.flatMap { velocity(for: $0, holds: holds) },
             weeklyR: expectedWeeklyR(ideas, holds: holds),
             worstRunLosses: dd?.losses,
-            worstRunDrawdownPct: dd?.drawdownPct)
+            worstRunDrawdownPct: dd?.drawdownPct,
+            riskFraction: fraction)
     }
 
     /// A short, ordered, copyable action list built from the summary — best bet, fastest,
@@ -199,7 +210,8 @@ enum StockSageExpectedValue {
             n += 1
         }
         if let losses = s.worstRunLosses, let dd = s.worstRunDrawdownPct {
-            lines.append("\(n). Risk control: your worst run (\(losses)) at 1%/trade ≈ −\(String(format: "%.1f", dd * 100))%. Keep risk small enough to survive it.")
+            let pct = Int((s.riskFraction * 100).rounded())
+            lines.append("\(n). Risk control: your worst run (\(losses)) at \(pct)%/trade ≈ −\(String(format: "%.1f", dd * 100))%. Keep risk small enough to survive it.")
             n += 1
         }
         lines.append("\(n). Rule: risk ≤1% per trade, always a stop, never chase. Speed compounds only if you stay in the game.")
