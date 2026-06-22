@@ -7236,6 +7236,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · DATA-INTEGRITY #2 — stale FX rate no longer silently converts the headline USD total
+**Files:** `Views/MarketsView.swift` (staleFXCurrencies + summary caveat).
+**What (DATA_INTEGRITY_AUDIT wnw1nvskx #2, MED realDataViolation):** currentPrice() drops the quote .time, so fxRatesToUSD would convert the whole portfolio USD total + P&L at a CACHED =X rate with no freshness check — on a partial refresh where only the FX pair failed (equities fresh → loadedFromCache=false → no cached banner), the headline USD value silently used a stale rate presented as live. Fix: new fxRateAge(ccy:asOf:) reads the freshest of CCYUSD=X / USDCCY=X quote .time; staleFXCurrencies flags held currencies whose rate is > maxFXAge (72h — FX is 24x5, tolerates a long weekend). We still CONVERT (excluding a holding distorts net worth more than a slightly-old rate), but the summary now shows "FX rate for X is over 72h old — converts at a stale rate, total may be off", matching the existing untrackedFX / unpriced exclude-and-caveat pattern.
+**Verify:** typecheck EXIT=0. RE-TRACED: portfolioTotals MATH untouched (still converts) — only ADDED computed props + a caveat; no test observes these view-layer props (consistent with untrackedFXCurrencies/unpricedHoldings being view-only). Byte-stable.
+**Remaining (DATA_INTEGRITY_AUDIT #3-#5): refreshIdeas/retry re-reconcile vs userSymbols; partial-refresh stale holding in total; future-dated GE leg → age 0.**
+**Result:** a 3-day-old FX rate is now flagged on the portfolio total instead of passing as a live conversion. Only-real-data reaches the FX path. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

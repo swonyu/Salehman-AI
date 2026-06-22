@@ -569,6 +569,31 @@ struct MarketsView: View {
             .filter { rates[$0] == nil }.sorted()
     }
 
+    /// FX trades ~24x5, so a rate quote older than this (a long holiday weekend) is stale — the USD
+    /// conversion it produces may be off. We still convert (dropping the holding distorts net worth
+    /// MORE than a slightly-old rate), but the summary flags it. Only-real-data: stale is not "live".
+    private static let maxFXAgeSeconds: TimeInterval = 72 * 3600
+
+    /// Age of the freshest FX quote (CCYUSD=X or USDCCY=X) backing a currency; nil if none is tracked.
+    private func fxRateAge(_ ccy: String, asOf now: Date) -> TimeInterval? {
+        let times = ["\(ccy)USD=X", "USD\(ccy)=X"].compactMap { sym in
+            store.symbols.first { $0.symbol.uppercased() == sym.uppercased() }?.latest?.time
+        }
+        guard let freshest = times.max() else { return nil }
+        return Swift.max(0, now.timeIntervalSince(freshest))
+    }
+
+    /// Held currencies whose FX rate EXISTS but is STALE (older than maxFXAge): the USD total still
+    /// converts them, but at an old rate — surfaced so the headline value is not silently overstated.
+    private var staleFXCurrencies: [String] {
+        let now = Date()
+        let rates = fxRatesToUSD
+        return Set(portfolio.positions.map { StockSageCurrency.currencyForSymbol($0.symbol) })
+            .filter { $0 != "USD" && rates[$0] != nil }
+            .filter { (fxRateAge($0, asOf: now) ?? 0) > Self.maxFXAgeSeconds }
+            .sorted()
+    }
+
     /// Portfolio cost & value in USD. Each holding's value AND cost go through holdingValue (so the
     /// .L-pence ÷100 is applied to BOTH — the P&L unit matches) then × its CCY→USD rate, so we never
     /// sum GBP + USD at 1:1. Holdings whose currency has no tracked rate are EXCLUDED (see
@@ -671,6 +696,11 @@ struct MarketsView: View {
             }
             if !untrackedFXCurrencies.isEmpty {
                 Text("Excludes \(untrackedFXCurrencies.joined(separator: ", ")) holdings — no FX rate to convert to USD (track \(untrackedFXCurrencies.first ?? "")USD=X). P&L uses today's FX, so it blends asset + currency moves.")
+                    .font(.system(size: 9)).foregroundStyle(DS.Palette.warningSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !staleFXCurrencies.isEmpty {
+                Text("FX rate for \(staleFXCurrencies.joined(separator: ", ")) is over \(Int(Self.maxFXAgeSeconds / 3600))h old — those holdings convert to USD at a stale rate, so the total may be off.")
                     .font(.system(size: 9)).foregroundStyle(DS.Palette.warningSoft)
                     .fixedSize(horizontal: false, vertical: true)
             }
