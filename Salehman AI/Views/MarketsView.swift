@@ -154,7 +154,39 @@ struct MarketsView: View {
     /// the sample/offline notice — surfacing `feedError` (web off, unreachable)
     /// when there is one so the message is actionable.
     @ViewBuilder private var feedBanner: some View {
-        if store.isSampleData { sampleBanner } else { liveBanner }
+        if store.isSampleData { sampleBanner }
+        else if store.loadedFromCache { cachedBanner }   // last-good disk cache is NOT live — say so
+        else { liveBanner }
+    }
+
+    /// Cached (last-good) prices loaded from disk after a failed/unreachable refresh. These are real
+    /// numbers but NOT live — showing them under the green "Live" banner would imply a freshness the
+    /// data doesn't have, so it gets its own amber banner with the snapshot age.
+    private var cachedBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "clock.arrow.circlepath").font(.system(size: 11))
+                .foregroundStyle(DS.Palette.warningSoft)
+            Text(cachedBannerText)
+                .font(.caption).foregroundStyle(.white.opacity(0.85))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+        }
+        .padding(.horizontal, DS.Space.md).padding(.vertical, DS.Space.sm)
+        .background(DS.Palette.warningSoft.opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
+            .stroke(DS.Palette.warningSoft.opacity(0.45), lineWidth: 1))
+    }
+
+    private var cachedBannerText: String {
+        let age: String = {
+            guard let saved = store.cacheSavedAt else { return "" }
+            let secs = Date().timeIntervalSince(saved)
+            if secs < 3600 { return " (\(Int(secs / 60))m old)" }
+            if secs < 86_400 { return " (\(Int(secs / 3600))h old)" }
+            return " (\(Int(secs / 86_400))d old)"
+        }()
+        return "Last-good (cached) prices\(age) — NOT live. The feed was unreachable; tap refresh for live quotes."
     }
 
     private var liveBanner: some View {

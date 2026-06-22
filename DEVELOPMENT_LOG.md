@@ -6916,6 +6916,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · ONLY-REAL-DATA FIX — stale disk-cache no longer shows the green "Live" banner
+**Files:** `Views/MarketsView.swift` (feedBanner 3-branch + cachedBanner).
+**What (data-integrity audit wqelv0xwp #3, VERIFIED real):** loadCachedQuotes (StockSageStore:88-90) sets isSampleData=false + loadedFromCache=true + cacheSavedAt after a failed/unreachable refresh, but feedBanner branched binary on isSampleData only — so a possibly days-old cached snapshot rendered under the green "Live worldwide quotes … delayed ~15 min" banner, implying a freshness it doesn't have. Added a 3rd branch: isSampleData → sample; else loadedFromCache → cachedBanner; else live. The new amber cachedBanner reads "Last-good (cached) prices (Nm/Nh/Nd old) — NOT live. The feed was unreachable; tap refresh for live quotes," computing the age from store.cacheSavedAt.
+**Verify:** typecheck EXIT=0; render UNVERIFIED (Mac) — DS.Palette.warningSoft / DS.Radius.chip resolve (shared with liveBanner). Cached prices are real but now honestly labeled NOT live, with their age.
+**Remaining (DATA_INTEGRITY_AUDIT.md): #1 GBP+USD 1:1 headline sum; #4 SAMPLE-price leak into rows/journal/what-if; #6 what-if sheet no banner; #12 gp/hour caveat.**
+**Result:** a stale cache can no longer masquerade as a live feed — the freshness claim now matches the data. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
