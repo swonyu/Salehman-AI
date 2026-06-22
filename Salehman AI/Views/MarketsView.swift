@@ -917,8 +917,13 @@ struct MarketsView: View {
     // MARK: Allocation breakdown
 
     private var allocationPanel: some View {
-        let holdings = portfolio.positions.map {
-            (symbol: $0.symbol, value: holdingValue($0.symbol, perShare: currentPrice($0.symbol) ?? $0.costBasis, shares: $0.shares))
+        // Convert to USD before the breakdown (mirrors portfolioTotals/rebalance) — summing currencies
+        // at 1:1 skews the asset-class / region slice percentages. Untracked-FX holdings are excluded.
+        let allocFX = fxRatesToUSD
+        let holdings = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
+            guard let rate = allocFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
+            return (symbol: p.symbol,
+                    value: holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares) * rate)
         }
         let alloc = StockSageAllocation.breakdown(holdings)
         return VStack(alignment: .leading, spacing: DS.Space.sm) {

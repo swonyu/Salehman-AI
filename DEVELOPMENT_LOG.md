@@ -7305,6 +7305,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · FORMAT/MONEY — allocation breakdown converts to USD before summing (no 1:1 mix)
+**Files:** `Views/MarketsView.swift` (allocationPanel holdings FX conversion).
+**What (UI_FORMAT_AUDIT wkdzud2tl #2-cont):** allocationPanel built its holdings from LOCAL-currency holdingValue with no * rate, so StockSageAllocation.breakdown summed GBP+USD+SAR+JPY at 1:1 → skewed asset-class / region slice percentages. Fix: convert each holding to USD (× fxRatesToUSD) before breakdown, excluding untracked-FX — identical to the rebalance fix (41ca7e8) and portfolioTotals.
+**Verify:** typecheck EXIT=0 (separate step). USD-only book → rate 1.0 → byte-identical; the breakdown engine is untouched.
+**Result:** allocation slices reflect true USD weight, not a currency-mixed distortion. (what-if/sizing ~3273 is the last 1:1 site.) ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
