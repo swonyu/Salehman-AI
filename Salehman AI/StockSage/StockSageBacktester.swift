@@ -45,14 +45,19 @@ struct BacktestResult: Sendable, Equatable {
     let avgHoldBars: Double
     let avgWinR: Double        // average R of winning trades
     let avgLossR: Double       // average R of losing trades, as a POSITIVE magnitude
+    /// P(true per-trade Sharpe > 0), the Probabilistic Sharpe Ratio haircut for sample size + skew
+    /// + fat tails. nil when there are too few trades (<4) or no dispersion to judge. A raw Sharpe
+    /// from a short, skewed record overstates the edge; this says how likely it is actually positive.
+    let probabilisticSharpe: Double?
 
     /// Defaulted new fields so older constructions (empty, tests) stay valid.
     nonisolated init(trades: Int, wins: Int, winRate: Double, avgR: Double, totalR: Double,
                      maxDrawdownR: Double, sharpe: Double, avgHoldBars: Double,
-                     avgWinR: Double = 0, avgLossR: Double = 0) {
+                     avgWinR: Double = 0, avgLossR: Double = 0, probabilisticSharpe: Double? = nil) {
         self.trades = trades; self.wins = wins; self.winRate = winRate; self.avgR = avgR
         self.totalR = totalR; self.maxDrawdownR = maxDrawdownR; self.sharpe = sharpe
         self.avgHoldBars = avgHoldBars; self.avgWinR = avgWinR; self.avgLossR = avgLossR
+        self.probabilisticSharpe = probabilisticSharpe
     }
 
     /// Below this, the numbers are noise — the UI must say so.
@@ -338,10 +343,18 @@ enum StockSageBacktester {
         let sharpe = sd > 0 ? avgR / sd : 0
         let avgHold = trades.map { Double($0.exitIndex - $0.entryIndex) }.reduce(0, +) / Double(trades.count)
 
+        // Deflate the raw Sharpe for sample size + skew/kurtosis (PSR). nil when too few trades
+        // (<4) or no dispersion — the engine returns nil there, never a fabricated confidence.
+        let psr: Double? = {
+            guard sd > 0, let m = StockSageDeflatedSharpe.moments(rs) else { return nil }
+            return StockSageDeflatedSharpe.probabilisticSharpe(observedSharpe: sharpe, nTrades: trades.count,
+                                                               skew: m.skew, kurtosis: m.kurtosis)
+        }()
+
         return BacktestResult(trades: trades.count, wins: wins,
                               winRate: Double(wins) / Double(trades.count),
                               avgR: avgR, totalR: totalR, maxDrawdownR: maxDD,
                               sharpe: sharpe, avgHoldBars: avgHold,
-                              avgWinR: avgWinR, avgLossR: avgLossR)
+                              avgWinR: avgWinR, avgLossR: avgLossR, probabilisticSharpe: psr)
     }
 }

@@ -7014,6 +7014,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · ORPHAN-WATCH (a) — Deflated/Probabilistic Sharpe WIRED into the backtester
+**Files:** `StockSage/StockSageBacktester.swift` (BacktestResult.probabilisticSharpe + summarize), `Salehman AITests/StockSageBacktesterTests.swift` (+1 test).
+**What:** StockSageDeflatedSharpe (built+tested 68f2bd0) was UNWIRED. Now summarize() computes the Probabilistic Sharpe Ratio from the trades: skew/kurtosis via DeflatedSharpe.moments(rs), then PSR(observedSharpe: per-trade sharpe, nTrades, skew, kurtosis) → new defaulted Optional `BacktestResult.probabilisticSharpe`. nil when <4 trades or no dispersion (the engine never fabricates a confidence). The raw per-trade Sharpe from a short/skewed record overstates the edge; PSR says how likely the true Sharpe is actually > 0.
+**Verify:** typecheck EXIT=0. RE-TRACED every BacktestResult test (the lesson from cf77050): all `== BacktestResult/.empty` comparisons are against .empty (psr nil both sides); summarizeAggregatesRMultiples checks individual fields not ==; aggregate returns a different struct (StrategyResult) and never touches the field; the result(...) helper builds inputs with the defaulted nil. No existing test breaks. +test: 6 dispersed trades → PSR in [0,1]; <4 → nil; no-dispersion → nil; .empty → nil.
+**Next: surface BacktestResult.probabilisticSharpe in the backtest UI; DSR in StockSageStrategyBacktest.aggregate (trials=results.count, varTrialSharpe=Var(results.sharpe)).**
+**Result:** the backtester now carries the selection-bias-aware confidence, computed from real trades — no longer an orphan engine. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

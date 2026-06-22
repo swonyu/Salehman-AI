@@ -30,6 +30,19 @@ struct StockSageBacktesterTests {
         #expect(abs(r.avgHoldBars - 1) < 1e-9)
     }
 
+    @Test func summarizePopulatesDeflatedProbabilisticSharpe() {
+        // ≥4 trades WITH dispersion → PSR in [0,1] (deflated for sample size + skew/kurtosis).
+        let r = StockSageBacktester.summarize([trade(2), trade(-1), trade(3), trade(-1), trade(2), trade(-1)])
+        if let psr = r.probabilisticSharpe { #expect(psr >= 0 && psr <= 1) }
+        else { Issue.record("PSR should populate for 6 dispersed trades") }
+        // < 4 trades → nil (too few to judge skew/kurtosis — never a fabricated confidence).
+        #expect(StockSageBacktester.summarize([trade(2), trade(-1)]).probabilisticSharpe == nil)
+        // No dispersion (all equal) → nil.
+        #expect(StockSageBacktester.summarize(Array(repeating: trade(1), count: 5)).probabilisticSharpe == nil)
+        // .empty carries no PSR.
+        #expect(BacktestResult.empty.probabilisticSharpe == nil)
+    }
+
     @Test func walkForwardDecayFlagsOverfitEdge() {
         // Stable +1R edge → keeps its edge out-of-sample, ratio ~1, no flag.
         let stable = StockSageBacktester.walkForwardDecay(Array(repeating: trade(1), count: 20))
