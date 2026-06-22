@@ -2387,6 +2387,36 @@ struct MarketsView: View {
 
     // MARK: Idea detail sheet
 
+    // Pre-trade gate verdict block for the detail sheet (go / caution / no-go + checks).
+    @ViewBuilder private func tradeGateView(_ v: TradeGateVerdict) -> some View {
+        let color: Color = v.decision == .blocked ? DS.Palette.danger
+            : (v.decision == .caution ? DS.Palette.warningSoft : DS.Palette.successSoft)
+        let icon = v.decision == .blocked ? "xmark.octagon.fill"
+            : (v.decision == .caution ? "exclamationmark.triangle.fill" : "checkmark.seal.fill")
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 13)).foregroundStyle(color)
+                Text("Pre-trade gate — \(v.decision.rawValue)").font(.system(size: 12, weight: .bold)).foregroundStyle(color)
+                Spacer()
+            }
+            ForEach(v.checks.indices, id: \.self) { i in
+                let c = v.checks[i]
+                let cc: Color = c.level == .fail ? DS.Palette.danger : (c.level == .warn ? DS.Palette.warningSoft : DS.Palette.successSoft)
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: c.level == .fail ? "xmark" : (c.level == .warn ? "exclamationmark" : "checkmark"))
+                        .font(.system(size: mvFont9, weight: .bold)).foregroundStyle(cc).frame(width: 10)
+                    Text(c.label).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Text(v.caveat).font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(DS.Space.sm).frame(maxWidth: .infinity, alignment: .leading)
+        .background(color.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(color.opacity(0.3), lineWidth: 1))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Pre-trade gate: \(v.decision.rawValue). \(v.fails) failed, \(v.warns) warnings, \(v.passes) passed.")
+    }
+
     private func ideaDetailSheet(_ idea: StockSageIdea) -> some View {
         let a = idea.advice
         return ScrollView {
@@ -2428,6 +2458,20 @@ struct MarketsView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) { ForEach(riskFlags) { riskChip($0) } }
                     }
+                }
+
+                if a.action == .buy || a.action == .strongBuy {
+                    let rr: Double? = {
+                        guard let stop = a.stopPrice, let tgt = a.targetPrice else { return nil }
+                        let risk = abs(idea.price - stop)
+                        guard risk > 0 else { return nil }
+                        return abs(tgt - idea.price) / risk
+                    }()
+                    let rf = Double(sizerRiskPct).map { $0 / 100 } ?? 0.01
+                    let gate = StockSageTradeGate.evaluate(
+                        hasStop: a.stopPrice != nil, rewardToRisk: rr, riskFraction: rf,
+                        daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil)
+                    tradeGateView(gate)
                 }
 
                 HStack(spacing: 20) {

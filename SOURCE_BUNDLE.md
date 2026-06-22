@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 08:36 +03 · Swift files: 218 · Swift LOC: 43312_
+_Generated: 2026-06-22 08:45 +03 · Swift files: 220 · Swift LOC: 43493_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -12925,6 +12925,98 @@ enum StockSageStrategyBacktest {
 }
 ```
 
+===== FILE: Salehman AI/StockSage/StockSageTradeGate.swift (88 lines) =====
+```swift
+import Foundation
+
+// MARK: - Pre-trade gate ("should I take this trade?")
+//
+// A single disciplined go/no-go verdict that composes the rules the owner already
+// has into one answer BEFORE entering: is risk defined (a stop)? is it within the
+// cap? is the reward skew acceptable? is there an earnings gap or a correlated-book
+// concentration? It BLOCKS undefined-risk / over-sized trades, CAUTIONS on poor
+// skew / event risk, and otherwise clears. Pure + deterministic.
+//
+// Honesty: a discipline checklist, NOT a profit signal — passing the gate does not
+// mean the trade wins; it means it isn't obviously reckless. Risk control > signal.
+
+struct TradeGateCheck: Sendable, Equatable {
+    enum Level: String, Sendable { case pass, warn, fail }
+    let level: Level
+    let label: String
+}
+
+struct TradeGateVerdict: Sendable, Equatable {
+    enum Decision: String, Sendable {
+        case clear   = "Clear to trade"
+        case caution = "Proceed with caution"
+        case blocked = "Don't take this trade"
+    }
+    let decision: Decision
+    let checks: [TradeGateCheck]
+    nonisolated var caveat: String {
+        "A discipline checklist, not a profit signal — clearing it means the trade isn't obviously reckless, not that it wins. Risk control > signal."
+    }
+    nonisolated var passes: Int { checks.filter { $0.level == .pass }.count }
+    nonisolated var warns: Int { checks.filter { $0.level == .warn }.count }
+    nonisolated var fails: Int { checks.filter { $0.level == .fail }.count }
+}
+
+enum StockSageTradeGate {
+    /// Evaluate a proposed trade. Inputs are already-computed primitives so the gate is
+    /// a pure decision over them (the caller supplies risk %, R:R, correlation, earnings).
+    /// `rewardToRisk`/`maxCorrelation`/`daysToEarnings` are nil when unknown/not applicable.
+    nonisolated static func evaluate(hasStop: Bool,
+                                     rewardToRisk: Double?,
+                                     riskFraction: Double,
+                                     maxRiskFraction: Double = 0.02,
+                                     maxCorrelation: Double? = nil,
+                                     daysToEarnings: Int? = nil) -> TradeGateVerdict {
+        var checks: [TradeGateCheck] = []
+
+        // 1. A defined stop — without it, risk is undefined and sizing is meaningless.
+        checks.append(hasStop
+            ? TradeGateCheck(level: .pass, label: "Stop defined — risk is bounded")
+            : TradeGateCheck(level: .fail, label: "No stop — risk is UNDEFINED; set one before entering"))
+
+        // 2. Risk within the per-trade cap.
+        if riskFraction <= 0 {
+            checks.append(TradeGateCheck(level: .fail, label: "Risk fraction must be positive"))
+        } else if riskFraction <= maxRiskFraction {
+            checks.append(TradeGateCheck(level: .pass, label: String(format: "Risk %.1f%% within the %.1f%% cap", riskFraction * 100, maxRiskFraction * 100)))
+        } else {
+            checks.append(TradeGateCheck(level: .fail, label: String(format: "Risk %.1f%% EXCEEDS the %.1f%% cap — size down", riskFraction * 100, maxRiskFraction * 100)))
+        }
+
+        // 3. Reward:risk skew.
+        if let rr = rewardToRisk {
+            if rr >= 2 { checks.append(TradeGateCheck(level: .pass, label: String(format: "Reward:risk %.1f:1 — positive skew", rr))) }
+            else if rr >= 1 { checks.append(TradeGateCheck(level: .warn, label: String(format: "Reward:risk %.1f:1 — thin; below 2:1", rr))) }
+            else { checks.append(TradeGateCheck(level: .fail, label: String(format: "Reward:risk %.1f:1 — NEGATIVE skew; target below 1R", rr))) }
+        } else {
+            checks.append(TradeGateCheck(level: .warn, label: "No target set — define one to judge skew"))
+        }
+
+        // 4. Correlation with the existing book (concentration).
+        if let c = maxCorrelation, c >= 0.8 {
+            checks.append(TradeGateCheck(level: .warn, label: String(format: "Highly correlated (%.2f) with a holding — sizes as one bet, not two", c)))
+        } else if let c = maxCorrelation {
+            checks.append(TradeGateCheck(level: .pass, label: String(format: "Low correlation (%.2f) with the book — adds diversification", c)))
+        }
+
+        // 5. Earnings-gap proximity.
+        if let d = daysToEarnings, d >= 0, d <= 3 {
+            checks.append(TradeGateCheck(level: .warn, label: "Earnings in \(d) day\(d == 1 ? "" : "s") — overnight gap risk through the stop"))
+        }
+
+        let decision: TradeGateVerdict.Decision =
+            checks.contains { $0.level == .fail } ? .blocked
+            : (checks.contains { $0.level == .warn } ? .caution : .clear)
+        return TradeGateVerdict(decision: decision, checks: checks)
+    }
+}
+```
+
 ===== FILE: Salehman AI/StockSage/StockSageTradePlan.swift (44 lines) =====
 ```swift
 import Foundation
@@ -25455,7 +25547,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (2833 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (2877 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -27846,6 +27938,36 @@ struct MarketsView: View {
 
     // MARK: Idea detail sheet
 
+    // Pre-trade gate verdict block for the detail sheet (go / caution / no-go + checks).
+    @ViewBuilder private func tradeGateView(_ v: TradeGateVerdict) -> some View {
+        let color: Color = v.decision == .blocked ? DS.Palette.danger
+            : (v.decision == .caution ? DS.Palette.warningSoft : DS.Palette.successSoft)
+        let icon = v.decision == .blocked ? "xmark.octagon.fill"
+            : (v.decision == .caution ? "exclamationmark.triangle.fill" : "checkmark.seal.fill")
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 13)).foregroundStyle(color)
+                Text("Pre-trade gate — \(v.decision.rawValue)").font(.system(size: 12, weight: .bold)).foregroundStyle(color)
+                Spacer()
+            }
+            ForEach(v.checks.indices, id: \.self) { i in
+                let c = v.checks[i]
+                let cc: Color = c.level == .fail ? DS.Palette.danger : (c.level == .warn ? DS.Palette.warningSoft : DS.Palette.successSoft)
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: c.level == .fail ? "xmark" : (c.level == .warn ? "exclamationmark" : "checkmark"))
+                        .font(.system(size: mvFont9, weight: .bold)).foregroundStyle(cc).frame(width: 10)
+                    Text(c.label).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Text(v.caveat).font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(DS.Space.sm).frame(maxWidth: .infinity, alignment: .leading)
+        .background(color.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(color.opacity(0.3), lineWidth: 1))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Pre-trade gate: \(v.decision.rawValue). \(v.fails) failed, \(v.warns) warnings, \(v.passes) passed.")
+    }
+
     private func ideaDetailSheet(_ idea: StockSageIdea) -> some View {
         let a = idea.advice
         return ScrollView {
@@ -27887,6 +28009,20 @@ struct MarketsView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) { ForEach(riskFlags) { riskChip($0) } }
                     }
+                }
+
+                if a.action == .buy || a.action == .strongBuy {
+                    let rr: Double? = {
+                        guard let stop = a.stopPrice, let tgt = a.targetPrice else { return nil }
+                        let risk = abs(idea.price - stop)
+                        guard risk > 0 else { return nil }
+                        return abs(tgt - idea.price) / risk
+                    }()
+                    let rf = Double(sizerRiskPct).map { $0 / 100 } ?? 0.01
+                    let gate = StockSageTradeGate.evaluate(
+                        hasStop: a.stopPrice != nil, rewardToRisk: rr, riskFraction: rf,
+                        daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil)
+                    tradeGateView(gate)
                 }
 
                 HStack(spacing: 20) {
@@ -43137,6 +43273,59 @@ struct StockSageStoreTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSageTradeGateTests.swift (49 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Pre-trade gate (pure)
+
+struct StockSageTradeGateTests {
+    typealias G = StockSageTradeGate
+
+    @Test func cleanTradeClears() {
+        let v = G.evaluate(hasStop: true, rewardToRisk: 2.5, riskFraction: 0.01,
+                           maxCorrelation: 0.3, daysToEarnings: 30)
+        #expect(v.decision == .clear)
+        #expect(v.fails == 0 && v.warns == 0)
+    }
+
+    @Test func noStopBlocks() {
+        let v = G.evaluate(hasStop: false, rewardToRisk: 3.0, riskFraction: 0.01)
+        #expect(v.decision == .blocked)            // undefined risk is an automatic no
+        #expect(v.fails >= 1)
+    }
+
+    @Test func overRiskBlocks() {
+        let v = G.evaluate(hasStop: true, rewardToRisk: 3.0, riskFraction: 0.03, maxRiskFraction: 0.02)
+        #expect(v.decision == .blocked)            // 3% > 2% cap
+    }
+
+    @Test func negativeSkewBlocksButThinSkewOnlyCautions() {
+        #expect(G.evaluate(hasStop: true, rewardToRisk: 0.8, riskFraction: 0.01).decision == .blocked)   // <1:1
+        #expect(G.evaluate(hasStop: true, rewardToRisk: 1.5, riskFraction: 0.01).decision == .caution)   // 1–2:1
+        #expect(G.evaluate(hasStop: true, rewardToRisk: 2.0, riskFraction: 0.01).decision == .clear)     // ≥2:1
+    }
+
+    @Test func correlationAndEarningsCaution() {
+        // Highly correlated with the book → caution (not a hard block).
+        #expect(G.evaluate(hasStop: true, rewardToRisk: 2.5, riskFraction: 0.01, maxCorrelation: 0.85).decision == .caution)
+        // Earnings in 2 days → caution.
+        #expect(G.evaluate(hasStop: true, rewardToRisk: 2.5, riskFraction: 0.01, daysToEarnings: 2).decision == .caution)
+        // Earnings far out → clear.
+        #expect(G.evaluate(hasStop: true, rewardToRisk: 2.5, riskFraction: 0.01, daysToEarnings: 20).decision == .clear)
+    }
+
+    @Test func failTrumpsWarn() {
+        // A warn (thin skew) AND a fail (no stop) → blocked (fail wins).
+        let v = G.evaluate(hasStop: false, rewardToRisk: 1.5, riskFraction: 0.01, maxCorrelation: 0.9)
+        #expect(v.decision == .blocked)
+        #expect(v.fails >= 1 && v.warns >= 1)
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSageTradePlanTests.swift (59 lines) =====
 ```swift
 import Testing
@@ -46243,7 +46432,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7482 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7487 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -52610,6 +52799,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** Completed the accessibility audit's deferred font-scaling fix (the owner started the task chip). All **44** fixed sub-9pt fonts (`.system(size: 7|8|9)`) on the Markets + RuneScape money-velocity surfaces — which ignored Dynamic Type, so a low-vision user couldn't enlarge important money/risk text — were migrated to **`@ScaledMetric(relativeTo: .caption2)`** base sizes (`mvFont7/8/9`, `rsFont8/9`). **Done safely WITHOUT a running build:** `@ScaledMetric` returns the exact base size at the default text setting (mvFont9 == 9), so the dense layout is pixel-identical to before today, and the fonts now scale up only when the user increases system text — strictly an improvement, no default-size visual change. Replace was collision-checked (no 2-digit `size:` values) and verified: 0 fixed `size: 7/8/9` remain in either view. Every honesty caveat preserved (captions still come from `MoneyVelocityCopy`).
 **⚠️ Owner verification still useful:** at LARGE text sizes the densest cards (fast-lane rows, heatmap) could in principle wrap/overflow — build + run (⌘R), open Markets, and bump system text size to confirm; the default-size layout is guaranteed unchanged.
 **Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). The Markets money-velocity surfaces are now Dynamic-Type-aware end-to-end; combined with last tick's VoiceOver labels + color-blind glyph, the accessibility audit's findings are substantially addressed. Committed + pushed. Autonomous /loop — responsive-maintenance.
+
+## 2026-06-21 · NEW FEATURE: Pre-trade gate (go / caution / no-go)
+**Files:** `StockSage/StockSageTradeGate.swift` (NEW), `Views/MarketsView.swift` (verdict block in the detail sheet), `Salehman AITests/StockSageTradeGateTests.swift` (NEW, 6 tests).
+**What & why:** Owner is away a week and wants NONSTOP work — pivoting from (exhausted) audits to BUILDING genuinely-new value that serves "make money" without touching the verified core. First: the discipline layer that stops bad trades BEFORE entry. `StockSageTradeGate.evaluate(hasStop:rewardToRisk:riskFraction:maxRiskFraction:maxCorrelation:daysToEarnings:)` runs five checks and returns a `TradeGateVerdict` (.clear / .caution / .blocked): **BLOCKS** no-stop (undefined risk), over-cap risk (>2% default), and negative skew (<1:1); **CAUTIONS** on thin skew (1–2:1), high book correlation (≥0.8), no target, or earnings ≤3 days; else clear. Decision precedence fail > warn > pass. Honesty: "a discipline checklist, NOT a profit signal — clearing it means the trade isn't obviously reckless, not that it wins." Wired into the buy-family idea detail sheet (verdict + per-check list, color/glyph coded, VoiceOver-combined), fed by the idea's stop/target, the sizer's risk %, and the symbol's earnings-days. 6 tests, HAND-VERIFIED: clean→clear; no-stop→blocked; 3%>2%→blocked; rr 0.8→blocked / 1.5→caution / 2.0→clear; corr 0.85 & earnings 2d→caution; fail trumps warn.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). The owner gets one honest go/no-go before risking real money — risk control > signal, made concrete. Committed + pushed. NEXT (new-value backlog): budget-aware OSRS flip optimizer; portfolio rebalance-to-target; alert-decision engine. Autonomous /loop — build mode.
 
 ---
 
