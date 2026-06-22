@@ -6439,6 +6439,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** The discovery surface over the full 393-instrument `StockSageUniverse.catalog`. A sheet that lists every catalog symbol SECTIONED by market group (pinned headers), with a live search box (reusing `StockSageUniverse.search`, up to 500 hits) and a segmented **asset-class filter** (All / Stocks / ETFs / Crypto / Forex / Indices, classified by suffix/label). Each row shows symbol + market and a one-tap **＋** that calls `store.addSymbol` — which lazily fetches just that ONE quote; already-tracked rows show a green check. This is the key scaling invariant the research synthesis called for: browsing costs nothing, only an explicit add touches the network, so the directory can grow toward "all stocks" without O(n) history fetches. A "Browse all 393 markets" button sits under the add-ticker box. Honest: catalog symbols are searchable-but-not-scanned until added to the watchlist.
 **Result:** ✅ `tools/typecheck.sh` clean. The owner can now visually browse/filter the whole universe and add anything in one tap. Backlog 11/32 done. NEXT: #5 rate-limit (429) handling + #11 disk cache. Committed + pushed.
 
+## 2026-06-22 · Backlog #13: Ideas action quick-filter (All / Strong Buy / Buys / Sells)
+**Files:** `Views/MarketsView.swift` (IdeaFilter enum + @AppStorage + Menu next to the sort picker + filter in `displayedIdeas`).
+**What & why:** The ideas board could only sort, not filter — to find the strongest setups you scanned the whole list. Added a persisted action filter (Menu): All / Strong Buy / Buys (strongBuy+buy) / Sells (sell+reduce), applied after the sort. Shows "No <filter> ideas in this scan" when a filter is empty. Persisted via @AppStorage so the owner's preferred view sticks. The TradeAdvice.Action enum has no strongSell (strongBuy/buy/hold/avoid/reduce/sell), so "Sells" = sell+reduce.
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 12/32 done. NEXT: #16 input validation. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues

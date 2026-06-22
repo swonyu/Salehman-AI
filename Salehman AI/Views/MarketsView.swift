@@ -15,6 +15,13 @@ struct MarketsView: View {
     private enum IdeaSort: String, CaseIterable { case ev = "Expected value", velocity = "EV / day", signal = "Signal rank" }
     @AppStorage("marketsIdeaSort") private var ideaSort: IdeaSort = .ev
 
+    /// Ideas board action filter — jump straight to the strongest setups.
+    private enum IdeaFilter: String, CaseIterable, Identifiable {
+        case all = "All", strongBuy = "Strong Buy", buys = "Buys", sells = "Sells"
+        var id: String { rawValue }
+    }
+    @AppStorage("marketsIdeaFilter") private var ideaFilter: IdeaFilter = .all
+
     /// Tunable hold-day assumptions feeding velocity (EV/day). Persisted; defaults match
     /// the engine's (crypto 3d, equity 12d) so nothing shifts until the owner changes it.
     @AppStorage("velocityCryptoHoldDays") private var cryptoHoldDays = 3.0
@@ -1855,12 +1862,27 @@ struct MarketsView: View {
                     Picker("", selection: $ideaSort) {
                         ForEach(IdeaSort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }.labelsHidden().pickerStyle(.segmented).frame(width: 300)
+                    Menu {
+                        ForEach(IdeaFilter.allCases) { f in
+                            Button { ideaFilter = f } label: { Label(f.rawValue, systemImage: ideaFilter == f ? "checkmark" : "") }
+                        }
+                    } label: {
+                        Label(ideaFilter == .all ? "Filter" : ideaFilter.rawValue, systemImage: "line.3.horizontal.decrease.circle")
+                            .font(.system(size: 10)).foregroundStyle(ideaFilter == .all ? .secondary : DS.Palette.accent)
+                    }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .accessibilityLabel("Filter ideas by action")
                     Spacer()
                 }
-                VStack(spacing: DS.Space.sm) {
-                    ForEach(displayedIdeas) { ideaCard($0) }
+                if displayedIdeas.isEmpty {
+                    Text("No \(ideaFilter.rawValue.lowercased()) ideas in this scan.")
+                        .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 12)
+                } else {
+                    VStack(spacing: DS.Space.sm) {
+                        ForEach(displayedIdeas) { ideaCard($0) }
+                    }
+                    .transition(.opacity)
                 }
-                .transition(.opacity)
             }
         }
         .animation(DS.Motion.smooth, value: store.ideas.count)
@@ -1869,10 +1891,17 @@ struct MarketsView: View {
     /// The ideas in display order — by expected value (best bet first) or the
     /// store's default signal rank.
     private var displayedIdeas: [StockSageIdea] {
+        let sorted: [StockSageIdea]
         switch ideaSort {
-        case .ev:       return StockSageExpectedValue.rankByEV(store.ideas)
-        case .velocity: return StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds)
-        case .signal:   return store.ideas
+        case .ev:       sorted = StockSageExpectedValue.rankByEV(store.ideas)
+        case .velocity: sorted = StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds)
+        case .signal:   sorted = store.ideas
+        }
+        switch ideaFilter {
+        case .all:       return sorted
+        case .strongBuy: return sorted.filter { $0.advice.action == .strongBuy }
+        case .buys:      return sorted.filter { $0.advice.action == .strongBuy || $0.advice.action == .buy }
+        case .sells:     return sorted.filter { $0.advice.action == .sell || $0.advice.action == .reduce }
         }
     }
 

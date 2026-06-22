@@ -84,7 +84,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** A hung 'Loading ideas…' with no cancel is a dead-end the user can't escape without relaunching. Store the Task, expose cancelIdeasRefresh(), publish ideasProgress (current/total) for 'Loading 45/250…', and wrap in a ~120s watchdog that flips the flag with a clear error.
 **Files:** Salehman AI/StockSage/StockSageStore.swift:135-174; Salehman AI/Views/MarketsView.swift:1790
 
-### ⬜ #13 — Ideas board: sector / Strong-Buy-Sell quick filter  [high/medium, UX/feature]
+### ✅ DONE #13 — Ideas board: sector / Strong-Buy-Sell quick filter  [high/medium, UX/feature]
 **What:** The EV-ranked ideas board (250+ symbols once the core grows) has no local filter — to see only Strong Buys or only Tech, the user scrolls the whole list or re-runs 'Find ideas' on a narrowed universe.
 **Why:** Filtering is the fastest path from a big board to an actionable shortlist — directly serves 'make money fast'. Add a SegmentPicker below ideaSort: All / Strong Buy only / Strong Sell only / [sector]; filter store.ideas locally before displayedIdeas. No extra network.
 **Files:** Salehman AI/Views/MarketsView.swift:1815; Salehman AI/Views/MarketsView.swift:1832-1836

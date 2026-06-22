@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 10:20 +03 · Swift files: 234 · Swift LOC: 44744_
+_Generated: 2026-06-22 10:25 +03 · Swift files: 234 · Swift LOC: 44773_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -26248,7 +26248,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (3061 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (3090 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -26266,6 +26266,13 @@ struct MarketsView: View {
     /// Ideas board ordering: by expected value, EV-per-day velocity, or signal rank.
     private enum IdeaSort: String, CaseIterable { case ev = "Expected value", velocity = "EV / day", signal = "Signal rank" }
     @AppStorage("marketsIdeaSort") private var ideaSort: IdeaSort = .ev
+
+    /// Ideas board action filter — jump straight to the strongest setups.
+    private enum IdeaFilter: String, CaseIterable, Identifiable {
+        case all = "All", strongBuy = "Strong Buy", buys = "Buys", sells = "Sells"
+        var id: String { rawValue }
+    }
+    @AppStorage("marketsIdeaFilter") private var ideaFilter: IdeaFilter = .all
 
     /// Tunable hold-day assumptions feeding velocity (EV/day). Persisted; defaults match
     /// the engine's (crypto 3d, equity 12d) so nothing shifts until the owner changes it.
@@ -28107,12 +28114,27 @@ struct MarketsView: View {
                     Picker("", selection: $ideaSort) {
                         ForEach(IdeaSort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }.labelsHidden().pickerStyle(.segmented).frame(width: 300)
+                    Menu {
+                        ForEach(IdeaFilter.allCases) { f in
+                            Button { ideaFilter = f } label: { Label(f.rawValue, systemImage: ideaFilter == f ? "checkmark" : "") }
+                        }
+                    } label: {
+                        Label(ideaFilter == .all ? "Filter" : ideaFilter.rawValue, systemImage: "line.3.horizontal.decrease.circle")
+                            .font(.system(size: 10)).foregroundStyle(ideaFilter == .all ? .secondary : DS.Palette.accent)
+                    }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .accessibilityLabel("Filter ideas by action")
                     Spacer()
                 }
-                VStack(spacing: DS.Space.sm) {
-                    ForEach(displayedIdeas) { ideaCard($0) }
+                if displayedIdeas.isEmpty {
+                    Text("No \(ideaFilter.rawValue.lowercased()) ideas in this scan.")
+                        .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 12)
+                } else {
+                    VStack(spacing: DS.Space.sm) {
+                        ForEach(displayedIdeas) { ideaCard($0) }
+                    }
+                    .transition(.opacity)
                 }
-                .transition(.opacity)
             }
         }
         .animation(DS.Motion.smooth, value: store.ideas.count)
@@ -28121,10 +28143,17 @@ struct MarketsView: View {
     /// The ideas in display order — by expected value (best bet first) or the
     /// store's default signal rank.
     private var displayedIdeas: [StockSageIdea] {
+        let sorted: [StockSageIdea]
         switch ideaSort {
-        case .ev:       return StockSageExpectedValue.rankByEV(store.ideas)
-        case .velocity: return StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds)
-        case .signal:   return store.ideas
+        case .ev:       sorted = StockSageExpectedValue.rankByEV(store.ideas)
+        case .velocity: sorted = StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds)
+        case .signal:   sorted = store.ideas
+        }
+        switch ideaFilter {
+        case .all:       return sorted
+        case .strongBuy: return sorted.filter { $0.advice.action == .strongBuy }
+        case .buys:      return sorted.filter { $0.advice.action == .strongBuy || $0.advice.action == .buy }
+        case .sells:     return sorted.filter { $0.advice.action == .sell || $0.advice.action == .reduce }
         }
     }
 
@@ -47739,7 +47768,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7556 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7561 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54181,6 +54210,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** The discovery surface over the full 393-instrument `StockSageUniverse.catalog`. A sheet that lists every catalog symbol SECTIONED by market group (pinned headers), with a live search box (reusing `StockSageUniverse.search`, up to 500 hits) and a segmented **asset-class filter** (All / Stocks / ETFs / Crypto / Forex / Indices, classified by suffix/label). Each row shows symbol + market and a one-tap **＋** that calls `store.addSymbol` — which lazily fetches just that ONE quote; already-tracked rows show a green check. This is the key scaling invariant the research synthesis called for: browsing costs nothing, only an explicit add touches the network, so the directory can grow toward "all stocks" without O(n) history fetches. A "Browse all 393 markets" button sits under the add-ticker box. Honest: catalog symbols are searchable-but-not-scanned until added to the watchlist.
 **Result:** ✅ `tools/typecheck.sh` clean. The owner can now visually browse/filter the whole universe and add anything in one tap. Backlog 11/32 done. NEXT: #5 rate-limit (429) handling + #11 disk cache. Committed + pushed.
 
+## 2026-06-22 · Backlog #13: Ideas action quick-filter (All / Strong Buy / Buys / Sells)
+**Files:** `Views/MarketsView.swift` (IdeaFilter enum + @AppStorage + Menu next to the sort picker + filter in `displayedIdeas`).
+**What & why:** The ideas board could only sort, not filter — to find the strongest setups you scanned the whole list. Added a persisted action filter (Menu): All / Strong Buy / Buys (strongBuy+buy) / Sells (sell+reduce), applied after the sort. Shows "No <filter> ideas in this scan" when a filter is empty. Persisted via @AppStorage so the owner's preferred view sticks. The TradeAdvice.Action enum has no strongSell (strongBuy/buy/hold/avoid/reduce/sell), so "Sells" = sell+reduce.
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 12/32 done. NEXT: #16 input validation. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
@@ -57623,7 +57657,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** A hung 'Loading ideas…' with no cancel is a dead-end the user can't escape without relaunching. Store the Task, expose cancelIdeasRefresh(), publish ideasProgress (current/total) for 'Loading 45/250…', and wrap in a ~120s watchdog that flips the flag with a clear error.
 **Files:** Salehman AI/StockSage/StockSageStore.swift:135-174; Salehman AI/Views/MarketsView.swift:1790
 
-### ⬜ #13 — Ideas board: sector / Strong-Buy-Sell quick filter  [high/medium, UX/feature]
+### ✅ DONE #13 — Ideas board: sector / Strong-Buy-Sell quick filter  [high/medium, UX/feature]
 **What:** The EV-ranked ideas board (250+ symbols once the core grows) has no local filter — to see only Strong Buys or only Tech, the user scrolls the whole list or re-runs 'Find ideas' on a narrowed universe.
 **Why:** Filtering is the fastest path from a big board to an actionable shortlist — directly serves 'make money fast'. Add a SegmentPicker below ideaSort: All / Strong Buy only / Strong Sell only / [sector]; filter store.ideas locally before displayedIdeas. No extra network.
 **Files:** Salehman AI/Views/MarketsView.swift:1815; Salehman AI/Views/MarketsView.swift:1832-1836
