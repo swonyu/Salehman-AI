@@ -6978,6 +6978,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · Consistency fix — StockSageAlertDecision.evaluate now SIDE-AWARE (matches the alerts detector)
+**Files:** `StockSage/StockSageAlertDecision.swift`, `Salehman AITests/StockSageAlertDecisionTests.swift` (+short test).
+**What (journal/portfolio bughunt w9ecjev4i #2, latent — no production caller yet, but the two detectors must agree):** evaluate() had the same long-only crossing inversion just fixed in StockSageAlerts.detect — a SHORT (sell/strongSell) stop-out (price up through stop) was missed, a winning short fired a false stopBreach. Fix: `isShort = recommendation == .sell || .strongSell` → short stop fires on cross-UP, target on cross-DOWN; long unchanged. The reason string's ≤/≥ now matches the side too. if/else (not ternary).
+**Verify:** typecheck EXIT=0; +test — short stop-out 105→111/stop110 fires; winning short 105→99 → nil; strongSell target 82→79/tgt80 fires targetHit. Existing long tests unchanged.
+**Result:** both alert paths now treat shorts correctly; no latent inversion left to surface if evaluate() gets wired. Remaining: DECISION_ENGINE #3 momentum triple-count; DATA_INTEGRITY #4/#6; FEED_CACHE #2-7; orphan-watch wiring.
+**Result:** ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

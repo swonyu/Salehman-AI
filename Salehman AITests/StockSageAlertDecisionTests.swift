@@ -39,6 +39,19 @@ struct StockSageAlertDecisionTests {
                             stop: 90, target: 120, lastAlertedRecommendation: nil) == nil)
     }
 
+    @Test func shortStopAndTargetCrossesAreSideAware() {
+        // SHORT (sell/strongSell): stop ABOVE (110), target BELOW (80).
+        // Stop-out = price crosses UP through the stop (105 → 111): fire.
+        #expect(AD.evaluate(symbol: "X", recommendation: .sell, price: 111, priorPrice: 105,
+                            stop: 110, target: 80, lastAlertedRecommendation: nil)?.kind == .stopBreach)
+        // A WINNING short falling toward target (105 → 99) must NOT fire a stop breach.
+        #expect(AD.evaluate(symbol: "X", recommendation: .sell, price: 99, priorPrice: 105,
+                            stop: 110, target: 80, lastAlertedRecommendation: nil) == nil)
+        // Target = price crosses DOWN through the target (82 → 79): fire targetHit.
+        #expect(AD.evaluate(symbol: "X", recommendation: .strongSell, price: 79, priorPrice: 82,
+                            stop: 110, target: 80, lastAlertedRecommendation: nil)?.kind == .targetHit)
+    }
+
     @Test func targetCrossFiresOnceOnTheCrossing() {
         #expect(AD.evaluate(symbol: "X", recommendation: .buy, price: 121, priorPrice: 115,
                             stop: 90, target: 120, lastAlertedRecommendation: nil)?.kind == .targetHit)

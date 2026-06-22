@@ -32,15 +32,31 @@ enum StockSageAlertDecision {
                                      stop: Double?,
                                      target: Double?,
                                      lastAlertedRecommendation: StockSageRecommendation?) -> StockSageAlert? {
-        // 1. Stop crossed DOWN through the level this update (priorPrice above, now at/below).
-        if let s = stop, s > 0, priorPrice > s, price <= s {
-            return StockSageAlert(symbol: symbol, kind: .stopBreach,
-                                  reason: "\(symbol) hit its stop (\(fmt(price)) ≤ \(fmt(s))) — the setup is invalidated; risk is realized.")
+        // Side-aware crossings (mirrors StockSageAlerts.detect). A LONG stops BELOW / targets ABOVE;
+        // a SHORT (sell/strongSell) stops ABOVE / targets BELOW. (Was long-only: a short's stop-out
+        // was missed and a winning short fired a false stop.)
+        let isShort = recommendation == .sell || recommendation == .strongSell
+        // 1. Stop crossed this update.
+        if let s = stop, s > 0 {
+            let breached: Bool
+            if isShort { breached = priorPrice < s && price >= s }
+            else { breached = priorPrice > s && price <= s }
+            if breached {
+                let rel = isShort ? "≥" : "≤"
+                return StockSageAlert(symbol: symbol, kind: .stopBreach,
+                                      reason: "\(symbol) hit its stop (\(fmt(price)) \(rel) \(fmt(s))) — the setup is invalidated; risk is realized.")
+            }
         }
-        // 2. Target crossed UP through the level this update.
-        if let t = target, t > 0, priorPrice < t, price >= t {
-            return StockSageAlert(symbol: symbol, kind: .targetHit,
-                                  reason: "\(symbol) reached its target (\(fmt(price)) ≥ \(fmt(t))) — consider taking profit or trailing the stop.")
+        // 2. Target crossed this update.
+        if let t = target, t > 0 {
+            let hit: Bool
+            if isShort { hit = priorPrice > t && price <= t }
+            else { hit = priorPrice < t && price >= t }
+            if hit {
+                let rel = isShort ? "≤" : "≥"
+                return StockSageAlert(symbol: symbol, kind: .targetHit,
+                                      reason: "\(symbol) reached its target (\(fmt(price)) \(rel) \(fmt(t))) — consider taking profit or trailing the stop.")
+            }
         }
         // 3. Strong-signal events only (buy/sell/hold don't notify), deduped vs last alert.
         let isStrong = recommendation == .strongBuy || recommendation == .strongSell
