@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 10:42 +03 · Swift files: 236 · Swift LOC: 44936_
+_Generated: 2026-06-22 10:44 +03 · Swift files: 236 · Swift LOC: 44937_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -26316,7 +26316,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (3109 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (3110 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -29260,7 +29260,8 @@ struct MarketsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(DS.Space.xl)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: 640, alignment: .leading)   // cap content for readability
+            .frame(maxWidth: .infinity)                  // …centered on wide windows
         }
         .frame(minWidth: 440, minHeight: 480)
         .background(DS.Palette.codeSurface)
@@ -47939,7 +47940,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7586 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7591 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54411,6 +54412,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** Removing a user-added watchlist ticker was only possible via right-click (low discoverability). Added a hover-visible trash button on the signal card, shown ONLY for user-added rows (`market == "★ My watchlist"` = `StockSageStore.userMarketLabel`); curated-universe rows stay un-removable (no button). Calls `store.removeSymbol` with an animation, + a VoiceOver label. The existing context-menu remove stays as the keyboard/right-click path.
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 17/32. NEXT: #21 journal a11y / #27 sheet width. Committed + pushed.
 
+## 2026-06-22 · Backlog #27: Cap idea/backtest sheet content width
+**Files:** `Views/MarketsView.swift` (idea detail sheet content frame).
+**What & why:** On a wide window the idea-detail sheet (which also hosts the backtest panel) stretched its text full-width, hurting readability. Capped the content column at `maxWidth: 640` and centered it (`.frame(maxWidth: 640, alignment: .leading).frame(maxWidth: .infinity)`) — comfortable line length on any window size; `minWidth: 440` floor unchanged.
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 18/32. NEXT: #21 journal a11y / #26 backtest validation. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
@@ -57923,7 +57929,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** A wrong backtest is worse than none for a money decision. Add validateHistory() guard returning .empty on bad data, and surface openAtEnd count in the idea detail ('15 closed · 5 open at end').
 **Files:** Salehman AI/StockSage/StockSageBacktester.swift:25-73
 
-### ⬜ #27 — Cap idea-detail / backtest sheet width; lock sheet scroll on small windows  [medium/small, Visual/Layout/ux]
+### ✅ DONE #27 — Cap idea-detail / backtest sheet width; lock sheet scroll on small windows  [medium/small, Visual/Layout/ux]
 **What:** ideaDetailSheet uses .frame(minWidth:440,minHeight:480) with NO maxWidth, so on a 2560px display text lines exceed 140 chars; the main column already caps at maxWidth:780. On small macOS windows the sheet's ScrollView can scroll away behind the parent.
 **Why:** Readability + a layout trap on the most important decision surface (the full trade plan). Add .frame(maxWidth:680) and make the sheet lock the underlying scroll / set a sane default size.
 **Files:** Salehman AI/Views/MarketsView.swift:2513-2837

@@ -154,7 +154,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** A wrong backtest is worse than none for a money decision. Add validateHistory() guard returning .empty on bad data, and surface openAtEnd count in the idea detail ('15 closed · 5 open at end').
 **Files:** Salehman AI/StockSage/StockSageBacktester.swift:25-73
 
-### ⬜ #27 — Cap idea-detail / backtest sheet width; lock sheet scroll on small windows  [medium/small, Visual/Layout/ux]
+### ✅ DONE #27 — Cap idea-detail / backtest sheet width; lock sheet scroll on small windows  [medium/small, Visual/Layout/ux]
 **What:** ideaDetailSheet uses .frame(minWidth:440,minHeight:480) with NO maxWidth, so on a 2560px display text lines exceed 140 chars; the main column already caps at maxWidth:780. On small macOS windows the sheet's ScrollView can scroll away behind the parent.
 **Why:** Readability + a layout trap on the most important decision surface (the full trade plan). Add .frame(maxWidth:680) and make the sheet lock the underlying scroll / set a sane default size.
 **Files:** Salehman AI/Views/MarketsView.swift:2513-2837

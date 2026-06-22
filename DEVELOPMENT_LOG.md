@@ -6469,6 +6469,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** Removing a user-added watchlist ticker was only possible via right-click (low discoverability). Added a hover-visible trash button on the signal card, shown ONLY for user-added rows (`market == "★ My watchlist"` = `StockSageStore.userMarketLabel`); curated-universe rows stay un-removable (no button). Calls `store.removeSymbol` with an animation, + a VoiceOver label. The existing context-menu remove stays as the keyboard/right-click path.
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 17/32. NEXT: #21 journal a11y / #27 sheet width. Committed + pushed.
 
+## 2026-06-22 · Backlog #27: Cap idea/backtest sheet content width
+**Files:** `Views/MarketsView.swift` (idea detail sheet content frame).
+**What & why:** On a wide window the idea-detail sheet (which also hosts the backtest panel) stretched its text full-width, hurting readability. Capped the content column at `maxWidth: 640` and centered it (`.frame(maxWidth: 640, alignment: .leading).frame(maxWidth: .infinity)`) — comfortable line length on any window size; `minWidth: 440` floor unchanged.
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 18/32. NEXT: #21 journal a11y / #26 backtest validation. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
