@@ -6576,6 +6576,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SIGNAL #6 — volatility-adjusted momentum (cross-asset apples-to-apples)
+**Files:** `StockSage/StockSageIndicators.swift` (+volAdjustedMomentum), `StockSage/StockSageAdvisor.swift` (gated ±0.05 term), `Salehman AITests/StockSageIndicatorsTests.swift` (+1 test).
+**What:** raw % return flatters whichever asset just swings harder (a 40%-vol crypto vs an 8%-vol equity), so a jumpy name out-ranks a steadier one at equal return. Added pure `volAdjustedMomentum(closes:period:atrPeriod:highs:lows:)` = %return ÷ ATR-as-%-of-price (same sign as raw momentum; nil on insufficient bars or zero ATR). advise() now adds ±0.05 in the momentum's own direction when |vam| ≥ 5 (a clean, risk-efficient trend) — gated on highs/lows, never flips sign. Existing pinned advisor tests unaffected (close-only tests skip the term; positionSizeIsHardCapped stays capped); backtester relational tests hold.
+**Verify:** typecheck clean; python sanity — identical closes, calm(±0.5 bands) vam ≈227 vs jumpy(±5 bands) ≈34, calm>jumpy>0; short & flat(zero-ATR) ⇒ nil.
+**Result:** momentum now rewards risk-efficiency, so a small account isn't steered into the highest-variance name by raw return alone. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

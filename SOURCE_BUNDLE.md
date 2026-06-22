@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 14:57 +03 · Swift files: 246 · Swift LOC: 45724_
+_Generated: 2026-06-22 15:06 +03 · Swift files: 246 · Swift LOC: 45765_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -8549,7 +8549,7 @@ final class RuneScapeStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageAdvisor.swift (209 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageAdvisor.swift (221 lines) =====
 ```swift
 import Foundation
 
@@ -8689,6 +8689,18 @@ enum StockSageAdvisor {
             rationale.append(vc.confirmed
                 ? String(format: "Volume-confirmed (recent ×%.1f the prior average)", vc.ratio)
                 : String(format: "Thin volume (recent ×%.1f the prior average) — weak participation", vc.ratio))
+        }
+
+        // Volatility-adjusted momentum quality (needs highs/lows for ATR): a move that's
+        // large relative to the asset's OWN noise is a clean, risk-efficient trend; a same-%
+        // move that's small next to violent swings is a whipsaw trap. Nudges ±0.05 in the
+        // momentum's own direction (never flips it); skipped when |vam| is middling or no ATR.
+        if let highs, let lows, mom != 0,
+           let vam = StockSageIndicators.volAdjustedMomentum(closes: closes, highs: highs, lows: lows) {
+            if abs(vam) >= 5 {
+                score += vam > 0 ? 0.05 : -0.05
+                rationale.append(String(format: "Volatility-efficient trend (momentum ÷ ATR%% ≈ %.0f)", abs(vam)))
+            }
         }
 
         // Relative strength vs the benchmark (real index closes only): the documented
@@ -10191,7 +10203,7 @@ enum StockSageGlossary {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageIndicators.swift (168 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageIndicators.swift (183 lines) =====
 ```swift
 import Foundation
 
@@ -10359,6 +10371,21 @@ enum StockSageIndicators {
         guard let symRet = returnOverPeriod(symbolCloses, period: period),
               let benchRet = returnOverPeriod(benchmarkCloses, period: period) else { return nil }
         return symRet - benchRet
+    }
+
+    /// Volatility-adjusted momentum: % return over `period` ÷ ATR-as-a-%-of-price. Raw %
+    /// return flatters whichever asset simply swings harder (a 40%-vol crypto vs an 8%-vol
+    /// equity), so dividing by the asset's own ATR makes momentum apples-to-apples across
+    /// assets — a steady low-vol climber beats a jumpy same-return name. Same sign as raw
+    /// momentum. nil when bars are insufficient or ATR is unavailable/zero.
+    nonisolated static func volAdjustedMomentum(closes: [Double], period: Int = 126, atrPeriod: Int = 14,
+                                                highs: [Double], lows: [Double]) -> Double? {
+        guard let mom = returnOverPeriod(closes, period: period),
+              let a = atr(highs: highs, lows: lows, closes: closes, period: atrPeriod),
+              let price = closes.last, price > 0 else { return nil }
+        let atrPct = a / price * 100
+        guard atrPct > 0 else { return nil }
+        return mom / atrPct
     }
 }
 ```
@@ -43300,7 +43327,7 @@ struct StockSageHonestyGuardTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageIndicatorsTests.swift (96 lines) =====
+===== FILE: Salehman AITests/StockSageIndicatorsTests.swift (110 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -43396,6 +43423,20 @@ struct StockSageIndicatorsTests {
         // Either series too short to measure the period → nil, never a fabricated number.
         #expect(I.relativeStrength(symbolCloses: [100, 130], benchmarkCloses: [100], period: 1) == nil)
         #expect(I.relativeStrength(symbolCloses: [100], benchmarkCloses: [100, 110], period: 1) == nil)
+    }
+
+    @Test func volAdjustedMomentumPrefersTheCalmerClimber() {
+        let closes = (1...200).map(Double.init)            // identical % momentum for both
+        // Same closes (⇒ same raw momentum), but the jumpy one has a much wider ATR.
+        let calm  = I.volAdjustedMomentum(closes: closes, highs: closes.map { $0 + 0.5 }, lows: closes.map { $0 - 0.5 })!
+        let jumpy = I.volAdjustedMomentum(closes: closes, highs: closes.map { $0 + 5 },   lows: closes.map { $0 - 5 })!
+        #expect(calm > 0 && jumpy > 0)                     // same sign as raw (upward) momentum
+        #expect(calm > jumpy)                              // lower ATR ⇒ higher risk-adjusted momentum
+        // Insufficient bars → nil; a flat (zero-ATR) series → nil — never a fabricated score.
+        let short = (1...10).map(Double.init)
+        #expect(I.volAdjustedMomentum(closes: short, highs: short, lows: short) == nil)
+        let flat = Array(repeating: 100.0, count: 200)
+        #expect(I.volAdjustedMomentum(closes: flat, highs: flat, lows: flat) == nil)
     }
 }
 ```
@@ -49017,7 +49058,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7695 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7703 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -55596,6 +55637,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SIGNAL #6 — volatility-adjusted momentum (cross-asset apples-to-apples)
+**Files:** `StockSage/StockSageIndicators.swift` (+volAdjustedMomentum), `StockSage/StockSageAdvisor.swift` (gated ±0.05 term), `Salehman AITests/StockSageIndicatorsTests.swift` (+1 test).
+**What:** raw % return flatters whichever asset just swings harder (a 40%-vol crypto vs an 8%-vol equity), so a jumpy name out-ranks a steadier one at equal return. Added pure `volAdjustedMomentum(closes:period:atrPeriod:highs:lows:)` = %return ÷ ATR-as-%-of-price (same sign as raw momentum; nil on insufficient bars or zero ATR). advise() now adds ±0.05 in the momentum's own direction when |vam| ≥ 5 (a clean, risk-efficient trend) — gated on highs/lows, never flips sign. Existing pinned advisor tests unaffected (close-only tests skip the term; positionSizeIsHardCapped stays capped); backtester relational tests hold.
+**Verify:** typecheck clean; python sanity — identical closes, calm(±0.5 bands) vam ≈227 vs jumpy(±5 bands) ≈34, calm>jumpy>0; short & flat(zero-ATR) ⇒ nil.
+**Result:** momentum now rewards risk-efficiency, so a small account isn't steered into the highest-variance name by raw return alone. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -60274,7 +60323,7 @@ VERDICT: Markets tab is real-data-only in substance today; sample data is a tran
 **Signature:** `nonisolated static func walkForward(_ history: StockSagePriceHistory, warmup: Int = 200, folds: Int = 3) -> [BacktestResult]`
 **Test:** Split a long synthetic history into `folds` contiguous out-of-sample windows, run run() on each, and return per-fold results. Assert (a) folds never overlap and collectively cover post-warmup bars, (b) a strategy that only works in fold 1 (engineered regime) shows degraded avgR in folds 2–3 — surfacing instability the single aggregate hides, and (c) folds with <20 trades carry isSignificant == false so the UI can't over-trust a thin fold.
 
-### #6 — ATR-normalized (volatility-adjusted) momentum so cross-asset EV ranking is apples-to-apples  [S-M — divides existing returnOverPeriod by ATR-as-%-of-price; both inputs already exist. Small additive change to the momentum term, easy to unit-test in isolation.]
+### ✅ DONE #6 — ATR-normalized (volatility-adjusted) momentum so cross-asset EV ranking is apples-to-apples  [S-M — divides existing returnOverPeriod by ATR-as-%-of-price; both inputs already exist. Small additive change to the momentum term, easy to unit-test in isolation.]
 **Signature:** `nonisolated static func volAdjustedMomentum(closes: [Double], period: Int = 126, atrPeriod: Int = 14, highs: [Double], lows: [Double]) -> Double?`
 **Test:** Two series with identical % momentum but one twice as volatile (wider ATR) → the calmer one scores higher (momentum ÷ ATR%). Insufficient bars or zero ATR → nil. Assert that when this replaces/augments the raw returnOverPeriod term in EV ranking, a low-vol steady climber outranks a jumpy same-return name — the correct risk-adjusted preference — without changing absolute-momentum sign.
 

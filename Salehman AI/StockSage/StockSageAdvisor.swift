@@ -138,6 +138,18 @@ enum StockSageAdvisor {
                 : String(format: "Thin volume (recent ×%.1f the prior average) — weak participation", vc.ratio))
         }
 
+        // Volatility-adjusted momentum quality (needs highs/lows for ATR): a move that's
+        // large relative to the asset's OWN noise is a clean, risk-efficient trend; a same-%
+        // move that's small next to violent swings is a whipsaw trap. Nudges ±0.05 in the
+        // momentum's own direction (never flips it); skipped when |vam| is middling or no ATR.
+        if let highs, let lows, mom != 0,
+           let vam = StockSageIndicators.volAdjustedMomentum(closes: closes, highs: highs, lows: lows) {
+            if abs(vam) >= 5 {
+                score += vam > 0 ? 0.05 : -0.05
+                rationale.append(String(format: "Volatility-efficient trend (momentum ÷ ATR%% ≈ %.0f)", abs(vam)))
+            }
+        }
+
         // Relative strength vs the benchmark (real index closes only): the documented
         // momentum edge is OUT-performance, not absolute drift. A name leading the S&P gets
         // a small confirmation; one merely rising with (or lagging) the market is demoted.

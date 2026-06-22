@@ -28,7 +28,7 @@
 **Signature:** `nonisolated static func walkForward(_ history: StockSagePriceHistory, warmup: Int = 200, folds: Int = 3) -> [BacktestResult]`
 **Test:** Split a long synthetic history into `folds` contiguous out-of-sample windows, run run() on each, and return per-fold results. Assert (a) folds never overlap and collectively cover post-warmup bars, (b) a strategy that only works in fold 1 (engineered regime) shows degraded avgR in folds 2–3 — surfacing instability the single aggregate hides, and (c) folds with <20 trades carry isSignificant == false so the UI can't over-trust a thin fold.
 
-### #6 — ATR-normalized (volatility-adjusted) momentum so cross-asset EV ranking is apples-to-apples  [S-M — divides existing returnOverPeriod by ATR-as-%-of-price; both inputs already exist. Small additive change to the momentum term, easy to unit-test in isolation.]
+### ✅ DONE #6 — ATR-normalized (volatility-adjusted) momentum so cross-asset EV ranking is apples-to-apples  [S-M — divides existing returnOverPeriod by ATR-as-%-of-price; both inputs already exist. Small additive change to the momentum term, easy to unit-test in isolation.]
 **Signature:** `nonisolated static func volAdjustedMomentum(closes: [Double], period: Int = 126, atrPeriod: Int = 14, highs: [Double], lows: [Double]) -> Double?`
 **Test:** Two series with identical % momentum but one twice as volatile (wider ATR) → the calmer one scores higher (momentum ÷ ATR%). Insufficient bars or zero ATR → nil. Assert that when this replaces/augments the raw returnOverPeriod term in EV ranking, a low-vol steady climber outranks a jumpy same-return name — the correct risk-adjusted preference — without changing absolute-momentum sign.
 

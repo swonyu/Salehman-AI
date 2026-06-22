@@ -165,4 +165,19 @@ enum StockSageIndicators {
               let benchRet = returnOverPeriod(benchmarkCloses, period: period) else { return nil }
         return symRet - benchRet
     }
+
+    /// Volatility-adjusted momentum: % return over `period` ÷ ATR-as-a-%-of-price. Raw %
+    /// return flatters whichever asset simply swings harder (a 40%-vol crypto vs an 8%-vol
+    /// equity), so dividing by the asset's own ATR makes momentum apples-to-apples across
+    /// assets — a steady low-vol climber beats a jumpy same-return name. Same sign as raw
+    /// momentum. nil when bars are insufficient or ATR is unavailable/zero.
+    nonisolated static func volAdjustedMomentum(closes: [Double], period: Int = 126, atrPeriod: Int = 14,
+                                                highs: [Double], lows: [Double]) -> Double? {
+        guard let mom = returnOverPeriod(closes, period: period),
+              let a = atr(highs: highs, lows: lows, closes: closes, period: atrPeriod),
+              let price = closes.last, price > 0 else { return nil }
+        let atrPct = a / price * 100
+        guard atrPct > 0 else { return nil }
+        return mom / atrPct
+    }
 }

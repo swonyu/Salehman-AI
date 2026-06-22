@@ -93,4 +93,18 @@ struct StockSageIndicatorsTests {
         #expect(I.relativeStrength(symbolCloses: [100, 130], benchmarkCloses: [100], period: 1) == nil)
         #expect(I.relativeStrength(symbolCloses: [100], benchmarkCloses: [100, 110], period: 1) == nil)
     }
+
+    @Test func volAdjustedMomentumPrefersTheCalmerClimber() {
+        let closes = (1...200).map(Double.init)            // identical % momentum for both
+        // Same closes (⇒ same raw momentum), but the jumpy one has a much wider ATR.
+        let calm  = I.volAdjustedMomentum(closes: closes, highs: closes.map { $0 + 0.5 }, lows: closes.map { $0 - 0.5 })!
+        let jumpy = I.volAdjustedMomentum(closes: closes, highs: closes.map { $0 + 5 },   lows: closes.map { $0 - 5 })!
+        #expect(calm > 0 && jumpy > 0)                     // same sign as raw (upward) momentum
+        #expect(calm > jumpy)                              // lower ATR ⇒ higher risk-adjusted momentum
+        // Insufficient bars → nil; a flat (zero-ATR) series → nil — never a fabricated score.
+        let short = (1...10).map(Double.init)
+        #expect(I.volAdjustedMomentum(closes: short, highs: short, lows: short) == nil)
+        let flat = Array(repeating: 100.0, count: 200)
+        #expect(I.volAdjustedMomentum(closes: flat, highs: flat, lows: flat) == nil)
+    }
 }
