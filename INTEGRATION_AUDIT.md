@@ -55,3 +55,6 @@
 **fix:** In TodayView, gate or annotate the best-bet tile on freshness — only show it (or append a '· stale' qualifier) when stockSage.ideasUpdated is within the same 4h bound MarketsView uses; hide when ideasUpdated is nil or older.
 
 **value:** Low. Freshness-labeling polish, not an ONLY-REAL-DATA violation: store.ideas is never persisted (empty on every fresh launch, only populated by an in-session 'Find ideas' scan), bestOpportunity returns nil unless a genuine positive-EV buy exists, and the shown value is an R-multiple EV estimate with caveat copy — not a stale price. The inconsistency: in a long session the Today tab keeps surfacing a best bet computed on hours-old ideas while Markets flags the same scan stale (>4h).
+
+### ⬜ #5 — Wire non-default ExitModes into run() (bughunt wc0f8m94q)
+The .chandelierTrail/.scaleOutLadder/.timeStop ExitModes are built+unit-tested (simulateExit/scaleOutLadderExit) but run()/walkForward only use the default all-at-target exit. Thread an ExitMode param through run() so the backtester scores the exit it actually simulates. Additive; keep allAtTarget the default for byte-compatible existing tests.

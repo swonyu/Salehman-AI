@@ -6891,6 +6891,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · Bughunt CLEAN — 3 new engines (recompute / walkForwardDecay / MonteCarloRuin) + 1 integration gap to track
+**What (bughunt-3engines wc0f8m94q, 4 agents):** adversarial review of the 3 newest math-heavy engines + a re-check of NetEdge → ZERO confirmed bugs. Re-validated (independently) prior decisions: breakEvenWinRate=1/(1+netRR) correct; netExpectancyR÷grossRisk intentional+test-pinned; the single-sided cost-R (the bad "fix" I REJECTED) confirmed working-as-designed + regression-locked; MonteCarloRuin's equity-clamp = intended absorbing ruin barrier; SplitMix64 determinism + uniform resample + p95≥median all hold; recompute's effStop indexing has no look-ahead/OOB.
+**Actionable (NOT a bug — integration gap to track):** the non-default ExitModes (.chandelierTrail / .scaleOutLadder / .timeStop) are correct + unit-tested via simulateExit/scaleOutLadderExit but NOT yet wired into run()'s production call sites (pre-integration, like the earlier orphaned engines). Candidate for a dedicated wiring tick: let run()/walkForward accept an ExitMode and thread it through, so the trail/ladder/time-stop exits the backtester can score are the exits it actually uses.
+**Result:** new engines verified clean by an independent adversarial pass; one integration gap logged. No code change this tick. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
