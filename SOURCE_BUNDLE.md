@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 13:49 +03 · Swift files: 246 · Swift LOC: 45550_
+_Generated: 2026-06-22 14:04 +03 · Swift files: 246 · Swift LOC: 45550_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -27267,7 +27267,7 @@ struct MarketsView: View {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "scalemass.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Risk-parity weights").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Risk-parity weights").font(DS.Typography.titleM).foregroundStyle(.white)
                     Text("Size each holding by 1 ÷ volatility so they contribute equal risk.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
@@ -27368,7 +27368,7 @@ struct MarketsView: View {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "chart.bar.doc.horizontal.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Allocation").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Allocation").font(DS.Typography.titleM).foregroundStyle(.white)
                     Text("Where the money sits — by asset class, region and sector.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
@@ -27462,7 +27462,7 @@ struct MarketsView: View {
                 HStack(spacing: DS.Space.md) {
                     Image(systemName: "square.grid.3x3.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Correlation heatmap").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                        Text("Correlation heatmap").font(DS.Typography.titleM).foregroundStyle(.white)
                             .help(StockSageGlossary.heatmapHelp)
                         Text("Green = independent · red = moves together (concentration risk).")
                             .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -27527,7 +27527,7 @@ struct MarketsView: View {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "book.closed.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Trade journal").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Trade journal").font(DS.Typography.titleM).foregroundStyle(.white)
                         .help(StockSageGlossary.journalHelp)
                     Text("Log the trades you actually take, then close them to build your realized track record.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -28002,7 +28002,7 @@ struct MarketsView: View {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "percent").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Position sizer (Kelly)").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Position sizer (Kelly)").font(DS.Typography.titleM).foregroundStyle(.white)
                         .help(StockSageGlossary.kellyHelp)
                     Text("How much to risk per trade, from your win-rate & payoff.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -28089,7 +28089,7 @@ struct MarketsView: View {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "chart.pie.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Risk analytics").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Risk analytics").font(DS.Typography.titleM).foregroundStyle(.white)
                         .help(StockSageGlossary.analyticsHelp)
                     Text("Sharpe · drawdown · VaR · correlation across your holdings.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -28713,7 +28713,7 @@ struct MarketsView: View {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "bell.badge.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Signal alerts").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Signal alerts").font(DS.Typography.titleM).foregroundStyle(.white)
                     Text("Flags when an idea turns bullish/bearish or its price crosses the advised stop or target — between refreshes.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
@@ -29009,7 +29009,7 @@ struct MarketsView: View {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "chart.bar.xaxis").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Strategy backtest").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Strategy backtest").font(DS.Typography.titleM).foregroundStyle(.white)
                         .help(StockSageGlossary.strategyHelp)
                     Text(store.strategyBacktest.map { "Tested \($0.symbolsTested)/\(StockSageStrategyBacktest.sampleSymbols.count) names, ~5 years — does the system hold up?" }
                          ?? "The advisor's rules across the sample (~\(StockSageStrategyBacktest.sampleSymbols.count) names), ~5 years — does the system hold up?")
@@ -46545,6 +46545,62 @@ struct WebToolsOfflineGateTests {
 }
 ```
 
+===== FILE: A11Y_BACKLOG.md (54 lines) =====
+# Accessibility backlog (accessibility-audit wbee4epc0, 2026-06-22)
+
+5 agents -> 11 a11y items (exact line+fix).
+
+## Top quick wins
+- Refresh button hit target: MarketsView.swift line 327 — change `.frame(width: 30, height: 30)` to `.frame(width: 44, height: 44)` (or add `.contentShape(Circle())` + keep the 30pt visual but pad to 44). One-line, zero-risk, fixes the only top-bar control that's below the 44pt floor.
+- Search-field labels: add `.accessibilityLabel("Search RuneScape items")` to RuneScapeMarketView.swift TextField (line 159, after `.focused($searchFocused)`) and `.accessibilityLabel("Search markets")` to BrowseMarketsView.swift TextField (line 61). Both currently expose only placeholder text, which VoiceOver drops once typing starts. Two lines, batchable.
+- R-multiple distribution bars (MarketsView.swift 1087-1098) are pure color (red bins 0-1, green bins 2+) with no VoiceOver text. Add `.accessibilityElement(children: .ignore).accessibilityLabel("\(bin.label): \(bin.count) trades")` to each bar's VStack (line 1089). Highest-value chart fix — the histogram is otherwise invisible to VoiceOver.
+- Grid container labels: add `.accessibilityElement(children: .contain).accessibilityLabel(...)` to the market heatmap LazyVGrid (MarketsView.swift 1581, e.g. "Market heatmap, \(store.symbols.count) symbols by price change") and the correlation grid VStack (line 882). Individual tiles/cells are already labeled; the container just needs a heading so VoiceOver users know a grid follows. Use `.contain` not `.combine` so per-cell labels survive.
+
+## Backlog
+### ⬜ #1 — Refresh button hit target below 44pt
+**File:** Salehman AI/Views/MarketsView.swift:327
+**Fix:** Change `.frame(width: 30, height: 30)` on the refresh icon to `.frame(width: 44, height: 44)`, OR keep the 30pt circle visual and add `.contentShape(Circle())` with surrounding padding so the tappable region reaches 44x44. Only sub-44pt control in the Markets header. One line, zero risk.
+
+### ⬜ #2 — R-multiple distribution histogram bars are color-only / invisible to VoiceOver
+**File:** Salehman AI/Views/MarketsView.swift:1087
+**Fix:** On each bar VStack (line 1089) add `.accessibilityElement(children: .ignore)` + `.accessibilityLabel("\(bin.label): \(bin.count) trades")`. Bars use red for bins 0-1 and green otherwise (line 1092) with no text alternative; counts/labels exist visually but the bar conveys magnitude by color+height only.
+
+### ⬜ #3 — RuneScape & Browse search fields expose only placeholder, no accessibilityLabel
+**File:** Salehman AI/Views/RuneScapeMarketView.swift:159
+**Fix:** Add `.accessibilityLabel("Search RuneScape items")` after `.focused($searchFocused)` on the RuneScape TextField (line 159), and `.accessibilityLabel("Search markets")` on the BrowseMarketsView TextField (BrowseMarketsView.swift:61). Placeholder text is dropped by VoiceOver once a value is entered, leaving the field unlabeled.
+
+### ⬜ #4 — Heatmap & correlation grids lack a container announcement
+**File:** Salehman AI/Views/MarketsView.swift:1581
+**Fix:** Add `.accessibilityElement(children: .contain).accessibilityLabel("Market heatmap, \(store.symbols.count) symbols by price change")` to the heatmap LazyVGrid (line 1581) and `.accessibilityElement(children: .contain).accessibilityLabel("Correlation heatmap, \(c.symbols.count) symbols")` to the correlation grid VStack (line 882). Use `.contain` (NOT `.combine`) so the already-present per-tile/per-cell labels are preserved as children.
+
+### ⬜ #5 — Detail-sheet & compounding sparklines hidden from VoiceOver with no text summary
+**File:** Salehman AI/Views/MarketsView.swift:2688
+**Fix:** Replace `.accessibilityHidden(true)` on the detail-sheet Sparkline (line 2691) with `.accessibilityElement(children: .ignore).accessibilityLabel("Price sparkline, \(sparkTrendWord(idea.spark)), high \(fmt(max)), low \(fmt(min))")`. Do the same for the compounding sparkline (line 1064, currently unlabeled inside a combined parent). The idea-card sparkline at line 2068 is already covered by the card's `.combine` label, so leave it hidden.
+
+### ⬜ #6 — Conviction meter gauge has no accessibilityValue
+**File:** Salehman AI/Views/MarketsView.swift:3029
+**Fix:** In `convictionMeter` add `.accessibilityElement(children: .ignore).accessibilityValue("\(Int(min(max(value,0),1) * 100)) percent")` to the GeometryReader. In the idea card the conviction % is already in the combined label, and the detail sheet pairs it with a visible 'Conviction X%' Text (line 2695) — so this is a polish-level gap, but the bare meter element is currently unlabeled when focused directly.
+
+### ⬜ #7 — Fixed .system(size:) caption text does not scale with Dynamic Type (MarketsView)
+**File:** Salehman AI/Views/MarketsView.swift:844
+**Fix:** Add `@ScaledMetric(relativeTo: .caption2) private var mvFont10: CGFloat = 10` and `mvFont11 = 11`, `mvFont13 = 13` near the existing mvFont7/8/9 (line 35-37), then replace the literal `.system(size: 10/11/13)` calls at lines 844, 847, 1085, 1103, 1118, 1133, 1148, 1188 and the add-holding/add-trade fields (611, 1263, 1485) with the scaled vars. mvFont7/8/9 already scale; these were missed.
+
+### ⬜ #8 — Fixed .system(size: 11/12/13) in RuneScape & Browse views don't scale
+**File:** Salehman AI/Views/RuneScapeMarketView.swift:351
+**Fix:** RuneScapeMarketView already has rsFont8/9 (lines 17-18); add `rsFont11 = 11` and `rsFont13 = 13` and apply to priceColumn value (line 351), fastest-flip name/value (212, 217, 219), and search/title text. In BrowseMarketsView add `@ScaledMetric(relativeTo: .caption2)` vars for the literal sizes at lines 51, 62, 86, 106, 107, 111, 117.
+
+### ⬜ #9 — BrowseMarketsView rows: add/check button hit target undersized
+**File:** Salehman AI/Views/BrowseMarketsView.swift:116
+**Fix:** The plus/checkmark Image buttons (lines 111-120) sit in a row with `.padding(.vertical, 4)` (line 123), giving ~24pt height. Add `.frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())` to the add Button (line 116) so its tappable region meets 44x44, and bump row padding toward `.padding(.vertical, 8)`.
+
+### ⬜ #10 — Decorative magnifying-glass icons not hidden from VoiceOver
+**File:** Salehman AI/Views/RuneScapeMarketView.swift:158
+**Fix:** Add `.accessibilityHidden(true)` to the magnifyingglass Image at RuneScapeMarketView.swift:158 and BrowseMarketsView.swift:60. They are non-interactive decoration; without hiding, VoiceOver announces 'magnifying glass image' before the (now-labeled) search field. Low impact, trivial.
+
+### ⬜ #11 — BrowseMarketsView asset-class Picker label hidden from sighted users
+**File:** Salehman AI/Views/BrowseMarketsView.swift:71
+**Fix:** The Picker uses `.labelsHidden()` (line 74), hiding the 'Asset class' label from sighted users. The segmented options (All/Stocks/ETFs/...) are self-describing, so VoiceOver is fine, but for visual clarity optionally add a small `Text("Asset class").font(.caption2).foregroundStyle(.secondary)` above. Cosmetic; lowest priority.
+
 ===== FILE: ARCHITECTURE.md (458 lines) =====
 <!-- Auto-generated 2026-06-05 by the full-codebase-review workflow (Chat B). Grounded in the real source; refine as the app evolves. -->
 
@@ -59050,6 +59106,89 @@ Implementation: `StockSageExpectedValue`, `StockSageGEFlip`, `StockSageRiskOfRui
 
 *Educational research compiled for the owner's personal use. Not investment advice.*
 
+===== FILE: OSRS_BACKLOG.md (81 lines) =====
+# OSRS profit build-specs (osrs-profit-research w7063r3f9, 2026-06-22)
+
+8 agents → 12 ranked Swift engine specs. Build top items engine-first + test + commit.
+
+## Top 3
+- Freshness-decay multiplier in gp/hour ranking (realizedGpPerHour) — adds fillConfidence(highTime:lowTime:now:) and sorts flips/budget by realizedGpPerHour. Highest realized-gp impact because stale quotes are the #1 cause of a high theoretical gp/hour never materializing, and the highTime/lowTime data ALREADY exists on RuneScapePrice (lines 34/36) and is already decoded from the OSRS-Wiki /latest feed — zero new data, small effort, directly improves what the user buys.
+- Net-of-tax margin everywhere (netMarginPercent) + tax-correctness audit — closes the gross-vs-net gap at RuneScapeModels.swift:45 so every ranking/tooltip honors the app's 2% tax honesty guarantee. Pure correctness, no modeling assumptions, tiny effort, prevents a silent honesty regression.
+- Alchemy comparative analyzer (realizedAlchGpPerHour) — surfaces 'alch instead' when nature-cost + cast speed beats the best flip. For mid/small bankrolls high-alch (e.g. Rune platebody ~3.4M gp/hr) routinely outruns buy-limit-capped flips, so this opens a genuinely higher realized-gp path; works from live listings[561] nature price, small effort.
+
+## Specs
+### ⬜ #1 — Freshness-decay multiplier in gp/hour ranking (realizedGpPerHour)  [small]
+**Signature:** `nonisolated static func fillConfidence(highTime: Date?, lowTime: Date?, now: Date = Date()) -> Double { /* 1.0 for <90s; linear decay to a 0.25 floor by ~3h; nil times => 1.0 */ }  // then add `var realizedGpPerHour: Double` to GEFlip (gpPerHour × confidence) and sort flips()/bestFlipsForBudget() by it; thread `now: Date = Date()` through both.`
+**Test:** highTime=lowTime=now -> ~1.0; both = now-1h -> ~0.75; both = now-3h -> ~0.25 floor; both nil -> 1.0. flips() and bestFlipsForBudget() now rank a fresh 65K flip above a 70K flip whose prices are 3h old; verify a stale item loses budget allocation to a fresher one.
+**Honesty:** Time-decay is a PROXY for staleness, not a volume measurement. A 3h-old Bonds quote may still fill instantly; a 5-min niche quote may sit. The OSRS-Wiki /latest feed gives highTime/lowTime but no trade volume, so this conservatively discounts age and cannot guarantee fills. Surface it as 'realized velocity', not a promise.
+
+### ⬜ #2 — Net-of-tax margin everywhere (netMarginPercent) + tax-correctness audit of sort keys  [small]
+**Signature:** `extension RuneScapePrice { func netMarginPercent(rate: Double = StockSageGEFlip.defaultRate) -> Double? { guard let high, let low, high > 0 else { return nil }; let tax = StockSageGEFlip.sellTax(high, rate: rate); return Double(high - low - tax) / Double(high) * 100 } }  // deprecate/comment the existing gross marginPercent (RuneScapeModels.swift:45) so no UI/sort path uses gross.`
+**Test:** 1000->1100 flip (high=1100, tax=22) => netMarginPercent ≈ (78/1100)*100 ≈ 7.09%, NOT the gross 10%. Assert it equals profitPerItem/buyPrice*100 to within rounding. Tax-exempt edge (sell<50) => margin computed with 0 tax. Grep test/CI assert that gross marginPercent has no UI or ranking callers.
+**Honesty:** Pure correctness fix, no modeling assumptions. It closes a real gap: marginPercent (line 45) is GROSS and one stray sort/tooltip using it would silently violate the app's 'all numbers net of 2% tax' guarantee. Net is the only honest edge a flipper keeps.
+
+### ⬜ #3 — Alchemy comparative analyzer: realizedAlchGpPerHour() + 'alch instead' rank  [small]
+**Signature:** `nonisolated static func realizedAlchGpPerHour(itemAlchValue: Int, natureRunePrice: Int, castsPerMinute: Double = 90, essenceCostPerCast: Int = 0) -> Double? { guard itemAlchValue > 0, natureRunePrice > 0, castsPerMinute > 0 else { return nil }; let net = itemAlchValue - natureRunePrice - essenceCostPerCast; guard net > 0 else { return nil }; return Double(net) * castsPerMinute / 60.0 * 60.0 }  // gp/hour = net/cast × casts/min × 60; pair with a helper that flags `alchGpPerHour > flip.realizedGpPerHour`.`
+**Test:** nature=60, Rune platebody alch=38000, 90 casts/min => (38000-60)*90 = 3,414,600 gp/hr; beats most ≤500K/hr flips. Low-alch leather body (alch 12000) vs a flip at 7500 gp/hr => high-alch still wins. Negative net (alch<nature) and natureRunePrice=0 => nil. Nature price pulled from live listings[561].
+**Honesty:** Assumes you sustain the cast rate (lag/AFK/fatigue cut real throughput) and nature runes fill instantly at the quoted price (thinly-traded natures spike). Alch is UNCAPPED by GE buy limits but CAPPED by player attention. Game economy, not financial advice — 'realized gp/hour depends on your setup'.
+
+### ⬜ #4 — Capital-efficiency ROI knapsack allocator (roiOptimizedAllocation) + compoundCycles  [medium]
+**Signature:** `nonisolated static func roiOptimizedAllocation(_ flips: [GEFlip], budget: Int, roiThreshold: Double = 0.0) -> BudgetPlan  // greedily allocate budget to flips sorted by roiPct desc (skip < roiThreshold), respecting buyLimit & remaining gp — mirrors bestFlipsForBudget but ROI-ranked; optionally extend BudgetPlan with `totalRoiPct` and `cyclesTo(target:from:)`.`
+**Test:** budget=500K; cheap 50K@12% ROI vs mid 100K@8% vs expensive 400K@3% vs fat 1M@1%. ROI-ranked picks cheap+mid first; gp/hr lower short-term but higher totalRoiPct than greedy-by-gp/hr. roiThreshold=8% drops expensive+fat. cyclesTo(1M, from:100K) returns the integer 4h-cycle count to compound there.
+**Honesty:** ROI compounding assumes liquidity holds across cycles — if bankroll demand for a cheap item exceeds its volume, fills collapse and ROI evaporates. Sound for small accounts (<10M) on liquid items; harsh slippage for big bankrolls on niche flips. Caveat: 'assumes cycle-N volume ≥ cycle-1'.
+
+### ⬜ #5 — Per-item allocation cap with diversification + concentrationRisk on BudgetPlan  [small]
+**Signature:** `nonisolated static func bestFlipsForBudgetDiversified(_ flips: [GEFlip], budget: Int, maxAllocationPct: Double = 0.25) -> BudgetPlan  // skip/partial-fill any flip whose capital would exceed maxAllocationPct×budget, spilling to the next flip; add `let concentrationRisk: Double` (Herfindahl Σ(capital/total)²) to BudgetPlan.`
+**Test:** budget=100M, 3 flips each able to absorb >25M. At 25% cap expect ~25M, 25M, 50M split. Single flip > budget => partial fill at the cap. concentrationRisk: one-flip plan ≈1.0; four equal flips ≈0.25; assert >0.40 sets a UI warning flag.
+**Honesty:** Diversifying costs ~5-8% theoretical gp/hour (spreads into slower flips) but cuts single-item crash/fill-stall exposure from ~70% to ~25% of bankroll. In OSRS fills aren't guaranteed (depend on open GE orders) — concentration is fill-risk, not free gp/hour.
+
+### ⬜ #6 — Bankroll-compounding projection (compoundingProjection) — labeled HYPOTHETICAL  [small]
+**Signature:** `nonisolated static func compoundingProjection(plan: BudgetPlan, cycles: Int, initialBankroll: Int) -> [ProjectionCycle]  // struct ProjectionCycle { let cycleNum: Int; let projectedBankroll: Int; let realizedProfit: Int; let roiPct: Double } — reinvest tax-net profit-per-cycle (gpPerHour×4h) forward N cycles.`
+**Test:** 5M start, +50K/4h (~1% ROI), 10 cycles => ≈5M×1.01^10 ≈ 5.52M; assert against a hand-computed forward fold. 0 cycles => [initial]; 0 initial => empty/guarded. Multi-flip plan pools profit across the portfolio.
+**Honesty:** HYPOTHETICAL & VOLUME-GATED: assumes you re-fill the same flips every cycle, margins/limits stay stable, and you actually fill what you buy. A static-condition CEILING, not a forecast — the GE economy shifts. UI must label it educational.
+
+### ⬜ #7 — Volume-margin decay correction (gpPerHourVolumeCorrected)  [medium]
+**Signature:** `nonisolated static func gpPerHourVolumeCorrected(buy: Int, sell: Int, buyLimit: Int, marginalDecay: Double = 0.3, rate: Double = defaultRate) -> Double?  // average realized margin = profit × (1 - marginalDecay/2) as you climb the buy limit; marginalDecay=0 recovers gpPerHour.`
+**Test:** marginalDecay=0 => equals gpPerHour exactly. marginalDecay=0.3 => result ~15% lower (avg over the fill). High buyLimit decays more in absolute gp than a 1-unit limit. Compare corrected vs raw ranking on a snapshot: thin expensive items drop in rank more than cheap high-volume ones.
+**Honesty:** HYPOTHETICAL: marginalDecay is a tuned parameter, NOT game-truth — real fills follow each item's live supply/demand curve, time of day, and luck. Use to surface 'realized vs theoretical', explicitly volume-gated.
+
+### ⬜ #8 — Price-pair staleness filter for the fastest-flips UI strip (isMarginFresh)  [small]
+**Signature:** `nonisolated static func isMarginFresh(highTime: Date?, lowTime: Date?, now: Date = Date(), maxAge: TimeInterval = 240) -> Bool { guard let h = highTime, let l = lowTime else { return false }; return max(now.timeIntervalSince(h), now.timeIntervalSince(l)) <= maxAge }  // filter fastestFlipsStrip to flips whose BOTH prices are < 4 min old.`
+**Test:** both=now => true; one=now-5min => false; both nil => false; high=30s/low=200s => true; high=50s/low=300s => false. UI: render one fresh + one half-stale flip, assert only fresh shows and the explanatory note renders.
+**Honesty:** Conservative: requires both sides fresh; a 4-min sell quote may already have moved. The 240s window is semi-arbitrary (should be a tunable setting). Falls back to 'no flips -> refresh', which is honest UX. Largely subsumed by rank-1's confidence model; ship as the UI filter atop it.
+
+### ⬜ #9 — Volume-gate predicate + 'thesis-only' badge (volumeGate) — BLOCKED on missing data  [medium]
+**Signature:** `nonisolated static func volumeGate(buyLimit: Int, margin: Int, estimatedDaily: Int) -> Bool { guard buyLimit > 0 else { return false }; return estimatedDaily >= buyLimit * 3 && margin > 0 }  // badge flips failing the gate as thesis-only instead of hiding them.`
+**Test:** rune ore (limit 10k, ~50k daily) => true; 1-limit item, 0 daily => false; zero/negative inputs => false. Wire to UI: low-volume flip keeps its gp/hour but gets a 🔬 badge.
+**Honesty:** DEPENDS ON DATA WE DON'T HAVE: the OSRS-Wiki /latest endpoint exposes high/low/highTime/lowTime/buyLimit but NO volume. estimatedDaily would need the separate /1h or /24h volume series (a new fetch) or a hardcoded guess. Until that feed is added this can't run on real data — defer, or first add the volume endpoint. Rank-1's time-decay is the available proxy.
+
+### ⬜ #10 — Age-aware budget allocator with confidence bands (ConfidentBudgetPlan)  [medium]
+**Signature:** `nonisolated static func confidentBudgetPlan(_ flips: [GEFlip], budget: Int, now: Date = Date()) -> ConfidentBudgetPlan  // struct adds confidenceWeightedGpPerHour, worstCaseGpPerHour, and per-flip expectedFillMinutes (derived from price age + buyLimit).`
+**Test:** 300K across Bonds (5-min prices) vs a niche plugin (2h prices): bonds expectedFillMinutes ≤15 & higher confidence; plugin ≥40 & lower; worstCaseGpPerHour ≈60% of theoretical. Run 10× with randomized buy-prices in-margin; realized clusters in the band, not the peak.
+**Honesty:** expectedFillMinutes is invented from age+buyLimit, NOT market depth (the API exposes neither order book nor volume). A heavier, mostly-cosmetic wrapper over rank-1's confidence — most of its value is already delivered by realizedGpPerHour. Lower priority for the effort.
+
+### ⬜ #11 — Alchemy-aware hybrid budget allocator (mixedAlchAndFlipPlan)  [medium]
+**Signature:** `nonisolated static func mixedAlchAndFlipPlan(flips: [GEFlip], alchs: [AlchItem], naturePrice: Int, budget: Int) -> MixedBudgetPlan  // struct BudgetedAlch { itemId, name, alchedPerHour, gpPerHour, costPerCast }; greedily fill by max(flip.realizedGpPerHour, alch.gpPerHour) across both pools.`
+**Test:** 10M budget, nature 60. Flips A(5k/hr), B(2.5k/hr); alchs C(Rune plate, 56k/hr), D(Addy, 17.8k/hr). Plan ranks alch C first (uncapped by GE limit). 500K budget => alch dominates since flip units are buy-limit/capital starved.
+**Honesty:** Mixes two different throughput models: flips are timer-gated/AFK-ish; alch is attention-gated and fatigue-degrades. Plan is best when the player rotates between them. Builds on rank-3; needs an AlchItem source (alch values are static per-item data, easy to bundle). Game economy, not advice.
+
+### ⬜ #12 — Multi-cycle rotation scheduler (multiCycleRotation) across buy-limit resets  [large]
+**Signature:** `nonisolated static func multiCycleRotation(flips: [GEFlip], sessionHours: Int, bankroll: Int, volumeMultiplier: Double = 1.0) -> FlipSession?  // FlipSession = [CycleAllocation { cycleStart: Int, items: [RotatedFlip], projectedGp: Double, utilizationPct: Double }]; nil if sessionHours < 4.`
+**Test:** 8h, 100M, flips A/B/C. Cycle 1 (0-4h) buy A+B to limit; cycle 2 (4-8h) limits reset, rebuy A+B; idle capital backfills C. Expect ~2× single-cycle projected gp. volumeMultiplier=0.8 => realized < projected. sessionHours=3 => nil.
+**Honesty:** Assumes volume multipliers and margins hold across the whole session (they don't — markets drift). A CEILING under static assumptions, not a floor; illiquid flips may realize 30-60% of projection. Largest build for the most assumptions — last to ship; lean on liquid items only.
+
+## Notes
+Verified against the real code: /Users/saleh/Desktop/Salehman AI/Salehman AI/StockSage/StockSageGEFlip.swift (GEFlip+roiPct, BudgetedFlip, BudgetPlan, sellTax 2%/cap5M/exempt<50, gpPerHour, flips, bestFlipsByROI, bestFlipsForBudget) and /Users/saleh/Desktop/Salehman AI/Salehman AI/Views/RuneScapeMarketView.swift (fastestFlipsStrip already consumes flips, ROI, and the budget plan; net-margin chip already applies sellTax).
+
+KEY DATA FINDING — drives the ranking: the recency/freshness ideas were the strongest cluster AND the cheapest because RuneScapePrice already carries highTime/lowTime (Date?) at /Users/saleh/Desktop/Salehman AI/Salehman AI/RuneScape/RuneScapeModels.swift:34 and :36, decoded from the OSRS-Wiki /latest endpoint in /Users/saleh/Desktop/Salehman AI/Salehman AI/RuneScape/RuneScapeMarketService.swift:74-76. The engine simply doesn't thread them in yet. So rank-1 is high-value/low-effort: best realized-gp lift per line of code, no new data source. Prefer this single confidence multiplier over the heavier ConfidentBudgetPlan (rank 10) which mostly re-wraps the same signal.
+
+DEDUP: the 12 ideas collapse to 5 themes — (a) recency/freshness [4 ideas -> rank 1 confidence multiplier + rank 8 UI filter; rank 10 is a heavier duplicate]; (b) tax honesty audit [rank 2]; (c) alchemy [rank 3 analyzer + rank 11 hybrid allocator]; (d) capital efficiency / risk [rank 4 ROI knapsack, rank 5 diversification, rank 6 compounding projection]; (e) volume realism [rank 7 decay correction, rank 9 volume-gate, rank 12 multi-cycle].
+
+ONE BLOCKED IDEA: volumeGate (rank 9) needs trade-volume data the /latest feed does NOT provide — it would require adding the OSRS-Wiki /1h or /24h volume series as a new fetch, or hardcoded guesses. Per the 'prefer ideas that work with existing high/low/times/buyLimit data' rule it's deprioritized; the rank-1 time-decay confidence is the available stand-in for the same 'can I actually fill this?' question.
+
+HONESTY THROUGHLINE preserved on every spec: gp/hour stays a volume-gated CEILING, fills aren't guaranteed, OSRS is a game economy (not financial advice). The confidence/decay/projection models are explicitly proxies or HYPOTHETICAL, never promises.
+
+Suggested build order for the top 3: do rank 2 first (pure correctness, unblocks honest ranking), then rank 1 (the realized-gp lift — sort by realizedGpPerHour), then rank 3 (alch alternative path). All three are 'small' effort and need no new data source. Add XCTests per the testIdea for each in Salehman AITests/StockSageTests.swift, and remember the owner's standing directive to append a dated DEVELOPMENT_LOG.md entry after implementing.
 ===== FILE: POLISH_BACKLOG.md (101 lines) =====
 # Polish backlog — curated for owner review
 **Author:** Claude Chat C · **2026-06-11 (evening)** · while owner away (4h autonomous polish).
@@ -59503,6 +59642,544 @@ Tests: `StockSageExpectedValueTests`, `StockSageRiskOfRuinTests`, `StockSageGEFl
 adversarial review workflows (passes 23–28; the few findings were honesty/label fixes, not math).
 
 
+===== FILE: SIGNAL_BACKLOG.md (35 lines) =====
+# Signal-quality build-specs (signal-quality-research wklhll44i, 2026-06-22)
+
+33 agents, 1.6M tokens -> 6 source-verified specs to improve the REAL trading edge.
+
+## Top 3 (build first)
+- Charge real frictions inside the backtester — signature run(_:warmup:costs:); without it the equity curve silently flatters every result by ignoring the very spread/slippage that NetEdge already models, so this is the highest-honesty-per-line fix and unblocks trustworthy ranking of all other edges.
+- Volume confirmation in the advisor — signature volumeConfirmation(closes:volumes:lookback:); volumes are already fetched and stored in StockSagePriceHistory but never read, so this turns dead data into a small, well-weighted real edge with zero new data plumbing.
+- Benchmark-relative strength — signature relativeStrength(symbolCloses:benchmarkCloses:period:); the part of momentum with documented forward edge is OUTperformance vs the index (already fetched for the regime gauge), filtering out names that only rise because the whole market rises.
+
+## Specs
+### #1 — Charge real frictions inside the backtester (close the lie between NetEdge and the equity curve)  [M — the per-trade loop already computes entry/exit; subtract cost from fill prices (worsen entry, worsen exit on both stop and target) and recompute r. ~25 lines plus a defaulted param so call sites are unchanged.]
+**Signature:** `nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200, costs: StockSageNetEdge.CostAssumption? = nil) -> BacktestResult`
+**Test:** Run the same synthetic uptrending history twice — once with costs: nil, once with a wide CostAssumption(spreadBps: 50, slippageBps: 50). Assert (a) avgR and totalR are strictly lower in the costed run, (b) costs are charged symmetrically (entry fill worsened by half the round-trip, exit by half) so a flat random-walk history trends toward negative totalR, and (c) costs: nil reproduces the current result byte-for-byte (no silent drift for existing callers). Use StockSageNetEdge.defaultCosts(forSymbol:) when costs is nil but a symbol-derived default is wanted, asserting the crypto suffix pulls the 50bps band.
+
+### #2 — Volume confirmation in the advisor (data already fetched, currently ignored)  [M — new pure helper in StockSageIndicators (~12 lines) + a guarded ±0.05 score nudge wired through advise(history:) which already has the volumes array. Keep the weight small so it confirms, never dominates, the 0.40 trend term.]
+**Signature:** `nonisolated static func volumeConfirmation(closes: [Double], volumes: [Double], lookback: Int = 20) -> (confirmed: Bool, ratio: Double)?`
+**Test:** Feed a rising-price series where the last bars carry 2x the 20-bar average volume → expect confirmed == true, ratio ≈ 2.0. Feed the same price path on declining/below-average volume → confirmed == false, ratio < 1. Feed all-zero volumes (FX/index case) → nil (no crash, no fabricated confirmation). Then assert advise(history:) adds at most ±0.05 to score and appends a 'volume-confirmed/divergent' rationale line ONLY when volumes are non-zero, and that advise(closes:highs:lows:) with no volumes is byte-for-byte unchanged.
+
+### #3 — Benchmark-relative strength (only buy names beating the index, the documented momentum edge)  [M — pure helper reusing returnOverPeriod for both legs (~10 lines); wiring is a small additive score term gated on benchmark availability. Index closes (^GSPC/SPY) are already fetched for the regime gauge, so the data path exists.]
+**Signature:** `nonisolated static func relativeStrength(symbolCloses: [Double], benchmarkCloses: [Double], period: Int = 126) -> Double?`
+**Test:** Construct symbol returns of +30% and benchmark +10% over the period → RS > 0 (outperforming). Reverse them → RS < 0. Mismatched-length / too-short series → nil. Then assert a regime-aware consumer (e.g. advise or the ideas ranker) demotes a name that is rising in absolute terms but LAGGING the benchmark, since relative strength is the part of momentum with real forward edge — and that it degrades gracefully (no penalty, no crash) when the benchmark history is absent.
+
+### #4 — Donchian/ATR channel breakout entry (a real trend-entry trigger, not just a trend filter)  [M — two small pure functions in StockSageIndicators; the harder part is unit-proving the exclusion of the current bar so it stays look-ahead-free when the backtester calls it.]
+**Signature:** `nonisolated static func donchian(highs: [Double], lows: [Double], period: Int = 20) -> (upper: Double, lower: Double)?`
+**Test:** On a monotonic series, upper == max of last `period` highs, lower == min of last `period` lows; insufficient bars → nil. Then test a breakout helper isBreakout(price:channel:) returns true when the latest close exceeds the prior-bar upper band (computed on bars EXCLUDING the current one, to avoid look-ahead) and false otherwise. Critically assert the channel is built from closes[0..<i], never including bar i, mirroring the backtester's no-look-ahead contract.
+
+### #5 — Walk-forward / out-of-sample split on the backtest (guard against the few-rules overfit the caveat admits)  [M-L — composes the existing run() over sub-ranges; main work is honest fold boundaries and an aggregate consistency metric (e.g. stdev of per-fold avgR) so the owner sees whether the edge is stable or a single lucky regime.]
+**Signature:** `nonisolated static func walkForward(_ history: StockSagePriceHistory, warmup: Int = 200, folds: Int = 3) -> [BacktestResult]`
+**Test:** Split a long synthetic history into `folds` contiguous out-of-sample windows, run run() on each, and return per-fold results. Assert (a) folds never overlap and collectively cover post-warmup bars, (b) a strategy that only works in fold 1 (engineered regime) shows degraded avgR in folds 2–3 — surfacing instability the single aggregate hides, and (c) folds with <20 trades carry isSignificant == false so the UI can't over-trust a thin fold.
+
+### #6 — ATR-normalized (volatility-adjusted) momentum so cross-asset EV ranking is apples-to-apples  [S-M — divides existing returnOverPeriod by ATR-as-%-of-price; both inputs already exist. Small additive change to the momentum term, easy to unit-test in isolation.]
+**Signature:** `nonisolated static func volAdjustedMomentum(closes: [Double], period: Int = 126, atrPeriod: Int = 14, highs: [Double], lows: [Double]) -> Double?`
+**Test:** Two series with identical % momentum but one twice as volatile (wider ATR) → the calmer one scores higher (momentum ÷ ATR%). Insufficient bars or zero ATR → nil. Assert that when this replaces/augments the raw returnOverPeriod term in EV ranking, a low-vol steady climber outranks a jumpy same-return name — the correct risk-adjusted preference — without changing absolute-momentum sign.
+
+## Notes
+All six proposals were generated fresh (the SOUND PROPOSALS input was empty) and grounded in the real source. Every indicator I reference exists and was verified: sma/ema/rsi/macd/atr/efficiencyRatio/annualizedVolatility/returnOverPeriod in StockSageIndicators.swift; the regime gauge, advisor scoring weights, EV/velocity, and NetEdge cost model. Key verified facts driving the ranking: (1) StockSagePriceHistory carries a `volumes: [Double]` array (StockSageQuoteService.swift:218) that the advisor never consumes — volume confirmation is real-data, zero-plumbing. (2) StockSageBacktester.run charges NO frictions (StockSageBacktester.swift:70-113) while StockSageNetEdge already models spread+slippage+commission — the backtest equity curve is therefore optimistically biased, the single biggest honesty gap. (3) Index closes are already fetched for StockSageRegime.assess, so benchmark-relative strength needs no new feed. Dedup: I dropped a 'Bollinger band' idea (redundant with the proposed Donchian channel and the existing efficiencyRatio regime filter) and a 'Sortino ratio' idea (the journal/backtester already report Sharpe + maxDrawdown + profit factor, marginal added edge). HONESTY FLOOR respected throughout: every spec keeps signals as estimates, all new helpers are total (insufficient data → nil), and specs #1/#4/#5 explicitly preserve the no-look-ahead / no-survivorship contract the backtester already enforces. All signatures follow the codebase convention (nonisolated static, newest-last series, defaulted params so existing call sites stay byte-for-byte unchanged — which is itself a stated test assertion in #1 and #2). Per CLAUDE.md, any implementation of these must append a DEVELOPMENT_LOG.md entry and leave build+tests green; new StockSage .swift files auto-compile.
+===== FILE: TEST_BACKLOG.md (499 lines) =====
+# Test-coverage backlog (test-coverage-sweep wmvxdkm71, 2026-06-22)
+
+10 agents -> 43 source-verified test specs. RE-VERIFY each expected value before adding.
+
+### ⬜ StockSageBacktester.summarize — Adverse gap fills BELOW the stop (entry 100, stop 97, gap-open 96)
+**Expected:** avgR = -4/3 ≈ -1.333 (filled at the gap-open, not the stop)
+```swift
+@Test func summarizeAdverseGapFillsAtWorseThanStopPrice() {
+    // r read from the trade: (96-100)/(100-97) = -4/3. summarize() just averages .r.
+    let trade = BacktestTrade(entryIndex: 0, exitIndex: 1, entry: 100, exit: 96, r: -4.0/3.0, outcome: .stop)
+    let result = StockSageBacktester.summarize([trade])
+    #expect(result.trades == 1)
+    #expect(abs(result.avgR - (-4.0/3.0)) < 1e-9)
+}
+```
+
+### ⬜ StockSageBacktester.summarize — Breakeven trade (r==0) counted in trades but excluded from win/loss split [+1, 0, -1]
+**Expected:** trades=3, wins=1, winRate=1/3, totalR=0, avgWinR=1, avgLossR=1, maxDrawdownR=1
+```swift
+@Test func summarizerBreakevenTradeExcludedFromWinLossSplit() {
+    let trades = [
+        BacktestTrade(entryIndex: 0, exitIndex: 1, entry: 100, exit: 101, r: 1, outcome: .target),
+        BacktestTrade(entryIndex: 1, exitIndex: 2, entry: 101, exit: 101, r: 0, outcome: .openAtEnd),
+        BacktestTrade(entryIndex: 2, exitIndex: 3, entry: 101, exit: 100, r: -1, outcome: .stop)
+    ]
+    let result = StockSageBacktester.summarize(trades)
+    #expect(result.trades == 3)
+    #expect(result.wins == 1)
+    #expect(abs(result.winRate - 1.0/3.0) < 1e-9)
+    #expect(abs(result.totalR) < 1e-9)
+    #expect(abs(result.avgWinR - 1) < 1e-9)
+    #expect(abs(result.avgLossR - 1) < 1e-9)
+    #expect(abs(result.maxDrawdownR - 1) < 1e-9)
+}
+```
+
+### ⬜ StockSageBacktester.summarize — Max drawdown peak-to-trough across cumulative R [+5,-2,-2,-2]
+**Expected:** cum=[5,3,1,-1], peak=5 throughout → maxDrawdownR=6
+```swift
+@Test func summarizeMaxDrawdownTracksPeakToTrough() {
+    let trades = [
+        BacktestTrade(entryIndex: 0, exitIndex: 1, entry: 100, exit: 105, r: 5, outcome: .target),
+        BacktestTrade(entryIndex: 1, exitIndex: 2, entry: 105, exit: 103, r: -2, outcome: .stop),
+        BacktestTrade(entryIndex: 2, exitIndex: 3, entry: 103, exit: 101, r: -2, outcome: .stop),
+        BacktestTrade(entryIndex: 3, exitIndex: 4, entry: 101, exit: 99, r: -2, outcome: .stop)
+    ]
+    let result = StockSageBacktester.summarize(trades)
+    #expect(abs(result.maxDrawdownR - 6) < 1e-9)  // peak 5 → trough -1
+}
+```
+
+### ⬜ StockSageBacktester.summarize — Average hold bars = mean(exitIndex - entryIndex) for variable holds
+**Expected:** avgHoldBars = (1 + 10) / 2 = 5.5
+```swift
+@Test func summarizeComputesAverageHoldBarsCorrectly() {
+    let trades = [
+        BacktestTrade(entryIndex: 5, exitIndex: 6, entry: 100, exit: 101, r: 1, outcome: .target),   // hold 1
+        BacktestTrade(entryIndex: 10, exitIndex: 20, entry: 100, exit: 110, r: 2, outcome: .target)  // hold 10
+    ]
+    let result = StockSageBacktester.summarize(trades)
+    #expect(abs(result.avgHoldBars - 5.5) < 1e-9)
+}
+```
+
+### ⬜ StockSageIndicators.returnOverPeriod — past price is zero (closes[0]=0) → division guard
+**Expected:** nil
+```swift
+@Test func returnOverPeriodRejectsZeroPastPrice() {
+    #expect(StockSageIndicators.returnOverPeriod([0, 100, 110], period: 2) == nil)  // past = closes[0] = 0
+}
+```
+
+### ⬜ StockSageIndicators.macd — fast >= slow (inverted / equal) is rejected
+**Expected:** nil
+```swift
+@Test func macdRejectsFastNotLessThanSlow() {
+    let closes = (0..<60).map { 100.0 + Double($0) }   // plenty of data; only the fast<slow guard should reject
+    #expect(StockSageIndicators.macd(closes, fast: 26, slow: 12) == nil)
+    #expect(StockSageIndicators.macd(closes, fast: 12, slow: 12) == nil)
+}
+```
+
+### ⬜ StockSageIndicators.efficiencyRatio — all prices identical → noise==0 guard
+**Expected:** 0.0
+```swift
+@Test func efficiencyRatioFlatPriceReturnsZero() {
+    #expect(StockSageIndicators.efficiencyRatio([5.0, 5.0, 5.0, 5.0, 5.0], period: 3)! == 0.0)
+}
+```
+
+### ⬜ StockSageIndicators.emaSeries — period == 0 → guard period > 0 (prevents k = 2/(0+1) blowups)
+**Expected:** []
+```swift
+@Test func emaSeriesRejectsPeriodZero() {
+    #expect(StockSageIndicators.emaSeries([1, 2, 3], period: 0) == [])
+}
+```
+
+### ⬜ StockSageIndicators.rsi — period == 0 → guard prevents /period division
+**Expected:** nil
+```swift
+@Test func rsiRejectsPeriodZero() {
+    #expect(StockSageIndicators.rsi([1, 2, 3], period: 0) == nil)
+}
+```
+
+### ⬜ StockSageIndicators.atr — period == 0 → guard
+**Expected:** nil
+```swift
+@Test func atrRejectsPeriodZero() {
+    #expect(StockSageIndicators.atr(highs: [10, 12, 11], lows: [8, 9, 9], closes: [9, 11, 10], period: 0) == nil)
+}
+```
+
+### ⬜ StockSageIndicators.efficiencyRatio — period == 0 → guard (suffix(period+1) safety)
+**Expected:** nil
+```swift
+@Test func efficiencyRatioRejectsPeriodZero() {
+    #expect(StockSageIndicators.efficiencyRatio([1, 2, 3], period: 0) == nil)
+}
+```
+
+### ⬜ StockSageIndicators.returnOverPeriod — period == 0 → guard (index underflow)
+**Expected:** nil
+```swift
+@Test func returnOverPeriodRejectsPeriodZero() {
+    #expect(StockSageIndicators.returnOverPeriod([100, 110], period: 0) == nil)
+}
+```
+
+### ⬜ StockSageStrategyBacktest.aggregate — zero-return symbol (totalR==0) is NOT counted profitable (> not >=)
+**Expected:** symbolsProfitable = 0
+```swift
+@Test func aggregateSymbolWithZeroReturnIsNotProfitable() {
+    let symbols = [
+        BacktestResult(trades: 10, wins: 5, winRate: 0.5, avgR: 0, totalR: 0, maxDrawdownR: 2, sharpe: 0, avgHoldBars: 5),
+        BacktestResult(trades: 5, wins: 2, winRate: 0.4, avgR: -0.2, totalR: -1, maxDrawdownR: 3, sharpe: -0.5, avgHoldBars: 4)
+    ]
+    let s = StockSageStrategyBacktest.aggregate(symbols)
+    #expect(s.symbolsTested == 2)
+    #expect(s.symbolsWithTrades == 2)
+    #expect(s.symbolsProfitable == 0)
+    #expect(abs(s.totalR - (-1)) < 1e-9)
+}
+```
+
+### ⬜ StockSagePortfolioHeat.compute (.level) — heatPct exactly 0.10 is .hot (warm uses < 0.10)
+**Expected:** .hot (1000 risk on 10k = 10%)
+```swift
+@Test func heatAtExact10PercentBoundaryIsHot() {
+    // 100 shares · |100-90| = 1000 on a 10k account = exactly 10%.
+    let h = StockSagePortfolioHeat.compute(openTrades: [(100, 100, 90)], accountSize: 10_000)!
+    #expect(abs(h.heatPct - 0.10) < 1e-9)
+    #expect(h.level == .hot)
+    #expect(h.verdict.lowercased().contains("heavy"))
+}
+```
+
+### ⬜ StockSagePortfolioHeat.compute (.level) — heatPct exactly 0.05 is .warm (cool uses < 0.05)
+**Expected:** .warm (500 risk on 10k = 5%)
+```swift
+@Test func heatAtExact5PercentBoundaryIsWarm() {
+    // 100 shares · |100-95| = 500 on a 10k account = exactly 5%. (NOTE: the candidate's
+    // (10,100,95)=50→0.5% was wrong; use 100 shares to actually land on 5%.)
+    let h = StockSagePortfolioHeat.compute(openTrades: [(100, 100, 95)], accountSize: 10_000)!
+    #expect(abs(h.heatPct - 0.05) < 1e-9)
+    #expect(h.level == .warm)
+    #expect(h.verdict.contains("getting full"))
+}
+```
+
+### ⬜ StockSageNetEdge.evaluate — netExpectancyR at winProb 0 and 1 (entry100 stop90 target130, no costs)
+**Expected:** winProb 0 → -1.0; winProb 1 → 3.0
+```swift
+@Test func netExpectancyRAtExtremeWinProbs() {
+    let e0 = StockSageNetEdge.evaluate(entry: 100, stop: 90, target: 130, winProb: 0)!
+    let e1 = StockSageNetEdge.evaluate(entry: 100, stop: 90, target: 130, winProb: 1)!
+    #expect(abs(e0.netExpectancyR! - (-1.0)) < 1e-9)
+    #expect(abs(e1.netExpectancyR! - 3.0) < 1e-9)
+}
+```
+
+### ⬜ StockSageExpectedValue.ev(conviction:entry:stop:target:) — SHORT trade entry>stop, target<entry (entry100 stop110 target80 conv0.9) — abs() parity
+**Expected:** rewardR=2.0, winProbEstimate≈0.557, evR≈0.671, isPositive
+```swift
+@Test func evShortTradeParity() {
+    let short = StockSageExpectedValue.ev(conviction: 0.9, entry: 100, stop: 110, target: 80)!
+    #expect(abs(short.rewardR - 2.0) < 1e-9)
+    let p = 0.35 + 0.9 * 0.23
+    #expect(abs(short.winProbEstimate - p) < 1e-9)
+    #expect(abs(short.evR - (p * 2.0 - (1 - p))) < 1e-9)
+    #expect(short.isPositive)
+}
+```
+
+### ⬜ StockSageExpectedValue.winProbEstimate(conviction:) — midpoint conviction 0.5 pins the 0.35 + 0.23·c formula
+**Expected:** 0.465
+```swift
+@Test func winProbEstimateMidpoint() {
+    #expect(abs(StockSageExpectedValue.winProbEstimate(conviction: 0.5) - 0.465) < 1e-9)
+}
+```
+
+### ⬜ StockSageGEFlip.sellTax — sellPrice exactly at taxExemptBelow (50) is NOT exempt (>= guard)
+**Expected:** 1 (floor(50·0.02))
+```swift
+@Test func sellTaxAtBoundary50NotExempt() {
+    #expect(StockSageGEFlip.sellTax(50) == 1)
+}
+```
+
+### ⬜ StockSageGEFlip.sellTax — tax-cap inflection at 250M (floor(250M·0.02)=5M exactly)
+**Expected:** 249,999,999→4,999,999; 250,000,000→5,000,000; 251,000,000→5,000,000
+```swift
+@Test func sellTaxAtCapInflection() {
+    #expect(StockSageGEFlip.sellTax(249_999_999) == 4_999_999)
+    #expect(StockSageGEFlip.sellTax(250_000_000) == 5_000_000)
+    #expect(StockSageGEFlip.sellTax(251_000_000) == 5_000_000)
+}
+```
+
+### ⬜ StockSageGEFlip.flips — negative profit after tax (buy 1000, sell 1010, tax 20 → -10) is silently dropped
+**Expected:** empty result
+```swift
+@Test func flipsFiltersNegativeProfitAfterTax() {
+    let badListing = RuneScapeListing(
+        item: RuneScapeItem(id: 99, name: "Loser", examine: "", members: false, buyLimit: 100),
+        price: RuneScapePrice(high: 1010, highTime: nil, low: 1000, lowTime: nil)
+    )
+    #expect(StockSageGEFlip.flips([badListing]).isEmpty)
+}
+```
+
+### ⬜ StockSageGEFlip.bestFlipsForBudget — greedy remainder below next item's buyPrice is not allocated
+**Expected:** only A bought: units=2, totalCapital=2000 (remainder 500 < B's 2000)
+```swift
+@Test func bestFlipsForBudgetPartialRemainder() {
+    let a = GEFlip(itemId: 1, name: "A", buyPrice: 1000, sellPrice: 1150, buyLimit: 10,
+                    taxPerItem: 30, profitPerItem: 120, gpPerHour: 300)
+    let b = GEFlip(itemId: 2, name: "B", buyPrice: 2000, sellPrice: 2400, buyLimit: 5,
+                    taxPerItem: 48, profitPerItem: 352, gpPerHour: 440)
+    let plan = StockSageGEFlip.bestFlipsForBudget([a, b], budget: 2500)
+    #expect(plan.flips.map(\.itemId) == [1])
+    #expect(plan.flips[0].units == 2)
+    #expect(plan.totalCapital == 2000)
+}
+```
+
+### ⬜ StockSageGEFlip.gpPerHour — minimum viable profit (profit=1 survives > 0 guard): buy100 sell103 limit100
+**Expected:** 25.0 (profit 1 · 100 ÷ 4h)
+```swift
+@Test func gpPerHourMinimumViableProfit() {
+    let gph = StockSageGEFlip.gpPerHour(buy: 100, sell: 103, buyLimit: 100)!  // tax floor(103·0.02)=2 → profit 1
+    #expect(abs(gph - 25.0) < 1e-9)
+}
+```
+
+### ⬜ StockSageGEFlip.GEFlip.roiPct — minimal non-zero buyPrice (=1) division boundary
+**Expected:** 10000.0 (profit 100 ÷ 1 · 100)
+```swift
+@Test func roiPctWithMinimalBuyPrice() {
+    let flip = GEFlip(itemId: 1, name: "Test", buyPrice: 1, sellPrice: 101, buyLimit: 100,
+                      taxPerItem: 2, profitPerItem: 100, gpPerHour: 0)
+    #expect(abs(flip.roiPct - 10000.0) < 1e-9)
+}
+```
+
+### ⬜ StockSageRiskParity.targets(_:) — negative currentValue (short) is silently filtered (>= 0 guard)
+**Expected:** only LONG survives: count 1
+```swift
+@Test func negativeCurrentValueSilentlyDropped() {
+    let t = StockSageRiskParity.targets([
+        RiskParityHolding(symbol: "SHORT", currentValue: -100, volatility: 0.20),
+        RiskParityHolding(symbol: "LONG", currentValue: 100, volatility: 0.20),
+    ])
+    #expect(t.count == 1)
+    #expect(t[0].symbol == "LONG")
+}
+```
+
+### ⬜ StockSageRiskParity.targets(_:) — all currentValue == 0 → validTotal 0 → currentWeight falls back to target (delta 0)
+**Expected:** A target 2/3, B target 1/3, both deltaWeight 0
+```swift
+@Test func allZeroCurrentValueUsesTargetAsCurrentWeight() {
+    let t = StockSageRiskParity.targets([
+        RiskParityHolding(symbol: "A", currentValue: 0, volatility: 0.10),
+        RiskParityHolding(symbol: "B", currentValue: 0, volatility: 0.20),
+    ])
+    let a = t.first { $0.symbol == "A" }!
+    let b = t.first { $0.symbol == "B" }!
+    #expect(abs(a.targetWeight - 2.0/3.0) < 1e-9)
+    #expect(abs(b.targetWeight - 1.0/3.0) < 1e-9)
+    #expect(abs(a.deltaWeight) < 1e-9)
+    #expect(abs(b.deltaWeight) < 1e-9)
+}
+```
+
+### ⬜ StockSageAllocation.breakdown(_:) — mixed long/short — negative-value short dropped from slices (where value > 0) but clamped to 0 in total
+**Expected:** totalValue=175, byClass count 1 (Equity), topClassConcentration=1.0
+```swift
+@Test func mixedSignHoldingsShortsDroppedFromConcentration() {
+    let b = StockSageAllocation.breakdown([("AAPL", 100), ("SHY", -50), ("MSFT", 75)])
+    #expect(b.totalValue == 175)
+    #expect(b.byClass.count == 1)
+    #expect(abs(b.topClassConcentration - 1.0) < 1e-9)
+}
+```
+
+### ⬜ StockSageKelly.compute(winRate:payoffRatio:accountSize:) — zero accountSize → dollarsToRisk 0 (max(0,account) guard)
+**Expected:** suggestedFraction 0.20, dollarsToRisk 0.0
+```swift
+@Test func zeroAccountSizeYieldsZeroDollars() {
+    let k = StockSageKelly.compute(winRate: 0.60, payoffRatio: 2.0, accountSize: 0)
+    #expect(abs(k.suggestedFraction - 0.20) < 1e-9)
+    #expect(k.dollarsToRisk == 0.0)
+}
+```
+
+### ⬜ StockSageRegime.adjustedWeight(base:bias:cap:) — zero bias zeroes the position (base>0 passes, then ·0)
+**Expected:** 0.0
+```swift
+@Test func zeroBiasSilentlyZerosPosition() {
+    #expect(StockSageRegime.adjustedWeight(base: 0.10, bias: 0.0, cap: 0.20) == 0.0)
+}
+```
+
+### ⬜ StockSageAdvisor.stopTarget(action:price:atr:) — buy with atr == 0 hits the $0>0?…:8% false branch (distinct from atr: nil)
+**Expected:** stop = 92, target = 116
+```swift
+@Test func stopTargetWithZeroATRUses8PercentFallback() {
+    let st = StockSageAdvisor.stopTarget(action: .buy, price: 100, atr: 0)
+    #expect(st.stop == 92)            // 100 - 100·0.08
+    #expect(st.target == 116)         // 100 + 2·(100-92)
+}
+```
+
+### ⬜ StockSageCurrency.breakdown — non-base weight just under 0.25 is NOT flagged (> threshold, strict)
+**Expected:** concentration == nil, hasFXRisk == false (EUR ≈ 24.9998%)
+```swift
+@Test func concentrationJustUnder25PercentNotFlagged() {
+    // USD 1000 + EUR 333.33 (rate 1) → EUR weight 333.33/1333.33 ≈ 0.249998 < 0.25.
+    let b = StockSageCurrency.breakdown(
+        holdings: [(1000, "USD"), (333.33, "EUR")],
+        ratesToBase: ["EUR": 1.0], base: "USD", concentrationThreshold: 0.25)!
+    #expect(b.concentration == nil)
+    #expect(!b.hasFXRisk)
+}
+```
+
+### ⬜ StockSageAlertDecision.evaluate — target crossed EXACTLY on the level (price == target) still fires (>= guard)
+**Expected:** .targetHit
+```swift
+@Test func targetCrossedExactlyOnTheLevel() {
+    let a = StockSageAlertDecision.evaluate(symbol: "X", recommendation: .buy, price: 120, priorPrice: 115,
+                                            stop: 90, target: 120, lastAlertedRecommendation: nil)
+    #expect(a?.kind == .targetHit)
+}
+```
+
+### ⬜ StockSageAlertDecision.evaluate — stop crossed EXACTLY on the level (price == stop) still fires (<= guard)
+**Expected:** .stopBreach
+```swift
+@Test func stopCrossedExactlyOnTheLevel() {
+    let a = StockSageAlertDecision.evaluate(symbol: "X", recommendation: .buy, price: 90, priorPrice: 95,
+                                            stop: 90, target: 120, lastAlertedRecommendation: nil)
+    #expect(a?.kind == .stopBreach)
+}
+```
+
+### ⬜ StockSageRebalance.plan — drift exactly at band (2%) is suppressed; 2.1% > band trades (> band, strict)
+**Expected:** at band → trades empty; above band → trades non-empty
+```swift
+@Test func driftExactlyAtBandEdge() {
+    let atBand = StockSageRebalance.plan(holdings: [("A", 5200), ("B", 4800)],
+                                         targets: ["A": 0.5, "B": 0.5], band: 0.02)!
+    #expect(atBand.trades.isEmpty)  // |0.52-0.50| = 0.02, not > 0.02
+    let aboveBand = StockSageRebalance.plan(holdings: [("A", 5210), ("B", 4790)],
+                                            targets: ["A": 0.5, "B": 0.5], band: 0.02)!
+    #expect(!aboveBand.trades.isEmpty)
+}
+```
+
+### ⬜ StockSagePartialLadder.levels — single-rung (rungs=1) degenerate: whole position exits at the target
+**Expected:** 1 rung at 130, rMultiple 3.0, fraction 1.0, blendedExitR 3.0
+```swift
+@Test func singleRungLadderExitsAtTarget() {
+    let l = StockSagePartialLadder.levels(entry: 100, stop: 90, target: 130, rungs: 1)!
+    #expect(l.rungs.count == 1)
+    #expect(abs(l.rungs[0].price - 130) < 1e-9)
+    #expect(abs(l.rungs[0].rMultiple - 3.0) < 1e-9)
+    #expect(abs(l.rungs[0].fraction - 1.0) < 1e-9)
+    #expect(abs(l.blendedExitR - 3.0) < 1e-9)
+}
+```
+
+### ⬜ StockSagePartialLadder.levels — large rungs (10) blended average scaling
+**Expected:** 10 rungs each fraction 0.1, blendedExitR = 2.75 (target 150 → 5R; (1+2+…+10)/10·(5/10)=2.75)
+```swift
+@Test func largeRungsCountBlendingIsCorrect() {
+    // entry 100, stop 90 (risk 10), target 150 (5R), 10 rungs. r_i = 5·i/10, each fraction 0.1.
+    // blended = Σ 0.1·(5·i/10) for i=1…10 = 0.5·(55/10) = 2.75.
+    let l = StockSagePartialLadder.levels(entry: 100, stop: 90, target: 150, rungs: 10)!
+    #expect(l.rungs.count == 10)
+    #expect(l.rungs.allSatisfy { abs($0.fraction - 0.1) < 1e-9 })
+    #expect(abs(l.blendedExitR - 2.75) < 1e-9)
+}
+```
+
+### ⬜ StockSageIndicators.annualizedVolatility — a zero/corrupt price mid-series drops a return; survivors decide nil
+**Expected:** [100,0,110] → nil (only 1 valid return); [100,100,110] → non-nil
+```swift
+@Test func annualizedVolatilitySkipsZeroPrice() {
+    #expect(StockSageIndicators.annualizedVolatility([100.0, 0, 110.0]) == nil)   // closes[1]=0 drops one ret → count 1
+    #expect(StockSageIndicators.annualizedVolatility([100.0, 100.0, 110.0]) != nil)
+}
+```
+
+### ⬜ StockSageJournal.streak — single closed trade with R != 0 → streak of 1
+**Expected:** streakCount 1, streakIsWin true, bestR 2.0
+```swift
+@Test func streakSingleWinTradeIsStreakOfOne() {
+    let single = [TradeRecord(symbol: "AAPL", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
+                             openedAt: Date(timeIntervalSince1970: 0),
+                             exitPrice: 120, closedAt: Date(timeIntervalSince1970: 100))]
+    let s = StockSageJournal.streak(single)!
+    #expect(s.streakCount == 1)
+    #expect(s.streakIsWin == true)
+    #expect(abs(s.bestR - 2.0) < 1e-9 && s.bestSymbol == "AAPL")
+}
+```
+
+### ⬜ StockSageJournal.streak — all decisive trades breakeven (R==0) → no streak
+**Expected:** streakCount 0 (not crash/undefined)
+```swift
+@Test func streakNoStreakWhenAllBreakeven() {
+    let breakeven = (0..<3).map { i in
+        TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
+                    openedAt: Date(timeIntervalSince1970: Double(i) * 100),
+                    exitPrice: 100, closedAt: Date(timeIntervalSince1970: Double(i) * 100 + 50))
+    }
+    let s = StockSageJournal.streak(breakeven)!
+    #expect(s.streakCount == 0)
+}
+```
+
+### ⬜ StockSageJournal.equityRisk — all winners → zero losing run, zero drawdown
+**Expected:** maxConsecutiveLosses 0, maxDrawdownR 0.0
+```swift
+@Test func equityRiskAllWinnersZeroDrawdown() {
+    let winners = [1.5, 2.0, 1.0].enumerated().map { i, r in
+        TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
+                    openedAt: Date(timeIntervalSince1970: Double(i) * 100),
+                    exitPrice: 100 + r * 10, closedAt: Date(timeIntervalSince1970: Double(i) * 100 + 50))
+    }
+    let risk = StockSageJournal.equityRisk(winners)!
+    #expect(risk.maxConsecutiveLosses == 0)
+    #expect(abs(risk.maxDrawdownR) < 1e-9)
+}
+```
+
+### ⬜ StockSageJournal.expectancyTrend — delta exactly == band → .flat (delta > band is strict)
+**Expected:** .flat (early mean 0, recent mean 0.1, band 0.1)
+```swift
+@Test func expectancyTrendDeltaAtBandExactlyIsFlat() {
+    let flat = (0..<6).map { i -> TradeRecord in
+        let r = i < 3 ? 0.0 : 0.1
+        return TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
+                          openedAt: Date(timeIntervalSince1970: Double(i) * 100),
+                          exitPrice: 100 + r * 10, closedAt: Date(timeIntervalSince1970: Double(i) * 100 + 50))
+    }
+    let t = StockSageJournal.expectancyTrend(flat, band: 0.1)!
+    #expect(t.direction == .flat)
+}
+```
+
+### ⬜ StockSageJournal.classifyHealth — profitFactor exactly 1.5 is .strong (>= 1.5); 1.49 is .developing
+**Expected:** 1.5 → .strong; 1.49 → .developing
+```swift
+@Test func classifyHealthPFBoundaryIsInclusive() {
+    let atBound = StockSageJournal.classifyHealth(profitFactor: 1.5, expectancyR: 0.5, significant: true,
+                                                  n: 30, maxDrawdownR: 3.0, minTrades: 20, deepDrawdownR: 8.0)
+    #expect(atBound.verdict == .strong)
+    let justBelow = StockSageJournal.classifyHealth(profitFactor: 1.49, expectancyR: 0.5, significant: true,
+                                                    n: 30, maxDrawdownR: 3.0, minTrades: 20, deepDrawdownR: 8.0)
+    #expect(justBelow.verdict == .developing)
+}
+```
+
+### ⬜ StockSageAdvisor.advise(closes:highs:lows:) — 50–200 bars uses the lighter 0.20 trend term (buy, not strongBuy) vs full 0.40 at 250 bars
+**Expected:** 70-bar uptrend → .buy; 250-bar uptrend → .strongBuy; short conviction < long conviction
+```swift
+@Test func fiftyBarHistoryUsesLighterTrendScore() {
+    let aShort = StockSageAdvisor.advise(closes: (1...70).map(Double.init))
+    let aLong  = StockSageAdvisor.advise(closes: (1...250).map(Double.init))
+    #expect(aShort.action == .buy)
+    #expect(aLong.action == .strongBuy)
+    #expect(aShort.conviction < aLong.conviction)
+}
+```
+
 ===== FILE: VERIFICATION.md (91 lines) =====
 # 🔬 VERIFICATION — turning estimates into measured evidence
 
@@ -59595,4 +60272,77 @@ dated entry to `DEVELOPMENT_LOG.md` (per `CLAUDE.md`):
 
 Measured evidence beats inferred — and we'd rather correct a wrong number than
 ship one with confidence.
+
+===== FILE: VISUAL_BACKLOG.md (71 lines) =====
+# Visual-design polish backlog (visual-design-audit wxpxw4t5l, 2026-06-22)
+
+7 agents → 17 pixel-safe ranked items.
+
+### ⬜ #1 — Elevate all four card panel titles to DS.Typography.titleM
+**File:** Salehman AI/Views/MarketsView.swift
+**Change:** Panel titles are all size-14 semibold today (verified: line 679 "Risk-parity weights", line 780 "Allocation", line 874 "Correlation heatmap", plus "Trade journal"). Swap each .font(.system(size: 14, weight: .semibold)) to .font(DS.Typography.titleM) (17pt semibold, rounded). Pixel-safe: text-only, no layout/frame change; creates one strong primary anchor per premium card. Highest visual impact, zero functional risk.
+
+### ⬜ #2 — Switch Browse modal background to DS.Palette.modalBG
+**File:** Salehman AI/Views/BrowseMarketsView.swift
+**Change:** Line 100: .background(DS.Palette.surface) is the inline-component token (white 0.07). For a sheet, use .background(DS.Palette.modalBG) (the opaque Color 0.13/0.13/0.14 reserved for modals). Restores the dark-mode elevation hierarchy where modals sit deeper than the main tab surface. One-token swap, pixel-safe.
+
+### ⬜ #3 — Tokenize Browse row hover background (surfaceAlt + DS.Radius.small)
+**File:** Salehman AI/Views/BrowseMarketsView.swift
+**Change:** Line 124: .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 6)) hardcodes both opacity and radius. Replace with DS.Palette.surfaceAlt (white 0.06) and DS.Radius.small (8pt). Aligns row depth + corner radius with the rest of the app's small components. Pixel-safe (small radius/opacity bump, no reflow).
+
+### ⬜ #4 — Premium gradient divider in RuneScape fastest-flips strip
+**File:** Salehman AI/Views/RuneScapeMarketView.swift
+**Change:** Line 235: Divider().overlay(DS.Palette.surfaceStroke) reads as a hard full-bleed line. Replace the overlay with Rectangle().fill(LinearGradient(colors: [DS.Palette.surfaceStroke.opacity(0), DS.Palette.surfaceStroke, DS.Palette.surfaceStroke.opacity(0)], startPoint: .leading, endPoint: .trailing)) so it fades at both edges. High visual polish, no geometry change (divider keeps its 1pt height).
+
+### ⬜ #5 — Upgrade fastest-flips strip stroke to a warningSoft bezel gradient
+**File:** Salehman AI/Views/RuneScapeMarketView.swift
+**Change:** Line 266: .stroke(DS.Palette.warningSoft.opacity(0.25), lineWidth: 1) is a flat single-color border that drowns into codeSurface. Replace with .stroke(LinearGradient(colors: [DS.Palette.warningSoft.opacity(0.48), DS.Palette.warningSoft.opacity(0.10)], startPoint: .top, endPoint: .bottom), lineWidth: 1) to match the regimeCard/liveBanner bezel language. Pixel-safe (same lineWidth/shape).
+
+### ⬜ #6 — Standardize row hover opacity to a single token across all interactive rows
+**File:** Salehman AI/Views/MarketsView.swift
+**Change:** Hover backgrounds drift between 0.06 and 0.07 (MarketsView signalAlertRow/positionRow at DS.Palette.accent.opacity(0.07); RuneScape listingRow line 325 uses accent.opacity(0.06)). Pick one value — accent.opacity(0.06) — and apply to every hoverable row in both MarketsView and RuneScapeMarketView line 325 for a cohesive feel. Pixel-safe (0.01 opacity normalization, no layout change).
+
+### ⬜ #7 — Promote RuneScape sub-strip title to bolder white type
+**File:** Salehman AI/Views/RuneScapeMarketView.swift
+**Change:** Line 212: "Fastest flips — gp/hour" is size 11 bold. Bump to size 13 bold (keep .foregroundStyle(.white)) so the premium flips card reads as a header above the commodity rows below it. Text-only, no frame change; pixel-safe.
+
+### ⬜ #8 — Align RuneScape status-banner stroke stops with MarketsView liveBanner
+**File:** Salehman AI/Views/RuneScapeMarketView.swift
+**Change:** Line 150: banner stroke gradient uses tint.opacity(0.48) → 0.10. MarketsView liveBanner uses 0.45 → 0.10. Change 0.48 to 0.45 so both tabs share one banner-bezel opacity. Trivial, pixel-safe token alignment.
+
+### ⬜ #9 — Use DS.Space.sm for fastest-flips strip vertical spacing
+**File:** Salehman AI/Views/RuneScapeMarketView.swift
+**Change:** Line 209: VStack(alignment: .leading, spacing: 6) is a magic number. Change to spacing: DS.Space.sm (10pt) to match ideasHeader/section grouping rhythm. Minor vertical-rhythm shift inside one card, no clipping risk; pixel-safe.
+
+### ⬜ #10 — Tokenize Browse + RuneScape search-field backgrounds to surfaceAlt family
+**File:** Salehman AI/Views/BrowseMarketsView.swift
+**Change:** BrowseMarketsView line 69 uses Color.white.opacity(0.08); RuneScape searchField line 170 uses 0.08 idle / 0.11 focus. Standardize the idle state to DS.Palette.surfaceAlt (0.06)-ish and keep 0.11 on focus so all search wells share one token family. Pixel-safe opacity normalization.
+
+### ⬜ #11 — Add a strokeBorder to the RuneScape P2P member capsule
+**File:** Salehman AI/Views/RuneScapeMarketView.swift
+**Change:** Line 291: the P2P badge has .background(DS.Palette.warningSoft, in: Capsule()) with no bezel highlight. Add .overlay(Capsule().stroke(DS.Palette.warningSoft.opacity(0.5), lineWidth: 0.5)) to match the glass-finish capsule pattern used elsewhere. Pixel-safe (0.5pt inset stroke).
+
+### ⬜ #12 — Give Browse modal more breathing room (DS.Space.lg padding)
+**File:** Salehman AI/Views/BrowseMarketsView.swift
+**Change:** Line 98: .padding(DS.Space.md) on the 420×520 sheet is tight. Bump the outer padding to DS.Space.lg (18) while keeping the VStack(spacing: DS.Space.sm) inter-section gaps. Frame minWidth/minHeight already accommodate it; pixel-safe.
+
+### ⬜ #13 — Bump Browse title to titleM and subtitle to readable body
+**File:** Salehman AI/Views/BrowseMarketsView.swift
+**Change:** Line 51: "Browse markets" is size 16 bold — change to DS.Typography.titleM (17pt semibold rounded) to match the MarketsView card headers. Line 52: subtitle is .caption2; bump to .font(.system(size: 12)) for modal-context legibility. Text-only, pixel-safe.
+
+### ⬜ #14 — Lighten sub-section group subtitles for white-on-dark contrast
+**File:** Salehman AI/Views/MarketsView.swift
+**Change:** Group subtitles ("By month", "By sector", "By side", "Currency exposure", "R-multiple distribution") are size-10 semibold .secondary. Bump to size 11 semibold and .foregroundStyle(.white) so they sit clearly below the new titleM card headers without competing. Text-only; pixel-safe.
+
+### ⬜ #15 — Tint ProgressView spinners with the brand accent
+**File:** Salehman AI/Views/MarketsView.swift
+**Change:** Bare ProgressView() instances (e.g. alerts/regime loading) use the default macOS tint. Add .tint(DS.Palette.accent) so loading spinners match brand. Note: the risk-parity spinner at line 687 already uses .tint(.white) on a brand-gradient button — leave that one; only tint the spinners sitting on the dark surface. Pixel-safe.
+
+### ⬜ #16 — Tokenize idea-detail-sheet divider radius to DS.Radius.small
+**File:** Salehman AI/Views/MarketsView.swift
+**Change:** The idea detail sheet footer uses a hardcoded RoundedRectangle(cornerRadius: 8, style: .continuous) that is numerically identical to DS.Radius.small. Replace the literal 8 with DS.Radius.small so future DS changes propagate. Zero visual change today; token-discipline only.
+
+### ⬜ #17 — Promote priceColumn label color to DS.Palette.textSecondary
+**File:** Salehman AI/Views/RuneScapeMarketView.swift
+**Change:** Line 349: priceColumn label uses raw .secondary. MarketsView parityRow uses explicit DS.Palette.textSecondary (white 0.66). Swap to DS.Palette.textSecondary for token consistency across the two markets surfaces. Pixel-safe (near-identical rendered value, deliberate token).
 

@@ -676,7 +676,7 @@ struct MarketsView: View {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "scalemass.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Risk-parity weights").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Risk-parity weights").font(DS.Typography.titleM).foregroundStyle(.white)
                     Text("Size each holding by 1 ÷ volatility so they contribute equal risk.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
@@ -777,7 +777,7 @@ struct MarketsView: View {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "chart.bar.doc.horizontal.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Allocation").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Allocation").font(DS.Typography.titleM).foregroundStyle(.white)
                     Text("Where the money sits — by asset class, region and sector.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
@@ -871,7 +871,7 @@ struct MarketsView: View {
                 HStack(spacing: DS.Space.md) {
                     Image(systemName: "square.grid.3x3.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Correlation heatmap").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                        Text("Correlation heatmap").font(DS.Typography.titleM).foregroundStyle(.white)
                             .help(StockSageGlossary.heatmapHelp)
                         Text("Green = independent · red = moves together (concentration risk).")
                             .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -936,7 +936,7 @@ struct MarketsView: View {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "book.closed.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Trade journal").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Trade journal").font(DS.Typography.titleM).foregroundStyle(.white)
                         .help(StockSageGlossary.journalHelp)
                     Text("Log the trades you actually take, then close them to build your realized track record.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -1411,7 +1411,7 @@ struct MarketsView: View {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "percent").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Position sizer (Kelly)").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Position sizer (Kelly)").font(DS.Typography.titleM).foregroundStyle(.white)
                         .help(StockSageGlossary.kellyHelp)
                     Text("How much to risk per trade, from your win-rate & payoff.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -1498,7 +1498,7 @@ struct MarketsView: View {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "chart.pie.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Risk analytics").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Risk analytics").font(DS.Typography.titleM).foregroundStyle(.white)
                         .help(StockSageGlossary.analyticsHelp)
                     Text("Sharpe · drawdown · VaR · correlation across your holdings.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -2122,7 +2122,7 @@ struct MarketsView: View {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "bell.badge.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Signal alerts").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Signal alerts").font(DS.Typography.titleM).foregroundStyle(.white)
                     Text("Flags when an idea turns bullish/bearish or its price crosses the advised stop or target — between refreshes.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
@@ -2418,7 +2418,7 @@ struct MarketsView: View {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "chart.bar.xaxis").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Strategy backtest").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Strategy backtest").font(DS.Typography.titleM).foregroundStyle(.white)
                         .help(StockSageGlossary.strategyHelp)
                     Text(store.strategyBacktest.map { "Tested \($0.symbolsTested)/\(StockSageStrategyBacktest.sampleSymbols.count) names, ~5 years — does the system hold up?" }
                          ?? "The advisor's rules across the sample (~\(StockSageStrategyBacktest.sampleSymbols.count) names), ~5 years — does the system hold up?")
