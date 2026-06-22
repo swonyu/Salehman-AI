@@ -18,13 +18,18 @@ public class FlipItem
 	public final int buyLimit;        // 4h GE buy limit (0 = unknown)
 	public final long dailyVolume;
 	public final long potentialProfit; // postTaxMargin * buyLimit
+	// MONEY VELOCITY: gp PER HOUR = potentialProfit / 4h buy-limit window — mirrors the
+	// macOS app's StockSageGEFlip.gpPerHour so a fast-turnover item beats a fat-margin
+	// one you can barely buy. An estimate that assumes you fill the limit each window.
+	public final double gpPerHour;
 	public final boolean members;
-	/// Age of the freshest of the two quotes, in seconds (-1 if unknown).
+	/// Age of the OLDEST (stalest) of the two quote legs, in seconds (-1 if unknown) —
+	/// the limiting factor for a two-sided flip, so a half-stale spread is judged correctly.
 	public final long ageSeconds;
 
 	public FlipItem(int id, String name, int buyPrice, int sellPrice, int margin, int tax,
 		int postTaxMargin, double roi, int buyLimit, long dailyVolume, long potentialProfit,
-		boolean members, long ageSeconds)
+		double gpPerHour, boolean members, long ageSeconds)
 	{
 		this.id = id;
 		this.name = name;
@@ -37,6 +42,7 @@ public class FlipItem
 		this.buyLimit = buyLimit;
 		this.dailyVolume = dailyVolume;
 		this.potentialProfit = potentialProfit;
+		this.gpPerHour = gpPerHour;
 		this.members = members;
 		this.ageSeconds = ageSeconds;
 	}

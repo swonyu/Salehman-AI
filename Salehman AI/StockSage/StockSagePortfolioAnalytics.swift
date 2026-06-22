@@ -15,8 +15,8 @@ import Foundation
 struct PortfolioAnalytics: Sendable, Equatable {
     let annualizedReturn: Double      // %, compounded
     let annualizedVolatility: Double  // %
-    let sharpe: Double                // (return − rf≈0) ÷ vol
-    let sortino: Double               // return ÷ downside deviation
+    let sharpe: Double?               // (return − rf≈0) ÷ vol; nil = undefined (zero vol)
+    let sortino: Double?              // return ÷ downside deviation; nil = undefined (zero downside)
     let maxDrawdown: Double           // %, positive magnitude (worst peak→trough)
     let calmar: Double                // annualizedReturn ÷ maxDrawdown
     let valueAtRisk95: Double         // %, 1-day historical 95% VaR (positive = a loss)
@@ -70,9 +70,9 @@ enum StockSagePortfolioAnalytics {
         let growth = port.reduce(1.0) { $0 * (1 + $1) }
         let annReturn = (growth > 0 ? pow(growth, periodsPerYear / Double(port.count)) - 1 : -1) * 100
 
-        // Zero realized vol → the sample is too uniform to risk-adjust; use the
-        // same positive-return sentinel as Sortino (not a misleading 0).
-        let sharpe = annVol != 0 ? annReturn / annVol : (annReturn > 0 ? 100 : 0)
+        // Zero realized vol → the ratio is UNDEFINED (a divide-by-zero). Report nil so
+        // the UI shows "n/a", not a sentinel that reads as a real (absurd) ratio of 100.
+        let sharpe: Double? = annVol != 0 ? annReturn / annVol : nil
 
         // Sortino — target-downside deviation (MAR = 0): the RMS of min(return, 0)
         // over ALL N observations (the standard definition), NOT only the down days
@@ -80,7 +80,7 @@ enum StockSagePortfolioAnalytics {
         let downSq = port.reduce(0) { $0 + Swift.min($1, 0) * Swift.min($1, 0) }
         let downVar = port.isEmpty ? 0 : downSq / Double(port.count)
         let downDev = downVar.squareRoot() * periodsPerYear.squareRoot() * 100
-        let sortino = downDev != 0 ? annReturn / downDev : (annReturn > 0 ? 100 : 0)
+        let sortino: Double? = downDev != 0 ? annReturn / downDev : nil
 
         let maxDD = maxDrawdown(port) * 100
         let calmar = maxDD != 0 ? annReturn / maxDD : 0

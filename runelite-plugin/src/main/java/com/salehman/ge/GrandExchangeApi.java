@@ -62,13 +62,25 @@ public class GrandExchangeApi
 			{
 				throw new IOException("mapping HTTP " + resp.code());
 			}
-			Mapping[] arr = gson.fromJson(resp.body().charStream(), Mapping[].class);
+			Mapping[] arr;
+			try
+			{
+				arr = gson.fromJson(resp.body().charStream(), Mapping[].class);
+			}
+			catch (com.google.gson.JsonSyntaxException e)
+			{
+				// Malformed/unexpected body — surface as an IOException so the caller
+				// reports a parse problem, not a misleading "connectivity" failure.
+				throw new IOException("malformed mapping response", e);
+			}
 			Map<Integer, Mapping> out = new HashMap<>();
 			if (arr != null)
 			{
 				for (Mapping m : arr)
 				{
-					if (m != null && m.name != null)
+					// id > 0: gson defaults a missing `id` to 0, which would collide all
+					// such entries on key 0 (last-write-wins). No real GE item has id 0.
+					if (m != null && m.name != null && m.id > 0)
 					{
 						out.put(m.id, m);
 					}

@@ -112,6 +112,41 @@ struct StockSageJournalTests {
         }
     }
 
+    @Test func projectGrowthCompoundsExpectancyForward() {
+        // expectancy +1R at 10%/trade, 2 trades → (1.1)^2 = 1.21; 3 trades → 1.331.
+        #expect(abs(StockSageJournal.projectGrowth(expectancyR: 1.0, trades: 2, fraction: 0.10)!.multiple - 1.21) < 1e-9)
+        #expect(abs(StockSageJournal.projectGrowth(expectancyR: 1.0, trades: 3, fraction: 0.10)!.multiple - 1.331) < 1e-9)
+        // Negative expectancy shrinks the account: −1R at 10%, 2 trades → 0.9^2 = 0.81.
+        #expect(abs(StockSageJournal.projectGrowth(expectancyR: -1.0, trades: 2, fraction: 0.10)!.multiple - 0.81) < 1e-9)
+        // Guards: no trades, and a wipeout step (1 + 0.01·−200 = −1 ≤ 0) → nil.
+        #expect(StockSageJournal.projectGrowth(expectancyR: 1, trades: 0) == nil)
+        #expect(StockSageJournal.projectGrowth(expectancyR: -200, trades: 2, fraction: 0.01) == nil)
+    }
+
+    @Test func projectGrowthNearWipeoutStaysFiniteAndGuardsZeroStep() {
+        // step = 1 + 0.01·(−99) = 0.01 → ×0.01² = 0.0001 (survives, tiny).
+        #expect(abs(StockSageJournal.projectGrowth(expectancyR: -99, trades: 2, fraction: 0.01)!.multiple - 0.0001) < 1e-12)
+        // step = 1 + 0.01·(−100) = 0 → wipeout guard → nil (no 0^n weirdness).
+        #expect(StockSageJournal.projectGrowth(expectancyR: -100, trades: 2, fraction: 0.01) == nil)
+    }
+
+    @Test func compoundingCurveSingleTrade() {
+        let c = StockSageJournal.compoundingCurve(seq([2]), fraction: 0.01)!
+        #expect(c.multiples.count == 1)
+        #expect(abs(c.finalMultiple - 1.02) < 1e-9)
+    }
+
+    @Test func compoundingCurveCompoundsLoggedR() {
+        // R = [+2, −1, +1] at 1%/trade → ×1.02, then ×1.02·0.99 = ×1.0098,
+        // then ×1.0098·1.01 = ×1.019898.
+        let c = StockSageJournal.compoundingCurve(seq([2, -1, 1]), fraction: 0.01)!
+        #expect(c.multiples.count == 3)
+        #expect(abs(c.multiples[0] - 1.02) < 1e-9)
+        #expect(abs(c.multiples[1] - 1.0098) < 1e-9)
+        #expect(abs(c.finalMultiple - 1.019898) < 1e-9)
+        #expect(StockSageJournal.compoundingCurve([]) == nil)
+    }
+
     private func closedInMonth(_ y: Int, _ m: Int, exit: Double) -> TradeRecord {
         var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
         let d = cal.date(from: DateComponents(year: y, month: m, day: 15))!

@@ -194,7 +194,51 @@ struct ExpectancyTrend: Sendable, Equatable {
     nonisolated var delta: Double { recentR - earlyR }
 }
 
+/// A HYPOTHETICAL forward projection of account growth from the measured edge.
+struct GrowthProjection: Sendable, Equatable {
+    let expectancyR: Double   // measured mean R per closed trade
+    let fraction: Double      // risk per trade
+    let trades: Int           // future trades modeled
+    let multiple: Double      // ×(1 + fraction·expectancyR)^trades
+}
+
+/// The account-growth multiple your logged R produced, compounded at a fixed risk %.
+struct CompoundingCurve: Sendable, Equatable {
+    let multiples: [Double]   // running growth multiple after each closed trade
+    let fraction: Double      // risk per trade (e.g. 0.01 = 1%)
+    nonisolated var finalMultiple: Double { multiples.last ?? 1 }
+}
+
 enum StockSageJournal {
+    /// Compounding curve: starting at ×1, each closed trade (by close time) multiplies
+    /// the account by (1 + fraction·R). Clamped at 0 (ruin is absorbing). Pure — this
+    /// is the PAST path of the owner's OWN trades at a fixed risk %, NOT a projection.
+    nonisolated static func compoundingCurve(_ trades: [TradeRecord], fraction: Double = 0.01) -> CompoundingCurve? {
+        let rs = trades.filter { !$0.isOpen }
+            .sorted { ($0.closedAt ?? .distantPast) < ($1.closedAt ?? .distantPast) }
+            .compactMap { $0.realizedR }
+        guard !rs.isEmpty else { return nil }
+        var mult = 1.0
+        var out: [Double] = []
+        out.reserveCapacity(rs.count)
+        for r in rs {
+            mult = Swift.max(0, mult * (1 + fraction * r))
+            out.append(mult)
+        }
+        return CompoundingCurve(multiples: out, fraction: fraction)
+    }
+
+    /// A HYPOTHETICAL forward account multiple: compound the measured expectancy (R/trade)
+    /// over `trades` future trades at risk `fraction` — ×(1 + fraction·expectancyR)^trades.
+    /// nil for non-positive trades/fraction or a wipeout step (1 + f·e ≤ 0). This is NOT a
+    /// prediction — it assumes the past edge persists and ignores variance (which lowers it).
+    nonisolated static func projectGrowth(expectancyR: Double, trades: Int, fraction: Double = 0.01) -> GrowthProjection? {
+        let step = 1 + fraction * expectancyR
+        guard trades > 0, fraction > 0, step > 0 else { return nil }
+        return GrowthProjection(expectancyR: expectancyR, fraction: fraction, trades: trades,
+                                multiple: pow(step, Double(trades)))
+    }
+
     /// Expectancy trend: mean R of the first half vs the most-recent half of closed
     /// trades (by close time). `band` = the flat zone. nil under 6 closed-with-R.
     nonisolated static func expectancyTrend(_ trades: [TradeRecord], band: Double = 0.10) -> ExpectancyTrend? {
@@ -489,6 +533,7 @@ final class StockSageJournalStore: ObservableObject {
     var kellyInputs: (winRate: Double, payoffRatio: Double, n: Int)? { StockSageJournal.kellyInputs(trades) }
     var systemHealth: SystemHealth? { StockSageJournal.systemHealth(trades) }
     var expectancyTrend: ExpectancyTrend? { StockSageJournal.expectancyTrend(trades) }
+    var compounding: CompoundingCurve? { StockSageJournal.compoundingCurve(trades) }
 
     func add(_ t: TradeRecord) {
         trades.insert(t, at: 0)

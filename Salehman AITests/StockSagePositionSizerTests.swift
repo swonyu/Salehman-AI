@@ -8,6 +8,17 @@ struct StockSagePositionSizerTests {
 
     typealias PS = StockSagePositionSizer
 
+    @Test func summaryLineStatesSharesRiskAndHonestyCaveat() {
+        // account 10000 · 1% · entry 100 · stop 90 → risk/share 10, budget 100 → 10 shares, $100 at risk, 10% acct.
+        let ps = PS.size(account: 10000, riskFraction: 0.01, entry: 100, stop: 90)!
+        #expect(ps.shares == 10)
+        #expect(abs(ps.dollarsAtRisk - 100) < 1e-9)
+        let line = PS.summaryLine(ps, riskPct: 1)
+        #expect(line.contains("10 shares"))
+        #expect(line.contains("$100"))
+        #expect(line.lowercased().contains("loss"))      // honesty: sizes the loss
+    }
+
     @Test func sizesToTheRiskBudget() {
         // $10k account, 1% risk = $100 budget; $10 stop distance → 10 shares.
         let p = PS.size(account: 10_000, riskFraction: 0.01, entry: 100, stop: 90)!

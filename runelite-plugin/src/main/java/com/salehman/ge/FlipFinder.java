@@ -17,6 +17,9 @@ import javax.inject.Singleton;
 @Singleton
 public class FlipFinder
 {
+	// GE buy limits reset every 4 hours — the window the gp/hour velocity is spread over.
+	static final double GE_WINDOW_HOURS = 4.0;
+
 	private final GrandExchangeApi api;
 	// volatile: the panel triggers refresh on background threads, so the lazy init
 	// can race — publish the fully-built map atomically (a rare double-fetch is benign).
@@ -82,6 +85,9 @@ public class FlipFinder
 			int limit = m.limit == null ? 0 : m.limit;
 			double roi = buyPrice > 0 ? (double) postTax / buyPrice * 100.0 : 0.0;
 			long potential = (long) postTax * Math.max(limit, 0);
+			// gp/hour money-velocity: a full buy-limit window of post-tax profit spread
+			// over the 4h reset (0 when the limit is unknown). Mirrors StockSageGEFlip.
+			double gpPerHour = potential / GE_WINDOW_HOURS;
 
 			if (postTax < config.minMargin())
 			{
@@ -115,7 +121,7 @@ public class FlipFinder
 			}
 
 			flips.add(new FlipItem(id, m.name, buyPrice, sellPrice, margin, tax, postTax,
-				roi, limit, volume, potential, m.members, ageSeconds));
+				roi, limit, volume, potential, gpPerHour, m.members, ageSeconds));
 		}
 
 		flips.sort(comparator(config.sortBy()));
@@ -131,6 +137,8 @@ public class FlipFinder
 				return Comparator.comparingDouble((FlipItem f) -> f.roi).reversed();
 			case MARGIN:
 				return Comparator.comparingInt((FlipItem f) -> f.postTaxMargin).reversed();
+			case VELOCITY:
+				return Comparator.comparingDouble((FlipItem f) -> f.gpPerHour).reversed();
 			case POTENTIAL_PROFIT:
 			default:
 				return Comparator.comparingLong((FlipItem f) -> f.potentialProfit).reversed();
@@ -138,9 +146,9 @@ public class FlipFinder
 	}
 
 	/**
-	 * OSRS Grand Exchange sell tax: a percentage of the sell price (default 1%),
-	 * capped per item (default 5,000,000 gp), with no tax on items under 50 gp.
-	 * Rate + cap are configurable since Jagex has tuned them over time.
+	 * OSRS Grand Exchange sell tax: a percentage of the sell price (default 2%, the
+	 * live rate since 2025-05-29), capped per item (default 5,000,000 gp), with no
+	 * tax on items under 50 gp. Rate + cap are configurable since Jagex tunes them.
 	 */
 	/** Epoch-seconds of the OLDER of the two quote legs — the limiting factor for a
 	 *  two-sided flip. -1 if either leg's time is unknown (can't judge freshness). */

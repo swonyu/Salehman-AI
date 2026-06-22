@@ -38,7 +38,9 @@ public class SalehmanGePlugin extends Plugin
 	private SalehmanGeConfig config;
 
 	private NavigationButton navButton;
-	private SalehmanGePanel panel;
+	// volatile: written on the client thread (startUp/shutDown) and read on the EDT /
+	// the refresh worker — publish visibly so a stale/torn reference can't race.
+	private volatile SalehmanGePanel panel;
 
 	@Provides
 	SalehmanGeConfig provideConfig(ConfigManager configManager)
@@ -84,12 +86,14 @@ public class SalehmanGePlugin extends Plugin
 			try
 			{
 				List<FlipItem> flips = flipFinder.findFlips(config);
-				SwingUtilities.invokeLater(() -> p.setFlips(flips));
+				// `p == panel` guards a late result landing after shutDown() (panel→null)
+				// or a panel swap — don't mutate a detached panel. (panel is volatile.)
+				SwingUtilities.invokeLater(() -> { if (p == panel) p.setFlips(flips); });
 			}
 			catch (Exception ex)
 			{
 				log.warn("GE flip refresh failed", ex);
-				SwingUtilities.invokeLater(() -> p.showError("Couldn't reach the price feed — try again."));
+				SwingUtilities.invokeLater(() -> { if (p == panel) p.showError("Couldn't reach the price feed — try again."); });
 			}
 		}, "salehman-ge-refresh").start();
 	}

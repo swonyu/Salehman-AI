@@ -300,3 +300,49 @@ _Keep this file current. Last refreshed: 2026-06-05._
 ### Effort Control
 The Effort control in Salehman AI/Intelligence/Effort.swift provides runtime-adjustable reasoning depth, token budget, and computational effort for the intelligence layer. It enables the orchestrator (and agents) to scale effort per-task — low for quick factual answers, high for complex multi-step reasoning or self-critique. This is a core Phase 1 deliverable for quality-over-quantity intelligence.
 
+## 10. Markets money-velocity system (2026-06-21)
+
+A cohesive "what should I do to make money the fastest, honestly?" layer over the Markets
+tab + the RuneLite OSRS plugin. Owner directive: surface the highest-velocity (fastest
+expected payoff per unit time) opportunities — **with a hard honesty floor**: every number
+is an ESTIMATE or a PAST/own-history path, never a forecast; risk control > signal; each
+surface carries its caveat. All engines are pure + `nonisolated` + unit-tested (hand-verified
+literals); the gate is `tools/typecheck.sh` (now `-strict-concurrency=complete`, matching Xcode —
+it cannot run tests, so test arithmetic is verified by hand and by adversarial review workflows).
+
+### Engines (`Salehman AI/StockSage/`)
+- **`StockSageExpectedValue.swift`** — the core. `ExpectedValue` + `ev(…)` = pWin·rewardR − (1−pWin),
+  where pWin is an ESTIMATE mapped from conviction into a conservative 35–58% band (`winProbEstimate`).
+  `expectedHoldDays`/`velocity` (EV ÷ hold = EV/day), `rankByEV`, `rankByVelocity`, `fastLane`
+  (positive-EV + has-velocity, ranked by EV/day), `bestOpportunity` (highest positive-EV buy; nil if none),
+  `expectedWeeklyR` (top-N velocities × ~5 days), `expectedWeeklyDollars` (× account × risk %),
+  `summary` → `MoneyVelocitySummary` (best/fastest/weekly + worst-run drawdown brake), `playbook`
+  (copyable ordered action list). `VelocityHoldDays` (tunable per-class hold; defaults crypto 3 / equity 12)
+  is a defaulted `holds:` param threaded through every velocity function (defaults preserve behavior).
+- **`StockSageGEFlip.swift`** — OSRS flip velocity: `gpPerHour = (sell − buy − GE tax) × buyLimit ÷ 4h`,
+  `sellTax` (floor(rate·sell), 5M cap, <50 exempt; rate a parameter, default 2% — live OSRS since 2025-05-29), `flips` ranks listings.
+- **`StockSageDrawdownScenario.swift`** — `StockSageRiskOfRuin.scenario` → `DrawdownScenario`: k 1R stop-outs
+  at risk f shrink the account by (1−f)^k; `isSteep` ≥20%. The velocity counterweight ("stay in the game").
+  (Named `RiskOfRuin` to avoid colliding with the existing `StockSageDrawdown` underwater-curve engine.)
+- **`StockSageVelocityHistory.swift`** — `VelocitySnapshot`/`record`/`trend` (recent-half vs early-half
+  weekly-R, rising/flat/fading, nil <4 days) + `@MainActor StockSageVelocityHistoryStore` (UserDefaults JSON,
+  one snapshot per UTC day, capped 60). "Your own history, not a forecast."
+- **`StockSageGlossary.swift`** — `MoneyVelocityTerm` (8 terms) + `explain(_:)` plain-English explainers,
+  each restating its honest hedge (enforced by a test); `moneyVelocityHelp` umbrella. Surfaced as ⓘ tooltips.
+- Drawdown/streak inputs come from the existing `StockSageJournal` (`equityRisk`, `compoundingCurve`).
+
+### Surfaces
+- **`Views/MarketsView.swift`** — top-of-tab **money-velocity summary card** (best · fastest · est. weekly ·
+  history trend+sparkline · drawdown brake · **Copy plan**); the **Ideas** board's 3-way sort (EV / EV-per-day /
+  signal), the **"Best opportunity now"** card, the **"Fast lane"** strip (EV/day + weekly-R + $/week + tunable
+  hold-day Steppers), per-idea EV badge + detail-sheet EV/EV-day lines; journal compounding ×growth +
+  drawdown survival lines. `@AppStorage` persists the hold-day assumptions.
+- **`Views/RuneScapeMarketView.swift`** — per-row "≈ N gp/hr" + a "Fastest flips — gp/hour" strip.
+- **RuneLite Java plugin (`runelite-plugin/…`, ⚠️ UNVERIFIED — cannot compile here):** `FlipItem.gpPerHour`,
+  `FlipFinder` gp/hour + `VELOCITY` comparator, `SortBy.VELOCITY`, panel gp/hour + buy-limit cells. Mirrors
+  `StockSageGEFlip`; must be built with RuneLite before trusting. GE tax stays config-driven (default 2%, live since 2025-05-29).
+
+Tests: `StockSageExpectedValueTests`, `StockSageRiskOfRuinTests`, `StockSageGEFlipTests`,
+`StockSageVelocityHistoryTests`, `StockSageGlossaryTests` (+ journal tests for compounding). Hardened by
+adversarial review workflows (passes 23–28; the few findings were honesty/label fixes, not math).
+

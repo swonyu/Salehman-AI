@@ -3,6 +3,7 @@ package com.salehman.ge;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.Range;
 
 /** User-tunable filters + sort for the flip finder. */
 @ConfigGroup("salehmange")
@@ -12,7 +13,8 @@ public interface SalehmanGeConfig extends Config
 	{
 		POTENTIAL_PROFIT,
 		ROI,
-		MARGIN
+		MARGIN,
+		VELOCITY        // gp/hour — fastest-compounding flips (money velocity)
 	}
 
 	@ConfigItem(
@@ -21,6 +23,7 @@ public interface SalehmanGeConfig extends Config
 		description = "Hide flips whose per-item profit (after GE tax) is below this.",
 		position = 1
 	)
+	@Range(min = 0, max = 2_000_000_000)
 	default int minMargin()
 	{
 		return 50;
@@ -84,7 +87,7 @@ public interface SalehmanGeConfig extends Config
 	@ConfigItem(
 		keyName = "sortBy",
 		name = "Sort by",
-		description = "Rank flips by total potential profit, ROI %, or per-item margin.",
+		description = "Rank flips by total potential profit, ROI %, per-item margin, or velocity (gp/hour).",
 		position = 7
 	)
 	default SortBy sortBy()
@@ -95,12 +98,13 @@ public interface SalehmanGeConfig extends Config
 	@ConfigItem(
 		keyName = "taxPercent",
 		name = "GE tax %",
-		description = "Grand Exchange sell tax percentage (OSRS default 1%). Verify against current game rules.",
+		description = "Grand Exchange sell tax percentage (OSRS is 2% since 2025-05-29). Verify against current game rules.",
 		position = 8
 	)
+	@Range(min = 0, max = 100)
 	default int taxPercent()
 	{
-		return 1;
+		return 2;
 	}
 
 	@ConfigItem(
@@ -109,6 +113,7 @@ public interface SalehmanGeConfig extends Config
 		description = "Maximum GE tax per item (OSRS default 5,000,000).",
 		position = 9
 	)
+	@Range(min = 0, max = 5_000_000)
 	default int taxCap()
 	{
 		return 5_000_000;

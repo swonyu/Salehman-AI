@@ -34,4 +34,11 @@ enum StockSagePositionSizer {
             pctOfAccount: notional / account * 100,
             riskPerShare: riskPerShare)
     }
+
+    /// One-line "size it now" summary — shares, $ at risk, % of account — with the
+    /// honesty caveat that this sizes the LOSS at the stop, not a profit.
+    nonisolated static func summaryLine(_ ps: PositionSize, riskPct: Double) -> String {
+        String(format: "%d shares ≈ $%.0f at risk (%.0f%% of acct) at %.1f%%/trade — sizes the LOSS, not a profit promise.",
+               ps.shares, ps.dollarsAtRisk, ps.pctOfAccount, riskPct)
+    }
 }

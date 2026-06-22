@@ -8,14 +8,80 @@ import Foundation
 // surface the structural risks of FX / crypto / index instruments that a single
 // price line hides.
 
+/// The money-velocity vocabulary — each term gets a plain-English explainer that
+/// restates its honest caveat (see `StockSageGlossary.explain`).
+enum MoneyVelocityTerm: String, CaseIterable, Sendable {
+    case ev = "EV"
+    case velocity = "EV / day"
+    case fastLane = "Fast lane"
+    case weeklyR = "Weekly R"
+    case weeklyDollars = "$ / week"
+    case compounding = "Compounding"
+    case drawdownSurvival = "Drawdown survival"
+    case gpPerHour = "gp / hour"
+}
+
+/// The user-facing money-velocity CAPTIONS, centralized so a test can guarantee each
+/// keeps its honest hedge — a structural guard against a future edit silently dropping a
+/// caveat. The views reference these (not inline literals).
+enum MoneyVelocityCopy {
+    nonisolated static let bestOpportunity =
+        "Highest estimated EV among current buy ideas — an estimate from conviction, NOT a forecast. Tap for the full plan; size with a stop and the cap."
+    nonisolated static let fastLane =
+        "Faster turnover = more compounding cycles, but also more chances to be wrong. Estimated EV/day, not a forecast."
+    nonisolated static let summary =
+        "Estimates from conviction & a rough hold — ranks SPEED of payoff, doesn't predict it. Risk control > speed; always size with a stop."
+    nonisolated static let weeklyDollars = "estimate, high variance, NOT income."
+    /// Shared hedge tail for the velocity-history lines (trend + since-last-session).
+    nonisolated static let ownHistory = "your own history, not a forecast."
+    /// Drawdown-brake tail on the summary card.
+    nonisolated static let drawdownBrake = "Size to survive variance."
+    /// The forward growth projection's caveat — the highest-risk honesty surface.
+    nonisolated static let growthProjection = "Assumes your past edge persists — it may not, and real variance lowers this. NOT a prediction."
+    /// Compact tail for the Today-tab "Best bet" stat tile (rendered after the EV figure).
+    nonisolated static let bestBetTile = "EV · estimate"
+    nonisolated static let all: [String] = [bestOpportunity, fastLane, summary, weeklyDollars, ownHistory, drawdownBrake, growthProjection, bestBetTile]
+}
+
 enum StockSageGlossary {
+
+    /// Plain-English explainer for a money-velocity term. Each one names the metric AND
+    /// states why it's an estimate, never a forecast.
+    nonisolated static func explain(_ term: MoneyVelocityTerm) -> String {
+        switch term {
+        case .ev:
+            return "Expected value (R) = pWin·reward − (1−pWin), where pWin is an ESTIMATE mapped from conviction (a conservative 35–58%), not a real probability. It ranks payoff per trade; it does not predict any single outcome."
+        case .velocity:
+            return "Velocity = EV ÷ typical hold = expected R per DAY. A setup that resolves faster compounds more, so it can outrank an equal-EV slower one. Built on an estimated hold — a rough assumption, not a measurement."
+        case .fastLane:
+            return "The positive-EV setups that have a defined velocity (crypto/equity), ranked by EV/day. Faster turnover means more compounding cycles AND more chances to be wrong."
+        case .weeklyR:
+            return "Sum of the top few fast-lane velocities × ~5 trading days — an estimate of weekly R IF you take and re-cycle those setups. High variance; not a promise."
+        case .weeklyDollars:
+            return "Weekly R × the dollar value of 1R (account × risk %). An estimate that assumes you take the top setups — NOT income."
+        case .compounding:
+            return "Your OWN closed-trade R compounded at a fixed risk % per trade, ×(1 + f·R) each. The PAST path of your trades, not a projection of future returns."
+        case .drawdownSurvival:
+            return "k losing trades in a row at risk f shrink the account by (1 − f)^k. The counterweight to velocity: size so a normal losing streak stays survivable — staying in the game is how velocity pays off."
+        case .gpPerHour:
+            return "OSRS flip velocity: (sell − buy − GE tax) × the 4-hour buy limit ÷ 4h = gp per hour. An estimate that assumes you fill the limit; real fills depend on volume."
+        }
+    }
+
+    /// Umbrella ⓘ for the money-velocity surfaces.
+    nonisolated static let moneyVelocityHelp = """
+    Money velocity ranks the SPEED of expected payoff, not just its size — so capital recycles faster and compounds. \
+    Every figure here (EV, EV/day, weekly R, $/week, gp/hour) is an ESTIMATE built on an estimated win-probability and a \
+    rough hold, not a forecast. Compounding shows your PAST path; the drawdown line is the brake. Risk control > speed: \
+    always size with a stop.
+    """
 
     // Per-card help — concise, honest, hover-reveal.
     nonisolated static let analyticsHelp = """
     Sharpe: annualized return per unit of TOTAL volatility — higher = smoother. \
     Sortino: like Sharpe but penalizes only DOWNSIDE volatility (upside swings don't count against you). \
     Calmar: annual return ÷ worst drawdown. VaR95: a daily loss the book exceeds ~1 day in 20 — a routine bad day, NOT a worst case. \
-    Diversification (0–100): 100 = effectively independent holdings, 0 = one concentrated bet (blends average pairwise correlation with how many names you hold). All backward-looking: past behavior, not a prediction.
+    Diversification (0–100): higher = better diversified — it rewards LOW or negative cross-holding correlation and holding more names. Independent (uncorrelated) holdings already score high; only strongly HEDGED, inversely-correlated books approach 100, and 0 = one concentrated bet. All backward-looking: past behavior, not a prediction.
     """
 
     nonisolated static let regimeHelp = """

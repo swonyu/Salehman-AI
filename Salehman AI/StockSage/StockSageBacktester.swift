@@ -112,7 +112,9 @@ enum StockSageBacktester {
         return summarize(trades)
     }
 
-    private nonisolated static func summarize(_ trades: [BacktestTrade]) -> BacktestResult {
+    /// Aggregate the simulated trades into honest metrics. `internal` (not private) so the
+    /// aggregation math is unit-tested directly with synthetic trades.
+    nonisolated static func summarize(_ trades: [BacktestTrade]) -> BacktestResult {
         guard !trades.isEmpty else { return .empty }
         let rs = trades.map(\.r)
         let winRs = rs.filter { $0 > 0 }

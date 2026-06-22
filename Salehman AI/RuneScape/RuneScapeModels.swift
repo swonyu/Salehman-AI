@@ -35,7 +35,7 @@ struct RuneScapePrice: Sendable, Equatable {
     let low: Int?
     let lowTime: Date?
 
-    /// GE flip margin: buy-now minus sell-now (gross, before the 1% GE tax).
+    /// GE flip margin: buy-now minus sell-now (gross, before the 2% GE sell tax).
     var margin: Int? {
         guard let high, let low else { return nil }
         return high - low

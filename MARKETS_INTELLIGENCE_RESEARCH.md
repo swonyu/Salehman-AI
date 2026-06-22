@@ -117,6 +117,55 @@ to lose. So **detect the regime first, then pick the signal**:
    hit-rate / max-drawdown / Sharpe, never a cherry-picked curve.
 7. **Alerts** — notify when a strong setup appears or a stop is breached.
 
+## 9. Money velocity — methodology & limitations (2026-06-21)
+
+The owner's directive was to surface the *fastest* way to compound, honestly. "Velocity"
+means **expected payoff per unit of TIME**, not just per trade — because a setup that
+resolves sooner frees the capital to redeploy, which is what actually compounds. The
+formulas below are deliberately simple and **transparent**; their value is in ranking and
+in forcing risk discipline, NOT in precision.
+
+**Methodology**
+- **Expected value (EV, in R).** `EV = pWin·rewardR − (1−pWin)·1`, modeling a loss as a
+  −1R stop-out. `rewardR` = reward:risk = |target−entry| / |entry−stop|. `pWin` is an
+  *estimate* mapped from the advisor's conviction into a deliberately conservative band
+  (**35% → 58%**); conviction is NOT a measured probability, so the band is narrow and the
+  UI says "estimate."
+- **Velocity (EV/day).** `EV ÷ expected hold days`, where the hold is a per-asset-class
+  default (crypto ≈ 3d, equity ≈ 12d; index/FX excluded) the owner can tune. A faster
+  setup can outrank an equal-EV slower one.
+- **Fast lane / weekly-R / weekly-$.** The positive-EV, has-velocity setups ranked by
+  EV/day; the top few summed × ~5 trading days ≈ weekly R; × account × risk% ≈ weekly $.
+  All gated behind "if you actually take and re-cycle them."
+- **Compounding (PAST).** `×∏(1 + f·Rᵢ)` over the owner's own CLOSED trades at a fixed
+  risk fraction f — the realized path of his edge, clamped at 0 (ruin absorbs).
+- **Growth projection (HYPOTHETICAL).** `×(1 + f·expectancyR)^N` forward — the optimistic
+  mean path; labeled not-a-prediction.
+- **Drawdown survival.** `×(1−f)^k` for k consecutive 1R stop-outs — the brake: chasing
+  velocity must never become over-betting.
+- **GE flip velocity (OSRS).** `(sell − buy − GE tax) × 4h buy limit ÷ 4h = gp/hour`.
+
+**Limitations (read these before trusting any number)**
+- Every figure is an **estimate or a backward-looking path**, never a forecast. EV ranks
+  payoff; it does not predict any single outcome.
+- **pWin is conviction-mapped, not measured.** If the advisor's conviction is miscalibrated,
+  EV/velocity/weekly-R are all off by the same bias. Treat them as relative rankings.
+- **Hold-day assumptions are rough class defaults**, not per-symbol measurements — velocity
+  is only as good as that assumption (now tunable).
+- **Variance & volatility drag.** The forward projection and weekly-R are mean paths; real
+  sequences with the same average return finish LOWER and bumpier. Single numbers hide this.
+- **Correlation illusion.** Velocity crowds into one fast-turnover class (crypto), so a
+  "diversified" fast lane can be one bet — surfaced by the concentration warning.
+- **OSRS GE tax/cap have changed over time**; the rate is a parameter (default 2%, live since 2025-05-29) and the
+  live RuneLite plugin is the source of truth. The Swift↔Java parity is logic-checked but
+  the Java side is UNVERIFIED here (no compiler).
+- **Not investment advice.** Risk control > signal; size every entry with a stop.
+
+Implementation: `StockSageExpectedValue`, `StockSageGEFlip`, `StockSageRiskOfRuin`,
+`StockSageVelocityHistory`, `StockSageJournal` (compounding/projection),
+`MoneyVelocityCopy`/`StockSageGlossary` (the caveats, guarded by a sweep test). See
+`PROJECT_CONTEXT.md` §10 for the file map.
+
 ## Sources
 - [Time-Series Momentum — historical evidence (Alpha Architect)](https://alphaarchitect.com/time-series-momentum-aka-trend-following-the-historical-evidence/) · [Moskowitz, Ooi, Pedersen, "Time series momentum" (ScienceDirect)](https://www.sciencedirect.com/science/article/pii/S0304405X11002613) · [Value and Momentum Everywhere (NYU Stern PDF)](https://pages.stern.nyu.edu/~lpederse/papers/ValMomEverywhere.pdf)
 - [RSI & MACD effectiveness (ResearchGate)](https://www.researchgate.net/publication/392317792_Analysis_of_the_Effectiveness_of_RSI_and_MACD_Indicators_in_Addressing_Stock_Price_Volatility) · [RSI vs MACD (LiteFinance)](https://www.litefinance.org/blog/for-beginners/best-technical-indicators/rsi-vs-macd/)

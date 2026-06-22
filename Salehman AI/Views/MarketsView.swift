@@ -13,6 +13,13 @@ struct MarketsView: View {
     /// Ideas board ordering: by expected value, EV-per-day velocity, or signal rank.
     private enum IdeaSort: String, CaseIterable { case ev = "Expected value", velocity = "EV / day", signal = "Signal rank" }
     @State private var ideaSort: IdeaSort = .ev
+
+    /// Tunable hold-day assumptions feeding velocity (EV/day). Persisted; defaults match
+    /// the engine's (crypto 3d, equity 12d) so nothing shifts until the owner changes it.
+    @AppStorage("velocityCryptoHoldDays") private var cryptoHoldDays = 3.0
+    @AppStorage("velocityEquityHoldDays") private var equityHoldDays = 12.0
+    private var velocityHolds: VelocityHoldDays { VelocityHoldDays(crypto: cryptoHoldDays, equity: equityHoldDays) }
+    @ObservedObject private var velocityHistory = StockSageVelocityHistoryStore.shared
     @ObservedObject private var store = StockSageStore.shared
     @ObservedObject private var portfolio = StockSagePortfolio.shared
     @ObservedObject private var journal = StockSageJournalStore.shared
@@ -84,6 +91,10 @@ struct MarketsView: View {
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 8)
                         .animation(DS.Motion.lux.delay(0.06), value: appeared)
+                    moneyVelocityCard
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 8)
+                        .animation(DS.Motion.lux.delay(0.07), value: appeared)
                     sectionPicker
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 8)
@@ -109,6 +120,11 @@ struct MarketsView: View {
             // snapshot harness so captures stay deterministic and offline.
             guard !ProcessInfo.processInfo.arguments.contains("--qa") else { return }
             await store.refresh()
+            // Snapshot today's money-velocity (one per UTC day) so the trend can build.
+            let snap = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds)
+            if let wk = snap.weeklyR {
+                velocityHistory.record(weeklyR: wk, bestSymbol: snap.bestSymbol, fastestSymbol: snap.fastestSymbol)
+            }
         }
         .sheet(item: $selectedIdea) { ideaDetailSheet($0) }
     }
@@ -943,6 +959,40 @@ struct MarketsView: View {
                     Text(String(format: "Worst losing run: %d · max drawdown −%.2fR (your realized path so far).",
                                 risk.maxConsecutiveLosses, risk.maxDrawdownR))
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    if let dd = StockSageRiskOfRuin.scenario(losses: risk.maxConsecutiveLosses, fraction: 0.01) {
+                        Text(String(format: "Stay in the game: %d 1R stops in a row at 1%%/trade ≈ −%.1f%% to the account — %@",
+                                    dd.losses, dd.drawdownPct * 100,
+                                    dd.isSteep ? "size down; surviving variance is how velocity compounds."
+                                               : "survivable — staying in the game is what lets velocity pay off."))
+                            .font(.caption2)
+                            .foregroundStyle(dd.isSteep ? DS.Palette.warningSoft : .secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .help(StockSageGlossary.explain(.drawdownSurvival))
+                    }
+                }
+                if let comp = journal.compounding, comp.multiples.count >= 2 {
+                    let up = comp.finalMultiple >= 1
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(String(format: "Compounded to ×%.2f at %.0f%%/trade", comp.finalMultiple, comp.fraction * 100))
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
+                        Sparkline(values: comp.multiples)
+                            .stroke(up ? DS.Palette.successSoft : DS.Palette.danger,
+                                    style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                            .frame(height: 26).opacity(0.9)
+                        Text("Your OWN logged R compounded at a fixed risk % — the past path of your trades, NOT a projection of future returns.")
+                            .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .help(StockSageGlossary.explain(.compounding))
+                }
+                if journal.closed.count >= 20,
+                   let proj = StockSageJournal.projectGrowth(expectancyR: journal.edgeStats.expectancyR, trades: 100, fraction: 0.01) {
+                    Text(String(format: "What-if (HYPOTHETICAL): at your measured %+.2fR/trade & 1%%/trade, 100 trades ≈ ×%.2f. %@",
+                                proj.expectancyR, proj.multiple, MoneyVelocityCopy.growthProjection))
+                        .font(.caption2)
+                        .foregroundStyle(proj.multiple >= 1 ? DS.Palette.warningSoft : DS.Palette.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help("A deterministic compounding of your measured average R — it ignores variance and drawdown, which make the real path lower and bumpier. Not advice, not a forecast.")
                 }
                 if let dist = journal.rDistribution, dist.total >= 3 {
                     let maxC = max(dist.bins.map(\.count).max() ?? 1, 1)
@@ -1332,9 +1382,9 @@ struct MarketsView: View {
                     ideaMetric("Ann. return", String(format: "%+.1f%%", a.annualizedReturn),
                                color: a.annualizedReturn >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                     ideaMetric("Volatility", String(format: "%.1f%%", a.annualizedVolatility))
-                    ideaMetric("Sharpe", String(format: "%.2f", a.sharpe),
-                               color: a.sharpe >= 1 ? DS.Palette.successSoft : (a.sharpe >= 0.3 ? .white : DS.Palette.danger))
-                    ideaMetric("Sortino", String(format: "%.2f", a.sortino))
+                    ideaMetric("Sharpe", a.sharpe.map { String(format: "%.2f", $0) } ?? "n/a",
+                               color: a.sharpe == nil ? .secondary : (a.sharpe! >= 1 ? DS.Palette.successSoft : (a.sharpe! >= 0.3 ? .white : DS.Palette.danger)))
+                    ideaMetric("Sortino", a.sortino.map { String(format: "%.2f", $0) } ?? "n/a")
                     Spacer(minLength: 0)
                 }
                 HStack(spacing: 18) {
@@ -1663,6 +1713,7 @@ struct MarketsView: View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
             ideasHeader
             bestOpportunityCard
+            fastLaneStrip
             alertsPanel
             strategyBacktestPanel
             backtestPanel
@@ -1696,7 +1747,7 @@ struct MarketsView: View {
     private var displayedIdeas: [StockSageIdea] {
         switch ideaSort {
         case .ev:       return StockSageExpectedValue.rankByEV(store.ideas)
-        case .velocity: return StockSageExpectedValue.rankByVelocity(store.ideas)
+        case .velocity: return StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds)
         case .signal:   return store.ideas
         }
     }
@@ -1918,7 +1969,15 @@ struct MarketsView: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    Text("Highest estimated EV among current buy ideas — an estimate from conviction, NOT a forecast. Tap for the full plan; size with a stop and the cap.")
+                    if let stop = idea.advice.stopPrice, let acct = Double(sizerAccount), acct > 0,
+                       let rp = Double(sizerRiskPct), rp > 0,
+                       let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
+                        Text("Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp))")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(ps.pctOfAccount > 100 ? DS.Palette.warningSoft : DS.Palette.successSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(MoneyVelocityCopy.bestOpportunity)
                         .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
@@ -1927,6 +1986,171 @@ struct MarketsView: View {
             }
             .buttonStyle(LuxPressStyle())
             .accessibilityLabel("Best opportunity: \(idea.symbol), estimated EV \(String(format: "%.2f", ev.evR)) R")
+        }
+    }
+
+    // Money-velocity summary — one-glance header (best bet · fastest · est. weekly R),
+    // visible across every section. Tappable to the best opportunity's plan.
+    @ViewBuilder private var moneyVelocityCard: some View {
+        let s = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds)
+        if s.hasContent {
+            VStack(alignment: .leading, spacing: 6) {
+            Button {
+                if let best = StockSageExpectedValue.bestOpportunity(store.ideas) { selectedIdea = best.idea }
+            } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bolt.fill").font(.system(size: 12)).foregroundStyle(DS.Palette.accent)
+                        Text("Money velocity — fastest moves now").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                        Spacer()
+                    }
+                    HStack(alignment: .top, spacing: 18) {
+                        if let sym = s.bestSymbol, let ev = s.bestEV {
+                            summaryStat("Best now", sym, String(format: "%+.2fR EV", ev))
+                        }
+                        if let sym = s.fastestSymbol, let v = s.fastestVelocity {
+                            summaryStat("Fastest", sym, String(format: "%+.2fR/day", v))
+                        }
+                        if let wk = s.weeklyR {
+                            summaryStat("Est./week", String(format: "%+.1fR", wk), "if you run top 3")
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    if let acct = Double(sizerAccount), acct > 0, let rp = Double(sizerRiskPct), rp > 0,
+                       let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, holds: velocityHolds) {
+                        Text(String(format: "≈ +$%.0f/week at $%.0f acct, %.1f%% risk — %@", usd, acct, rp, MoneyVelocityCopy.weeklyDollars))
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let d = velocityHistory.lastDelta, abs(d) >= 0.05 {
+                        Text(String(format: "Since last session: weekly-R %@ %.1fR — %@", d >= 0 ? "↑" : "↓", abs(d), MoneyVelocityCopy.ownHistory))
+                            .font(.system(size: 8))
+                            .foregroundStyle(d >= 0 ? DS.Palette.successSoft : DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let ch = velocityHistory.change {
+                        let movers = [ch.bestChangedTo.map { "best → \($0)" }, ch.fastestChangedTo.map { "fastest → \($0)" }].compactMap { $0 }
+                        if !movers.isEmpty {
+                            Text("Mover: \(movers.joined(separator: ", ")) — \(MoneyVelocityCopy.ownHistory)")
+                                .font(.system(size: 8)).foregroundStyle(DS.Palette.accent).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    if let t = velocityHistory.trend {
+                        let rising = t.direction == .rising, fading = t.direction == .fading
+                        HStack(spacing: 5) {
+                            Image(systemName: rising ? "arrow.up.right" : (fading ? "arrow.down.right" : "arrow.right"))
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(rising ? DS.Palette.successSoft : (fading ? DS.Palette.warningSoft : .secondary))
+                            Text(String(format: "Your opportunity set is %@ (recent wk-R %+.1f vs %+.1f early) — %@",
+                                        t.direction.rawValue, t.recentAvg, t.earlyAvg, MoneyVelocityCopy.ownHistory))
+                                .font(.system(size: 8)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            if velocityHistory.series.count >= 2 {
+                                Sparkline(values: velocityHistory.series.map(\.weeklyR))
+                                    .stroke(rising ? DS.Palette.successSoft : (fading ? DS.Palette.warningSoft : DS.Palette.surfaceStroke),
+                                            style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
+                                    .frame(width: 48, height: 14)
+                            }
+                        }
+                    }
+                    if let ddPct = s.worstRunDrawdownPct, let losses = s.worstRunLosses {
+                        Text(String(format: "Brake — your worst run (%d) at 1%%/trade ≈ −%.1f%% to the account. %@", losses, ddPct * 100, MoneyVelocityCopy.drawdownBrake))
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(MoneyVelocityCopy.summary)
+                        .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
+                .background(DS.Palette.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.accent.opacity(0.3), lineWidth: 1))
+            }
+            .buttonStyle(LuxPressStyle())
+            .accessibilityLabel("Money velocity summary; tap for the best opportunity")
+            .help(StockSageGlossary.moneyVelocityHelp)
+            HStack(spacing: 6) {
+                Spacer()
+                Button {
+                    let plan = StockSageExpectedValue.playbook(s)
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(plan, forType: .string)
+                } label: {
+                    Label("Copy plan", systemImage: "doc.on.doc").font(.system(size: 9, weight: .medium))
+                }
+                .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+                .help("Copy a short, caveated money-velocity action list to the clipboard.")
+            }
+            }
+        }
+    }
+
+    private func summaryStat(_ label: String, _ value: String, _ sub: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label.uppercased()).font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
+            Text(value).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white).lineLimit(1)
+            Text(sub).font(.system(size: 8)).foregroundStyle(DS.Palette.successSoft).lineLimit(1)
+        }
+    }
+
+    // Fast lane — the highest-turnover positive-EV setups (fastest compounding).
+    @ViewBuilder private var fastLaneStrip: some View {
+        let lane = StockSageExpectedValue.fastLane(store.ideas, holds: velocityHolds)
+        if lane.count >= 2 {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "hare.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.accent)
+                    Text("Fast lane — fastest compounding").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                    Spacer()
+                }
+                ForEach(lane.prefix(3), id: \.id) { idea in
+                    if let v = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds) {
+                        Button { selectedIdea = idea } label: {
+                            HStack(spacing: 8) {
+                                Text(idea.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                                    .frame(width: 84, alignment: .leading)
+                                Text(String(format: "%+.3fR/day", v)).font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(DS.Palette.successSoft)
+                                if idea.symbol.hasSuffix("-USD") {
+                                    Text("24/7 · volatile").font(.system(size: 8)).foregroundStyle(DS.Palette.warningSoft)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right").font(.system(size: 8)).foregroundStyle(.secondary)
+                            }.contentShape(Rectangle())
+                        }.buttonStyle(LuxPressStyle())
+                    }
+                }
+                if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, holds: velocityHolds) {
+                    Text(String(format: "≈ %+.1fR/week if you run the top %d — estimate, high variance, assumes you take and re-cycle these. Not a promise.", wk, Swift.min(3, lane.count)))
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
+                    if let acct = Double(sizerAccount), acct > 0, let rp = Double(sizerRiskPct), rp > 0,
+                       let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, holds: velocityHolds) {
+                        Text(String(format: "≈ +$%.0f/week at $%.0f account, %.1f%% risk — estimate, high variance, NOT income.", usd, acct, rp))
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds), conc.isConcentrated {
+                    Text("⚠︎ Your top \(conc.total) fastest are all \(conc.dominantClass) — that's closer to ONE bet than \(conc.total); they tend to move together. Diversify or size them as one.")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                }
+                Text(MoneyVelocityCopy.fastLane)
+                    .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 14) {
+                    Text("Hold est:").font(.system(size: 9)).foregroundStyle(.secondary)
+                    Stepper(value: $cryptoHoldDays, in: 1...60, step: 1) {
+                        Text("crypto \(Int(cryptoHoldDays))d").font(.system(size: 9)).foregroundStyle(.white)
+                    }.frame(maxWidth: 132)
+                    Stepper(value: $equityHoldDays, in: 1...180, step: 1) {
+                        Text("equity \(Int(equityHoldDays))d").font(.system(size: 9)).foregroundStyle(.white)
+                    }.frame(maxWidth: 132)
+                    Spacer(minLength: 0)
+                }
+                .help("Typical days you hold each — velocity is EV ÷ hold, so a shorter hold raises EV/day. A rough assumption, not a measurement.")
+            }
+            .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
+            .background(DS.Palette.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.accent.opacity(0.25), lineWidth: 1))
+            .help(StockSageGlossary.explain(.fastLane))
         }
     }
 
@@ -2231,7 +2455,7 @@ struct MarketsView: View {
                             .help(StockSageExpectedValue.caveat)
                     }
                 }
-                if let vel = StockSageExpectedValue.velocity(for: idea) {
+                if let vel = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds) {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "gauge.with.dots.needle.67percent").font(.system(size: 11)).foregroundStyle(.secondary)
                         Text(String(format: "≈ %+.3fR/day velocity (EV ÷ typical hold) — faster turnover compounds faster. An estimate.", vel))

@@ -178,18 +178,53 @@ struct RuneScapeMarketView: View {
         if rows.isEmpty {
             emptyState
         } else {
-            VStack(spacing: 1) {
-                ForEach(rows) { listingRow($0) }
-            }
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Bezel.cardFill)
-                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            VStack(spacing: DS.Space.md) {
+                fastestFlipsStrip
+                VStack(spacing: 1) {
+                    ForEach(rows) { listingRow($0) }
                 }
-            )
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Bezel.cardFill)
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                            .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                    }
+                )
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            }
+        }
+    }
+
+    // Fastest flips — the GE money-velocity strip: top flips by gp/HOUR (margin × buy
+    // limit ÷ 4h), not raw margin. An estimate that assumes you fill the buy limit.
+    @ViewBuilder private var fastestFlipsStrip: some View {
+        let flips = StockSageGEFlip.flips(rows)
+        if flips.count >= 2 {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "hare.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.warningSoft)
+                    Text("Fastest flips — gp/hour").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                    Spacer()
+                }
+                ForEach(flips.prefix(3)) { flip in
+                    HStack(spacing: 8) {
+                        Text(flip.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                            .lineLimit(1).frame(maxWidth: 150, alignment: .leading)
+                        Text("≈ \(RSFormat.gp(Int(flip.gpPerHour)))/hr")
+                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(DS.Palette.successSoft)
+                        Spacer(minLength: 0)
+                        Text("\(RSFormat.gp(flip.profitPerItem))/ea · ×\(flip.buyLimit.formatted())")
+                            .font(.system(size: 9)).foregroundStyle(.secondary)
+                    }
+                }
+                Text("gp/hour = (margin − GE tax) × buy limit ÷ 4h. An estimate — assumes you fill the limit; real fills depend on volume.")
+                    .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .help(StockSageGlossary.explain(.gpPerHour))
+            }
+            .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
+            .background(DS.Palette.warningSoft.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.warningSoft.opacity(0.25), lineWidth: 1))
         }
     }
 
@@ -219,6 +254,10 @@ struct RuneScapeMarketView: View {
                 }
                 if let limit = listing.item.buyLimit {
                     Text("buy limit \(limit.formatted())").font(.caption2).foregroundStyle(.secondary)
+                }
+                if let buy = price.low, let sell = price.high, let limit = listing.item.buyLimit,
+                   let gph = StockSageGEFlip.gpPerHour(buy: buy, sell: sell, buyLimit: limit) {
+                    Text("≈ \(RSFormat.gp(Int(gph)))/hr").font(.caption2).foregroundStyle(DS.Palette.successSoft)
                 }
             }
             Spacer(minLength: 8)

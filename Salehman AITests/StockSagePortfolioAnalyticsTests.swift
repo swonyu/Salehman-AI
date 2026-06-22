@@ -63,7 +63,8 @@ struct StockSagePortfolioAnalyticsTests {
         #expect(abs(a.maxDrawdown - PA.maxDrawdown(rets) * 100) < 1e-6)
         #expect(abs(a.valueAtRisk95 - max(0, -PA.percentile(rets, 0.05) * 100)) < 1e-6)
         #expect(a.annualizedVolatility > 0)
-        #expect(abs(a.sharpe - a.annualizedReturn / a.annualizedVolatility) < 1e-6)
+        #expect(a.sharpe != nil)   // defined here (vol > 0)
+        #expect(abs(a.sharpe! - a.annualizedReturn / a.annualizedVolatility) < 1e-6)
         #expect(a.maxDrawdown > 0)
         #expect(abs(a.calmar - a.annualizedReturn / a.maxDrawdown) < 1e-6)
         // Sortino's downside deviation is normalized over ALL observations (the fix);
@@ -72,7 +73,18 @@ struct StockSagePortfolioAnalyticsTests {
         let downSq = rets.reduce(0.0) { $0 + min($1, 0) * min($1, 0) }
         let downDev = (downSq / n).squareRoot() * (252.0).squareRoot() * 100
         #expect(downDev > 0)
-        #expect(abs(a.sortino - a.annualizedReturn / downDev) < 1e-6)
+        #expect(a.sortino != nil)   // defined here (downside > 0)
+        #expect(abs(a.sortino! - a.annualizedReturn / downDev) < 1e-6)
+    }
+
+    @Test func zeroVolatilityYieldsUndefinedSharpeSortino() {
+        // No movement → zero realized vol & zero downside → the ratios are UNDEFINED.
+        // They must be nil (rendered "n/a"), never a sentinel that reads as a real 100.
+        let flat = Array(repeating: 100.0, count: 8)
+        let a = PA.compute(holdings: [(1000, flat)])!
+        #expect(a.annualizedVolatility == 0)
+        #expect(a.sharpe == nil)
+        #expect(a.sortino == nil)
     }
 
     @Test func correlationMatrixIsSymmetricWithUnitDiagonal() {

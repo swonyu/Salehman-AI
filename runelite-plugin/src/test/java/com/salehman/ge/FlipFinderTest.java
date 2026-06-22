@@ -61,7 +61,7 @@ public class FlipFinderTest
 	{
 		SalehmanGeConfig c = config(0, 0);
 		assertEquals(0, FlipFinder.geTax(49, c));                      // under 50 gp → no tax
-		assertEquals(1, FlipFinder.geTax(100, c));                     // 1% of 100
+		assertEquals(2, FlipFinder.geTax(100, c));                     // 2% of 100 (live OSRS rate)
 		assertEquals(5_000_000, FlipFinder.geTax(1_000_000_000, c));   // capped at 5M
 	}
 
@@ -90,5 +90,48 @@ public class FlipFinderTest
 		assertEquals(2, flips.size());
 		assertEquals("A", flips.get(0).name);   // higher profit/limit ranks first
 		assertEquals("B", flips.get(1).name);
+	}
+
+	@Test
+	public void velocitySortRanksByGpPerHour()
+	{
+		Map<Integer, GrandExchangeApi.Latest> latest = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Mapping> mapping = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Volume> volumes = new HashMap<>();
+
+		// A: sell 1100 / buy 1000 → tax 22 (2%), postTax 78, limit 1000 → 78000 ÷ 4h = 19500 gp/hr.
+		latest.put(1, latest(1100, 1000));
+		mapping.put(1, mapping(1, "A", 1000, false));
+		volumes.put(1, volume(5000, 5000));
+		// B: sell 130 / buy 100 → tax 2 (2%), postTax 28, limit 10000 → 280000 ÷ 4h = 70000 gp/hr.
+		latest.put(2, latest(130, 100));
+		mapping.put(2, mapping(2, "B", 10000, false));
+		volumes.put(2, volume(5000, 5000));
+
+		SalehmanGeConfig c = new SalehmanGeConfig()
+		{
+			@Override
+			public int minMargin()
+			{
+				return 0;
+			}
+
+			@Override
+			public int minVolume()
+			{
+				return 100;
+			}
+
+			@Override
+			public SortBy sortBy()
+			{
+				return SortBy.VELOCITY;
+			}
+		};
+		List<FlipItem> flips = FlipFinder.rank(latest, volumes, mapping, c, 1_000_000L);
+		assertEquals(2, flips.size());
+		assertEquals("B", flips.get(0).name);                  // 70000 gp/hr beats 19500 (fast turnover)
+		assertEquals(70000.0, flips.get(0).gpPerHour, 1e-9);
+		assertEquals(19500.0, flips.get(1).gpPerHour, 1e-9);
 	}
 }

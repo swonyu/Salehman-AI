@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 04:15 +03 · Swift files: 209 · Swift LOC: 42058_
+_Generated: 2026-06-22 07:34 +03 · Swift files: 218 · Swift LOC: 43292_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -8432,7 +8432,7 @@ struct RuneScapePrice: Sendable, Equatable {
     let low: Int?
     let lowTime: Date?
 
-    /// GE flip margin: buy-now minus sell-now (gross, before the 1% GE tax).
+    /// GE flip margin: buy-now minus sell-now (gross, before the 2% GE sell tax).
     var margin: Int? {
         guard let high, let low else { return nil }
         return high - low
@@ -8878,7 +8878,7 @@ enum StockSageAllocation {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageBacktester.swift (145 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageBacktester.swift (147 lines) =====
 ```swift
 import Foundation
 
@@ -8994,7 +8994,9 @@ enum StockSageBacktester {
         return summarize(trades)
     }
 
-    private nonisolated static func summarize(_ trades: [BacktestTrade]) -> BacktestResult {
+    /// Aggregate the simulated trades into honest metrics. `internal` (not private) so the
+    /// aggregation math is unit-tested directly with synthetic trades.
+    nonisolated static func summarize(_ trades: [BacktestTrade]) -> BacktestResult {
         guard !trades.isEmpty else { return .empty }
         let rs = trades.map(\.r)
         let winRs = rs.filter { $0 > 0 }
@@ -9294,6 +9296,40 @@ enum StockSageDrawdown {
 }
 ```
 
+===== FILE: Salehman AI/StockSage/StockSageDrawdownScenario.swift (30 lines) =====
+```swift
+import Foundation
+
+// MARK: - Drawdown survival (the "stay in the game" check)
+//
+// Velocity rewards taking more setups — but more setups means more losing streaks.
+// This models the account going DOWN: k consecutive 1R stop-outs at a fixed risk
+// fraction f shrink the account by (1 − f)^k. It is the deliberate counterweight to
+// the money-velocity surfaces — "fastest" must never quietly mean "over-bet." Pure +
+// deterministic. (Assumes 1R stop-outs; a loss bigger than the stop costs more.)
+
+struct DrawdownScenario: Sendable, Equatable {
+    let losses: Int                // consecutive 1R stop-outs modeled
+    let fraction: Double           // risk per trade (e.g. 0.01 = 1%)
+    let survivalMultiple: Double   // (1 − fraction)^losses
+
+    /// Fraction of the account lost after the streak (0–1).
+    nonisolated var drawdownPct: Double { 1 - survivalMultiple }
+    /// A streak that costs ≥20% of the account is "steep" — worth a survival warning.
+    nonisolated var isSteep: Bool { drawdownPct >= 0.20 }
+}
+
+enum StockSageRiskOfRuin {
+    /// Account multiple after `losses` consecutive 1R stop-outs at risk `fraction`.
+    /// nil for a non-positive streak or a fraction outside (0, 1).
+    nonisolated static func scenario(losses: Int, fraction: Double) -> DrawdownScenario? {
+        guard losses >= 1, fraction > 0, fraction < 1 else { return nil }
+        return DrawdownScenario(losses: losses, fraction: fraction,
+                                survivalMultiple: pow(1 - fraction, Double(losses)))
+    }
+}
+```
+
 ===== FILE: Salehman AI/StockSage/StockSageEarnings.swift (81 lines) =====
 ```swift
 import Foundation
@@ -9379,7 +9415,7 @@ enum StockSageEarnings {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageExpectedValue.swift (100 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageExpectedValue.swift (224 lines) =====
 ```swift
 import Foundation
 
@@ -9397,6 +9433,37 @@ struct ExpectedValue: Sendable, Equatable {
     let rewardR: Double           // reward:risk
     let evR: Double               // expected R per trade
     nonisolated var isPositive: Bool { evR > 0 }
+}
+
+/// How concentrated the top fast-lane setups are by asset class — the honest check on
+/// chasing velocity (which tends to crowd into one fast-turnover class, e.g. crypto).
+struct FastLaneConcentration: Sendable, Equatable {
+    let dominantClass: String
+    let count: Int        // how many of the top-N are the dominant class
+    let total: Int        // size of the top-N considered
+    nonisolated var isConcentrated: Bool { total >= 2 && count == total }
+}
+
+/// Tunable per-asset-class holding-period assumptions feeding velocity (EV/day), so
+/// the owner can match it to his real holding periods. Defaults equal the original
+/// hardcoded values (crypto 3d, equity 12d) so nothing shifts silently.
+struct VelocityHoldDays: Sendable, Equatable {
+    var crypto: Double
+    var equity: Double
+    nonisolated static let defaults = VelocityHoldDays(crypto: 3, equity: 12)
+}
+
+/// One-glance money-velocity rollup for the top-of-Markets header. Every field is a
+/// value computed by a dedicated, tested helper — this just gathers them.
+struct MoneyVelocitySummary: Sendable, Equatable {
+    let bestSymbol: String?       // highest positive-EV buy
+    let bestEV: Double?
+    let fastestSymbol: String?    // highest EV/day (fast lane)
+    let fastestVelocity: Double?
+    let weeklyR: Double?          // est. weekly R running the top setups
+    let worstRunLosses: Int?      // worst losing streak in the journal (the brake)
+    let worstRunDrawdownPct: Double?  // that streak at the modeled risk % → account drawdown
+    nonisolated var hasContent: Bool { bestSymbol != nil || fastestSymbol != nil || weeklyR != nil }
 }
 
 enum StockSageExpectedValue {
@@ -9419,10 +9486,10 @@ enum StockSageExpectedValue {
     /// Typical hold in days by asset class — crypto turns over fast (24/7), equities
     /// swing. nil for index/FX (not traded for velocity here). A rough default, not
     /// a per-symbol measurement.
-    nonisolated static func expectedHoldDays(forSymbol symbol: String) -> Double? {
+    nonisolated static func expectedHoldDays(forSymbol symbol: String, holds: VelocityHoldDays = .defaults) -> Double? {
         switch StockSageAllocation.assetClass(symbol) {
-        case "Crypto": return 3
-        case "Equity": return 12
+        case "Crypto": return holds.crypto
+        case "Equity": return holds.equity
         default: return nil
         }
     }
@@ -9430,15 +9497,15 @@ enum StockSageExpectedValue {
     /// Velocity = EV ÷ expected hold = expected R PER DAY, so a fast-turnover setup
     /// beats a slow swing of equal EV (more compounding cycles). nil if no EV or no
     /// hold estimate. An estimate on an estimate — the UI says so.
-    nonisolated static func velocity(for idea: StockSageIdea) -> Double? {
-        guard let e = ev(for: idea), let hold = expectedHoldDays(forSymbol: idea.symbol), hold > 0 else { return nil }
+    nonisolated static func velocity(for idea: StockSageIdea, holds: VelocityHoldDays = .defaults) -> Double? {
+        guard let e = ev(for: idea), let hold = expectedHoldDays(forSymbol: idea.symbol, holds: holds), hold > 0 else { return nil }
         return e.evR / hold
     }
 
     /// Ideas ranked by velocity (EV/day) desc; ideas without a velocity fall last (stable).
-    nonisolated static func rankByVelocity(_ ideas: [StockSageIdea]) -> [StockSageIdea] {
+    nonisolated static func rankByVelocity(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults) -> [StockSageIdea] {
         ideas.enumerated().sorted { a, b in
-            switch (velocity(for: a.element), velocity(for: b.element)) {
+            switch (velocity(for: a.element, holds: holds), velocity(for: b.element, holds: holds)) {
             case let (x?, y?): return x == y ? a.offset < b.offset : x > y
             case (_?, nil): return true
             case (nil, _?): return false
@@ -9478,12 +9545,171 @@ enum StockSageExpectedValue {
         .map { (idea: $0.0, ev: $0.1) }
     }
 
+    /// Fast lane: positive-EV ideas that HAVE a velocity (crypto/equity), ranked by
+    /// velocity (EV/day) desc — the fastest-compounding opportunities. Index/FX (no
+    /// hold) and non-positive-EV ideas are excluded. Faster turnover = more cycles
+    /// AND more chances to be wrong; the UI carries that caveat.
+    nonisolated static func fastLane(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults) -> [StockSageIdea] {
+        ideas.enumerated().compactMap { idx, idea -> (Int, StockSageIdea, Double)? in
+            guard let e = ev(for: idea), e.evR > 0, let v = velocity(for: idea, holds: holds) else { return nil }
+            return (idx, idea, v)
+        }
+        .sorted { $0.2 == $1.2 ? $0.0 < $1.0 : $0.2 > $1.2 }
+        .map { $0.1 }
+    }
+
+    /// A heavily-caveated estimate of weekly R IF you actually run AND re-cycle the
+    /// top `maxConcurrent` fast-lane setups: sum of their velocities (EV/day) × trading
+    /// days. nil if the fast lane is empty. NOT a promise — it assumes you take these,
+    /// each carries variance, and it ignores fills/slippage/correlation.
+    nonisolated static func expectedWeeklyR(_ ideas: [StockSageIdea], maxConcurrent: Int = 3, tradingDays: Double = 5,
+                                            holds: VelocityHoldDays = .defaults) -> Double? {
+        let vels = fastLane(ideas, holds: holds).prefix(Swift.max(0, maxConcurrent)).compactMap { velocity(for: $0, holds: holds) }
+        guard !vels.isEmpty else { return nil }
+        return vels.reduce(0, +) * tradingDays
+    }
+
+    /// Account-aware weekly $ estimate: expected weekly R × the dollar value of 1R
+    /// (account × riskFraction). nil without an account, risk, or a non-empty fast
+    /// lane. An ESTIMATE that assumes you take & re-cycle the top setups — NOT income.
+    nonisolated static func expectedWeeklyDollars(_ ideas: [StockSageIdea], account: Double, riskFraction: Double,
+                                                  maxConcurrent: Int = 3, tradingDays: Double = 5,
+                                                  holds: VelocityHoldDays = .defaults) -> Double? {
+        guard account > 0, riskFraction > 0,
+              let wkR = expectedWeeklyR(ideas, maxConcurrent: maxConcurrent, tradingDays: tradingDays, holds: holds) else { return nil }
+        return wkR * account * riskFraction
+    }
+
+    /// A one-glance money-velocity rollup: the best bet now, the fastest-compounding
+    /// setup, and the estimated weekly R — each a value already computed elsewhere,
+    /// composed for a single header. All optional; `hasContent` gates the card.
+    nonisolated static func summary(_ ideas: [StockSageIdea], trades: [TradeRecord] = [],
+                                    fraction: Double = 0.01, holds: VelocityHoldDays = .defaults) -> MoneyVelocitySummary {
+        let best = bestOpportunity(ideas)
+        let fastest = fastLane(ideas, holds: holds).first
+        // The brake: the owner's worst losing streak, compounded down at the risk fraction.
+        let dd = StockSageJournal.equityRisk(trades)
+            .flatMap { StockSageRiskOfRuin.scenario(losses: $0.maxConsecutiveLosses, fraction: fraction) }
+        return MoneyVelocitySummary(
+            bestSymbol: best?.idea.symbol,
+            bestEV: best?.ev.evR,
+            fastestSymbol: fastest?.symbol,
+            fastestVelocity: fastest.flatMap { velocity(for: $0, holds: holds) },
+            weeklyR: expectedWeeklyR(ideas, holds: holds),
+            worstRunLosses: dd?.losses,
+            worstRunDrawdownPct: dd?.drawdownPct)
+    }
+
+    /// A short, ordered, copyable action list built from the summary — best bet, fastest,
+    /// est. weekly, and a hard risk rule. Every line is hedged; it is NOT advice.
+    nonisolated static func playbook(_ s: MoneyVelocitySummary) -> String {
+        var lines = ["Money-velocity playbook — estimates, not advice. Size every entry with a stop."]
+        var n = 1
+        if let sym = s.bestSymbol, let ev = s.bestEV {
+            lines.append("\(n). Best bet now: \(sym) — est. EV \(String(format: "%+.2f", ev))R. Enter only with a defined stop.")
+            n += 1
+        }
+        if let sym = s.fastestSymbol, let v = s.fastestVelocity {
+            lines.append("\(n). Fastest compounding: \(sym) — est. \(String(format: "%+.2f", v))R/day (faster turnover, more variance).")
+            n += 1
+        }
+        if let wk = s.weeklyR {
+            lines.append("\(n). Run the top setups: ~\(String(format: "%+.1f", wk))R/week — an estimate assuming you take and re-cycle them, not income.")
+            n += 1
+        }
+        if let losses = s.worstRunLosses, let dd = s.worstRunDrawdownPct {
+            lines.append("\(n). Risk control: your worst run (\(losses)) at 1%/trade ≈ −\(String(format: "%.1f", dd * 100))%. Keep risk small enough to survive it.")
+            n += 1
+        }
+        lines.append("\(n). Rule: risk ≤1% per trade, always a stop, never chase. Speed compounds only if you stay in the game.")
+        return lines.joined(separator: "\n")
+    }
+
+    /// Concentration of the top fast-lane setups by asset class. Chasing velocity
+    /// (shortest holds) tends to pile into crypto — so the "diversification" of the
+    /// fast lane can be an illusion. `isConcentrated` = the top-N are ALL one class.
+    nonisolated static func fastLaneConcentration(_ ideas: [StockSageIdea], topN: Int = 3,
+                                                  holds: VelocityHoldDays = .defaults) -> FastLaneConcentration? {
+        let top = Array(fastLane(ideas, holds: holds).prefix(Swift.max(0, topN)))
+        guard top.count >= 2 else { return nil }
+        let counts = Dictionary(grouping: top.map { StockSageAllocation.assetClass($0.symbol) }, by: { $0 })
+            .mapValues(\.count)
+        guard let dominant = counts.max(by: { $0.value < $1.value }) else { return nil }
+        return FastLaneConcentration(dominantClass: dominant.key, count: dominant.value, total: top.count)
+    }
+
     nonisolated static let caveat =
         "EV uses an ESTIMATED win probability from conviction (not a real probability) and a −1R loss. It ranks payoff, it doesn't predict it — size with the cap and a stop."
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageGlossary.swift (69 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageGEFlip.swift (62 lines) =====
+```swift
+import Foundation
+
+// MARK: - Grand Exchange flip velocity (gp / hour)
+//
+// The OSRS mirror of the stock side's EV/day "velocity": rank GE flips by gp PER
+// HOUR, not just margin, so a high-buy-limit item that fills fast beats a fat-margin
+// item you can only buy 8 of every 4 hours. A flip buys at the instant-sell price
+// (`low`) and sells at the instant-buy price (`high`); the SELL pays GE tax.
+//
+// Honesty: the buy-limit window and tax rate model OSRS rules, but the GE tax RATE
+// and CAP have changed over the game's history — `rate` is a parameter (default 2%, live since 2025-05-29,
+// matching the rest of this codebase) and the live RuneLite Java side, which talks to
+// the real game, is the source of truth. gp/hour assumes you actually FILL the buy
+// limit each window — real fills depend on volume. Pure + deterministic.
+
+struct GEFlip: Sendable, Equatable, Identifiable {
+    let itemId: Int
+    let name: String
+    let buyPrice: Int        // you buy at the instant-sell price (`low`)
+    let sellPrice: Int       // you sell at the instant-buy price (`high`)
+    let buyLimit: Int        // units per 4-hour GE window
+    let taxPerItem: Int      // GE tax paid on each sale
+    let profitPerItem: Int   // sell − buy − tax
+    let gpPerHour: Double     // profitPerItem × buyLimit ÷ 4h window
+    var id: Int { itemId }
+}
+
+enum StockSageGEFlip {
+    nonisolated static let windowHours = 4.0      // GE buy limits reset every 4 hours
+    nonisolated static let taxCap = 5_000_000     // GE tax is capped per item
+    nonisolated static let taxExemptBelow = 50    // sales under this are tax-free
+    nonisolated static let defaultRate = 0.02     // 2% (live OSRS since 2025-05-29) — a parameter; verify vs current rules
+
+    /// GE sell tax per item: `rate` of the sell price, floored, capped at 5M/item,
+    /// exempt below the threshold.
+    nonisolated static func sellTax(_ sellPrice: Int, rate: Double = defaultRate) -> Int {
+        guard sellPrice >= taxExemptBelow else { return 0 }
+        return Swift.min(Int((Double(sellPrice) * rate).rounded(.down)), taxCap)
+    }
+
+    /// gp/hour for flipping one item: (sell − buy − tax) × buyLimit ÷ 4h window.
+    /// nil if prices/limit are non-positive or there's no profit after tax.
+    nonisolated static func gpPerHour(buy: Int, sell: Int, buyLimit: Int, rate: Double = defaultRate) -> Double? {
+        guard buy > 0, sell > 0, buyLimit > 0 else { return nil }
+        let profit = sell - buy - sellTax(sell, rate: rate)
+        guard profit > 0 else { return nil }
+        return Double(profit) * Double(buyLimit) / windowHours
+    }
+
+    /// Build and rank flips (gp/hour desc) from priced listings. Listings without a
+    /// buy limit, missing prices, or no profit after tax are dropped.
+    nonisolated static func flips(_ listings: [RuneScapeListing], rate: Double = defaultRate) -> [GEFlip] {
+        listings.compactMap { l -> GEFlip? in
+            guard let buy = l.price.low, let sell = l.price.high, let limit = l.item.buyLimit,
+                  let gph = gpPerHour(buy: buy, sell: sell, buyLimit: limit, rate: rate) else { return nil }
+            let tax = sellTax(sell, rate: rate)
+            return GEFlip(itemId: l.item.id, name: l.item.name, buyPrice: buy, sellPrice: sell,
+                          buyLimit: limit, taxPerItem: tax, profitPerItem: sell - buy - tax, gpPerHour: gph)
+        }
+        .sorted { $0.gpPerHour > $1.gpPerHour }
+    }
+}
+```
+
+===== FILE: Salehman AI/StockSage/StockSageGlossary.swift (135 lines) =====
 ```swift
 import Foundation
 
@@ -9495,14 +9721,80 @@ import Foundation
 // surface the structural risks of FX / crypto / index instruments that a single
 // price line hides.
 
+/// The money-velocity vocabulary — each term gets a plain-English explainer that
+/// restates its honest caveat (see `StockSageGlossary.explain`).
+enum MoneyVelocityTerm: String, CaseIterable, Sendable {
+    case ev = "EV"
+    case velocity = "EV / day"
+    case fastLane = "Fast lane"
+    case weeklyR = "Weekly R"
+    case weeklyDollars = "$ / week"
+    case compounding = "Compounding"
+    case drawdownSurvival = "Drawdown survival"
+    case gpPerHour = "gp / hour"
+}
+
+/// The user-facing money-velocity CAPTIONS, centralized so a test can guarantee each
+/// keeps its honest hedge — a structural guard against a future edit silently dropping a
+/// caveat. The views reference these (not inline literals).
+enum MoneyVelocityCopy {
+    nonisolated static let bestOpportunity =
+        "Highest estimated EV among current buy ideas — an estimate from conviction, NOT a forecast. Tap for the full plan; size with a stop and the cap."
+    nonisolated static let fastLane =
+        "Faster turnover = more compounding cycles, but also more chances to be wrong. Estimated EV/day, not a forecast."
+    nonisolated static let summary =
+        "Estimates from conviction & a rough hold — ranks SPEED of payoff, doesn't predict it. Risk control > speed; always size with a stop."
+    nonisolated static let weeklyDollars = "estimate, high variance, NOT income."
+    /// Shared hedge tail for the velocity-history lines (trend + since-last-session).
+    nonisolated static let ownHistory = "your own history, not a forecast."
+    /// Drawdown-brake tail on the summary card.
+    nonisolated static let drawdownBrake = "Size to survive variance."
+    /// The forward growth projection's caveat — the highest-risk honesty surface.
+    nonisolated static let growthProjection = "Assumes your past edge persists — it may not, and real variance lowers this. NOT a prediction."
+    /// Compact tail for the Today-tab "Best bet" stat tile (rendered after the EV figure).
+    nonisolated static let bestBetTile = "EV · estimate"
+    nonisolated static let all: [String] = [bestOpportunity, fastLane, summary, weeklyDollars, ownHistory, drawdownBrake, growthProjection, bestBetTile]
+}
+
 enum StockSageGlossary {
+
+    /// Plain-English explainer for a money-velocity term. Each one names the metric AND
+    /// states why it's an estimate, never a forecast.
+    nonisolated static func explain(_ term: MoneyVelocityTerm) -> String {
+        switch term {
+        case .ev:
+            return "Expected value (R) = pWin·reward − (1−pWin), where pWin is an ESTIMATE mapped from conviction (a conservative 35–58%), not a real probability. It ranks payoff per trade; it does not predict any single outcome."
+        case .velocity:
+            return "Velocity = EV ÷ typical hold = expected R per DAY. A setup that resolves faster compounds more, so it can outrank an equal-EV slower one. Built on an estimated hold — a rough assumption, not a measurement."
+        case .fastLane:
+            return "The positive-EV setups that have a defined velocity (crypto/equity), ranked by EV/day. Faster turnover means more compounding cycles AND more chances to be wrong."
+        case .weeklyR:
+            return "Sum of the top few fast-lane velocities × ~5 trading days — an estimate of weekly R IF you take and re-cycle those setups. High variance; not a promise."
+        case .weeklyDollars:
+            return "Weekly R × the dollar value of 1R (account × risk %). An estimate that assumes you take the top setups — NOT income."
+        case .compounding:
+            return "Your OWN closed-trade R compounded at a fixed risk % per trade, ×(1 + f·R) each. The PAST path of your trades, not a projection of future returns."
+        case .drawdownSurvival:
+            return "k losing trades in a row at risk f shrink the account by (1 − f)^k. The counterweight to velocity: size so a normal losing streak stays survivable — staying in the game is how velocity pays off."
+        case .gpPerHour:
+            return "OSRS flip velocity: (sell − buy − GE tax) × the 4-hour buy limit ÷ 4h = gp per hour. An estimate that assumes you fill the limit; real fills depend on volume."
+        }
+    }
+
+    /// Umbrella ⓘ for the money-velocity surfaces.
+    nonisolated static let moneyVelocityHelp = """
+    Money velocity ranks the SPEED of expected payoff, not just its size — so capital recycles faster and compounds. \
+    Every figure here (EV, EV/day, weekly R, $/week, gp/hour) is an ESTIMATE built on an estimated win-probability and a \
+    rough hold, not a forecast. Compounding shows your PAST path; the drawdown line is the brake. Risk control > speed: \
+    always size with a stop.
+    """
 
     // Per-card help — concise, honest, hover-reveal.
     nonisolated static let analyticsHelp = """
     Sharpe: annualized return per unit of TOTAL volatility — higher = smoother. \
     Sortino: like Sharpe but penalizes only DOWNSIDE volatility (upside swings don't count against you). \
     Calmar: annual return ÷ worst drawdown. VaR95: a daily loss the book exceeds ~1 day in 20 — a routine bad day, NOT a worst case. \
-    Diversification (0–100): 100 = effectively independent holdings, 0 = one concentrated bet (blends average pairwise correlation with how many names you hold). All backward-looking: past behavior, not a prediction.
+    Diversification (0–100): higher = better diversified — it rewards LOW or negative cross-holding correlation and holding more names. Independent (uncorrelated) holdings already score high; only strongly HEDGED, inversely-correlated books approach 100, and 0 = one concentrated bet. All backward-looking: past behavior, not a prediction.
     """
 
     nonisolated static let regimeHelp = """
@@ -9697,7 +9989,7 @@ enum StockSageIndicators {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageJournal.swift (521 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageJournal.swift (566 lines) =====
 ```swift
 import Foundation
 import Combine
@@ -9895,7 +10187,51 @@ struct ExpectancyTrend: Sendable, Equatable {
     nonisolated var delta: Double { recentR - earlyR }
 }
 
+/// A HYPOTHETICAL forward projection of account growth from the measured edge.
+struct GrowthProjection: Sendable, Equatable {
+    let expectancyR: Double   // measured mean R per closed trade
+    let fraction: Double      // risk per trade
+    let trades: Int           // future trades modeled
+    let multiple: Double      // ×(1 + fraction·expectancyR)^trades
+}
+
+/// The account-growth multiple your logged R produced, compounded at a fixed risk %.
+struct CompoundingCurve: Sendable, Equatable {
+    let multiples: [Double]   // running growth multiple after each closed trade
+    let fraction: Double      // risk per trade (e.g. 0.01 = 1%)
+    nonisolated var finalMultiple: Double { multiples.last ?? 1 }
+}
+
 enum StockSageJournal {
+    /// Compounding curve: starting at ×1, each closed trade (by close time) multiplies
+    /// the account by (1 + fraction·R). Clamped at 0 (ruin is absorbing). Pure — this
+    /// is the PAST path of the owner's OWN trades at a fixed risk %, NOT a projection.
+    nonisolated static func compoundingCurve(_ trades: [TradeRecord], fraction: Double = 0.01) -> CompoundingCurve? {
+        let rs = trades.filter { !$0.isOpen }
+            .sorted { ($0.closedAt ?? .distantPast) < ($1.closedAt ?? .distantPast) }
+            .compactMap { $0.realizedR }
+        guard !rs.isEmpty else { return nil }
+        var mult = 1.0
+        var out: [Double] = []
+        out.reserveCapacity(rs.count)
+        for r in rs {
+            mult = Swift.max(0, mult * (1 + fraction * r))
+            out.append(mult)
+        }
+        return CompoundingCurve(multiples: out, fraction: fraction)
+    }
+
+    /// A HYPOTHETICAL forward account multiple: compound the measured expectancy (R/trade)
+    /// over `trades` future trades at risk `fraction` — ×(1 + fraction·expectancyR)^trades.
+    /// nil for non-positive trades/fraction or a wipeout step (1 + f·e ≤ 0). This is NOT a
+    /// prediction — it assumes the past edge persists and ignores variance (which lowers it).
+    nonisolated static func projectGrowth(expectancyR: Double, trades: Int, fraction: Double = 0.01) -> GrowthProjection? {
+        let step = 1 + fraction * expectancyR
+        guard trades > 0, fraction > 0, step > 0 else { return nil }
+        return GrowthProjection(expectancyR: expectancyR, fraction: fraction, trades: trades,
+                                multiple: pow(step, Double(trades)))
+    }
+
     /// Expectancy trend: mean R of the first half vs the most-recent half of closed
     /// trades (by close time). `band` = the flat zone. nil under 6 closed-with-R.
     nonisolated static func expectancyTrend(_ trades: [TradeRecord], band: Double = 0.10) -> ExpectancyTrend? {
@@ -10190,6 +10526,7 @@ final class StockSageJournalStore: ObservableObject {
     var kellyInputs: (winRate: Double, payoffRatio: Double, n: Int)? { StockSageJournal.kellyInputs(trades) }
     var systemHealth: SystemHealth? { StockSageJournal.systemHealth(trades) }
     var expectancyTrend: ExpectancyTrend? { StockSageJournal.expectancyTrend(trades) }
+    var compounding: CompoundingCurve? { StockSageJournal.compoundingCurve(trades) }
 
     func add(_ t: TradeRecord) {
         trades.insert(t, at: 0)
@@ -10738,8 +11075,8 @@ import Foundation
 struct PortfolioAnalytics: Sendable, Equatable {
     let annualizedReturn: Double      // %, compounded
     let annualizedVolatility: Double  // %
-    let sharpe: Double                // (return − rf≈0) ÷ vol
-    let sortino: Double               // return ÷ downside deviation
+    let sharpe: Double?               // (return − rf≈0) ÷ vol; nil = undefined (zero vol)
+    let sortino: Double?              // return ÷ downside deviation; nil = undefined (zero downside)
     let maxDrawdown: Double           // %, positive magnitude (worst peak→trough)
     let calmar: Double                // annualizedReturn ÷ maxDrawdown
     let valueAtRisk95: Double         // %, 1-day historical 95% VaR (positive = a loss)
@@ -10793,9 +11130,9 @@ enum StockSagePortfolioAnalytics {
         let growth = port.reduce(1.0) { $0 * (1 + $1) }
         let annReturn = (growth > 0 ? pow(growth, periodsPerYear / Double(port.count)) - 1 : -1) * 100
 
-        // Zero realized vol → the sample is too uniform to risk-adjust; use the
-        // same positive-return sentinel as Sortino (not a misleading 0).
-        let sharpe = annVol != 0 ? annReturn / annVol : (annReturn > 0 ? 100 : 0)
+        // Zero realized vol → the ratio is UNDEFINED (a divide-by-zero). Report nil so
+        // the UI shows "n/a", not a sentinel that reads as a real (absurd) ratio of 100.
+        let sharpe: Double? = annVol != 0 ? annReturn / annVol : nil
 
         // Sortino — target-downside deviation (MAR = 0): the RMS of min(return, 0)
         // over ALL N observations (the standard definition), NOT only the down days
@@ -10803,7 +11140,7 @@ enum StockSagePortfolioAnalytics {
         let downSq = port.reduce(0) { $0 + Swift.min($1, 0) * Swift.min($1, 0) }
         let downVar = port.isEmpty ? 0 : downSq / Double(port.count)
         let downDev = downVar.squareRoot() * periodsPerYear.squareRoot() * 100
-        let sortino = downDev != 0 ? annReturn / downDev : (annReturn > 0 ? 100 : 0)
+        let sortino: Double? = downDev != 0 ? annReturn / downDev : nil
 
         let maxDD = maxDrawdown(port) * 100
         let calmar = maxDD != 0 ? annReturn / maxDD : 0
@@ -10967,7 +11304,7 @@ enum StockSagePortfolioAnalytics {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSagePositionSizer.swift (37 lines) =====
+===== FILE: Salehman AI/StockSage/StockSagePositionSizer.swift (44 lines) =====
 ```swift
 import Foundation
 
@@ -11004,6 +11341,13 @@ enum StockSagePositionSizer {
             notional: notional,
             pctOfAccount: notional / account * 100,
             riskPerShare: riskPerShare)
+    }
+
+    /// One-line "size it now" summary — shares, $ at risk, % of account — with the
+    /// honesty caveat that this sizes the LOSS at the stop, not a profit.
+    nonisolated static func summaryLine(_ ps: PositionSize, riskPct: Double) -> String {
+        String(format: "%d shares ≈ $%.0f at risk (%.0f%% of acct) at %.1f%%/trade — sizes the LOSS, not a profit promise.",
+               ps.shares, ps.dollarsAtRisk, ps.pctOfAccount, riskPct)
     }
 }
 ```
@@ -12665,6 +13009,128 @@ enum StockSageTrailingStop {
         guard level > 0, level < last else { return nil }
         return TrailingStop(level: level, atr: atr, multiple: multiple,
                             distancePct: (last - level) / last * 100)
+    }
+}
+```
+
+===== FILE: Salehman AI/StockSage/StockSageVelocityHistory.swift (118 lines) =====
+```swift
+import Foundation
+import Combine
+
+// MARK: - Velocity history (is my opportunity set getting faster/fatter?)
+//
+// A tiny rolling daily series of the money-velocity summary's weekly-R estimate, plus
+// a recent-half-vs-early-half trend (the same shape as the journal's expectancy trend).
+// It answers "are the setups the app is surfacing improving over time?" — descriptive
+// of the OPPORTUNITY SET, never a forecast. Pure engine + a persisted @MainActor store.
+
+struct VelocitySnapshot: Codable, Sendable, Equatable {
+    let day: String       // "YYYY-MM-DD" (UTC) — one snapshot per day
+    let weeklyR: Double    // the day's estimated weekly R (top fast-lane setups)
+    // Migration-safe optionals: snapshots persisted before this field decode as nil
+    // (Swift synthesizes decodeIfPresent for optionals).
+    var bestSymbol: String? = nil
+    var fastestSymbol: String? = nil
+}
+
+/// What moved between the two most-recent snapshots — names the new best/fastest if it
+/// changed. Descriptive of the owner's own recorded history, not a forecast.
+struct VelocityChange: Sendable, Equatable {
+    let weeklyRDelta: Double
+    let bestChangedTo: String?
+    let fastestChangedTo: String?
+}
+
+struct VelocityHistoryTrend: Sendable, Equatable {
+    enum Direction: String, Sendable { case rising, flat, fading }
+    let earlyAvg: Double   // mean weekly-R of the first half
+    let recentAvg: Double  // mean weekly-R of the most-recent half
+    let direction: Direction
+    nonisolated var delta: Double { recentAvg - earlyAvg }
+}
+
+enum StockSageVelocityHistory {
+    /// Append today's snapshot (replacing any existing one for the same day), keep the
+    /// series sorted by day, and cap it to the newest `maxDays`. Pure.
+    nonisolated static func record(_ series: [VelocitySnapshot], day: String, weeklyR: Double,
+                                   bestSymbol: String? = nil, fastestSymbol: String? = nil,
+                                   maxDays: Int = 60) -> [VelocitySnapshot] {
+        var out = series.filter { $0.day != day }
+        out.append(VelocitySnapshot(day: day, weeklyR: weeklyR, bestSymbol: bestSymbol, fastestSymbol: fastestSymbol))
+        out.sort { $0.day < $1.day }
+        if out.count > Swift.max(1, maxDays) { out = Array(out.suffix(Swift.max(1, maxDays))) }
+        return out
+    }
+
+    /// What changed between the two most-recent snapshots: the weekly-R delta and the new
+    /// best/fastest symbol IF it changed (nil if unchanged or unknown). nil under 2 snapshots.
+    nonisolated static func changeSinceLast(_ series: [VelocitySnapshot]) -> VelocityChange? {
+        let s = series.sorted { $0.day < $1.day }
+        guard s.count >= 2 else { return nil }
+        let prev = s[s.count - 2], cur = s[s.count - 1]
+        return VelocityChange(
+            weeklyRDelta: cur.weeklyR - prev.weeklyR,
+            bestChangedTo: (cur.bestSymbol != nil && cur.bestSymbol != prev.bestSymbol) ? cur.bestSymbol : nil,
+            fastestChangedTo: (cur.fastestSymbol != nil && cur.fastestSymbol != prev.fastestSymbol) ? cur.fastestSymbol : nil)
+    }
+
+    /// Change in weekly-R from the previous snapshot to the latest — "what changed since
+    /// last session." nil with fewer than 2 snapshots. Descriptive of the owner's own
+    /// recorded history, not a forecast.
+    nonisolated static func lastDelta(_ series: [VelocitySnapshot]) -> Double? {
+        let s = series.sorted { $0.day < $1.day }
+        guard s.count >= 2 else { return nil }
+        return s[s.count - 1].weeklyR - s[s.count - 2].weeklyR
+    }
+
+    /// Recent-half mean vs first-half mean of weekly-R, with a flat band. nil under 4 days.
+    nonisolated static func trend(_ series: [VelocitySnapshot], band: Double = 0.25) -> VelocityHistoryTrend? {
+        let vals = series.sorted { $0.day < $1.day }.map(\.weeklyR)
+        guard vals.count >= 4 else { return nil }
+        let half = vals.count / 2
+        let early = vals.prefix(half), recent = vals.suffix(vals.count - half)
+        let ea = early.reduce(0, +) / Double(early.count)
+        let ra = recent.reduce(0, +) / Double(recent.count)
+        let dir: VelocityHistoryTrend.Direction = (ra - ea) > band ? .rising : ((ra - ea) < -band ? .fading : .flat)
+        return VelocityHistoryTrend(earlyAvg: ea, recentAvg: ra, direction: dir)
+    }
+}
+
+/// Persisted daily velocity history (UserDefaults JSON). One snapshot per UTC day.
+@MainActor
+final class StockSageVelocityHistoryStore: ObservableObject {
+    static let shared = StockSageVelocityHistoryStore()
+    @Published private(set) var series: [VelocitySnapshot] = []
+    private let key = "velocityHistory.v1"
+
+    init() { load() }
+
+    /// Record (or replace) today's snapshot (weekly-R + the day's best/fastest) and persist.
+    func record(weeklyR: Double, bestSymbol: String? = nil, fastestSymbol: String? = nil) {
+        series = StockSageVelocityHistory.record(series, day: Self.dayKey(Date()), weeklyR: weeklyR,
+                                                 bestSymbol: bestSymbol, fastestSymbol: fastestSymbol)
+        save()
+    }
+
+    var trend: VelocityHistoryTrend? { StockSageVelocityHistory.trend(series) }
+    var lastDelta: Double? { StockSageVelocityHistory.lastDelta(series) }
+    var change: VelocityChange? { StockSageVelocityHistory.changeSinceLast(series) }
+
+    nonisolated static func dayKey(_ date: Date) -> String {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        let c = cal.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    private func load() {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let decoded = try? JSONDecoder().decode([VelocitySnapshot].self, from: data) else { return }
+        series = decoded
+    }
+
+    private func save() {
+        if let data = try? JSONEncoder().encode(series) { UserDefaults.standard.set(data, forKey: key) }
     }
 }
 ```
@@ -24989,7 +25455,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (2598 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (2822 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -25006,6 +25472,13 @@ struct MarketsView: View {
     /// Ideas board ordering: by expected value, EV-per-day velocity, or signal rank.
     private enum IdeaSort: String, CaseIterable { case ev = "Expected value", velocity = "EV / day", signal = "Signal rank" }
     @State private var ideaSort: IdeaSort = .ev
+
+    /// Tunable hold-day assumptions feeding velocity (EV/day). Persisted; defaults match
+    /// the engine's (crypto 3d, equity 12d) so nothing shifts until the owner changes it.
+    @AppStorage("velocityCryptoHoldDays") private var cryptoHoldDays = 3.0
+    @AppStorage("velocityEquityHoldDays") private var equityHoldDays = 12.0
+    private var velocityHolds: VelocityHoldDays { VelocityHoldDays(crypto: cryptoHoldDays, equity: equityHoldDays) }
+    @ObservedObject private var velocityHistory = StockSageVelocityHistoryStore.shared
     @ObservedObject private var store = StockSageStore.shared
     @ObservedObject private var portfolio = StockSagePortfolio.shared
     @ObservedObject private var journal = StockSageJournalStore.shared
@@ -25077,6 +25550,10 @@ struct MarketsView: View {
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 8)
                         .animation(DS.Motion.lux.delay(0.06), value: appeared)
+                    moneyVelocityCard
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 8)
+                        .animation(DS.Motion.lux.delay(0.07), value: appeared)
                     sectionPicker
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 8)
@@ -25102,6 +25579,11 @@ struct MarketsView: View {
             // snapshot harness so captures stay deterministic and offline.
             guard !ProcessInfo.processInfo.arguments.contains("--qa") else { return }
             await store.refresh()
+            // Snapshot today's money-velocity (one per UTC day) so the trend can build.
+            let snap = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds)
+            if let wk = snap.weeklyR {
+                velocityHistory.record(weeklyR: wk, bestSymbol: snap.bestSymbol, fastestSymbol: snap.fastestSymbol)
+            }
         }
         .sheet(item: $selectedIdea) { ideaDetailSheet($0) }
     }
@@ -25936,6 +26418,40 @@ struct MarketsView: View {
                     Text(String(format: "Worst losing run: %d · max drawdown −%.2fR (your realized path so far).",
                                 risk.maxConsecutiveLosses, risk.maxDrawdownR))
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    if let dd = StockSageRiskOfRuin.scenario(losses: risk.maxConsecutiveLosses, fraction: 0.01) {
+                        Text(String(format: "Stay in the game: %d 1R stops in a row at 1%%/trade ≈ −%.1f%% to the account — %@",
+                                    dd.losses, dd.drawdownPct * 100,
+                                    dd.isSteep ? "size down; surviving variance is how velocity compounds."
+                                               : "survivable — staying in the game is what lets velocity pay off."))
+                            .font(.caption2)
+                            .foregroundStyle(dd.isSteep ? DS.Palette.warningSoft : .secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .help(StockSageGlossary.explain(.drawdownSurvival))
+                    }
+                }
+                if let comp = journal.compounding, comp.multiples.count >= 2 {
+                    let up = comp.finalMultiple >= 1
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(String(format: "Compounded to ×%.2f at %.0f%%/trade", comp.finalMultiple, comp.fraction * 100))
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
+                        Sparkline(values: comp.multiples)
+                            .stroke(up ? DS.Palette.successSoft : DS.Palette.danger,
+                                    style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                            .frame(height: 26).opacity(0.9)
+                        Text("Your OWN logged R compounded at a fixed risk % — the past path of your trades, NOT a projection of future returns.")
+                            .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .help(StockSageGlossary.explain(.compounding))
+                }
+                if journal.closed.count >= 20,
+                   let proj = StockSageJournal.projectGrowth(expectancyR: journal.edgeStats.expectancyR, trades: 100, fraction: 0.01) {
+                    Text(String(format: "What-if (HYPOTHETICAL): at your measured %+.2fR/trade & 1%%/trade, 100 trades ≈ ×%.2f. %@",
+                                proj.expectancyR, proj.multiple, MoneyVelocityCopy.growthProjection))
+                        .font(.caption2)
+                        .foregroundStyle(proj.multiple >= 1 ? DS.Palette.warningSoft : DS.Palette.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help("A deterministic compounding of your measured average R — it ignores variance and drawdown, which make the real path lower and bumpier. Not advice, not a forecast.")
                 }
                 if let dist = journal.rDistribution, dist.total >= 3 {
                     let maxC = max(dist.bins.map(\.count).max() ?? 1, 1)
@@ -26325,9 +26841,9 @@ struct MarketsView: View {
                     ideaMetric("Ann. return", String(format: "%+.1f%%", a.annualizedReturn),
                                color: a.annualizedReturn >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                     ideaMetric("Volatility", String(format: "%.1f%%", a.annualizedVolatility))
-                    ideaMetric("Sharpe", String(format: "%.2f", a.sharpe),
-                               color: a.sharpe >= 1 ? DS.Palette.successSoft : (a.sharpe >= 0.3 ? .white : DS.Palette.danger))
-                    ideaMetric("Sortino", String(format: "%.2f", a.sortino))
+                    ideaMetric("Sharpe", a.sharpe.map { String(format: "%.2f", $0) } ?? "n/a",
+                               color: a.sharpe == nil ? .secondary : (a.sharpe! >= 1 ? DS.Palette.successSoft : (a.sharpe! >= 0.3 ? .white : DS.Palette.danger)))
+                    ideaMetric("Sortino", a.sortino.map { String(format: "%.2f", $0) } ?? "n/a")
                     Spacer(minLength: 0)
                 }
                 HStack(spacing: 18) {
@@ -26656,6 +27172,7 @@ struct MarketsView: View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
             ideasHeader
             bestOpportunityCard
+            fastLaneStrip
             alertsPanel
             strategyBacktestPanel
             backtestPanel
@@ -26689,7 +27206,7 @@ struct MarketsView: View {
     private var displayedIdeas: [StockSageIdea] {
         switch ideaSort {
         case .ev:       return StockSageExpectedValue.rankByEV(store.ideas)
-        case .velocity: return StockSageExpectedValue.rankByVelocity(store.ideas)
+        case .velocity: return StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds)
         case .signal:   return store.ideas
         }
     }
@@ -26911,7 +27428,15 @@ struct MarketsView: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    Text("Highest estimated EV among current buy ideas — an estimate from conviction, NOT a forecast. Tap for the full plan; size with a stop and the cap.")
+                    if let stop = idea.advice.stopPrice, let acct = Double(sizerAccount), acct > 0,
+                       let rp = Double(sizerRiskPct), rp > 0,
+                       let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
+                        Text("Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp))")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(ps.pctOfAccount > 100 ? DS.Palette.warningSoft : DS.Palette.successSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(MoneyVelocityCopy.bestOpportunity)
                         .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
@@ -26920,6 +27445,171 @@ struct MarketsView: View {
             }
             .buttonStyle(LuxPressStyle())
             .accessibilityLabel("Best opportunity: \(idea.symbol), estimated EV \(String(format: "%.2f", ev.evR)) R")
+        }
+    }
+
+    // Money-velocity summary — one-glance header (best bet · fastest · est. weekly R),
+    // visible across every section. Tappable to the best opportunity's plan.
+    @ViewBuilder private var moneyVelocityCard: some View {
+        let s = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds)
+        if s.hasContent {
+            VStack(alignment: .leading, spacing: 6) {
+            Button {
+                if let best = StockSageExpectedValue.bestOpportunity(store.ideas) { selectedIdea = best.idea }
+            } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bolt.fill").font(.system(size: 12)).foregroundStyle(DS.Palette.accent)
+                        Text("Money velocity — fastest moves now").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                        Spacer()
+                    }
+                    HStack(alignment: .top, spacing: 18) {
+                        if let sym = s.bestSymbol, let ev = s.bestEV {
+                            summaryStat("Best now", sym, String(format: "%+.2fR EV", ev))
+                        }
+                        if let sym = s.fastestSymbol, let v = s.fastestVelocity {
+                            summaryStat("Fastest", sym, String(format: "%+.2fR/day", v))
+                        }
+                        if let wk = s.weeklyR {
+                            summaryStat("Est./week", String(format: "%+.1fR", wk), "if you run top 3")
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    if let acct = Double(sizerAccount), acct > 0, let rp = Double(sizerRiskPct), rp > 0,
+                       let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, holds: velocityHolds) {
+                        Text(String(format: "≈ +$%.0f/week at $%.0f acct, %.1f%% risk — %@", usd, acct, rp, MoneyVelocityCopy.weeklyDollars))
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let d = velocityHistory.lastDelta, abs(d) >= 0.05 {
+                        Text(String(format: "Since last session: weekly-R %@ %.1fR — %@", d >= 0 ? "↑" : "↓", abs(d), MoneyVelocityCopy.ownHistory))
+                            .font(.system(size: 8))
+                            .foregroundStyle(d >= 0 ? DS.Palette.successSoft : DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let ch = velocityHistory.change {
+                        let movers = [ch.bestChangedTo.map { "best → \($0)" }, ch.fastestChangedTo.map { "fastest → \($0)" }].compactMap { $0 }
+                        if !movers.isEmpty {
+                            Text("Mover: \(movers.joined(separator: ", ")) — \(MoneyVelocityCopy.ownHistory)")
+                                .font(.system(size: 8)).foregroundStyle(DS.Palette.accent).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    if let t = velocityHistory.trend {
+                        let rising = t.direction == .rising, fading = t.direction == .fading
+                        HStack(spacing: 5) {
+                            Image(systemName: rising ? "arrow.up.right" : (fading ? "arrow.down.right" : "arrow.right"))
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(rising ? DS.Palette.successSoft : (fading ? DS.Palette.warningSoft : .secondary))
+                            Text(String(format: "Your opportunity set is %@ (recent wk-R %+.1f vs %+.1f early) — %@",
+                                        t.direction.rawValue, t.recentAvg, t.earlyAvg, MoneyVelocityCopy.ownHistory))
+                                .font(.system(size: 8)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            if velocityHistory.series.count >= 2 {
+                                Sparkline(values: velocityHistory.series.map(\.weeklyR))
+                                    .stroke(rising ? DS.Palette.successSoft : (fading ? DS.Palette.warningSoft : DS.Palette.surfaceStroke),
+                                            style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
+                                    .frame(width: 48, height: 14)
+                            }
+                        }
+                    }
+                    if let ddPct = s.worstRunDrawdownPct, let losses = s.worstRunLosses {
+                        Text(String(format: "Brake — your worst run (%d) at 1%%/trade ≈ −%.1f%% to the account. %@", losses, ddPct * 100, MoneyVelocityCopy.drawdownBrake))
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(MoneyVelocityCopy.summary)
+                        .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
+                .background(DS.Palette.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.accent.opacity(0.3), lineWidth: 1))
+            }
+            .buttonStyle(LuxPressStyle())
+            .accessibilityLabel("Money velocity summary; tap for the best opportunity")
+            .help(StockSageGlossary.moneyVelocityHelp)
+            HStack(spacing: 6) {
+                Spacer()
+                Button {
+                    let plan = StockSageExpectedValue.playbook(s)
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(plan, forType: .string)
+                } label: {
+                    Label("Copy plan", systemImage: "doc.on.doc").font(.system(size: 9, weight: .medium))
+                }
+                .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+                .help("Copy a short, caveated money-velocity action list to the clipboard.")
+            }
+            }
+        }
+    }
+
+    private func summaryStat(_ label: String, _ value: String, _ sub: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label.uppercased()).font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
+            Text(value).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white).lineLimit(1)
+            Text(sub).font(.system(size: 8)).foregroundStyle(DS.Palette.successSoft).lineLimit(1)
+        }
+    }
+
+    // Fast lane — the highest-turnover positive-EV setups (fastest compounding).
+    @ViewBuilder private var fastLaneStrip: some View {
+        let lane = StockSageExpectedValue.fastLane(store.ideas, holds: velocityHolds)
+        if lane.count >= 2 {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "hare.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.accent)
+                    Text("Fast lane — fastest compounding").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                    Spacer()
+                }
+                ForEach(lane.prefix(3), id: \.id) { idea in
+                    if let v = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds) {
+                        Button { selectedIdea = idea } label: {
+                            HStack(spacing: 8) {
+                                Text(idea.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                                    .frame(width: 84, alignment: .leading)
+                                Text(String(format: "%+.3fR/day", v)).font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(DS.Palette.successSoft)
+                                if idea.symbol.hasSuffix("-USD") {
+                                    Text("24/7 · volatile").font(.system(size: 8)).foregroundStyle(DS.Palette.warningSoft)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right").font(.system(size: 8)).foregroundStyle(.secondary)
+                            }.contentShape(Rectangle())
+                        }.buttonStyle(LuxPressStyle())
+                    }
+                }
+                if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, holds: velocityHolds) {
+                    Text(String(format: "≈ %+.1fR/week if you run the top %d — estimate, high variance, assumes you take and re-cycle these. Not a promise.", wk, Swift.min(3, lane.count)))
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
+                    if let acct = Double(sizerAccount), acct > 0, let rp = Double(sizerRiskPct), rp > 0,
+                       let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, holds: velocityHolds) {
+                        Text(String(format: "≈ +$%.0f/week at $%.0f account, %.1f%% risk — estimate, high variance, NOT income.", usd, acct, rp))
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds), conc.isConcentrated {
+                    Text("⚠︎ Your top \(conc.total) fastest are all \(conc.dominantClass) — that's closer to ONE bet than \(conc.total); they tend to move together. Diversify or size them as one.")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                }
+                Text(MoneyVelocityCopy.fastLane)
+                    .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 14) {
+                    Text("Hold est:").font(.system(size: 9)).foregroundStyle(.secondary)
+                    Stepper(value: $cryptoHoldDays, in: 1...60, step: 1) {
+                        Text("crypto \(Int(cryptoHoldDays))d").font(.system(size: 9)).foregroundStyle(.white)
+                    }.frame(maxWidth: 132)
+                    Stepper(value: $equityHoldDays, in: 1...180, step: 1) {
+                        Text("equity \(Int(equityHoldDays))d").font(.system(size: 9)).foregroundStyle(.white)
+                    }.frame(maxWidth: 132)
+                    Spacer(minLength: 0)
+                }
+                .help("Typical days you hold each — velocity is EV ÷ hold, so a shorter hold raises EV/day. A rough assumption, not a measurement.")
+            }
+            .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
+            .background(DS.Palette.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.accent.opacity(0.25), lineWidth: 1))
+            .help(StockSageGlossary.explain(.fastLane))
         }
     }
 
@@ -27224,7 +27914,7 @@ struct MarketsView: View {
                             .help(StockSageExpectedValue.caveat)
                     }
                 }
-                if let vel = StockSageExpectedValue.velocity(for: idea) {
+                if let vel = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds) {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "gauge.with.dots.needle.67percent").font(.system(size: 11)).foregroundStyle(.secondary)
                         Text(String(format: "≈ %+.3fR/day velocity (EV ÷ typical hold) — faster turnover compounds faster. An estimate.", vel))
@@ -28586,7 +29276,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/RuneScapeMarketView.swift (331 lines) =====
+===== FILE: Salehman AI/Views/RuneScapeMarketView.swift (370 lines) =====
 ```swift
 import SwiftUI
 
@@ -28768,18 +29458,53 @@ struct RuneScapeMarketView: View {
         if rows.isEmpty {
             emptyState
         } else {
-            VStack(spacing: 1) {
-                ForEach(rows) { listingRow($0) }
-            }
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Bezel.cardFill)
-                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                        .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            VStack(spacing: DS.Space.md) {
+                fastestFlipsStrip
+                VStack(spacing: 1) {
+                    ForEach(rows) { listingRow($0) }
                 }
-            )
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Bezel.cardFill)
+                        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                            .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+                    }
+                )
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            }
+        }
+    }
+
+    // Fastest flips — the GE money-velocity strip: top flips by gp/HOUR (margin × buy
+    // limit ÷ 4h), not raw margin. An estimate that assumes you fill the buy limit.
+    @ViewBuilder private var fastestFlipsStrip: some View {
+        let flips = StockSageGEFlip.flips(rows)
+        if flips.count >= 2 {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "hare.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.warningSoft)
+                    Text("Fastest flips — gp/hour").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                    Spacer()
+                }
+                ForEach(flips.prefix(3)) { flip in
+                    HStack(spacing: 8) {
+                        Text(flip.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                            .lineLimit(1).frame(maxWidth: 150, alignment: .leading)
+                        Text("≈ \(RSFormat.gp(Int(flip.gpPerHour)))/hr")
+                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(DS.Palette.successSoft)
+                        Spacer(minLength: 0)
+                        Text("\(RSFormat.gp(flip.profitPerItem))/ea · ×\(flip.buyLimit.formatted())")
+                            .font(.system(size: 9)).foregroundStyle(.secondary)
+                    }
+                }
+                Text("gp/hour = (margin − GE tax) × buy limit ÷ 4h. An estimate — assumes you fill the limit; real fills depend on volume.")
+                    .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .help(StockSageGlossary.explain(.gpPerHour))
+            }
+            .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
+            .background(DS.Palette.warningSoft.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.warningSoft.opacity(0.25), lineWidth: 1))
         }
     }
 
@@ -28809,6 +29534,10 @@ struct RuneScapeMarketView: View {
                 }
                 if let limit = listing.item.buyLimit {
                     Text("buy limit \(limit.formatted())").font(.caption2).foregroundStyle(.secondary)
+                }
+                if let buy = price.low, let sell = price.high, let limit = listing.item.buyLimit,
+                   let gph = StockSageGEFlip.gpPerHour(buy: buy, sell: sell, buyLimit: limit) {
+                    Text("≈ \(RSFormat.gp(Int(gph)))/hr").font(.caption2).foregroundStyle(DS.Palette.successSoft)
                 }
             }
             Spacer(minLength: 8)
@@ -31776,7 +32505,7 @@ struct TabSwitcherBar: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/TodayView.swift (404 lines) =====
+===== FILE: Salehman AI/Views/TodayView.swift (415 lines) =====
 ```swift
 import SwiftUI
 
@@ -31790,6 +32519,7 @@ struct TodayView: View {
     @ObservedObject private var app = AppState.shared
     @ObservedObject private var scratchpad = ScratchpadStore.shared
     @ObservedObject private var market = MarketStore.shared
+    @ObservedObject private var stockSage = StockSageStore.shared
     /// KnowledgeStore isn't an ObservableObject, so its count is cached and
     /// refreshed whenever this tab becomes active (cheap, no timer).
     @State private var knowledgeCount = 0
@@ -32033,6 +32763,16 @@ struct TodayView: View {
                          detail: market.session.isOpen ? "open now" : "closed",
                          valueAccent: market.session.isOpen ? DS.Palette.successSoft : .white) {
                     app.selectedTab = .markets
+                }
+                // Money-velocity glance: the single best positive-EV bet, if ideas are
+                // loaded. A concise pointer — the full caveats live on the Markets card.
+                if let best = StockSageExpectedValue.bestOpportunity(stockSage.ideas) {
+                    StatTile(icon: "bolt.fill", title: "Best bet",
+                             value: best.idea.symbol,
+                             detail: String(format: "%+.2fR %@", best.ev.evR, MoneyVelocityCopy.bestBetTile),
+                             valueAccent: DS.Palette.accent) {
+                        app.selectedTab = .markets
+                    }
                 }
             }
         }
@@ -39920,6 +40660,77 @@ struct StockSageBacktestTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSageBacktesterTests.swift (67 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Backtester aggregation (pure) — the metrics the owner actually sees.
+// summarize() is exercised directly with synthetic trades; all literals hand-verified.
+
+struct StockSageBacktesterTests {
+
+    /// Only `.r` and `(exitIndex − entryIndex)` matter to summarize; entry/exit are fillers.
+    private func trade(_ r: Double, hold: Int = 1) -> BacktestTrade {
+        BacktestTrade(entryIndex: 0, exitIndex: hold, entry: 100, exit: 100 + r,
+                      r: r, outcome: r > 0 ? .target : .stop)
+    }
+
+    @Test func summarizeAggregatesRMultiples() {
+        // R = [+2, −1, +2, −1]: total 2, avg 0.5, 2 wins / 4 = 50%.
+        // cum 2,1,3,2 → peak 2,2,3,3 → DD 0,1,0,1 → maxDD 1.
+        // sd (Bessel): devs ±1.5 → Σsq 9 / 3 = 3 → √3 ; sharpe 0.5/√3.
+        let r = StockSageBacktester.summarize([trade(2), trade(-1), trade(2), trade(-1)])
+        #expect(r.trades == 4)
+        #expect(r.wins == 2)
+        #expect(abs(r.winRate - 0.5) < 1e-9)
+        #expect(abs(r.totalR - 2) < 1e-9)
+        #expect(abs(r.avgR - 0.5) < 1e-9)
+        #expect(abs(r.avgWinR - 2) < 1e-9)
+        #expect(abs(r.avgLossR - 1) < 1e-9)              // POSITIVE magnitude of the avg loss
+        #expect(abs(r.maxDrawdownR - 1) < 1e-9)
+        #expect(abs(r.sharpe - 0.5 / 3.0.squareRoot()) < 1e-9)
+        #expect(abs(r.avgHoldBars - 1) < 1e-9)
+    }
+
+    @Test func summarizeEmptyAndSingleTradeAreSafe() {
+        #expect(StockSageBacktester.summarize([]) == BacktestResult.empty)
+        let one = StockSageBacktester.summarize([trade(2)])
+        #expect(one.trades == 1)
+        #expect(one.sharpe == 0)                         // <2 trades → no dispersion, not a crash
+        #expect(abs(one.avgWinR - 2) < 1e-9)
+        #expect(one.avgLossR == 0)                       // no losing trades
+        #expect(abs(one.maxDrawdownR) < 1e-9)            // a single win never draws down
+    }
+
+    @Test func significanceThresholdIsTwenty() {
+        #expect(!BacktestResult.empty.isSignificant)
+        #expect(!StockSageBacktester.summarize(Array(repeating: trade(1), count: 19)).isSignificant)
+        #expect(StockSageBacktester.summarize(Array(repeating: trade(1), count: 20)).isSignificant)
+    }
+
+    private func history(_ closes: [Double]) -> StockSagePriceHistory {
+        StockSagePriceHistory(
+            symbol: "X",
+            dates: closes.enumerated().map { Date(timeIntervalSince1970: Double($0.offset) * 86_400) },
+            opens: closes, highs: closes, lows: closes, closes: closes, volumes: closes.map { _ in 0 })
+    }
+
+    @Test func runGuardsInsufficientData() {
+        // n must exceed warmup(200)+5; 10 bars → .empty (no decisions, no crash).
+        #expect(StockSageBacktester.run(history(Array(repeating: 100.0, count: 10))) == BacktestResult.empty)
+    }
+
+    @Test func runOnADowntrendNeverGoesLong() {
+        // The advisor's LONG rules require an uptrend; a strict downtrend (always below
+        // its 200DMA) must never trigger an entry → zero trades.
+        let down = history((0..<260).map { Double(260 - $0) })
+        #expect(StockSageBacktester.run(down).trades == 0)
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSageCorrelationClusterTests.swift (60 lines) =====
 ```swift
 import Testing
@@ -40141,7 +40952,7 @@ struct StockSageEarningsTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageExpectedValueTests.swift (76 lines) =====
+===== FILE: Salehman AITests/StockSageExpectedValueTests.swift (205 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -40198,6 +41009,135 @@ struct StockSageExpectedValueTests {
         #expect(EV.velocity(for: idea("EURUSD=X", conviction: 0.9, stop: 90, target: 130)) == nil)
     }
 
+    @Test func fastLaneEmptyWhenNoVelocity() {
+        // Index/FX have no asset-class hold → no velocity → excluded from every velocity surface.
+        let idx = idea("^GSPC", conviction: 0.9, stop: 90, target: 130)
+        let fx = idea("EURUSD=X", conviction: 0.9, stop: 90, target: 130)
+        #expect(EV.fastLane([idx, fx]).isEmpty)
+        #expect(EV.expectedWeeklyR([idx, fx]) == nil)
+        #expect(EV.fastLaneConcentration([idx, fx]) == nil)
+    }
+
+    @Test func fastLaneRanksByVelocityCryptoFirst() {
+        let equity = idea("AAPL", conviction: 0.9, stop: 90, target: 130)    // EV 1.228, vel 0.1023
+        let crypto = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130) // EV 1.228, vel 0.4093
+        let index = idea("^GSPC", conviction: 0.9, stop: 90, target: 130)    // EV but no velocity → excluded
+        let neg = idea("D", conviction: 0.0, stop: 90, target: 110)          // EV −0.30 → excluded
+        let lane = EV.fastLane([equity, index, neg, crypto])
+        #expect(lane.map(\.symbol) == ["BTC-USD", "AAPL"])                    // crypto first (faster turnover)
+    }
+
+    @Test func expectedWeeklyRSumsTopVelocities() {
+        let equity = idea("AAPL", conviction: 0.9, stop: 90, target: 130)    // vel 1.228/12
+        let crypto = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130) // vel 1.228/3
+        let index = idea("^GSPC", conviction: 0.9, stop: 90, target: 130)    // no velocity → excluded
+        // fast lane = [crypto, equity]; sum = 1.228/3 + 1.228/12; × 5 trading days.
+        let wk = EV.expectedWeeklyR([equity, index, crypto], maxConcurrent: 3, tradingDays: 5)!
+        let expected = (1.228 / 3 + 1.228 / 12) * 5
+        #expect(abs(wk - expected) < 1e-9)
+        #expect(abs(wk - 2.5583333333) < 1e-6)
+        #expect(EV.expectedWeeklyR([index]) == nil)                          // empty fast lane → nil
+        #expect(EV.expectedWeeklyR([crypto], maxConcurrent: 0) == nil)       // no slots → nil (no crash)
+    }
+
+    @Test func expectedWeeklyDollarsScalesWeeklyRByRiskDollar() {
+        let equity = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        let crypto = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
+        // weekly-R = (1.228/3 + 1.228/12)·5 ; $ per 1R = 10000·0.01 = 100.
+        let dollars = EV.expectedWeeklyDollars([equity, crypto], account: 10000, riskFraction: 0.01)!
+        let wkR = (1.228 / 3 + 1.228 / 12) * 5
+        #expect(abs(dollars - wkR * 100) < 1e-6)
+        #expect(abs(dollars - 255.8333333) < 1e-4)
+        #expect(EV.expectedWeeklyDollars([equity, crypto], account: 0, riskFraction: 0.01) == nil)  // no account
+        #expect(EV.expectedWeeklyDollars([], account: 10000, riskFraction: 0.01) == nil)            // empty fast lane
+    }
+
+    @Test func summaryComposesBestFastestAndWeeklyR() {
+        let a = idea("A", action: .buy, conviction: 0.2, stop: 90, target: 120)            // EV 0.188
+        let b = idea("BTC-USD", action: .strongBuy, conviction: 0.9, stop: 90, target: 130) // EV 1.228, vel 1.228/3
+        let s = EV.summary([a, b])
+        #expect(s.bestSymbol == "BTC-USD")                       // highest positive-EV buy
+        #expect(abs((s.bestEV ?? 0) - 1.228) < 1e-9)
+        #expect(s.fastestSymbol == "BTC-USD")                    // highest velocity
+        #expect(abs((s.fastestVelocity ?? 0) - 1.228 / 3) < 1e-9)
+        #expect(s.weeklyR != nil)
+        #expect(s.hasContent)
+        #expect(!EV.summary([]).hasContent)                      // empty → nothing to show
+    }
+
+    @Test func summaryIncludesWorstRunDrawdownBrake() {
+        let b = idea("BTC-USD", action: .strongBuy, conviction: 0.9, stop: 90, target: 130)
+        // 3 closed losers in a row → worst run 3; at 1%/trade → 1 − 0.99^3 = 0.029701.
+        let losers = (0..<3).map { i in
+            TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
+                        openedAt: Date(timeIntervalSince1970: Double(i) * 100),
+                        exitPrice: 95, closedAt: Date(timeIntervalSince1970: Double(i) * 100 + 50))
+        }
+        let s = EV.summary([b], trades: losers)
+        #expect(s.worstRunLosses == 3)
+        #expect(abs((s.worstRunDrawdownPct ?? 0) - (1 - pow(0.99, 3))) < 1e-9)
+        #expect(EV.summary([b]).worstRunDrawdownPct == nil)      // no trades → no brake
+    }
+
+    @Test func velocityRespectsTunableHoldDays() {
+        let crypto = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)   // EV 1.228
+        let base = EV.velocity(for: crypto)!                                   // default crypto 3 → 1.228/3
+        let slower = EV.velocity(for: crypto, holds: VelocityHoldDays(crypto: 6, equity: 12))!  // → 1.228/6
+        #expect(abs(base - 1.228 / 3) < 1e-9)
+        #expect(abs(slower - 1.228 / 6) < 1e-9)
+        #expect(base > slower)                                                 // shorter hold = higher velocity
+        #expect(EV.expectedHoldDays(forSymbol: "BTC-USD") == 3)                // default unchanged
+        #expect(EV.expectedHoldDays(forSymbol: "BTC-USD", holds: VelocityHoldDays(crypto: 6, equity: 12)) == 6)
+    }
+
+    @Test func playbookListsBestFastestWeeklyAndRisk() {
+        let s = MoneyVelocitySummary(bestSymbol: "NVDA", bestEV: 0.74, fastestSymbol: "BTC-USD",
+                                     fastestVelocity: 0.41, weeklyR: 2.6, worstRunLosses: 6, worstRunDrawdownPct: 0.059)
+        let plan = EV.playbook(s)
+        #expect(plan.contains("NVDA"))
+        #expect(plan.contains("BTC-USD"))
+        #expect(plan.contains("+0.74"))
+        #expect(plan.contains("week"))
+        #expect(plan.contains("stop"))                       // honesty: always a stop
+        #expect(plan.lowercased().contains("estimate"))      // honesty: labeled estimate
+        #expect(plan.contains("1.") && plan.contains("2."))  // numbered, ordered
+        // Empty summary → just the header + the risk rule, still honest.
+        let empty = EV.playbook(MoneyVelocitySummary(bestSymbol: nil, bestEV: nil, fastestSymbol: nil,
+                                                     fastestVelocity: nil, weeklyR: nil, worstRunLosses: nil, worstRunDrawdownPct: nil))
+        #expect(empty.contains("stop"))
+        #expect(empty.contains("1."))
+    }
+
+    @Test func fastLaneConcentrationFlagsAllSameClass() {
+        let c1 = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
+        let c2 = idea("ETH-USD", conviction: 0.8, stop: 90, target: 130)
+        let c3 = idea("SOL-USD", conviction: 0.7, stop: 90, target: 130)
+        let conc = EV.fastLaneConcentration([c1, c2, c3])!
+        #expect(conc.dominantClass == "Crypto")
+        #expect(conc.count == 3 && conc.total == 3)
+        #expect(conc.isConcentrated)                     // all 3 fastest are crypto → one bet, not three
+        // Mixed: top fast lane = BTC, ETH (crypto), AAPL (equity) → not all one class.
+        let eq = idea("AAPL", conviction: 0.95, stop: 90, target: 130)
+        let mixed = EV.fastLaneConcentration([c1, eq, c2])!
+        #expect(!mixed.isConcentrated)
+        #expect(EV.fastLaneConcentration([c1]) == nil)   // <2 fast-lane → nil
+    }
+
+    @Test func summaryMatchesStandaloneSurfaces() {
+        // The summary card composes the same helpers the standalone surfaces use — pin
+        // that they never drift (a future change to summary() that diverges goes red).
+        let a = idea("A", action: .buy, conviction: 0.2, stop: 90, target: 120)
+        let b = idea("BTC-USD", action: .strongBuy, conviction: 0.9, stop: 90, target: 130)
+        let c = idea("AAPL", action: .buy, conviction: 0.6, stop: 90, target: 120)
+        let ideas = [a, b, c]
+        let s = EV.summary(ideas)
+        #expect(s.bestSymbol == EV.bestOpportunity(ideas)?.idea.symbol)
+        #expect(s.bestEV == EV.bestOpportunity(ideas)?.ev.evR)
+        #expect(s.fastestSymbol == EV.fastLane(ideas).first?.symbol)
+        #expect(s.fastestVelocity == EV.fastLane(ideas).first.flatMap { EV.velocity(for: $0) })
+        #expect(s.weeklyR == EV.expectedWeeklyR(ideas))
+    }
+
     @Test func bestOpportunityPicksHighestPositiveEVBuy() {
         let a = idea("A", action: .buy, conviction: 0.2, stop: 90, target: 120)        // EV 0.188
         let b = idea("B", action: .strongBuy, conviction: 0.9, stop: 90, target: 130)  // EV 1.228
@@ -40221,7 +41161,56 @@ struct StockSageExpectedValueTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageGlossaryTests.swift (34 lines) =====
+===== FILE: Salehman AITests/StockSageGEFlipTests.swift (45 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - GE flip velocity (pure)
+
+struct StockSageGEFlipTests {
+
+    private func listing(_ id: Int, _ name: String, low: Int, high: Int, limit: Int) -> RuneScapeListing {
+        RuneScapeListing(item: RuneScapeItem(id: id, name: name, examine: "", members: false, buyLimit: limit),
+                         price: RuneScapePrice(high: high, highTime: nil, low: low, lowTime: nil))
+    }
+
+    @Test func gpPerHourUsesMarginTaxAndBuyLimit() {
+        // buy 1000, sell 1100 → tax floor(1100·0.02)=22, profit 78; ×1000 limit ÷ 4h = 19500 gp/h.
+        let gph = StockSageGEFlip.gpPerHour(buy: 1000, sell: 1100, buyLimit: 1000)!
+        #expect(abs(gph - 19500) < 1e-9)
+        #expect(StockSageGEFlip.gpPerHour(buy: 1100, sell: 1000, buyLimit: 1000) == nil)  // no margin after tax
+        #expect(StockSageGEFlip.gpPerHour(buy: 0, sell: 1100, buyLimit: 1000) == nil)     // bad price
+        #expect(StockSageGEFlip.gpPerHour(buy: 1000, sell: 1100, buyLimit: 0) == nil)     // no limit
+    }
+
+    @Test func sellTaxFlooredCappedAndExempt() {
+        #expect(StockSageGEFlip.sellTax(1100) == 22)                  // floor(1100·0.02)=22
+        #expect(StockSageGEFlip.sellTax(49) == 0)                     // below 50 → exempt
+        #expect(StockSageGEFlip.sellTax(5000) == 100)                 // floor(5000·0.02)=100
+        #expect(StockSageGEFlip.sellTax(1_000_000_000) == 5_000_000)  // capped at 5M (cap unchanged)
+    }
+
+    @Test func gpPerHourHandlesHugeBuyLimitWithoutOverflow() {
+        // postTax 78 (2% tax) × 2e9 ÷ 4h — Double math, so no Int overflow and a finite result.
+        let gph = StockSageGEFlip.gpPerHour(buy: 1000, sell: 1100, buyLimit: 2_000_000_000)!
+        #expect(gph.isFinite)
+        #expect(abs(gph - 78.0 * 2_000_000_000 / 4) < 1.0)
+    }
+
+    @Test func flipsRankByGpPerHourDescDroppingLosers() {
+        let a = listing(1, "A", low: 1000, high: 1100, limit: 1000)   // tax 22, profit 78 ×1000/4 = 19500
+        let b = listing(2, "B", low: 100, high: 130, limit: 10000)    // tax floor(2.6)=2, profit 28 ×10000/4 = 70000
+        let c = listing(3, "C", low: 500, high: 490, limit: 1000)     // negative margin → dropped
+        let ranked = StockSageGEFlip.flips([a, c, b])
+        #expect(ranked.map(\.itemId) == [2, 1])                       // B (70000) before A (19500); C gone
+        #expect(ranked.first?.profitPerItem == 28)
+    }
+}
+```
+
+===== FILE: Salehman AITests/StockSageGlossaryTests.swift (65 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -40255,6 +41244,107 @@ struct StockSageGlossaryTests {
     @Test func diversificationHelpMatchesRendered0to100Scale() {
         // UI renders "%.0f / 100"; the tooltip must not claim a 0–1 scale.
         #expect(StockSageGlossary.analyticsHelp.contains("0–100"))
+    }
+
+    @Test func everyMoneyVelocitySurfaceKeepsAnHonestHedge() {
+        // Structural guard: every user-facing money-velocity string must carry a hedge,
+        // so a future edit can't silently turn an estimate into a promise.
+        // NOTE: "surviv" is the STEM so it matches both "survive" and "survivable"
+        // (the drawdown-survival explainer says "survivable" — "survive" alone would miss it).
+        let hedges = ["estimate", "not ", "rough", "hypothetical", "past", "surviv", "variance", "wrong", "assumes"]
+        func hedged(_ s: String) -> Bool { let l = s.lowercased(); return hedges.contains { l.contains($0) } }
+
+        for c in MoneyVelocityCopy.all { #expect(hedged(c)) }
+        for term in MoneyVelocityTerm.allCases { #expect(hedged(StockSageGlossary.explain(term))) }
+        #expect(hedged(StockSageGlossary.moneyVelocityHelp))
+        // A fully-populated playbook must stay hedged too.
+        let plan = StockSageExpectedValue.playbook(
+            MoneyVelocitySummary(bestSymbol: "NVDA", bestEV: 0.7, fastestSymbol: "BTC-USD",
+                                 fastestVelocity: 0.4, weeklyR: 2.5, worstRunLosses: 5, worstRunDrawdownPct: 0.05))
+        #expect(hedged(plan))
+    }
+
+    @Test func everyMoneyVelocityTermHasAnHonestExplainer() {
+        // Each term carries at least one honest hedge — the surfaces must never read as a promise.
+        let hedges = ["estimate", "not ", "past", "rough", "assumes", "variance", "survivable", "wrong"]
+        #expect(MoneyVelocityTerm.allCases.count == 8)
+        for term in MoneyVelocityTerm.allCases {
+            let text = StockSageGlossary.explain(term)
+            #expect(text.count > 40)
+            #expect(hedges.contains { text.lowercased().contains($0) })
+        }
+        #expect(StockSageGlossary.moneyVelocityHelp.count > 80)
+        #expect(StockSageGlossary.moneyVelocityHelp.lowercased().contains("estimate"))
+    }
+}
+```
+
+===== FILE: Salehman AITests/StockSageIndicatorsTests.swift (66 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Technical indicators (pure) — the foundation every signal rests on.
+// All literals hand-verified; see the per-test comments for the derivation.
+
+struct StockSageIndicatorsTests {
+    typealias I = StockSageIndicators
+
+    @Test func smaAveragesLastPeriod() {
+        #expect(I.sma([1, 2, 3, 4, 5], period: 3)! == 4)     // (3+4+5)/3
+        #expect(I.sma([1, 2], period: 3) == nil)             // not enough data
+        #expect(I.sma([], period: 1) == nil)
+    }
+
+    @Test func emaSeedsWithSMAThenSmooths() {
+        // period 2 (k=2/3): seed (1+2)/2 = 1.5; →3·⅔+1.5·⅓ = 2.5; →4·⅔+2.5·⅓ = 3.5.
+        let s = I.emaSeries([1, 2, 3, 4], period: 2)
+        #expect(s.count == 3)
+        #expect(abs(s[0] - 1.5) < 1e-9)
+        #expect(abs(s[1] - 2.5) < 1e-9)
+        #expect(abs(s[2] - 3.5) < 1e-9)
+        #expect(abs(I.ema([1, 2, 3, 4], period: 2)! - 3.5) < 1e-9)
+        #expect(I.ema([1], period: 2) == nil)
+    }
+
+    @Test func rsiHitsExtremesAndMidpoint() {
+        #expect(abs(I.rsi([1, 2, 3, 4], period: 2)! - 100) < 1e-9)   // all up → 100
+        #expect(abs(I.rsi([5, 4, 3, 2], period: 2)! - 0) < 1e-9)     // all down → 0
+        #expect(abs(I.rsi([5, 5, 5, 5], period: 2)! - 50) < 1e-9)    // flat → 50
+        #expect(I.rsi([1, 2], period: 2) == nil)                     // count must exceed period
+    }
+
+    @Test func atrIsWilderTrueRange() {
+        // len 3, period 2 → TR₁ max(3,3,0)=3, TR₂ max(2,0,2)=2 → (3+2)/2 = 2.5.
+        let atr = I.atr(highs: [10, 12, 11], lows: [8, 9, 9], closes: [9, 11, 10], period: 2)!
+        #expect(abs(atr - 2.5) < 1e-9)
+        #expect(I.atr(highs: [1, 2], lows: [0, 1], closes: [1, 1], period: 2) == nil)  // n must exceed period
+    }
+
+    @Test func efficiencyRatioCleanTrendVsChop() {
+        #expect(abs(I.efficiencyRatio([1, 2, 3, 4, 5], period: 4)! - 1) < 1e-9)   // monotonic → 1
+        #expect(abs(I.efficiencyRatio([1, 2, 1, 2, 1], period: 4)! - 0) < 1e-9)   // round-trip → 0 (net 0)
+    }
+
+    @Test func returnOverPeriodIsPercent() {
+        #expect(abs(I.returnOverPeriod([100, 105, 110], period: 2)! - 10) < 1e-9)  // (110−100)/100·100
+        #expect(I.returnOverPeriod([100, 110], period: 2) == nil)                  // count must exceed period
+    }
+
+    @Test func annualizedVolatilityFromLogReturns() {
+        // closes [100,110,100]: rets ±ln(1.1), mean 0, var = 2·ln(1.1)²/(2−1); × √252.
+        let v = I.annualizedVolatility([100, 110, 100])!
+        let expected = (2 * pow(log(1.1), 2)).squareRoot() * Double(252).squareRoot()
+        #expect(abs(v - expected) < 1e-9)
+        #expect(I.annualizedVolatility([100, 110]) == nil)   // needs ≥3 closes
+    }
+
+    @Test func macdHistogramIsMacdMinusSignalAndGuardsShortData() {
+        #expect(I.macd(Array(repeating: 1.0, count: 34)) == nil)   // < slow+signal (26+9=35)
+        let closes = (0..<60).map { 100.0 + Double($0) }           // steady ramp, enough data
+        let m = I.macd(closes)!
+        #expect(abs(m.histogram - (m.macd - m.signal)) < 1e-9)     // histogram is defined as macd − signal
     }
 }
 ```
@@ -40301,7 +41391,7 @@ struct StockSageJournalCSVTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageJournalTests.swift (308 lines) =====
+===== FILE: Salehman AITests/StockSageJournalTests.swift (343 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -40415,6 +41505,41 @@ struct StockSageJournalTests {
                         openedAt: Date(timeIntervalSince1970: Double(i) * 100),
                         exitPrice: 100 + r * 10, closedAt: Date(timeIntervalSince1970: Double(i) * 100 + 50))
         }
+    }
+
+    @Test func projectGrowthCompoundsExpectancyForward() {
+        // expectancy +1R at 10%/trade, 2 trades → (1.1)^2 = 1.21; 3 trades → 1.331.
+        #expect(abs(StockSageJournal.projectGrowth(expectancyR: 1.0, trades: 2, fraction: 0.10)!.multiple - 1.21) < 1e-9)
+        #expect(abs(StockSageJournal.projectGrowth(expectancyR: 1.0, trades: 3, fraction: 0.10)!.multiple - 1.331) < 1e-9)
+        // Negative expectancy shrinks the account: −1R at 10%, 2 trades → 0.9^2 = 0.81.
+        #expect(abs(StockSageJournal.projectGrowth(expectancyR: -1.0, trades: 2, fraction: 0.10)!.multiple - 0.81) < 1e-9)
+        // Guards: no trades, and a wipeout step (1 + 0.01·−200 = −1 ≤ 0) → nil.
+        #expect(StockSageJournal.projectGrowth(expectancyR: 1, trades: 0) == nil)
+        #expect(StockSageJournal.projectGrowth(expectancyR: -200, trades: 2, fraction: 0.01) == nil)
+    }
+
+    @Test func projectGrowthNearWipeoutStaysFiniteAndGuardsZeroStep() {
+        // step = 1 + 0.01·(−99) = 0.01 → ×0.01² = 0.0001 (survives, tiny).
+        #expect(abs(StockSageJournal.projectGrowth(expectancyR: -99, trades: 2, fraction: 0.01)!.multiple - 0.0001) < 1e-12)
+        // step = 1 + 0.01·(−100) = 0 → wipeout guard → nil (no 0^n weirdness).
+        #expect(StockSageJournal.projectGrowth(expectancyR: -100, trades: 2, fraction: 0.01) == nil)
+    }
+
+    @Test func compoundingCurveSingleTrade() {
+        let c = StockSageJournal.compoundingCurve(seq([2]), fraction: 0.01)!
+        #expect(c.multiples.count == 1)
+        #expect(abs(c.finalMultiple - 1.02) < 1e-9)
+    }
+
+    @Test func compoundingCurveCompoundsLoggedR() {
+        // R = [+2, −1, +1] at 1%/trade → ×1.02, then ×1.02·0.99 = ×1.0098,
+        // then ×1.0098·1.01 = ×1.019898.
+        let c = StockSageJournal.compoundingCurve(seq([2, -1, 1]), fraction: 0.01)!
+        #expect(c.multiples.count == 3)
+        #expect(abs(c.multiples[0] - 1.02) < 1e-9)
+        #expect(abs(c.multiples[1] - 1.0098) < 1e-9)
+        #expect(abs(c.finalMultiple - 1.019898) < 1e-9)
+        #expect(StockSageJournal.compoundingCurve([]) == nil)
     }
 
     private func closedInMonth(_ y: Int, _ m: Int, exit: Double) -> TradeRecord {
@@ -40749,6 +41874,32 @@ struct StockSageLiquidityTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSageModelsTests.swift (22 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - StockSage value types (pure) — the shapes the signal engine/monitor read.
+
+struct StockSageModelsTests {
+
+    @Test func quoteChangePercentAndZeroGuard() {
+        #expect(abs(StockSageQuote(price: 110, previousPrice: 100).changePercent - 10) < 1e-9)
+        #expect(abs(StockSageQuote(price: 90, previousPrice: 100).changePercent - (-10)) < 1e-9)
+        // No prior price → 0%, NOT NaN/inf (the divide-by-zero guard that protects alerts/UI).
+        #expect(StockSageQuote(price: 50, previousPrice: 0).changePercent == 0)
+    }
+
+    @Test func symbolLatestIsMostRecentQuote() {
+        let q1 = StockSageQuote(price: 100, previousPrice: 99)
+        let q2 = StockSageQuote(price: 105, previousPrice: 100)
+        #expect(StockSageSymbol(symbol: "X", market: "M", quotes: [q1, q2]).latest == q2)
+        #expect(StockSageSymbol(symbol: "Y", market: "M").latest == nil)   // no quotes → nil, no crash
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSageMultiTimeframeTests.swift (51 lines) =====
 ```swift
 import Testing
@@ -40804,7 +41955,7 @@ struct StockSageMultiTimeframeTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSagePortfolioAnalyticsTests.swift (97 lines) =====
+===== FILE: Salehman AITests/StockSagePortfolioAnalyticsTests.swift (109 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -40871,7 +42022,8 @@ struct StockSagePortfolioAnalyticsTests {
         #expect(abs(a.maxDrawdown - PA.maxDrawdown(rets) * 100) < 1e-6)
         #expect(abs(a.valueAtRisk95 - max(0, -PA.percentile(rets, 0.05) * 100)) < 1e-6)
         #expect(a.annualizedVolatility > 0)
-        #expect(abs(a.sharpe - a.annualizedReturn / a.annualizedVolatility) < 1e-6)
+        #expect(a.sharpe != nil)   // defined here (vol > 0)
+        #expect(abs(a.sharpe! - a.annualizedReturn / a.annualizedVolatility) < 1e-6)
         #expect(a.maxDrawdown > 0)
         #expect(abs(a.calmar - a.annualizedReturn / a.maxDrawdown) < 1e-6)
         // Sortino's downside deviation is normalized over ALL observations (the fix);
@@ -40880,7 +42032,18 @@ struct StockSagePortfolioAnalyticsTests {
         let downSq = rets.reduce(0.0) { $0 + min($1, 0) * min($1, 0) }
         let downDev = (downSq / n).squareRoot() * (252.0).squareRoot() * 100
         #expect(downDev > 0)
-        #expect(abs(a.sortino - a.annualizedReturn / downDev) < 1e-6)
+        #expect(a.sortino != nil)   // defined here (downside > 0)
+        #expect(abs(a.sortino! - a.annualizedReturn / downDev) < 1e-6)
+    }
+
+    @Test func zeroVolatilityYieldsUndefinedSharpeSortino() {
+        // No movement → zero realized vol & zero downside → the ratios are UNDEFINED.
+        // They must be nil (rendered "n/a"), never a sentinel that reads as a real 100.
+        let flat = Array(repeating: 100.0, count: 8)
+        let a = PA.compute(holdings: [(1000, flat)])!
+        #expect(a.annualizedVolatility == 0)
+        #expect(a.sharpe == nil)
+        #expect(a.sortino == nil)
     }
 
     @Test func correlationMatrixIsSymmetricWithUnitDiagonal() {
@@ -41056,7 +42219,7 @@ struct StockSagePortfolioTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSagePositionSizerTests.swift (44 lines) =====
+===== FILE: Salehman AITests/StockSagePositionSizerTests.swift (55 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -41067,6 +42230,17 @@ import Foundation
 struct StockSagePositionSizerTests {
 
     typealias PS = StockSagePositionSizer
+
+    @Test func summaryLineStatesSharesRiskAndHonestyCaveat() {
+        // account 10000 · 1% · entry 100 · stop 90 → risk/share 10, budget 100 → 10 shares, $100 at risk, 10% acct.
+        let ps = PS.size(account: 10000, riskFraction: 0.01, entry: 100, stop: 90)!
+        #expect(ps.shares == 10)
+        #expect(abs(ps.dollarsAtRisk - 100) < 1e-9)
+        let line = PS.summaryLine(ps, riskPct: 1)
+        #expect(line.contains("10 shares"))
+        #expect(line.contains("$100"))
+        #expect(line.lowercased().contains("loss"))      // honesty: sizes the loss
+    }
 
     @Test func sizesToTheRiskBudget() {
         // $10k account, 1% risk = $100 budget; $10 stop distance → 10 shares.
@@ -41308,6 +42482,37 @@ struct StockSageRiskFlagsTests {
         let f = RF.flags(action: .avoid, conviction: 0.3, symbol: "ETH-USD",
                          earnings: imminent(), precheck: nil, regimeIsStale: false, hasRegime: true)
         #expect(f.first?.level == .high)   // Earnings ≤3d ahead of the cautions
+    }
+}
+```
+
+===== FILE: Salehman AITests/StockSageRiskOfRuinTests.swift (27 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Drawdown survival / risk-of-ruin (pure)
+
+struct StockSageRiskOfRuinTests {
+
+    @Test func compoundsLossesDown() {
+        // 5 stop-outs at 1% → ×0.99^5 = 0.9509900499 → ~4.9% down, not steep.
+        let mild = StockSageRiskOfRuin.scenario(losses: 5, fraction: 0.01)!
+        #expect(abs(mild.survivalMultiple - 0.9509900499) < 1e-9)
+        #expect(abs(mild.drawdownPct - 0.0490099501) < 1e-9)
+        #expect(!mild.isSteep)
+        // 3 stop-outs at 10% → ×0.9^3 = 0.729 → 27.1% down, steep.
+        let steep = StockSageRiskOfRuin.scenario(losses: 3, fraction: 0.10)!
+        #expect(abs(steep.survivalMultiple - 0.729) < 1e-9)
+        #expect(abs(steep.drawdownPct - 0.271) < 1e-9)
+        #expect(steep.isSteep)
+    }
+
+    @Test func guardsBadInputs() {
+        #expect(StockSageRiskOfRuin.scenario(losses: 0, fraction: 0.01) == nil)    // no streak
+        #expect(StockSageRiskOfRuin.scenario(losses: 3, fraction: 1.0) == nil)     // fraction ≥ 1
+        #expect(StockSageRiskOfRuin.scenario(losses: 3, fraction: 0.0) == nil)     // fraction ≤ 0
     }
 }
 ```
@@ -42025,6 +43230,71 @@ struct StockSageTrailingStopTests {
         let highs = Array(repeating: 101.0, count: n)
         let lows = Array(repeating: 99.0, count: n)
         #expect(TS.suggest(highs: highs, lows: lows, closes: closes, multiple: 60) == nil)  // 100 − 60×2 < 0
+    }
+}
+```
+
+===== FILE: Salehman AITests/StockSageVelocityHistoryTests.swift (61 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Velocity history (pure)
+
+struct StockSageVelocityHistoryTests {
+
+    private func snaps(_ rs: [Double]) -> [VelocitySnapshot] {
+        rs.enumerated().map { VelocitySnapshot(day: String(format: "2026-06-%02d", $0.offset + 1), weeklyR: $0.element) }
+    }
+
+    @Test func recordReplacesSameDayAndCaps() {
+        var s = StockSageVelocityHistory.record([], day: "2026-06-01", weeklyR: 2.0)
+        s = StockSageVelocityHistory.record(s, day: "2026-06-01", weeklyR: 3.0)   // same day → replace
+        #expect(s.count == 1)
+        #expect(s[0].weeklyR == 3.0)
+        s = StockSageVelocityHistory.record(s, day: "2026-06-02", weeklyR: 4.0, maxDays: 2)
+        s = StockSageVelocityHistory.record(s, day: "2026-06-03", weeklyR: 5.0, maxDays: 2)
+        #expect(s.count == 2)
+        #expect(s.map(\.day) == ["2026-06-02", "2026-06-03"])    // oldest dropped by the cap
+    }
+
+    @Test func changeSinceLastNamesTheMover() {
+        let prev = VelocitySnapshot(day: "2026-06-01", weeklyR: 1.0, bestSymbol: "AAPL", fastestSymbol: "AAPL")
+        let cur = VelocitySnapshot(day: "2026-06-02", weeklyR: 2.5, bestSymbol: "BTC-USD", fastestSymbol: "AAPL")
+        let c = StockSageVelocityHistory.changeSinceLast([prev, cur])!
+        #expect(abs(c.weeklyRDelta - 1.5) < 1e-9)
+        #expect(c.bestChangedTo == "BTC-USD")      // best moved AAPL → BTC-USD
+        #expect(c.fastestChangedTo == nil)         // fastest unchanged (AAPL)
+        #expect(StockSageVelocityHistory.changeSinceLast([prev]) == nil)   // <2 → nil
+    }
+
+    @Test func snapshotDecodesLegacyJSONWithoutSymbols() {
+        // Migration safety: snapshots persisted before the symbol fields must still decode.
+        let legacy = #"{"day":"2026-06-01","weeklyR":2.0}"#.data(using: .utf8)!
+        let s = try! JSONDecoder().decode(VelocitySnapshot.self, from: legacy)
+        #expect(s.weeklyR == 2.0)
+        #expect(s.bestSymbol == nil)
+        #expect(s.fastestSymbol == nil)
+    }
+
+    @Test func lastDeltaIsLatestMinusPrevious() {
+        #expect(abs(StockSageVelocityHistory.lastDelta(snaps([1, 3]))! - 2) < 1e-9)    // 3 − 1
+        #expect(abs(StockSageVelocityHistory.lastDelta(snaps([3, 1]))! - (-2)) < 1e-9) // 1 − 3
+        #expect(StockSageVelocityHistory.lastDelta(snaps([5])) == nil)                 // <2 → nil
+    }
+
+    @Test func trendComparesRecentHalfToEarly() {
+        #expect(StockSageVelocityHistory.trend(snaps([1, 1, 3, 3]))?.direction == .rising)   // 1→3
+        #expect(StockSageVelocityHistory.trend(snaps([3, 3, 1, 1]))?.direction == .fading)   // 3→1
+        #expect(StockSageVelocityHistory.trend(snaps([2, 2, 2, 2]))?.direction == .flat)     // 2→2
+        #expect(StockSageVelocityHistory.trend(snaps([1, 2, 3])) == nil)                     // <4 days
+        // Odd count 5: half=2 → early[first 2]=1, recent[last 3]=3 → rising (no off-by-one crash).
+        #expect(StockSageVelocityHistory.trend(snaps([1, 1, 3, 3, 3]))?.direction == .rising)
+        let t = StockSageVelocityHistory.trend(snaps([1, 1, 3, 3]))!
+        #expect(abs(t.earlyAvg - 1) < 1e-9)
+        #expect(abs(t.recentAvg - 3) < 1e-9)
+        #expect(abs(t.delta - 2) < 1e-9)
     }
 }
 ```
@@ -44953,7 +46223,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7281 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7466 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -51120,6 +52390,191 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Also:** Features review pass-23 (best-opportunity-now + velocity) returned **0 findings** — both clean.
 **Result:** ✅ hardened `tools/typecheck.sh` green. The gate now matches Xcode's concurrency strictness, so this class of error gets caught locally before a build. SOURCE_BUNDLE regenerated. Twenty-five review workflows → **48 confirmed defects fixed**. Committed+pushed the fix so origin/main builds. NEXT: compounding tracker. Autonomous /loop — active-dev.
 
+## 2026-06-21 · NEW FEATURE: Compounding tracker (money velocity)
+**Files:** `StockSage/StockSageJournal.swift` (+`CompoundingCurve`/`compoundingCurve`), `Views/MarketsView.swift` (journal growth line + sparkline), `Salehman AITests/StockSageJournalTests.swift` (+1 test).
+**What & why:** Shows what the owner's edge ACTUALLY did to an account: `compoundingCurve(trades:fraction:)` starts at ×1 and, over closed trades (by close time), multiplies by (1 + fraction·R) per trade (default 1%/trade), clamped at 0 (ruin is absorbing). The journal renders "Compounded to ×N.NN at 1%/trade" + a green growth sparkline of the running multiple — the velocity story made concrete (more positive-R cycles → faster the curve climbs). Honesty: explicitly the PAST path of YOUR OWN trades at a fixed risk %, NOT a projection. 1 test, HAND-VERIFIED: R=[+2,−1,+1] at 1% → ×1.02, ×1.02·0.99=×1.0098, ×1.0098·1.01=×1.019898; empty→nil.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #55 done. 48 big features today (#9–#55). The owner can see his realized R turn into account growth — closing the money-velocity loop from per-trade EV → per-day velocity → compounded result. NEXT: "Fast lane" (highlight crypto/high-turnover); review after ~1 more. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: Fast lane — highest-turnover setups (money velocity)
+**Files:** `StockSage/StockSageExpectedValue.swift` (+`fastLane`), `Views/MarketsView.swift` (strip above the board), `Salehman AITests/StockSageExpectedValueTests.swift` (+1 test).
+**What & why:** Surfaces the fastest-COMPOUNDING opportunities directly. `fastLane(_:)` keeps positive-EV ideas that have a velocity (crypto/equity; index/FX excluded — no hold) and ranks them by EV/day desc, stable on ties. A compact "Fast lane — fastest compounding" strip sits above the ideas board listing the top 3 (symbol · +R/day · "24/7 · volatile" tag for -USD crypto), each tappable to its plan. Honesty: "faster turnover = more compounding cycles, but also more chances to be wrong — estimated EV/day, not a forecast." 1 test, HAND-VERIFIED: BTC-USD (vel 1.228/3≈0.409) ranks before AAPL (1.228/12≈0.102) at equal EV; ^GSPC (no hold → no velocity) and a −0.30-EV buy both excluded → ["BTC-USD","AAPL"].
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #56 done. 49 big features today (#9–#56). **Launching a review workflow** over the 2 unreviewed (compounding + fast-lane). Autonomous /loop — active-dev.
+
+## 2026-06-21 · Features review pass 24 → fixed the 1 confirmed (LOW honesty/cosmetic)
+**Files:** `Views/MarketsView.swift`.
+**What & why:** Review over compounding + Fast-lane confirmed the math/ranking/exclusions/caveats all CLEAN (1 raw finding total) and 1 defect: **[LOW honesty] the compounding disclaimer rendered a doubled `%%`** — that line is a bare `Text("…fixed risk %% —…")` (a LocalizedStringKey, NOT `String(format:)`), and with no interpolation args a literal `%%` shows as two percent signs. Every other no-interpolation `Text` literal in the file uses a single `%`; the `%%` was copied from the `String(format:)` idiom two lines up (which correctly keeps `%%`). → changed to a single `%`. (Compounding math, ruin clamp, close-time ordering, finalMultiple, nil-on-empty, the 1.02/1.0098/1.019898 test literals, and the entire Fast-lane engine/ordering/exclusions all confirmed correct.)
+**Result:** ✅ `tools/typecheck.sh` clean. SOURCE_BUNDLE regenerated. Twenty-six review workflows → **49 confirmed defects fixed**. Same recurring theme: math right, the LABEL needed a one-char fix. NEXT: expected-weekly-R estimate. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: Expected weekly R (heavily-caveated estimate)
+**Files:** `StockSage/StockSageExpectedValue.swift` (+`expectedWeeklyR`), `Views/MarketsView.swift` (line under Fast-lane strip), `Salehman AITests/StockSageExpectedValueTests.swift` (+1 test).
+**What & why:** Puts a tangible — and deliberately hedged — number on the velocity story: `expectedWeeklyR(ideas:maxConcurrent:tradingDays:)` sums the top-`maxConcurrent` (default 3) Fast-lane velocities (EV/day) × `tradingDays` (default 5) → estimated R/week IF you run and re-cycle those setups; nil if the fast lane is empty. The Fast-lane strip shows "≈ +X.XR/week if you run the top 3 — estimate, high variance, assumes you take and re-cycle these. Not a promise." 1 test, HAND-VERIFIED: fast lane [BTC-USD 1.228/3, AAPL 1.228/12], sum 1.228·5/12 × 5 = 2.5583R/wk; ^GSPC (no velocity) excluded; empty lane → nil. Honesty: it explicitly ignores fills/slippage/correlation and is gated behind "if you actually take these," never framed as expected income.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #57 done. 50 big features today (#9–#57). The money-velocity arc now spans single-trade EV → EV/day → fast-lane shortlist → est. weekly R → compounded ×growth — each rung more caveated than the last. NEXT: drawdown-aware "stay in the game" note; review after ~1 more. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: Drawdown "stay in the game" note (velocity counterweight)
+**Files:** `StockSage/StockSageDrawdownScenario.swift` (NEW), `Views/MarketsView.swift` (journal line), `Salehman AITests/StockSageRiskOfRuinTests.swift` (NEW, 2 tests).
+**What & why:** The deliberate counterweight to the money-velocity surfaces — "fastest" must never quietly mean "over-bet." `StockSageRiskOfRuin.scenario(losses:fraction:)` models the account going DOWN: k consecutive 1R stop-outs at risk f shrink it by (1−f)^k; `drawdownPct` = 1−that; `isSteep` ≥20%. The journal ties the owner's OWN worst losing run to a 1%/trade drawdown: "Stay in the game: N 1R stops in a row at 1%/trade ≈ −Y% — survivable / size down." **Caught a name collision:** first draft reused `enum StockSageDrawdown` (already the underwater-curve engine, #24) → would have been an Xcode redeclaration error; renamed to `StockSageRiskOfRuin` (+ separate test struct, since `StockSageDrawdownTests` was also taken). 2 tests, HAND-VERIFIED: 0.99^5=0.9509900499 → 4.9% (not steep); 0.9^3=0.729 → 27.1% (steep); guards (losses 0, fraction 1.0/0.0 → nil).
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #58 done. 51 big features today (#9–#58). Velocity now has its honest brake: the same screen that rewards turnover reminds you to size to survive the streaks. **Launching a review workflow** over the 2 unreviewed (weekly-R + drawdown-note). Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: GE-flip velocity (gp/hour) — the OSRS money-velocity mirror
+**Files:** `StockSage/StockSageGEFlip.swift` (NEW), `Views/RuneScapeMarketView.swift` (per-row gp/hr + "Fastest flips" strip), `Salehman AITests/StockSageGEFlipTests.swift` (NEW, 3 tests).
+**What & why:** Brings money velocity to the OSRS side: rank GE flips by gp PER HOUR, not raw margin, so a high-buy-limit item that fills fast beats a fat-margin item capped at a few buys per window. `gpPerHour = (sell − buy − GE tax) × buyLimit ÷ 4h`; `flips()` builds+ranks from live `RuneScapeListing`s, dropping no-limit/no-margin items. The RuneScape view shows "≈ N gp/hr" per row + a "Fastest flips — gp/hour" strip (top 3, with the "assumes you fill the limit; real fills depend on volume" caveat). **GE tax honesty:** modeled as floor(rate·sell), capped 5M/item, exempt <50 gp — but the RATE/cap have changed across OSRS history, so `rate` is a PARAMETER (default 1%, matching this codebase's existing comment) and the live RuneLite Java side is the source of truth. 3 tests, HAND-VERIFIED: buy 1000/sell 1100 → tax 11, profit 89, ×1000÷4h = 22250 gp/hr; tax 11/0(<50)/50/5M-cap; flips rank B(72500) before A(22250), negative-margin C dropped.
+**Strict-concurrency caught a real one:** the static constants (windowHours/taxCap/…) defaulted to MainActor isolation but are read from nonisolated funcs → marked `nonisolated static let` (exactly the class the hardened gate now catches before Xcode).
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #59 done. 52 big features today (#9–#59). **TODO:** mirror gp/hour into the RuneLite Java plugin (Java can't compile in this sandbox). NEXT: account-aware $/week; review after ~1 more. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: Account-aware $/week (money velocity, heavily caveated)
+**Files:** `StockSage/StockSageExpectedValue.swift` (+`expectedWeeklyDollars`), `Views/MarketsView.swift` (line under Fast-lane strip), `Salehman AITests/StockSageExpectedValueTests.swift` (+1 test).
+**What & why:** Translates the abstract weekly-R into the owner's actual dollars: `expectedWeeklyDollars = expectedWeeklyR × account × riskFraction` (i.e. weekly-R × the $ value of 1R). Gated — nil without an account, risk, or a non-empty fast lane — and it reuses the position-sizer's account + risk % the owner already entered, so it only appears when meaningful. Shows "≈ +$X/week at $A account, Y% risk — estimate, high variance, NOT income." 1 test, HAND-VERIFIED: weekly-R (1.228·5/12·5)=2.5583R × ($10000·0.01=$100/R) = $255.83; account 0 → nil; empty fast lane → nil.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #60 done. 53 big features today (#9–#60). The money-velocity ladder is now fully concrete: best bet → EV → EV/day → fast lane → weekly R → **weekly $** → compounded ×growth, with the drawdown brake alongside. **Launching a review workflow** over the 2 unreviewed (GE-flip + $/week). Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: Money-velocity summary card (one-glance header)
+**Files:** `StockSage/StockSageExpectedValue.swift` (+`MoneyVelocitySummary`/`summary`), `Views/MarketsView.swift` (top-of-tab card + `summaryStat`), `Salehman AITests/StockSageExpectedValueTests.swift` (+1 test).
+**What & why:** The owner's "fastest money" answer at a single glance — a card at the TOP of Markets (right under the regime gauge, visible across Ideas/Portfolio/Journal) showing Best now (sym · EV), Fastest (sym · EV/day), and Est./week (R), tappable straight to the best opportunity's plan. `summary(_:)` is a pure compose of already-tested helpers (bestOpportunity, fastLane, expectedWeeklyR); `hasContent` gates it so it never shows an empty shell. Caveat baked in: "Estimates from conviction & a rough hold — ranks SPEED of payoff, doesn't predict it. Risk control > speed; always size with a stop." 1 test, HAND-VERIFIED: [A 0.188-EV equity, BTC-USD 1.228-EV crypto] → best & fastest both BTC-USD, fastestVelocity 1.228/3, weeklyR non-nil, hasContent; empty → !hasContent.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #61 done. 54 big features today (#9–#61). Open Markets → the single best & fastest money move is the first thing you see, one tap from a sized plan — directly answering "make money the fastest way." NEXT: mirror gp/hour into the RuneLite Java plugin (write, mark unverified); review after ~1 more. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW (Java, ⚠️ UNVERIFIED): gp/hour velocity in the RuneLite plugin
+**Files:** `runelite-plugin/.../FlipItem.java`, `FlipFinder.java`, `SalehmanGeConfig.java`, `SalehmanGePanel.java`, `FlipFinderTest.java`.
+**What & why:** Parity with the macOS app's `StockSageGEFlip` — the OSRS plugin now ranks flips by **gp/hour**, not just margin/potential. `FlipItem.gpPerHour`; `FlipFinder` computes `gpPerHour = potentialProfit / GE_WINDOW_HOURS(4)` and adds a `VELOCITY` comparator; `SortBy.VELOCITY` config option; the panel shows a "gp/hour" + "Buy limit" cell (grid 2×2→3×2); `FlipFinderTest.velocitySortRanksByGpPerHour` pins B(72500) > A(22250) and the exact values. GE tax stays config-driven (`taxPercent` default 1%, `taxCap` 5M, <50 exempt) — matches the existing plugin model and the Swift side.
+**⚠️ UNVERIFIED:** Java does NOT compile in this sandbox (no RuneLite client/Gradle). Changes were cross-read for constructor-arg alignment (new `gpPerHour` arg threaded through the one `new FlipItem(...)` call) and import availability (Locale/GridLayout/GP.format(long) already used in-file), but **must be built with RuneLite before trusting** — the test math is hand-verified (post-tax 89×1000÷4=22250; 29×10000÷4=72500), not executed.
+**Result:** Swift app still ✅ `tools/typecheck.sh` clean (no Swift touched). Task #62 done. 55 features today (#9–#62); both money surfaces (stocks EV/day, OSRS gp/hour) now rank by speed-of-return on BOTH the app and the plugin. NEXT: a Swift money-velocity feature, then a review (covering #61 summary + next; Java mirror = logic-parity review only). Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: Tunable per-asset-class hold-day assumptions (velocity)
+**Files:** `StockSage/StockSageExpectedValue.swift` (+`VelocityHoldDays`, threaded `holds:`), `Views/MarketsView.swift` (persisted setting + Steppers, 7 call sites), `Salehman AITests/StockSageExpectedValueTests.swift` (+1 test).
+**What & why:** Velocity = EV ÷ hold, but the hold was a fixed class default — now the owner can match it to his real holding periods. `VelocityHoldDays{crypto,equity}` (defaults 3/12) is threaded as a **defaulted** `holds:` param through expectedHoldDays/velocity/rankByVelocity/fastLane/expectedWeeklyR/expectedWeeklyDollars/summary, so every existing call site is byte-for-byte unchanged until the owner moves a stepper. MarketsView persists it via `@AppStorage` (cryptoHoldDays/equityHoldDays), exposes compact Steppers in the Fast-lane strip, and passes `velocityHolds` to all 7 velocity call sites — so EV/day, the fast lane, weekly-R/$, and the summary all react live. 1 test, HAND-VERIFIED: crypto hold 3 → 1.228/3, hold 6 → 1.228/6 (shorter hold = higher velocity); defaults unchanged (BTC-USD → 3).
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #63 done. 56 features today (#9–#63). Velocity is no longer a black-box assumption — it's the owner's own number, honestly labelled "a rough assumption, not a measurement." **Launching a review workflow** over the 3 unreviewed: #61 summary card, #62 Java gp/hr mirror (logic-parity only — can't compile), #63 hold-days. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: Money-velocity glossary/explainers + pass-27 clean
+**Files:** `StockSage/StockSageGlossary.swift` (+`MoneyVelocityTerm`/`explain`/`moneyVelocityHelp`), `Views/MarketsView.swift` + `Views/RuneScapeMarketView.swift` (.help surfacing), `Salehman AITests/StockSageGlossaryTests.swift` (+1 test).
+**What & why:** Every money-velocity figure now has a plain-English ⓘ explainer that restates its caveat — so a new reader can't mistake an estimate for a promise. `MoneyVelocityTerm` (8: EV, EV/day, fast lane, weekly-R, $/week, compounding, drawdown survival, gp/hour); `explain(_:)` returns an honest definition for each; `moneyVelocityHelp` is the umbrella. Surfaced as `.help` tooltips on the summary card, fast-lane strip, the journal's compounding + drawdown lines, and the RuneScape fastest-flips strip. 1 test, HAND-VERIFIED: all 8 terms present, each explainer >40 chars and contains a hedge word (estimate/not/past/rough/assumes/variance/survivable/wrong); umbrella mentions "estimate".
+**Also:** Features review pass-27 (summary card + hold-days + Java gp/hour parity) returned **0 findings** — all three clean (incl. the holds: forward-threading and Java↔Swift formula parity).
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #64 done. 57 features today (#9–#64). Twenty-nine review workflows → **49 confirmed defects fixed** (passes 23/25/26/27 all clean). The whole money-velocity system is now self-documenting and honestly hedged at every surface. NEXT: add the drawdown line to the summary card (the brake in the glance). Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: Drawdown brake on the money-velocity summary card
+**Files:** `StockSage/StockSageExpectedValue.swift` (MoneyVelocitySummary + `summary` extended), `Views/MarketsView.swift` (brake line + trades passed), `Salehman AITests/StockSageExpectedValueTests.swift` (+1 test).
+**What & why:** The one-glance card showed only SPEED; now it shows the BRAKE beside it. `summary(ideas:trades:fraction:holds:)` composes the journal's worst losing run (`equityRisk.maxConsecutiveLosses`) through `StockSageRiskOfRuin` at the modeled risk % (default 1%) into `worstRunLosses` + `worstRunDrawdownPct`. The card renders a warning-colored "Brake — your worst run (N) at 1%/trade ≈ −Y% to the account. Size to survive variance." beneath the best/fastest/weekly stats — so the fastest-money glance always carries its risk counterweight. Backward-compatible (trades defaults to []→nil; existing summary test untouched). 1 test, HAND-VERIFIED: 3 closed losers → worstRunLosses 3, drawdownPct 1−0.99^3 = 0.029701; no trades → nil.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #65 done. 58 features today (#9–#65). The summary card is now a complete honest picture: best bet, fastest, est. weekly, AND what a normal losing streak costs — speed never shown without survival. NEXT: review after ~1 more (covering #64 glossary + #65 brake); then velocity-history trend. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: Velocity-history trend (are my opportunities improving?)
+**Files:** `StockSage/StockSageVelocityHistory.swift` (NEW: pure engine + persisted store), `Views/MarketsView.swift` (record + trend line/sparkline), `Salehman AITests/StockSageVelocityHistoryTests.swift` (NEW, 2 tests).
+**What & why:** Tracks whether the OPPORTUNITY SET is improving over time. `StockSageVelocityHistory.record` keeps one daily `VelocitySnapshot{day,weeklyR}` (dedup per UTC day, sorted, capped to 60), and `trend` compares the recent half's mean weekly-R to the early half (0.25R band → rising/flat/fading, nil <4 days) — same shape as the journal's expectancy trend. A `@MainActor StockSageVelocityHistoryStore` persists it as UserDefaults JSON; the Markets `.task` records today's weekly-R after a refresh. The summary card shows a rising/flat/fading arrow + "your opportunity set is X (recent wk-R … vs … early) — your own history, not a forecast" + a small sparkline. 2 tests, HAND-VERIFIED: record replace+cap → [06-02,06-03]; [1,1,3,3]→rising (early 1, recent 3, Δ2), [3,3,1,1]→fading, [2,2,2,2]→flat, 3 days→nil.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #66 done. 59 features today (#9–#66). The money-velocity system now has memory — the owner can see if the setups are getting faster/fatter, honestly framed as his own history. **Launching a review workflow** over the 3 unreviewed: #64 glossary, #65 drawdown brake, #66 velocity-history. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: Money-velocity playbook (copyable) + pass-28 clean
+**Files:** `StockSage/StockSageExpectedValue.swift` (+`playbook`), `Views/MarketsView.swift` ("Copy plan" button), `Salehman AITests/StockSageExpectedValueTests.swift` (+1 test).
+**What & why:** Turns the one-glance summary into a short, ordered, COPYABLE action list — best bet now (sym + EV + "with a stop"), fastest compounding (sym + EV/day), run-the-top-setups weekly-R (labeled "not income"), your worst-run risk-control line, and a hard rule: "risk ≤1% per trade, always a stop, never chase. Speed compounds only if you stay in the game." Header says "estimates, not advice." A "Copy plan" button on the summary card writes it to the clipboard (card wrapped in a VStack so the secondary button sits outside the tappable card). 1 test, HAND-VERIFIED: contains NVDA/BTC-USD/+0.74/week/stop/estimate and numbered lines; an empty summary still yields the header + risk rule (+ "stop"/"1.").
+**Also:** Features review pass-28 (glossary #64 + drawdown brake #65 + velocity-history #66) returned **0 findings** — all clean (incl. the first-half/recent-half split on odd counts, the JSON persistence round-trip, and every glossary hedge).
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #67 done. 60 features today (#9–#67). Thirty review workflows → **49 confirmed defects fixed** (passes 23/25/26/27/28 all clean). The whole money-velocity system now exports a one-tap honest plan. NEXT: PROJECT_CONTEXT.md refresh documenting the money-velocity system. Autonomous /loop — active-dev.
+
+## 2026-06-21 · DOCS: PROJECT_CONTEXT.md — money-velocity system documented
+**Files:** `PROJECT_CONTEXT.md` (+ section 10).
+**What & why:** Per the "keep the knowledge base current" directive, added a "Markets money-velocity system" section so an external reader stays correct. Documents every new engine (StockSageExpectedValue: EV/velocity/fastLane/best-now/weekly-R/$-week/summary/playbook + VelocityHoldDays; StockSageGEFlip; StockSageRiskOfRuin/DrawdownScenario; StockSageVelocityHistory + store; MoneyVelocityTerm glossary), the surfaces (summary card, fast lane, best-now, RuneScape gp/hr, the ⚠️ UNVERIFIED Java mirror), the honesty floor, the test files, and the strict-concurrency gate. **Verified all 9 referenced source/test paths exist** (no stale refs). No code touched → no typecheck needed.
+**Result:** Docs accurate. 61 increments today (#9–#68; #68 = docs). The whole money-velocity system is now captured in the canonical context doc. NEXT: back to Swift features — "size-it-now" prefill from the best opportunity into the position sizer. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: "Size it now" on the best-opportunity card
+**Files:** `StockSage/StockSagePositionSizer.swift` (+`summaryLine`), `Views/MarketsView.swift` (inline line), `Salehman AITests/StockSagePositionSizerTests.swift` (+1 test).
+**What & why:** Shortest path from "best bet" to "exact order size." The best-opportunity card now shows an inline "Size it now: N shares ≈ $X at risk (Y% of acct) at Z%/trade — sizes the LOSS, not a profit promise." computed from the idea's entry (price) + stop via the already-pure-and-tested `StockSagePositionSizer.size`, using the sizer's entered account + risk %. New pure helper `summaryLine(_:riskPct:)` formats it with the honesty caveat; turns warning-colored when the notional would exceed the account (needs leverage). 1 test, HAND-VERIFIED: $10k·1%·entry 100·stop 90 → 10 shares, $100 at risk, line contains "10 shares"/"$100"/"loss".
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #68 done (label #69). 62 increments today (#9–#69). The owner can read the best bet AND the exact share count in one glance, honestly framed as sizing the loss. NEXT: forward "what-if" account-growth projection (hypothetical, journal's own expectancy, heavily caveated) + review after ~1 more. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: Forward "what-if" growth projection (HYPOTHETICAL)
+**Files:** `StockSage/StockSageJournal.swift` (+`GrowthProjection`/`projectGrowth`), `Views/MarketsView.swift` (caveated journal line), `Salehman AITests/StockSageJournalTests.swift` (+1 test).
+**What & why:** The forward complement to the (past-path) compounding tracker — but loudly labeled HYPOTHETICAL. `projectGrowth(expectancyR:trades:fraction:)` = ×(1 + fraction·expectancyR)^trades; nil for trades≤0, fraction≤0, or a wipeout step (1+f·e ≤ 0). The journal (gated ≥20 closed trades) shows "What-if (HYPOTHETICAL): at your measured +X.XXR/trade & 1%/trade, 100 trades ≈ ×N.NN. Assumes your past edge persists — it may not, and real variance lowers this. NOT a prediction." 1 test, HAND-VERIFIED: +1R@10%×2 → 1.1^2=1.21; ×3 → 1.331; −1R@10%×2 → 0.9^2=0.81; trades 0 → nil; expectancyR −200@1% (step −1) → nil.
+**Honesty:** deliberately the deterministic mean-path compounding — the help text states it ignores variance/drawdown (which make the real path lower and bumpier), it's warning/danger colored, and it's framed "not advice, not a forecast." The owner gets the optimistic ceiling AND the reasons it's a ceiling.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #69 done (label #70). 63 increments today (#9–#70). **Launching a review workflow** over the 2 unreviewed (size-it-now + growth projection) — esp. the projection's honesty floor. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: Fast-lane concentration warning + pass-29 clean
+**Files:** `StockSage/StockSageExpectedValue.swift` (+`FastLaneConcentration`/`fastLaneConcentration`), `Views/MarketsView.swift` (warning on the fast-lane strip), `Salehman AITests/StockSageExpectedValueTests.swift` (+1 test).
+**What & why:** The honest counter to the fast lane's own bias — chasing velocity (shortest holds) crowds into crypto, so the "diversification" of a 3-name fast lane can be an illusion. `fastLaneConcentration` groups the top-N fast-lane setups by asset class; `isConcentrated` = they're ALL one class. The strip then warns "⚠︎ Your top 3 fastest are all Crypto — that's closer to ONE bet than 3; they tend to move together. Diversify or size them as one." 1 test, HAND-VERIFIED: BTC/ETH/SOL → Crypto, count 3/total 3, concentrated; BTC/ETH/AAPL (top lane crypto,crypto,equity) → not concentrated; <2 fast-lane → nil.
+**Also:** Features review pass-29 (size-it-now #68 + forward growth projection #69) → 1 raw, **0 confirmed** (adversarially rejected); independently confirmed the projection carries all four caveats (HYPOTHETICAL / assumes-edge-persists / variance-lowers / not-a-prediction). Both clean.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #70 done (label #71). 64 increments today (#9–#71). Thirty-one review workflows → **49 confirmed defects fixed** (passes 23/25/26/27/28/29 clean). The fastest-money surface now tells you when "fast" has quietly become "all-in on one thing." NEXT: summary-card $/week parity, or a caveat-presence test sweep. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW: Caveat-presence test sweep (structural honesty guard)
+**Files:** `StockSage/StockSageGlossary.swift` (+`MoneyVelocityCopy`), `Views/MarketsView.swift` (3 captions → constants), `Salehman AITests/StockSageGlossaryTests.swift` (+1 sweep test).
+**What & why:** Makes the honesty floor ENFORCEABLE, not just a convention. Centralized the three inline money-velocity captions (best-opportunity, fast-lane, summary) into `MoneyVelocityCopy` static constants — the views now reference them instead of inline literals. New test `everyMoneyVelocitySurfaceKeepsAnHonestHedge` sweeps `MoneyVelocityCopy.all` + all 8 glossary explainers + `moneyVelocityHelp` + a fully-populated `playbook` and asserts each contains at least one hedge word (estimate/not/rough/hypothetical/past/survive/variance/wrong/assumes). So if a future edit (mine or another AI's) deletes a caveat from any of these surfaces, the test goes red. HAND-VERIFIED each swept string has a hedge (best-opp "estimate/NOT", fast-lane "Estimated/wrong", summary "Estimates", umbrella "ESTIMATE", playbook "estimates").
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #71 done (label #72). 65 increments today (#9–#72). The honesty floor is now partly self-policing — the captions can't silently become promises. NEXT: summary-card $/week parity. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW: Summary-card $/week parity + "since last session" delta
+**Files:** `StockSage/StockSageVelocityHistory.swift` (+`lastDelta`), `StockSage/StockSageGlossary.swift` (+`MoneyVelocityCopy.weeklyDollars`), `Views/MarketsView.swift` (2 summary-card lines), `Salehman AITests/StockSageVelocityHistoryTests.swift` (+1 test).
+**What & why:** Two summary-card enhancements. (1) **$/week parity** with the fast-lane line: when an account + risk % are set, the card adds "≈ +$X/week at $A acct, Y% risk — estimate, high variance, NOT income" (reusing `expectedWeeklyDollars`; the hedged tail is the new `MoneyVelocityCopy.weeklyDollars` constant, so it's covered by the caveat sweep). (2) **"Since last session"**: new pure `StockSageVelocityHistory.lastDelta` (latest − previous snapshot weekly-R; nil <2; ≥0.05R to show) renders "Since last session: weekly-R ↑/↓ XR — your own history, not a forecast." 1 test, HAND-VERIFIED: [1,3]→+2, [3,1]→−2, [5]→nil.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #72 done (label #73). 66 increments today (#9–#73). The summary card now shows dollars AND momentum-since-last-open, both honestly hedged (the $/week tail is sweep-guarded). **Launching a review workflow** over the 3 unreviewed Swift bits (#71 concentration, #72 copy/sweep, #73 $/week+delta). Autonomous /loop — active-dev.
+
+## 2026-06-21 · Features review pass 30 → fixed BOTH confirmed (1 HIGH test-bug, 1 LOW test-gap)
+**Files:** `Salehman AITests/StockSageGlossaryTests.swift`, `StockSage/StockSageGlossary.swift`, `Views/MarketsView.swift`.
+**What & why:** Review over concentration + copy/sweep + $/week-delta confirmed the MATH/units/signs all clean, and caught 2 real issues — **both in the new honesty-guard machinery itself**:
+- **[HIGH test-bug] my own caveat-sweep test was RED.** `everyMoneyVelocitySurfaceKeepsAnHonestHedge` listed the hedge `"survive"`, but the drawdown-survival explainer's only hedge is **"survivable"** — and `"survive"` is NOT a substring of `"surviv-a-ble"`. So `hedged(explain(.drawdownSurvival))` returned false → the test would FAIL the moment the suite runs (it only "passed" because typecheck can't execute tests — the exact lesson-learned trap). → changed the token to the **stem `"surviv"`** so it matches both "survive" and "survivable". Re-derived all 8 explainers against the corrected list: all green.
+- **[LOW test-gap] the since-last-session + trend lines used inline hedge literals** the sweep couldn't see — a future edit could strip "not a forecast" and still pass. → hoisted the shared tail into `MoneyVelocityCopy.ownHistory` (added to `.all`), and both lines now reference it, so the sweep guards them.
+**Result:** ✅ `tools/typecheck.sh` clean. SOURCE_BUNDLE regenerated. Thirty-two review workflows → **51 confirmed defects fixed**. The honesty guard is now actually green (not assumed-green) and covers the velocity-history captions. Sharp irony worth keeping: the adversarial review's best catch this pass was a bug in the honesty-guard test I'd just written to prevent honesty bugs — measurement over claim, again. NEXT: highest-value remaining money-velocity item. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: "Name the mover" (velocity history remembers symbols)
+**Files:** `StockSage/StockSageVelocityHistory.swift` (snapshot + change), `Views/MarketsView.swift` (record symbols + mover line), `Salehman AITests/StockSageVelocityHistoryTests.swift` (+2 tests).
+**What & why:** "Since last session" could only say weekly-R moved; now it NAMES what changed. `VelocitySnapshot` gains **migration-safe optional** `bestSymbol`/`fastestSymbol` (snapshots persisted before today decode to nil via synthesized `decodeIfPresent` — important, there's already live UserDefaults history). `record` threads them; new `VelocityChange` + `changeSinceLast` report the new best/fastest IF it changed between the two latest snapshots. The Markets `.task` records the day's summary symbols, and the card shows "Mover: best → BTC-USD — your own history, not a forecast" (reusing the sweep-guarded `ownHistory` tail). 2 tests, HAND-VERIFIED: best AAPL→BTC-USD names it / fastest unchanged → nil / delta 1.5 / single → nil; **legacy JSON `{"day":…,"weeklyR":2.0}` decodes with nil symbols** (migration proof).
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #73 done (label #74). 67 increments today (#9–#74). The summary card now tells the owner not just THAT his opportunity set shifted but WHICH symbol took over — still strictly his own recorded history. NEXT: review after ~1 more, or the research/methodology note. Autonomous /loop — active-dev.
+
+## 2026-06-21 · DOCS: Money-velocity methodology + limitations note
+**Files:** `MARKETS_INTELLIGENCE_RESEARCH.md` (+ §9).
+**What & why:** An honest research note documenting the money-velocity methodology AND its limits, so the math is transparent and never mistaken for precision. Covers EV (conviction→35–58% win-prob band, −1R loss model), velocity (EV÷class hold), fast lane/weekly-R/$, compounding (past path) vs growth projection (hypothetical mean path), drawdown survival, gp/hour — then a LIMITATIONS section: estimates-not-forecasts, pWin is conviction-mapped not measured, hold-days are rough class defaults, variance/volatility-drag makes real sequences finish lower, the correlation illusion (velocity crowds into crypto), OSRS GE tax/cap have changed (Java UNVERIFIED here), not investment advice. Points to the engines + PROJECT_CONTEXT §10. Docs-only (confirmed no code edits this tick); cited engine files all exist.
+**Result:** 68 increments today (#9–#75; #75 docs). The owner — or any future reader — now has the full honest methodology in one place. **Launching a review workflow** over #74 name-the-mover (+ a skim of this note for any overclaim). Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: Today-tab best-bet tile + pass-31 clean
+**Files:** `Views/TodayView.swift`.
+**What & why:** Surfaces the fastest move WITHOUT opening Markets. The Today "AT A GLANCE" row now includes a "Best bet" StatTile (⚡ icon, value = the highest positive-EV idea's symbol, detail "+X.XXR EV · estimate", tap → Markets), gated on ideas being loaded AND the Markets tab not hidden. Reuses `StockSageExpectedValue.bestOpportunity` (EV-based, hold-independent — so no tunable-holds needed here). It's a concise pointer: the inline "estimate" is the hedge and the full caveats live one tap away on the Markets summary card. No new pure logic → no new test (UI reuse of a tested helper).
+**Also:** Features review pass-31 (#74 name-the-mover migration Codable + the methodology note) → 1 raw, **0 confirmed** (adversarially rejected); the legacy-JSON decode and the note's formulas-vs-code were verified sound.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #75 done (label #76). 69 increments today (#9–#76). The owner sees the best bet from the home screen the moment markets are loaded. NEXT: review #75/#76 with the next Swift feature, or refine coverage. Autonomous /loop — active-dev.
+
+## 2026-06-21 · HARDENING: caveat sweep now guards the projection + drawdown-brake captions
+**Files:** `StockSage/StockSageGlossary.swift` (+2 MoneyVelocityCopy constants), `Views/MarketsView.swift` (2 lines → constants), `Salehman AITests/StockSageExpectedValueTests.swift` (+1 edge-case).
+**What & why:** Closes the LOW guard-gap pass-30 flagged: the two HIGHEST-risk inline honesty captions weren't sweep-covered. Hoisted the **hypothetical growth-projection** caveat ("Assumes your past edge persists — it may not, and real variance lowers this. NOT a prediction.") and the **drawdown brake** ("Size to survive variance.") into `MoneyVelocityCopy.growthProjection`/`.drawdownBrake`, added both to `.all`, and wired the MarketsView lines to them — so `everyMoneyVelocitySurfaceKeepsAnHonestHedge` now fails if either loses its hedge. HAND-VERIFIED both substring-match the sweep stems (growthProjection: assumes/past/variance/"not "; drawdownBrake: "surviv"/variance). +1 edge-case test: `expectedWeeklyR(maxConcurrent: 0)` → nil (the `Swift.max(0,…).prefix` boundary, no crash).
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #76 done (label #77). 70 increments today (#9–#77). The growth projection — the single surface where an overclaim would do the most damage — is now structurally prevented from silently shedding its "not a prediction" hedge. NEXT: review #75/#76/#77 batch, or another hardening pass. Autonomous /loop — active-dev.
+
+## 2026-06-21 · Features review pass 32 → fixed the 1 confirmed (MEDIUM test-gap)
+**Files:** `StockSage/StockSageGlossary.swift` (+`MoneyVelocityCopy.bestBetTile`), `Views/TodayView.swift`.
+**What & why:** Review over the Today tile + the sweep hardening confirmed the hardening is correct (every `.all` string genuinely hedge-matches; no divergent inline copy left on the Markets lines) and caught 1 defect — **the Today best-bet tile I added last tick used an inline "estimate" hedge not in `MoneyVelocityCopy.all`**, so the sweep couldn't guard it (a future edit could strip "· estimate", turning "+1.23R EV (est.)" into a bare fact, and the test would still pass green). Same coverage-gap pattern I'd just fixed for the Markets captions — reintroduced in the new tile. → added `MoneyVelocityCopy.bestBetTile = "EV · estimate"` to `.all` (hedge "estimate" ✓) and built the tile detail from it (`%+.2fR %@`) — renders identically, now sweep-guarded. (Reviewer confirmed the EV source, nil-gating, no-force-unwrap, and tap-nav were all sound.)
+**Result:** ✅ `tools/typecheck.sh` clean; tile renders "+X.XXR EV · estimate" unchanged. SOURCE_BUNDLE regenerated. Thirty-four review workflows → **52 confirmed defects fixed**. Lesson reinforced: every new money-velocity caption must go through `MoneyVelocityCopy` + `.all`, or the honesty guard has a blind spot. NEXT: edge-case engine audit. Autonomous /loop — active-dev.
+
+## 2026-06-21 · HARDENING: money-velocity engine edge-case regression tests + audit
+**Files:** `Salehman AITests/StockSageGEFlipTests.swift`, `StockSageJournalTests.swift`, `StockSageExpectedValueTests.swift` (+5 tests).
+**What & why:** With the feature surface saturated, pinned the boundary behavior of the money-velocity engines with 5 regression tests (numerically hand-verified, no fudged literals): (1) GE `gpPerHour` with a 2,000,000,000 buy limit stays **finite** (Double math, no Int overflow) — 4.45e10; (2) `projectGrowth(-99R, 2, 1%)` → ×0.0001 (near-wipeout survives) and `-100R` → step 0 → **nil** (wipeout guard, no 0^n weirdness); (3) `compoundingCurve` single trade → ×1.02; (4) `fastLane` / `expectedWeeklyR` / `fastLaneConcentration` all **empty/nil** when ideas are only index/FX (no velocity). Also launched an adversarial **money-velocity-edge-audit** workflow (4 engines) hunting empty/single/negative/overflow/NaN/tie bugs.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #77 done (label #78). 72 increments today (#9–#78). The boundaries that the per-feature reviews touched lightly are now explicitly locked by tests, so a future refactor that breaks a guard goes red. Audit findings (if any) → fixed next tick. Autonomous /loop — active-dev.
+
+## 2026-06-21 · Edge audit CLEAN + coherence/odd-count regression tests
+**Files:** `Salehman AITests/StockSageExpectedValueTests.swift`, `StockSageVelocityHistoryTests.swift` (+2 tests).
+**What & why:** The adversarial **money-velocity-edge-audit** (4 engine groups, boundary hunt: empty/single/negative/overflow/NaN/ties) returned **0 raw, 0 confirmed** — the EV/velocity/fast-lane/weekly, GE gp/hour, risk-of-ruin/history, and compounding/projection engines are boundary-sound. Added two consolidation regression tests: (1) **coherence cross-check** — `summary(ideas)`'s bestSymbol/bestEV/fastestSymbol/fastestVelocity/weeklyR must equal the standalone `bestOpportunity`/`fastLane.first`/`expectedWeeklyR` outputs, so the composed summary card can never silently drift from the individual surfaces it summarizes; (2) **odd-count trend** — `trend([1,1,3,3,3])` (5 days → half 2, early[2] avg 1 / recent[3] avg 3, Δ2) → rising, pinning the half/suffix split has no off-by-one. Both hand-verified (the odd split re-derived: early [1,1]→1, recent [3,3,3]→3).
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #78 done (label #79). 73 increments today (#9–#79). The money-velocity engines are now audited clean AND regression-locked on their boundaries and cross-surface coherence. Thirty-five review/audit workflows, 52 confirmed defects fixed. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW: Indicators engine test suite (foundation, was untested)
+**Files:** `Salehman AITests/StockSageIndicatorsTests.swift` (NEW, 8 tests).
+**What & why:** Surveyed the non-money-velocity engines for the highest-value coverage gap → `StockSageIndicators` (SMA/EMA/RSI/MACD/ATR/efficiency-ratio/vol/return) — the math under EVERY advisor signal and the backtester — had **no dedicated tests**. The code is already TOTAL (nil on insufficient data, no NaN paths) so there was no bug to fix; the value is locking the math with hand-verified known values so a future refactor can't silently break a signal. 8 tests: sma (3+4+5)/3=4; emaSeries [1,2,3,4]@2 → [1.5,2.5,3.5] (SMA-seed then k=⅔ smooth); rsi all-up→100 / all-down→0 / flat→50; atr Wilder TR [3,2]→2.5; efficiencyRatio monotonic→1 / round-trip→0; returnOverPeriod 10%; annualizedVolatility (±ln1.1 → var 2·ln1.1², ×√252) matches the closed form to **4.4e-16**; macd histogram == macd−signal + the <35-bar guard. Every literal numerically re-derived (ema/atr/vol cross-checked).
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #79 done (label #80). 74 increments today (#9–#80). The signal foundation is now regression-locked alongside the money-velocity engines. NEXT: another non-money-velocity coverage/robustness target (e.g. StockSageBacktester or StockSageRegime tests), reviewed periodically. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW: Backtester aggregation test suite (honesty-critical metrics)
+**Files:** `StockSage/StockSageBacktester.swift` (summarize private→internal test seam), `Salehman AITests/StockSageBacktesterTests.swift` (NEW, 3 tests).
+**What & why:** The backtester is the honesty check on the whole "ideas" feature — its no-look-ahead is structurally enforced by `Array(closes[0...i])` slicing (entry fills at i+1's open) and was sound on read. The untested part was `summarize`, which produces the numbers the owner SEES (win rate, expectancy, drawdown, Sharpe). Opened it private→internal (documented test seam) and pinned the math with synthetic trades: R=[+2,−1,+2,−1] → trades 4 / wins 2 / winRate .5 / total 2 / avg .5 / avgWinR 2 / avgLossR 1 (positive magnitude) / maxDD 1 / **sharpe 0.5÷√3 = 0.2886751** / avgHold 1 — every literal python-verified. Plus empty→`.empty`, single-trade→sharpe 0 / no drawdown / avgLossR 0 (no crash on <2 trades), and the isSignificant ≥20 threshold (19→false, 20→true).
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #80 done (label #81). 75 increments today (#9–#81). The two most load-bearing "what to buy" engines — indicators and backtester aggregation — are now both regression-locked. NEXT: regime gauge or signal-engine coverage; review the indicators+backtester suites. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW: Models tests + backtester run-level coverage (engine hardening ~complete)
+**Files:** `Salehman AITests/StockSageModelsTests.swift` (NEW, 2 tests), `StockSageBacktesterTests.swift` (+2 run-level tests).
+**What & why:** Closed the last clean pure-engine coverage gaps. `StockSageModels` (0 tests): `StockSageQuote.changePercent` (+10 / −10 / **zero-prev guard → 0, not NaN/inf** — protects alerts & UI) + `StockSageSymbol.latest` (last / empty→nil). Backtester `run` (only `summarize` was tested): `runGuardsInsufficientData` (10 bars < warmup+5 → `.empty`) + `runOnADowntrendNeverGoesLong` (a strict 260-bar decline → the long-only advisor never enters → 0 trades — a behavioral guard that doubles as a no-look-ahead sanity, since it exercises the real walk-forward via crafted StockSagePriceHistory). Survey corrected: StockSageRegime + StockSageSignalEngine were ALREADY well-tested (a `comm` name-mismatch had mislisted them).
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). Task #81 done (label #82). 76 increments today (#9–#82). The load-bearing "what to buy" engines — indicators, backtester (summarize + run), regime, signal-engine, models — are now ALL regression-locked. Remaining untested files are not cleanly unit-testable (Monitor = @MainActor notifications, ScreenAnalysis = unwired, QuoteService/Briefing = network/LLM I/O). **Launching a review** over the new non-money-velocity suites — focus: is any pinned literal WRONG? Autonomous /loop — active-dev.
+
+## 2026-06-21 · TWO large parallel audits (23 agents, ~1.1M tok) → 3 honesty fixes
+**Files:** `StockSage/StockSagePortfolioAnalytics.swift`, `Views/MarketsView.swift`, `StockSage/StockSageGlossary.swift`, `Salehman AITests/StockSagePortfolioAnalyticsTests.swift` (+1 test).
+**Why:** Owner asked to "work harder" (use the weekly limit) → ran two big adversarial workflows over the WHOLE Markets/StockSage system: a 12-area engine deep-audit and an 8-surface UI honesty audit. Both re-derived the math and verified findings; **the vast majority of the system checked out** (Bessel n−1, geometric annualization with the growth>0 guard, Sortino RMS-over-N, VaR percentile/sign, beta cov/var, correlation clamp, alignByDate UTC bucketing, rp/100 percent→fraction, %% escaping, every gate/caveat). **3 confirmed defects, all LOW honesty/label-drift:**
+1. **[engine] Zero-vol Sharpe/Sortino sentinel.** When realized vol (or downside) is exactly 0, the ratio is UNDEFINED but the code substituted `100`, which the UI rendered as a green "100.00" reading as a real (absurd) ratio. → made `sharpe`/`sortino` `Double?` (nil when undefined); UI shows "n/a" with neutral color; +regression test (flat closes → both nil).
+2. **[UI] Weekly-R caption "top 3" with only 2 setups.** The fast-lane strip shows when ≥2 setups exist and the figure sums `min(3, count)` velocities, but the caption hardcoded "top 3". → "top \(min(3, lane.count))".
+3. **[UI] Diversification ⓘ overclaim.** Help said "100 = effectively independent holdings", but the engine maps independence (corr≈0) to ~65; 100 needs avgCorr=−1 (inversely-correlated/hedged). → reworded honestly (kept the "0–100" the test asserts).
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 37 review/audit workflows total, **55 confirmed defects fixed**. The two audits confirm the trading math is sound and tightened the last honesty edges before the owner trades real money through it. Autonomous /loop — active-dev (heavy verification mode per owner request).
+
+## 2026-06-21 · RuneLite plugin deep audit (19 agents, 768k tok) → 11 findings, 9 fixed + 1 TODO
+**Files:** `runelite-plugin/.../SalehmanGeConfig.java`, `FlipFinder.java`, `FlipItem.java`, `GrandExchangeApi.java`, `SalehmanGePlugin.java`, `FlipFinderTest.java`, `runelite-plugin/LICENSE` (NEW); Swift mirror `StockSage/StockSageGEFlip.swift` + `RuneScape/RuneScapeModels.swift` + `Salehman AITests/StockSageGEFlipTests.swift`.
+**🔴 HIGH — GE sell tax was 1%, live OSRS is 2% since 2025-05-29** (web-verified; per-item cap unchanged at 5M). At the default config the plugin AND the macOS RuneScape view overstated every flip's post-tax margin / ROI / gp-hour out of the box, and the config description asserted the wrong rate was "the default." → default `taxPercent` 1→2 + honest description; `StockSageGEFlip.defaultRate` 0.01→0.02; FlipFinder javadoc + RuneScapeModels comment updated; **BOTH test suites re-pinned to 2% (all literals python-verified):** Swift sellTax 1100→22 / 5000→100, gpPerHour 22250→19500, flip profit 29→28, huge-limit 78×2e9/4; Java geTax(100)=2, velocity 72500→70000 / 22250→19500.
+**MEDIUM — added a BSD 2-Clause LICENSE** (Plugin Hub rejects submissions without one).
+**LOW (9 confirmed total, all addressed):** FlipItem.ageSeconds doc said "freshest" but the code uses the OLDEST leg → corrected; `panel` made `volatile` + the refresh worker now guards `p == panel` so a late result can't mutate a detached panel after shutDown(); mapping parse wraps `JsonSyntaxException`→`IOException` (honest "parse" vs "connectivity" error) and skips `id ≤ 0` entries (gson defaults missing id to 0 → key-0 collision); `@Range` bounds on taxPercent/taxCap/minMargin (negative values were inverting the tax math). **Deferred (tracked TODO for the next RuneLite build):** #10 — replace the per-click raw `Thread` with the injected executor (a bigger concurrency refactor; low harm — manual button, short-lived thread).
+**⚠️ JAVA UNVERIFIED:** none of the Java compiles in this sandbox — changes were cross-read for correctness (imports, types, arg order) but MUST be built with RuneLite before trusting. Swift side ✅ `tools/typecheck.sh` clean.
+**Result:** 38 review/audit workflows, **64 confirmed defects fixed**. The OSRS money math is now correct at the live 2% tax on BOTH surfaces, and the plugin is materially closer to Plugin-Hub-submittable. Autonomous /loop — heavy verification mode (owner: "work harder").
+
+## 2026-06-21 · Security/secrets audit CLEAN + docs corrected to 2% GE tax
+**Files:** `PROJECT_CONTEXT.md`, `MARKETS_INTELLIGENCE_RESEARCH.md`.
+**What & why:** Ran a 6-agent security/secrets audit (deterministic grep pre-sweep + adversarial flow analysis) → **0 raw, 0 confirmed**. Verified: API keys live ONLY in the macOS Keychain (`LLM/KeychainStore.swift`), are sent as Authorization HEADERS (never URL query params), and never reach a log/print/error string/UserDefaults/SOURCE_BUNDLE; `.auto` is local-first and no free mode silently calls a paid API (the NVIDIA-NIM free-DeepSeek route is free-tier). The previously-exposed DeepSeek key was already removed from source (2026-06-12). **Secrets posture VERIFIED CLEAN.** Also fixed the canonical docs' stale "GE tax default 1%" → "2% (live since 2025-05-29)" to match the code fix.
+**Result:** 39 review/audit workflows, 64 confirmed defects fixed (security added 0 — clean). Committed + pushed the full body. Autonomous /loop — heavy verification mode.
+
 ---
 
 ## Standing notes / known issues
@@ -54475,7 +55930,7 @@ The current app is macOS. The same cloud brain can back an **iOS** build of this
 SwiftUI app (shared code, add an iOS target) distributed via **TestFlight** — ask and
 I'll scaffold the iOS target.
 
-===== FILE: MARKETS_INTELLIGENCE_RESEARCH.md (129 lines) =====
+===== FILE: MARKETS_INTELLIGENCE_RESEARCH.md (178 lines) =====
 # Markets Intelligence — research & design (what to buy, when, how much, when to sell)
 
 **Owner goal (2026-06-20):** make Salehman AI's Markets tab tell *me* what to buy,
@@ -54595,6 +56050,55 @@ to lose. So **detect the regime first, then pick the signal**:
    hit-rate / max-drawdown / Sharpe, never a cherry-picked curve.
 7. **Alerts** — notify when a strong setup appears or a stop is breached.
 
+## 9. Money velocity — methodology & limitations (2026-06-21)
+
+The owner's directive was to surface the *fastest* way to compound, honestly. "Velocity"
+means **expected payoff per unit of TIME**, not just per trade — because a setup that
+resolves sooner frees the capital to redeploy, which is what actually compounds. The
+formulas below are deliberately simple and **transparent**; their value is in ranking and
+in forcing risk discipline, NOT in precision.
+
+**Methodology**
+- **Expected value (EV, in R).** `EV = pWin·rewardR − (1−pWin)·1`, modeling a loss as a
+  −1R stop-out. `rewardR` = reward:risk = |target−entry| / |entry−stop|. `pWin` is an
+  *estimate* mapped from the advisor's conviction into a deliberately conservative band
+  (**35% → 58%**); conviction is NOT a measured probability, so the band is narrow and the
+  UI says "estimate."
+- **Velocity (EV/day).** `EV ÷ expected hold days`, where the hold is a per-asset-class
+  default (crypto ≈ 3d, equity ≈ 12d; index/FX excluded) the owner can tune. A faster
+  setup can outrank an equal-EV slower one.
+- **Fast lane / weekly-R / weekly-$.** The positive-EV, has-velocity setups ranked by
+  EV/day; the top few summed × ~5 trading days ≈ weekly R; × account × risk% ≈ weekly $.
+  All gated behind "if you actually take and re-cycle them."
+- **Compounding (PAST).** `×∏(1 + f·Rᵢ)` over the owner's own CLOSED trades at a fixed
+  risk fraction f — the realized path of his edge, clamped at 0 (ruin absorbs).
+- **Growth projection (HYPOTHETICAL).** `×(1 + f·expectancyR)^N` forward — the optimistic
+  mean path; labeled not-a-prediction.
+- **Drawdown survival.** `×(1−f)^k` for k consecutive 1R stop-outs — the brake: chasing
+  velocity must never become over-betting.
+- **GE flip velocity (OSRS).** `(sell − buy − GE tax) × 4h buy limit ÷ 4h = gp/hour`.
+
+**Limitations (read these before trusting any number)**
+- Every figure is an **estimate or a backward-looking path**, never a forecast. EV ranks
+  payoff; it does not predict any single outcome.
+- **pWin is conviction-mapped, not measured.** If the advisor's conviction is miscalibrated,
+  EV/velocity/weekly-R are all off by the same bias. Treat them as relative rankings.
+- **Hold-day assumptions are rough class defaults**, not per-symbol measurements — velocity
+  is only as good as that assumption (now tunable).
+- **Variance & volatility drag.** The forward projection and weekly-R are mean paths; real
+  sequences with the same average return finish LOWER and bumpier. Single numbers hide this.
+- **Correlation illusion.** Velocity crowds into one fast-turnover class (crypto), so a
+  "diversified" fast lane can be one bet — surfaced by the concentration warning.
+- **OSRS GE tax/cap have changed over time**; the rate is a parameter (default 2%, live since 2025-05-29) and the
+  live RuneLite plugin is the source of truth. The Swift↔Java parity is logic-checked but
+  the Java side is UNVERIFIED here (no compiler).
+- **Not investment advice.** Risk control > signal; size every entry with a stop.
+
+Implementation: `StockSageExpectedValue`, `StockSageGEFlip`, `StockSageRiskOfRuin`,
+`StockSageVelocityHistory`, `StockSageJournal` (compounding/projection),
+`MoneyVelocityCopy`/`StockSageGlossary` (the caveats, guarded by a sweep test). See
+`PROJECT_CONTEXT.md` §10 for the file map.
+
 ## Sources
 - [Time-Series Momentum — historical evidence (Alpha Architect)](https://alphaarchitect.com/time-series-momentum-aka-trend-following-the-historical-evidence/) · [Moskowitz, Ooi, Pedersen, "Time series momentum" (ScienceDirect)](https://www.sciencedirect.com/science/article/pii/S0304405X11002613) · [Value and Momentum Everywhere (NYU Stern PDF)](https://pages.stern.nyu.edu/~lpederse/papers/ValMomEverywhere.pdf)
 - [RSI & MACD effectiveness (ResearchGate)](https://www.researchgate.net/publication/392317792_Analysis_of_the_Effectiveness_of_RSI_and_MACD_Indicators_in_Addressing_Stock_Price_Volatility) · [RSI vs MACD (LiteFinance)](https://www.litefinance.org/blog/for-beginners/best-technical-indicators/rsi-vs-macd/)
@@ -54709,7 +56213,7 @@ QA audit at commit `910a5d61` fails 2 surfaces, both Chat B's: `chat_narrow` (co
 — real geo issue in `ContentView` narrow layout) and `settings` (0.34% baselineDiff — likely needs
 `qa.sh --adopt`). Not Chat C's lane; flagged for re-verify.
 
-===== FILE: PROJECT_CONTEXT.md (302 lines) =====
+===== FILE: PROJECT_CONTEXT.md (348 lines) =====
 # 🧠 PROJECT_CONTEXT — Salehman AI (complete handoff knowledge base)
 
 > ## 📌 READ ME FIRST — instructions for any AI (Grok, Claude, …) or person
@@ -55011,6 +56515,52 @@ _Keep this file current. Last refreshed: 2026-06-05._
 
 ### Effort Control
 The Effort control in Salehman AI/Intelligence/Effort.swift provides runtime-adjustable reasoning depth, token budget, and computational effort for the intelligence layer. It enables the orchestrator (and agents) to scale effort per-task — low for quick factual answers, high for complex multi-step reasoning or self-critique. This is a core Phase 1 deliverable for quality-over-quantity intelligence.
+
+## 10. Markets money-velocity system (2026-06-21)
+
+A cohesive "what should I do to make money the fastest, honestly?" layer over the Markets
+tab + the RuneLite OSRS plugin. Owner directive: surface the highest-velocity (fastest
+expected payoff per unit time) opportunities — **with a hard honesty floor**: every number
+is an ESTIMATE or a PAST/own-history path, never a forecast; risk control > signal; each
+surface carries its caveat. All engines are pure + `nonisolated` + unit-tested (hand-verified
+literals); the gate is `tools/typecheck.sh` (now `-strict-concurrency=complete`, matching Xcode —
+it cannot run tests, so test arithmetic is verified by hand and by adversarial review workflows).
+
+### Engines (`Salehman AI/StockSage/`)
+- **`StockSageExpectedValue.swift`** — the core. `ExpectedValue` + `ev(…)` = pWin·rewardR − (1−pWin),
+  where pWin is an ESTIMATE mapped from conviction into a conservative 35–58% band (`winProbEstimate`).
+  `expectedHoldDays`/`velocity` (EV ÷ hold = EV/day), `rankByEV`, `rankByVelocity`, `fastLane`
+  (positive-EV + has-velocity, ranked by EV/day), `bestOpportunity` (highest positive-EV buy; nil if none),
+  `expectedWeeklyR` (top-N velocities × ~5 days), `expectedWeeklyDollars` (× account × risk %),
+  `summary` → `MoneyVelocitySummary` (best/fastest/weekly + worst-run drawdown brake), `playbook`
+  (copyable ordered action list). `VelocityHoldDays` (tunable per-class hold; defaults crypto 3 / equity 12)
+  is a defaulted `holds:` param threaded through every velocity function (defaults preserve behavior).
+- **`StockSageGEFlip.swift`** — OSRS flip velocity: `gpPerHour = (sell − buy − GE tax) × buyLimit ÷ 4h`,
+  `sellTax` (floor(rate·sell), 5M cap, <50 exempt; rate a parameter, default 2% — live OSRS since 2025-05-29), `flips` ranks listings.
+- **`StockSageDrawdownScenario.swift`** — `StockSageRiskOfRuin.scenario` → `DrawdownScenario`: k 1R stop-outs
+  at risk f shrink the account by (1−f)^k; `isSteep` ≥20%. The velocity counterweight ("stay in the game").
+  (Named `RiskOfRuin` to avoid colliding with the existing `StockSageDrawdown` underwater-curve engine.)
+- **`StockSageVelocityHistory.swift`** — `VelocitySnapshot`/`record`/`trend` (recent-half vs early-half
+  weekly-R, rising/flat/fading, nil <4 days) + `@MainActor StockSageVelocityHistoryStore` (UserDefaults JSON,
+  one snapshot per UTC day, capped 60). "Your own history, not a forecast."
+- **`StockSageGlossary.swift`** — `MoneyVelocityTerm` (8 terms) + `explain(_:)` plain-English explainers,
+  each restating its honest hedge (enforced by a test); `moneyVelocityHelp` umbrella. Surfaced as ⓘ tooltips.
+- Drawdown/streak inputs come from the existing `StockSageJournal` (`equityRisk`, `compoundingCurve`).
+
+### Surfaces
+- **`Views/MarketsView.swift`** — top-of-tab **money-velocity summary card** (best · fastest · est. weekly ·
+  history trend+sparkline · drawdown brake · **Copy plan**); the **Ideas** board's 3-way sort (EV / EV-per-day /
+  signal), the **"Best opportunity now"** card, the **"Fast lane"** strip (EV/day + weekly-R + $/week + tunable
+  hold-day Steppers), per-idea EV badge + detail-sheet EV/EV-day lines; journal compounding ×growth +
+  drawdown survival lines. `@AppStorage` persists the hold-day assumptions.
+- **`Views/RuneScapeMarketView.swift`** — per-row "≈ N gp/hr" + a "Fastest flips — gp/hour" strip.
+- **RuneLite Java plugin (`runelite-plugin/…`, ⚠️ UNVERIFIED — cannot compile here):** `FlipItem.gpPerHour`,
+  `FlipFinder` gp/hour + `VELOCITY` comparator, `SortBy.VELOCITY`, panel gp/hour + buy-limit cells. Mirrors
+  `StockSageGEFlip`; must be built with RuneLite before trusting. GE tax stays config-driven (default 2%, live since 2025-05-29).
+
+Tests: `StockSageExpectedValueTests`, `StockSageRiskOfRuinTests`, `StockSageGEFlipTests`,
+`StockSageVelocityHistoryTests`, `StockSageGlossaryTests` (+ journal tests for compounding). Hardened by
+adversarial review workflows (passes 23–28; the few findings were honesty/label fixes, not math).
 
 
 ===== FILE: VERIFICATION.md (91 lines) =====

@@ -53,6 +53,135 @@ struct StockSageExpectedValueTests {
         #expect(EV.velocity(for: idea("EURUSD=X", conviction: 0.9, stop: 90, target: 130)) == nil)
     }
 
+    @Test func fastLaneEmptyWhenNoVelocity() {
+        // Index/FX have no asset-class hold → no velocity → excluded from every velocity surface.
+        let idx = idea("^GSPC", conviction: 0.9, stop: 90, target: 130)
+        let fx = idea("EURUSD=X", conviction: 0.9, stop: 90, target: 130)
+        #expect(EV.fastLane([idx, fx]).isEmpty)
+        #expect(EV.expectedWeeklyR([idx, fx]) == nil)
+        #expect(EV.fastLaneConcentration([idx, fx]) == nil)
+    }
+
+    @Test func fastLaneRanksByVelocityCryptoFirst() {
+        let equity = idea("AAPL", conviction: 0.9, stop: 90, target: 130)    // EV 1.228, vel 0.1023
+        let crypto = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130) // EV 1.228, vel 0.4093
+        let index = idea("^GSPC", conviction: 0.9, stop: 90, target: 130)    // EV but no velocity → excluded
+        let neg = idea("D", conviction: 0.0, stop: 90, target: 110)          // EV −0.30 → excluded
+        let lane = EV.fastLane([equity, index, neg, crypto])
+        #expect(lane.map(\.symbol) == ["BTC-USD", "AAPL"])                    // crypto first (faster turnover)
+    }
+
+    @Test func expectedWeeklyRSumsTopVelocities() {
+        let equity = idea("AAPL", conviction: 0.9, stop: 90, target: 130)    // vel 1.228/12
+        let crypto = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130) // vel 1.228/3
+        let index = idea("^GSPC", conviction: 0.9, stop: 90, target: 130)    // no velocity → excluded
+        // fast lane = [crypto, equity]; sum = 1.228/3 + 1.228/12; × 5 trading days.
+        let wk = EV.expectedWeeklyR([equity, index, crypto], maxConcurrent: 3, tradingDays: 5)!
+        let expected = (1.228 / 3 + 1.228 / 12) * 5
+        #expect(abs(wk - expected) < 1e-9)
+        #expect(abs(wk - 2.5583333333) < 1e-6)
+        #expect(EV.expectedWeeklyR([index]) == nil)                          // empty fast lane → nil
+        #expect(EV.expectedWeeklyR([crypto], maxConcurrent: 0) == nil)       // no slots → nil (no crash)
+    }
+
+    @Test func expectedWeeklyDollarsScalesWeeklyRByRiskDollar() {
+        let equity = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        let crypto = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
+        // weekly-R = (1.228/3 + 1.228/12)·5 ; $ per 1R = 10000·0.01 = 100.
+        let dollars = EV.expectedWeeklyDollars([equity, crypto], account: 10000, riskFraction: 0.01)!
+        let wkR = (1.228 / 3 + 1.228 / 12) * 5
+        #expect(abs(dollars - wkR * 100) < 1e-6)
+        #expect(abs(dollars - 255.8333333) < 1e-4)
+        #expect(EV.expectedWeeklyDollars([equity, crypto], account: 0, riskFraction: 0.01) == nil)  // no account
+        #expect(EV.expectedWeeklyDollars([], account: 10000, riskFraction: 0.01) == nil)            // empty fast lane
+    }
+
+    @Test func summaryComposesBestFastestAndWeeklyR() {
+        let a = idea("A", action: .buy, conviction: 0.2, stop: 90, target: 120)            // EV 0.188
+        let b = idea("BTC-USD", action: .strongBuy, conviction: 0.9, stop: 90, target: 130) // EV 1.228, vel 1.228/3
+        let s = EV.summary([a, b])
+        #expect(s.bestSymbol == "BTC-USD")                       // highest positive-EV buy
+        #expect(abs((s.bestEV ?? 0) - 1.228) < 1e-9)
+        #expect(s.fastestSymbol == "BTC-USD")                    // highest velocity
+        #expect(abs((s.fastestVelocity ?? 0) - 1.228 / 3) < 1e-9)
+        #expect(s.weeklyR != nil)
+        #expect(s.hasContent)
+        #expect(!EV.summary([]).hasContent)                      // empty → nothing to show
+    }
+
+    @Test func summaryIncludesWorstRunDrawdownBrake() {
+        let b = idea("BTC-USD", action: .strongBuy, conviction: 0.9, stop: 90, target: 130)
+        // 3 closed losers in a row → worst run 3; at 1%/trade → 1 − 0.99^3 = 0.029701.
+        let losers = (0..<3).map { i in
+            TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
+                        openedAt: Date(timeIntervalSince1970: Double(i) * 100),
+                        exitPrice: 95, closedAt: Date(timeIntervalSince1970: Double(i) * 100 + 50))
+        }
+        let s = EV.summary([b], trades: losers)
+        #expect(s.worstRunLosses == 3)
+        #expect(abs((s.worstRunDrawdownPct ?? 0) - (1 - pow(0.99, 3))) < 1e-9)
+        #expect(EV.summary([b]).worstRunDrawdownPct == nil)      // no trades → no brake
+    }
+
+    @Test func velocityRespectsTunableHoldDays() {
+        let crypto = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)   // EV 1.228
+        let base = EV.velocity(for: crypto)!                                   // default crypto 3 → 1.228/3
+        let slower = EV.velocity(for: crypto, holds: VelocityHoldDays(crypto: 6, equity: 12))!  // → 1.228/6
+        #expect(abs(base - 1.228 / 3) < 1e-9)
+        #expect(abs(slower - 1.228 / 6) < 1e-9)
+        #expect(base > slower)                                                 // shorter hold = higher velocity
+        #expect(EV.expectedHoldDays(forSymbol: "BTC-USD") == 3)                // default unchanged
+        #expect(EV.expectedHoldDays(forSymbol: "BTC-USD", holds: VelocityHoldDays(crypto: 6, equity: 12)) == 6)
+    }
+
+    @Test func playbookListsBestFastestWeeklyAndRisk() {
+        let s = MoneyVelocitySummary(bestSymbol: "NVDA", bestEV: 0.74, fastestSymbol: "BTC-USD",
+                                     fastestVelocity: 0.41, weeklyR: 2.6, worstRunLosses: 6, worstRunDrawdownPct: 0.059)
+        let plan = EV.playbook(s)
+        #expect(plan.contains("NVDA"))
+        #expect(plan.contains("BTC-USD"))
+        #expect(plan.contains("+0.74"))
+        #expect(plan.contains("week"))
+        #expect(plan.contains("stop"))                       // honesty: always a stop
+        #expect(plan.lowercased().contains("estimate"))      // honesty: labeled estimate
+        #expect(plan.contains("1.") && plan.contains("2."))  // numbered, ordered
+        // Empty summary → just the header + the risk rule, still honest.
+        let empty = EV.playbook(MoneyVelocitySummary(bestSymbol: nil, bestEV: nil, fastestSymbol: nil,
+                                                     fastestVelocity: nil, weeklyR: nil, worstRunLosses: nil, worstRunDrawdownPct: nil))
+        #expect(empty.contains("stop"))
+        #expect(empty.contains("1."))
+    }
+
+    @Test func fastLaneConcentrationFlagsAllSameClass() {
+        let c1 = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
+        let c2 = idea("ETH-USD", conviction: 0.8, stop: 90, target: 130)
+        let c3 = idea("SOL-USD", conviction: 0.7, stop: 90, target: 130)
+        let conc = EV.fastLaneConcentration([c1, c2, c3])!
+        #expect(conc.dominantClass == "Crypto")
+        #expect(conc.count == 3 && conc.total == 3)
+        #expect(conc.isConcentrated)                     // all 3 fastest are crypto → one bet, not three
+        // Mixed: top fast lane = BTC, ETH (crypto), AAPL (equity) → not all one class.
+        let eq = idea("AAPL", conviction: 0.95, stop: 90, target: 130)
+        let mixed = EV.fastLaneConcentration([c1, eq, c2])!
+        #expect(!mixed.isConcentrated)
+        #expect(EV.fastLaneConcentration([c1]) == nil)   // <2 fast-lane → nil
+    }
+
+    @Test func summaryMatchesStandaloneSurfaces() {
+        // The summary card composes the same helpers the standalone surfaces use — pin
+        // that they never drift (a future change to summary() that diverges goes red).
+        let a = idea("A", action: .buy, conviction: 0.2, stop: 90, target: 120)
+        let b = idea("BTC-USD", action: .strongBuy, conviction: 0.9, stop: 90, target: 130)
+        let c = idea("AAPL", action: .buy, conviction: 0.6, stop: 90, target: 120)
+        let ideas = [a, b, c]
+        let s = EV.summary(ideas)
+        #expect(s.bestSymbol == EV.bestOpportunity(ideas)?.idea.symbol)
+        #expect(s.bestEV == EV.bestOpportunity(ideas)?.ev.evR)
+        #expect(s.fastestSymbol == EV.fastLane(ideas).first?.symbol)
+        #expect(s.fastestVelocity == EV.fastLane(ideas).first.flatMap { EV.velocity(for: $0) })
+        #expect(s.weeklyR == EV.expectedWeeklyR(ideas))
+    }
+
     @Test func bestOpportunityPicksHighestPositiveEVBuy() {
         let a = idea("A", action: .buy, conviction: 0.2, stop: 90, target: 120)        // EV 0.188
         let b = idea("B", action: .strongBuy, conviction: 0.9, stop: 90, target: 130)  // EV 1.228

@@ -111,7 +111,7 @@ class SalehmanGePanel extends PluginPanel
 		name.setFont(FontManager.getRunescapeBoldFont());
 		row.add(name, BorderLayout.NORTH);
 
-		JPanel grid = new JPanel(new GridLayout(2, 2, 8, 0));
+		JPanel grid = new JPanel(new GridLayout(3, 2, 8, 0));
 		grid.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		grid.add(metric("Buy", GP.format(f.buyPrice), ColorScheme.LIGHT_GRAY_COLOR));
 		grid.add(metric("Sell", GP.format(f.sellPrice), ColorScheme.LIGHT_GRAY_COLOR));
@@ -119,6 +119,11 @@ class SalehmanGePanel extends PluginPanel
 			GP.format(f.postTaxMargin) + " (" + String.format(Locale.US, "%.1f", f.roi) + "%)",
 			f.postTaxMargin >= 0 ? ColorScheme.PROGRESS_COMPLETE_COLOR : ColorScheme.PROGRESS_ERROR_COLOR));
 		grid.add(metric("Profit/limit", GP.format(f.potentialProfit), ColorScheme.PROGRESS_COMPLETE_COLOR));
+		// MONEY VELOCITY: gp/hour ranks fastest-compounding flips (estimate; assumes you
+		// fill the 4h buy limit). Mirrors the macOS app's StockSageGEFlip.
+		grid.add(metric("gp/hour", GP.format((long) f.gpPerHour), ColorScheme.PROGRESS_COMPLETE_COLOR));
+		grid.add(metric("Buy limit", f.buyLimit > 0 ? String.valueOf(f.buyLimit) : "—",
+			ColorScheme.LIGHT_GRAY_COLOR));
 		row.add(grid, BorderLayout.CENTER);
 
 		return row;

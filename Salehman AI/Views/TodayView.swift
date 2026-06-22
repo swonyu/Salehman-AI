@@ -10,6 +10,7 @@ struct TodayView: View {
     @ObservedObject private var app = AppState.shared
     @ObservedObject private var scratchpad = ScratchpadStore.shared
     @ObservedObject private var market = MarketStore.shared
+    @ObservedObject private var stockSage = StockSageStore.shared
     /// KnowledgeStore isn't an ObservableObject, so its count is cached and
     /// refreshed whenever this tab becomes active (cheap, no timer).
     @State private var knowledgeCount = 0
@@ -253,6 +254,16 @@ struct TodayView: View {
                          detail: market.session.isOpen ? "open now" : "closed",
                          valueAccent: market.session.isOpen ? DS.Palette.successSoft : .white) {
                     app.selectedTab = .markets
+                }
+                // Money-velocity glance: the single best positive-EV bet, if ideas are
+                // loaded. A concise pointer — the full caveats live on the Markets card.
+                if let best = StockSageExpectedValue.bestOpportunity(stockSage.ideas) {
+                    StatTile(icon: "bolt.fill", title: "Best bet",
+                             value: best.idea.symbol,
+                             detail: String(format: "%+.2fR %@", best.ev.evR, MoneyVelocityCopy.bestBetTile),
+                             valueAccent: DS.Palette.accent) {
+                        app.selectedTab = .markets
+                    }
                 }
             }
         }

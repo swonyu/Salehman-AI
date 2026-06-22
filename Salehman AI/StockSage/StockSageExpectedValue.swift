@@ -16,6 +16,37 @@ struct ExpectedValue: Sendable, Equatable {
     nonisolated var isPositive: Bool { evR > 0 }
 }
 
+/// How concentrated the top fast-lane setups are by asset class — the honest check on
+/// chasing velocity (which tends to crowd into one fast-turnover class, e.g. crypto).
+struct FastLaneConcentration: Sendable, Equatable {
+    let dominantClass: String
+    let count: Int        // how many of the top-N are the dominant class
+    let total: Int        // size of the top-N considered
+    nonisolated var isConcentrated: Bool { total >= 2 && count == total }
+}
+
+/// Tunable per-asset-class holding-period assumptions feeding velocity (EV/day), so
+/// the owner can match it to his real holding periods. Defaults equal the original
+/// hardcoded values (crypto 3d, equity 12d) so nothing shifts silently.
+struct VelocityHoldDays: Sendable, Equatable {
+    var crypto: Double
+    var equity: Double
+    nonisolated static let defaults = VelocityHoldDays(crypto: 3, equity: 12)
+}
+
+/// One-glance money-velocity rollup for the top-of-Markets header. Every field is a
+/// value computed by a dedicated, tested helper — this just gathers them.
+struct MoneyVelocitySummary: Sendable, Equatable {
+    let bestSymbol: String?       // highest positive-EV buy
+    let bestEV: Double?
+    let fastestSymbol: String?    // highest EV/day (fast lane)
+    let fastestVelocity: Double?
+    let weeklyR: Double?          // est. weekly R running the top setups
+    let worstRunLosses: Int?      // worst losing streak in the journal (the brake)
+    let worstRunDrawdownPct: Double?  // that streak at the modeled risk % → account drawdown
+    nonisolated var hasContent: Bool { bestSymbol != nil || fastestSymbol != nil || weeklyR != nil }
+}
+
 enum StockSageExpectedValue {
     /// Conviction (0–1) → an estimated win probability in a conservative band:
     /// 0 → 35%, 1 → 58%. Never claims high certainty; conviction ≠ probability.
@@ -36,10 +67,10 @@ enum StockSageExpectedValue {
     /// Typical hold in days by asset class — crypto turns over fast (24/7), equities
     /// swing. nil for index/FX (not traded for velocity here). A rough default, not
     /// a per-symbol measurement.
-    nonisolated static func expectedHoldDays(forSymbol symbol: String) -> Double? {
+    nonisolated static func expectedHoldDays(forSymbol symbol: String, holds: VelocityHoldDays = .defaults) -> Double? {
         switch StockSageAllocation.assetClass(symbol) {
-        case "Crypto": return 3
-        case "Equity": return 12
+        case "Crypto": return holds.crypto
+        case "Equity": return holds.equity
         default: return nil
         }
     }
@@ -47,15 +78,15 @@ enum StockSageExpectedValue {
     /// Velocity = EV ÷ expected hold = expected R PER DAY, so a fast-turnover setup
     /// beats a slow swing of equal EV (more compounding cycles). nil if no EV or no
     /// hold estimate. An estimate on an estimate — the UI says so.
-    nonisolated static func velocity(for idea: StockSageIdea) -> Double? {
-        guard let e = ev(for: idea), let hold = expectedHoldDays(forSymbol: idea.symbol), hold > 0 else { return nil }
+    nonisolated static func velocity(for idea: StockSageIdea, holds: VelocityHoldDays = .defaults) -> Double? {
+        guard let e = ev(for: idea), let hold = expectedHoldDays(forSymbol: idea.symbol, holds: holds), hold > 0 else { return nil }
         return e.evR / hold
     }
 
     /// Ideas ranked by velocity (EV/day) desc; ideas without a velocity fall last (stable).
-    nonisolated static func rankByVelocity(_ ideas: [StockSageIdea]) -> [StockSageIdea] {
+    nonisolated static func rankByVelocity(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults) -> [StockSageIdea] {
         ideas.enumerated().sorted { a, b in
-            switch (velocity(for: a.element), velocity(for: b.element)) {
+            switch (velocity(for: a.element, holds: holds), velocity(for: b.element, holds: holds)) {
             case let (x?, y?): return x == y ? a.offset < b.offset : x > y
             case (_?, nil): return true
             case (nil, _?): return false
@@ -93,6 +124,99 @@ enum StockSageExpectedValue {
         }
         .max { $0.1.evR < $1.1.evR }
         .map { (idea: $0.0, ev: $0.1) }
+    }
+
+    /// Fast lane: positive-EV ideas that HAVE a velocity (crypto/equity), ranked by
+    /// velocity (EV/day) desc — the fastest-compounding opportunities. Index/FX (no
+    /// hold) and non-positive-EV ideas are excluded. Faster turnover = more cycles
+    /// AND more chances to be wrong; the UI carries that caveat.
+    nonisolated static func fastLane(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults) -> [StockSageIdea] {
+        ideas.enumerated().compactMap { idx, idea -> (Int, StockSageIdea, Double)? in
+            guard let e = ev(for: idea), e.evR > 0, let v = velocity(for: idea, holds: holds) else { return nil }
+            return (idx, idea, v)
+        }
+        .sorted { $0.2 == $1.2 ? $0.0 < $1.0 : $0.2 > $1.2 }
+        .map { $0.1 }
+    }
+
+    /// A heavily-caveated estimate of weekly R IF you actually run AND re-cycle the
+    /// top `maxConcurrent` fast-lane setups: sum of their velocities (EV/day) × trading
+    /// days. nil if the fast lane is empty. NOT a promise — it assumes you take these,
+    /// each carries variance, and it ignores fills/slippage/correlation.
+    nonisolated static func expectedWeeklyR(_ ideas: [StockSageIdea], maxConcurrent: Int = 3, tradingDays: Double = 5,
+                                            holds: VelocityHoldDays = .defaults) -> Double? {
+        let vels = fastLane(ideas, holds: holds).prefix(Swift.max(0, maxConcurrent)).compactMap { velocity(for: $0, holds: holds) }
+        guard !vels.isEmpty else { return nil }
+        return vels.reduce(0, +) * tradingDays
+    }
+
+    /// Account-aware weekly $ estimate: expected weekly R × the dollar value of 1R
+    /// (account × riskFraction). nil without an account, risk, or a non-empty fast
+    /// lane. An ESTIMATE that assumes you take & re-cycle the top setups — NOT income.
+    nonisolated static func expectedWeeklyDollars(_ ideas: [StockSageIdea], account: Double, riskFraction: Double,
+                                                  maxConcurrent: Int = 3, tradingDays: Double = 5,
+                                                  holds: VelocityHoldDays = .defaults) -> Double? {
+        guard account > 0, riskFraction > 0,
+              let wkR = expectedWeeklyR(ideas, maxConcurrent: maxConcurrent, tradingDays: tradingDays, holds: holds) else { return nil }
+        return wkR * account * riskFraction
+    }
+
+    /// A one-glance money-velocity rollup: the best bet now, the fastest-compounding
+    /// setup, and the estimated weekly R — each a value already computed elsewhere,
+    /// composed for a single header. All optional; `hasContent` gates the card.
+    nonisolated static func summary(_ ideas: [StockSageIdea], trades: [TradeRecord] = [],
+                                    fraction: Double = 0.01, holds: VelocityHoldDays = .defaults) -> MoneyVelocitySummary {
+        let best = bestOpportunity(ideas)
+        let fastest = fastLane(ideas, holds: holds).first
+        // The brake: the owner's worst losing streak, compounded down at the risk fraction.
+        let dd = StockSageJournal.equityRisk(trades)
+            .flatMap { StockSageRiskOfRuin.scenario(losses: $0.maxConsecutiveLosses, fraction: fraction) }
+        return MoneyVelocitySummary(
+            bestSymbol: best?.idea.symbol,
+            bestEV: best?.ev.evR,
+            fastestSymbol: fastest?.symbol,
+            fastestVelocity: fastest.flatMap { velocity(for: $0, holds: holds) },
+            weeklyR: expectedWeeklyR(ideas, holds: holds),
+            worstRunLosses: dd?.losses,
+            worstRunDrawdownPct: dd?.drawdownPct)
+    }
+
+    /// A short, ordered, copyable action list built from the summary — best bet, fastest,
+    /// est. weekly, and a hard risk rule. Every line is hedged; it is NOT advice.
+    nonisolated static func playbook(_ s: MoneyVelocitySummary) -> String {
+        var lines = ["Money-velocity playbook — estimates, not advice. Size every entry with a stop."]
+        var n = 1
+        if let sym = s.bestSymbol, let ev = s.bestEV {
+            lines.append("\(n). Best bet now: \(sym) — est. EV \(String(format: "%+.2f", ev))R. Enter only with a defined stop.")
+            n += 1
+        }
+        if let sym = s.fastestSymbol, let v = s.fastestVelocity {
+            lines.append("\(n). Fastest compounding: \(sym) — est. \(String(format: "%+.2f", v))R/day (faster turnover, more variance).")
+            n += 1
+        }
+        if let wk = s.weeklyR {
+            lines.append("\(n). Run the top setups: ~\(String(format: "%+.1f", wk))R/week — an estimate assuming you take and re-cycle them, not income.")
+            n += 1
+        }
+        if let losses = s.worstRunLosses, let dd = s.worstRunDrawdownPct {
+            lines.append("\(n). Risk control: your worst run (\(losses)) at 1%/trade ≈ −\(String(format: "%.1f", dd * 100))%. Keep risk small enough to survive it.")
+            n += 1
+        }
+        lines.append("\(n). Rule: risk ≤1% per trade, always a stop, never chase. Speed compounds only if you stay in the game.")
+        return lines.joined(separator: "\n")
+    }
+
+    /// Concentration of the top fast-lane setups by asset class. Chasing velocity
+    /// (shortest holds) tends to pile into crypto — so the "diversification" of the
+    /// fast lane can be an illusion. `isConcentrated` = the top-N are ALL one class.
+    nonisolated static func fastLaneConcentration(_ ideas: [StockSageIdea], topN: Int = 3,
+                                                  holds: VelocityHoldDays = .defaults) -> FastLaneConcentration? {
+        let top = Array(fastLane(ideas, holds: holds).prefix(Swift.max(0, topN)))
+        guard top.count >= 2 else { return nil }
+        let counts = Dictionary(grouping: top.map { StockSageAllocation.assetClass($0.symbol) }, by: { $0 })
+            .mapValues(\.count)
+        guard let dominant = counts.max(by: { $0.value < $1.value }) else { return nil }
+        return FastLaneConcentration(dominantClass: dominant.key, count: dominant.value, total: top.count)
     }
 
     nonisolated static let caveat =
