@@ -268,9 +268,19 @@ struct RuneScapeMarketView: View {
         }
     }
 
+    /// "5m old" / "3h old" / "2d old" for a leg age in seconds.
+    private func rsAgeLabel(_ s: TimeInterval) -> String {
+        if s < 3600 { return "\(Int(s / 60))m old" }
+        if s < 86_400 { return "\(Int(s / 3600))h old" }
+        return "\(Int(s / 86_400))d old"
+    }
+
     private func listingRow(_ listing: RuneScapeListing) -> some View {
         let hovered = hoveredID == listing.id
         let price = listing.price
+        // A thin item's older leg can be days stale while the spread is shown green — flag + de-emphasize.
+        let priceAge = price.oldestLegAge(asOf: Date())
+        let stale = price.isStale(asOf: Date())
         return HStack(spacing: DS.Space.md) {
             AsyncImage(url: listing.item.iconURL) { phase in
                 if case .success(let image) = phase {
@@ -297,7 +307,13 @@ struct RuneScapeMarketView: View {
                 }
                 if let buy = price.low, let sell = price.high, let limit = listing.item.buyLimit,
                    let gph = StockSageGEFlip.gpPerHour(buy: buy, sell: sell, buyLimit: limit) {
-                    Text("≈ \(RSFormat.gp(Int(gph)))/hr").font(.caption2).foregroundStyle(DS.Palette.successSoft)
+                    Text("≈ \(RSFormat.gp(Int(gph)))/hr").font(.caption2)
+                        .foregroundStyle(DS.Palette.successSoft).opacity(stale ? 0.5 : 1)
+                }
+                if stale, let age = priceAge {
+                    Text("⚠︎ \(rsAgeLabel(age)) — stale; may not fill at this spread")
+                        .font(.system(size: rsFont8, weight: .medium)).foregroundStyle(DS.Palette.warningSoft)
+                        .lineLimit(1)
                 }
             }
             Spacer(minLength: 8)
@@ -316,8 +332,9 @@ struct RuneScapeMarketView: View {
                     .foregroundStyle(up ? Color(white: 0.06) : .white)
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(up ? DS.Palette.successSoft : DS.Palette.danger, in: Capsule())
+                    .opacity(stale ? 0.45 : 1)   // a stale spread's margin may not actually be fillable
                     .frame(width: 70, alignment: .trailing)
-                    .help("NET flip margin after the 2% GE sell tax: raw \(RSFormat.gp(margin)) − tax \(RSFormat.gp(tax)) = \(RSFormat.gp(net)) (tax live since 2025-05-29)")
+                    .help("NET flip margin after the 2% GE sell tax: raw \(RSFormat.gp(margin)) − tax \(RSFormat.gp(tax)) = \(RSFormat.gp(net)) (tax live since 2025-05-29)" + (stale ? " — STALE leg, may not fill" : ""))
             } else {
                 Color.clear.frame(width: 70, height: 1)
             }

@@ -11,6 +11,22 @@ import Foundation
 
 struct RuneScapeParseTests {
 
+    @Test func priceStalenessFlagsTheOlderLeg() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        // Buy leg 10 min old, sell leg 2 days old → oldest = 2 days → stale (the spread may not fill).
+        let p = RuneScapePrice(high: 100, highTime: now.addingTimeInterval(-600),
+                               low: 90, lowTime: now.addingTimeInterval(-2 * 86_400))
+        #expect(p.oldestLegAge(asOf: now) == 2 * 86_400)
+        #expect(p.isStale(asOf: now))                        // > 60-min default
+        // Both legs fresh → not stale.
+        let fresh = RuneScapePrice(high: 100, highTime: now.addingTimeInterval(-300),
+                                   low: 90, lowTime: now.addingTimeInterval(-120))
+        #expect(!fresh.isStale(asOf: now))
+        // No feed timestamps → can't judge → nil age, not stale.
+        let undated = RuneScapePrice(high: 100, highTime: nil, low: 90, lowTime: nil)
+        #expect(undated.oldestLegAge(asOf: now) == nil && !undated.isStale(asOf: now))
+    }
+
     @Test func parsesLatestPricesAndMargin() {
         let json = #"{"data":{"4151":{"high":2000000,"highTime":1700000000,"low":1950000,"lowTime":1700000100},"561":{"high":95,"low":92,"highTime":1,"lowTime":2}}}"#
         let prices = RuneScapeMarketService.parseLatest(Data(json.utf8))

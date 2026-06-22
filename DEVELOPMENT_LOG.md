@@ -7136,6 +7136,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · OSRS ONLY-REAL-DATA FIX — stale GE legs no longer render as a live spread
+**Files:** `RuneScape/RuneScapeModels.swift` (RuneScapePrice.oldestLegAge/isStale), `Views/RuneScapeMarketView.swift` (age marker + de-emphasis), `Salehman AITests/RuneScapeTests.swift` (+test).
+**What (OSRS bughunt wv2v508ni #2, HIGH sacred only-real-data):** RuneScapePrice.highTime/lowTime were PARSED but consumed nowhere — so a thin item whose sell leg last traded days ago (e.g. a Twisted bow) rendered a green "Sell" + a confident "+288M net margin" chip + gp/hr, identical to a fresh spread, even though that spread no longer exists. Fix: new pure oldestLegAge(asOf:) + isStale(maxAge:3600 default, matching the plugin's maxStaleMinutes); the listing row now shows a "⚠︎ Nh old — stale; may not fill at this spread" caution when stale and de-emphasizes (opacity) the gp/hr + the net-margin chip, with " — STALE leg, may not fill" appended to the chip's .help.
+**Verify:** typecheck EXIT=0; +test — older leg 2d → oldestLegAge 172800 + isStale true; both legs fresh → not stale; no timestamps → nil age + not stale. UI render UNVERIFIED (Mac).
+**Remaining (OSRS_BUGHUNT.md): the headerSubtitle "updated HH:mm"/"Live" wording could still imply per-quote freshness (secondary; the row-level age now disambiguates).**
+**Result:** a days-old GE spread is now visibly flagged + dimmed, not presented as a live, fillable flip. The sacred only-real-data rule reaches the OSRS surface. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

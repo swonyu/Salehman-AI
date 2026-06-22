@@ -41,6 +41,22 @@ struct RuneScapePrice: Sendable, Equatable {
         return high - low
     }
 
+    /// Age of the OLDER traded leg (high/low) — the limiting freshness of the displayed spread. A
+    /// thin item's "sell" leg can be days stale while shown green, so the UI must qualify it. nil if
+    /// neither leg carries a feed timestamp.
+    nonisolated func oldestLegAge(asOf now: Date) -> TimeInterval? {
+        let ts = [highTime, lowTime].compactMap { $0 }
+        guard let oldest = ts.min() else { return nil }
+        return Swift.max(0, now.timeIntervalSince(oldest))
+    }
+
+    /// The spread is stale when its older leg hasn't traded within `maxAge` (default 60 min, matching
+    /// the plugin's maxStaleMinutes) — the margin may no longer be fillable.
+    nonisolated func isStale(maxAge: TimeInterval = 3600, asOf now: Date) -> Bool {
+        guard let age = oldestLegAge(asOf: now) else { return false }
+        return age > maxAge
+    }
+
     /// Margin as a percentage of the sell price — the "return" on a flip.
     var marginPercent: Double? {
         guard let high, let low, low > 0 else { return nil }
