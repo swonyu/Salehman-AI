@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 11:05 +03 · Swift files: 238 · Swift LOC: 45087_
+_Generated: 2026-06-22 12:13 +03 · Swift files: 238 · Swift LOC: 45103_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -26425,7 +26425,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (3113 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (3129 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -26492,6 +26492,7 @@ struct MarketsView: View {
     /// Inline close-a-trade: the open trade being closed + its exit-price field.
     @State private var closingTradeID: UUID?
     @State private var closeExitText = ""
+    @State private var pendingJournalDeleteID: UUID?
     /// Detail-sheet position sizer inputs.
     @AppStorage("marketsSizerAccount") private var sizerAccount = "10000"
     @AppStorage("marketsSizerRiskPct") private var sizerRiskPct = "1"
@@ -27743,6 +27744,7 @@ struct MarketsView: View {
                 } label: {
                     Text(closingTradeID == trade.id ? "Cancel" : "Close").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 }.buttonStyle(.plain)
+                .accessibilityLabel(closingTradeID == trade.id ? "Cancel closing \(trade.symbol)" : "Close \(trade.symbol) position")
             }
             if let note = trade.note, !note.isEmpty {
                 Text(note).font(.system(size: mvFont9)).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
@@ -27751,16 +27753,20 @@ struct MarketsView: View {
                 HStack(spacing: 8) {
                     journalField("Exit px", text: $closeExitText, width: 80)
                     Button {
-                        if let exit = Double(closeExitText), exit > 0 { journal.close(trade.id, exitPrice: exit); closingTradeID = nil }
+                        if let exit = StockSageInput.positiveAmount(closeExitText) { journal.close(trade.id, exitPrice: exit); closingTradeID = nil }
                     } label: {
                         Text("Confirm close").font(.system(size: 10, weight: .semibold)).foregroundStyle(.white)
                             .padding(.horizontal, 10).padding(.vertical, 5).background(DS.Palette.danger, in: Capsule())
-                    }.buttonStyle(LuxPressStyle()).disabled((Double(closeExitText) ?? 0) <= 0)
+                    }.buttonStyle(LuxPressStyle()).disabled(StockSageInput.positiveAmount(closeExitText) == nil)
                     Spacer(minLength: 0)
                 }
             }
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(trade.side.rawValue) \(trade.symbol), entry \(String(format: "%.2f", trade.entry))"
+            + (pnl.map { String(format: ", unrealized %+.0f", $0) } ?? ", no live price")
+            + (r.map { String(format: ", %+.2f R", $0) } ?? ""))
     }
 
     private func journalClosedRow(_ trade: TradeRecord) -> some View {
@@ -27774,11 +27780,21 @@ struct MarketsView: View {
             if let r = trade.realizedR {
                 Text(String(format: "%+.2fR", r)).font(.caption2).foregroundStyle(.secondary).frame(width: 48, alignment: .trailing)
             }
-            Button { journal.remove(trade.id) } label: {
+            Button { pendingJournalDeleteID = trade.id } label: {
                 Image(systemName: "trash").font(.system(size: mvFont9)).foregroundStyle(.secondary)
             }.buttonStyle(.plain)
+            .accessibilityLabel("Delete \(trade.symbol) from journal")
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(trade.symbol), \(String(format: "%.2f to %.2f", trade.entry, trade.exitPrice ?? 0)), realized \(String(format: "%+.0f", pnl))"
+            + (trade.realizedR.map { String(format: ", %+.2f R", $0) } ?? ""))
+        .confirmationDialog("Delete this logged trade?",
+                            isPresented: Binding(get: { pendingJournalDeleteID == trade.id },
+                                                 set: { if !$0 { pendingJournalDeleteID = nil } })) {
+            Button("Delete \(trade.symbol)", role: .destructive) { journal.remove(trade.id); pendingJournalDeleteID = nil }
+            Button("Cancel", role: .cancel) { pendingJournalDeleteID = nil }
+        } message: { Text("Removes it from your realized P&L and edge stats. This can't be undone.") }
     }
 
     // MARK: Kelly position sizer
@@ -48098,7 +48114,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7607 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7612 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54591,6 +54607,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** On launch the board showed fabricated SAMPLE data until a live fetch landed; offline it stayed sample forever. Added `StockSageQuoteCache` — a `nonisolated` Codable model (entries: symbol/price/prevClose/time + savedAt) with pure `from(symbols:)` / `symbols(marketFor:)` (rebuilds two-quote rows so change% matches the live path) and a thin Application-Support JSON load/save. Store: `loadCachedQuotes()` in init prefers real last-good prices over the sample seed (sets `loadedFromCache`/`cacheSavedAt`); `refreshLiveQuotes` saves the snapshot after success. The header reads "Last-good (cached) as of HH:mm · refresh for live" until a live fetch replaces it. **Isolation:** the quote models are MainActor-isolated, so `from`/`symbols` are `@MainActor` while the struct + Codable + file I/O are `nonisolated` (load/save work off the main actor). 1 test (MainActor), HAND-VERIFIED: Codable round-trip exact; rebuild preserves price 110 + change% 10% ((110−100)/100); `from` is the inverse (price 110, prevClose 100).
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 21/32. Launch is now instant + offline-useful with honest cached labeling. NEXT: #21 journal a11y / #25 watchlist-scoped Monitor. Committed + pushed.
 
+## 2026-06-22 · Backlog #21 + #15: Journal row a11y + confirm-before-delete (+ validated close)
+**Files:** `Views/MarketsView.swift` (journalOpenRow/journalClosedRow).
+**What & why:** (#21) Journal rows were color-only for P&L and had unlabeled Close/trash buttons — opaque to VoiceOver. Added combined `accessibilityLabel`s: open row = "Long AAPL, entry 150.00, unrealized +250, +1.50 R" (or "no live price"); closed row = "AAPL, 150.00 to 160.00, realized +500, +2.00 R"; Close + trash buttons now have spoken labels with the symbol. (#15) The closed-row trash was a ONE-CLICK irreversible delete — now a `confirmationDialog` ("Delete this logged trade? Removes it from realized P&L and edge stats — can't be undone"). Also routed the close-exit field through `StockSageInput.positiveAmount` (rejects junk instead of silently 0). The open-row Close already had a two-step expand→confirm flow.
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 23/32 (#15+#21). A 16-agent `salehman-hardening-sweep` Workflow (whole-app bug-hunt + money-feature ideation, adversarially verified) is running for the next backlog. NEXT: #25/#26/#18 + visual #30-32. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
@@ -58043,7 +58064,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Cheap consistency win on a daily action. Reuse the positionRow hover-trash pattern on signalCard.
 **Files:** Salehman AI/Views/MarketsView.swift:1641-1717; Salehman AI/Views/MarketsView.swift:613-654
 
-### ⬜ #15 — Confirm dialog before closing a journal trade (prevent wrong-exit P&L)  [medium/small, Journal/ux]
+### ✅ DONE #15 — Confirm dialog before closing a journal trade (prevent wrong-exit P&L)  [medium/small, Journal/ux]
 **What:** Closing an open trade prompts for exit price then immediately calls journal.close() with no confirmation/undo. A fat-fingered 100.5 vs 105.0 writes a wrong R/P&L; correcting it requires a lossy delete.
 **Why:** The journal is the system-health source of truth — a wrong close corrupts expectancy/edge stats. Add a confirm sheet showing computed P&L and R-multiple before committing, or a brief undo toast.
 **Files:** Salehman AI/Views/MarketsView.swift:1310-1321
@@ -58073,7 +58094,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Velocity-chasing hides correlation risk — the owner's fastest-money instinct is exactly where this bites. Run the same isConcentrated check inside moneyVelocityCard and render a one-line yellow alert.
 **Files:** Salehman AI/Views/MarketsView.swift:2096-2186; Salehman AI/Views/MarketsView.swift:2235-2238
 
-### ⬜ #21 — Accessibility labels on journal trade rows + delete/close buttons + P&L sign  [medium/medium, a11y/Journal/a11y]
+### ✅ DONE #21 — Accessibility labels on journal trade rows + delete/close buttons + P&L sign  [medium/medium, a11y/Journal/a11y]
 **What:** journalOpenRow/journalClosedRow have no accessibilityElement(.combine)/label — VoiceOver reads disjoint fragments. Win/loss is encoded by color only (1294-1296, 1332-1335), and the trash/Close buttons have no labels (a user can't tell a delete from context).
 **Why:** Color-only P&L and unlabeled destructive buttons are real a11y failures on the owner's own audit trail. Combine each row into one labeled element ('AAPL Long @150, +1.5R, closed'), prefix signs/words for gain/loss, label the trash/Close buttons with the symbol.
 **Files:** Salehman AI/Views/MarketsView.swift:1282-1339

@@ -94,7 +94,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Cheap consistency win on a daily action. Reuse the positionRow hover-trash pattern on signalCard.
 **Files:** Salehman AI/Views/MarketsView.swift:1641-1717; Salehman AI/Views/MarketsView.swift:613-654
 
-### ⬜ #15 — Confirm dialog before closing a journal trade (prevent wrong-exit P&L)  [medium/small, Journal/ux]
+### ✅ DONE #15 — Confirm dialog before closing a journal trade (prevent wrong-exit P&L)  [medium/small, Journal/ux]
 **What:** Closing an open trade prompts for exit price then immediately calls journal.close() with no confirmation/undo. A fat-fingered 100.5 vs 105.0 writes a wrong R/P&L; correcting it requires a lossy delete.
 **Why:** The journal is the system-health source of truth — a wrong close corrupts expectancy/edge stats. Add a confirm sheet showing computed P&L and R-multiple before committing, or a brief undo toast.
 **Files:** Salehman AI/Views/MarketsView.swift:1310-1321
@@ -124,7 +124,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Velocity-chasing hides correlation risk — the owner's fastest-money instinct is exactly where this bites. Run the same isConcentrated check inside moneyVelocityCard and render a one-line yellow alert.
 **Files:** Salehman AI/Views/MarketsView.swift:2096-2186; Salehman AI/Views/MarketsView.swift:2235-2238
 
-### ⬜ #21 — Accessibility labels on journal trade rows + delete/close buttons + P&L sign  [medium/medium, a11y/Journal/a11y]
+### ✅ DONE #21 — Accessibility labels on journal trade rows + delete/close buttons + P&L sign  [medium/medium, a11y/Journal/a11y]
 **What:** journalOpenRow/journalClosedRow have no accessibilityElement(.combine)/label — VoiceOver reads disjoint fragments. Win/loss is encoded by color only (1294-1296, 1332-1335), and the trash/Close buttons have no labels (a user can't tell a delete from context).
 **Why:** Color-only P&L and unlabeled destructive buttons are real a11y failures on the owner's own audit trail. Combine each row into one labeled element ('AAPL Long @150, +1.5R, closed'), prefix signs/words for gain/loss, label the trash/Close buttons with the symbol.
 **Files:** Salehman AI/Views/MarketsView.swift:1282-1339

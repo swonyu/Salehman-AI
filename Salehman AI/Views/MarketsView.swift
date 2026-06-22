@@ -63,6 +63,7 @@ struct MarketsView: View {
     /// Inline close-a-trade: the open trade being closed + its exit-price field.
     @State private var closingTradeID: UUID?
     @State private var closeExitText = ""
+    @State private var pendingJournalDeleteID: UUID?
     /// Detail-sheet position sizer inputs.
     @AppStorage("marketsSizerAccount") private var sizerAccount = "10000"
     @AppStorage("marketsSizerRiskPct") private var sizerRiskPct = "1"
@@ -1314,6 +1315,7 @@ struct MarketsView: View {
                 } label: {
                     Text(closingTradeID == trade.id ? "Cancel" : "Close").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 }.buttonStyle(.plain)
+                .accessibilityLabel(closingTradeID == trade.id ? "Cancel closing \(trade.symbol)" : "Close \(trade.symbol) position")
             }
             if let note = trade.note, !note.isEmpty {
                 Text(note).font(.system(size: mvFont9)).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
@@ -1322,16 +1324,20 @@ struct MarketsView: View {
                 HStack(spacing: 8) {
                     journalField("Exit px", text: $closeExitText, width: 80)
                     Button {
-                        if let exit = Double(closeExitText), exit > 0 { journal.close(trade.id, exitPrice: exit); closingTradeID = nil }
+                        if let exit = StockSageInput.positiveAmount(closeExitText) { journal.close(trade.id, exitPrice: exit); closingTradeID = nil }
                     } label: {
                         Text("Confirm close").font(.system(size: 10, weight: .semibold)).foregroundStyle(.white)
                             .padding(.horizontal, 10).padding(.vertical, 5).background(DS.Palette.danger, in: Capsule())
-                    }.buttonStyle(LuxPressStyle()).disabled((Double(closeExitText) ?? 0) <= 0)
+                    }.buttonStyle(LuxPressStyle()).disabled(StockSageInput.positiveAmount(closeExitText) == nil)
                     Spacer(minLength: 0)
                 }
             }
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(trade.side.rawValue) \(trade.symbol), entry \(String(format: "%.2f", trade.entry))"
+            + (pnl.map { String(format: ", unrealized %+.0f", $0) } ?? ", no live price")
+            + (r.map { String(format: ", %+.2f R", $0) } ?? ""))
     }
 
     private func journalClosedRow(_ trade: TradeRecord) -> some View {
@@ -1345,11 +1351,21 @@ struct MarketsView: View {
             if let r = trade.realizedR {
                 Text(String(format: "%+.2fR", r)).font(.caption2).foregroundStyle(.secondary).frame(width: 48, alignment: .trailing)
             }
-            Button { journal.remove(trade.id) } label: {
+            Button { pendingJournalDeleteID = trade.id } label: {
                 Image(systemName: "trash").font(.system(size: mvFont9)).foregroundStyle(.secondary)
             }.buttonStyle(.plain)
+            .accessibilityLabel("Delete \(trade.symbol) from journal")
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(trade.symbol), \(String(format: "%.2f to %.2f", trade.entry, trade.exitPrice ?? 0)), realized \(String(format: "%+.0f", pnl))"
+            + (trade.realizedR.map { String(format: ", %+.2f R", $0) } ?? ""))
+        .confirmationDialog("Delete this logged trade?",
+                            isPresented: Binding(get: { pendingJournalDeleteID == trade.id },
+                                                 set: { if !$0 { pendingJournalDeleteID = nil } })) {
+            Button("Delete \(trade.symbol)", role: .destructive) { journal.remove(trade.id); pendingJournalDeleteID = nil }
+            Button("Cancel", role: .cancel) { pendingJournalDeleteID = nil }
+        } message: { Text("Removes it from your realized P&L and edge stats. This can't be undone.") }
     }
 
     // MARK: Kelly position sizer
