@@ -6751,6 +6751,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · Bughunt fixes — 4 real bugs in this session's own new engines (caught by our own workflow)
+**Files:** `StockSage/StockSageGapRisk.swift`, `StockSageCapitalAllocator.swift`, `StockSageLossLimit.swift` + their tests. Persisted BUGHUNT_NEWENGINES.md.
+**The newengine-bughunt caught 4 real bugs I shipped this session (all re-verified vs source):** (#1 HIGH) GapRisk's `leverage` param was validated + stored but NEVER applied to the loss math — a dead knob while the caveat promised it drove the blowup case. Removed it entirely (it's redundant: a big gap × actual shares vs equity already shows >100% account loss; the separate StockSageLeverage engine owns leverage math). (#5 MED) CapitalAllocator weighted off RAW half-Kelly (up to 0.50) instead of suggestedFraction (Kelly's 20% per-position cap) — a lone idea under maxHeat could sit at 50% risk. Now uses suggestedFraction (capped); halfKelly field keeps the raw value for transparency. Heat invariant + existing tests unchanged (uniform scaling normalizes). (#3 MED) LossLimit loss-run was built from realizedR, which is NIL when stop==entry — a real cash loser became invisible to the streak. Now judged by realized P&L (loss = profit<0), R fallback. (#4 MED) LossLimit used Calendar.current → day/week halt windows drifted by timezone/DST/locale, disagreeing with the journal's UTC aggregation; pinned a fixed UTC Gregorian calendar (matches the journal).
+**Verify:** typecheck clean; python-verified — #5 raw halfKelly 0.2818 capped to 0.20; #3 stop==entry loser profit −$50 counts; +2 new tests (per-position cap, zero-risk-loser streak). #2 (surface GapRisk/LossLimit in the Markets UI so the caveats reach the user) is REAL but UI-scope — deferred.
+**Result:** the new risk engines are now correct AND their knobs do what they claim. Re-verify-then-fix discipline turned a self-audit into 4 real fixes. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

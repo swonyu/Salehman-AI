@@ -8,7 +8,7 @@ import Foundation
 struct StockSageLossLimitTests {
     typealias LL = StockSageLossLimit
 
-    private let cal = Calendar.current
+    private let cal = StockSageLossLimit.utcCalendar   // align with the engine's UTC boundaries
     private var dayStart: Date { cal.startOfDay(for: Date(timeIntervalSince1970: 1_700_000_000)) }
     private var now: Date { cal.date(byAdding: .hour, value: 12, to: dayStart)! }   // midday
     private func todayAt(_ hoursBeforeNow: Int) -> Date { cal.date(byAdding: .hour, value: -hoursBeforeNow, to: now)! }
@@ -65,5 +65,16 @@ struct StockSageLossLimitTests {
         let s = LL.evaluate(closedTrades: [t(-1, closedAt: nil)],
                             policy: LossLimitPolicy(maxDailyLoss: 100), now: now)
         #expect(abs(s.dailyRealized) < 1e-9 && s.lossRun == 0 && s.status == .ok)
+    }
+
+    @Test func stopEqualsEntryLoserStillCountsInTheRun() {
+        // A closed loser whose stop == entry has a real negative P&L but a NIL R — it must still
+        // count toward (and not break) the loss streak (judged by realized P&L, not R).
+        let zeroRiskLoser = TradeRecord(symbol: "Z", side: .long, entry: 100, stop: 100, target: nil,
+                                        shares: 10, openedAt: Date(timeIntervalSince1970: 0),
+                                        exitPrice: 95, closedAt: now)
+        let s = LL.evaluate(closedTrades: [t(-1, closedAt: todayAt(1)), zeroRiskLoser],
+                            policy: LossLimitPolicy(standDownLossRun: 2), now: now)
+        #expect(s.lossRun == 2 && s.status == .halted)
     }
 }

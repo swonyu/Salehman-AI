@@ -49,7 +49,7 @@ enum StockSageCapitalAllocator {
         // Step 1+2: fund only buy-family ideas with a defined R and positive EV; the raw weight
         // IS half-Kelly (already a FRACTION in [0,0.5] — do NOT divide by account; it also
         // already encodes the edge, so no separate EV multiplier — that would double-count).
-        struct Fundable { let symbol: String; let entry: Double; let stop: Double; let raw: Double; let evR: Double }
+        struct Fundable { let symbol: String; let entry: Double; let stop: Double; let weight: Double; let halfKelly: Double; let evR: Double }
         var fundable: [Fundable] = []
         for idea in ideas {
             let a = idea.advice
@@ -58,26 +58,29 @@ enum StockSageCapitalAllocator {
                   let ev = StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target),
                   ev.evR > 0 else { continue }
             let k = StockSageKelly.compute(winRate: ev.winProbEstimate, payoffRatio: ev.rewardR, accountSize: account)
-            guard k.halfKelly > 0 else { continue }
-            fundable.append(Fundable(symbol: idea.symbol, entry: idea.price, stop: stop, raw: k.halfKelly, evR: ev.evR))
+            // Weight off suggestedFraction (= half-Kelly HARD-CAPPED at Kelly's 20% per-position
+            // limit), NOT raw half-Kelly — so a lone idea under maxHeat can't sit at up to 50% risk.
+            guard k.suggestedFraction > 0 else { continue }
+            fundable.append(Fundable(symbol: idea.symbol, entry: idea.price, stop: stop,
+                                     weight: k.suggestedFraction, halfKelly: k.halfKelly, evR: ev.evR))
         }
         guard !fundable.isEmpty else { return empty() }
 
         // Step 3: uniform proportional scaling pins Σ pre-floor heat to min(requested, cap) and
         // preserves the edge ranking.
-        let requestedHeat = fundable.reduce(0) { $0 + $1.raw }
+        let requestedHeat = fundable.reduce(0) { $0 + $1.weight }
         let scaleApplied = requestedHeat > cap ? cap / requestedHeat : 1
 
         // Step 4: the sizer is the ONLY place dollars/shares are produced; it floors shares DOWN,
         // so realized dollarsAtRisk ≤ scaledFraction·account ⇒ summed realized heat ≤ the cap.
         var positions: [AllocatedPosition] = []
         for f in fundable {
-            let scaled = f.raw * scaleApplied
+            let scaled = f.weight * scaleApplied
             guard let ps = StockSagePositionSizer.size(account: account, riskFraction: scaled, entry: f.entry, stop: f.stop),
                   ps.shares > 0 else { continue }
             positions.append(AllocatedPosition(symbol: f.symbol, riskFraction: scaled, shares: ps.shares,
                                                dollarsAtRisk: ps.dollarsAtRisk, notional: ps.notional,
-                                               halfKelly: f.raw, evR: f.evR))
+                                               halfKelly: f.halfKelly, evR: f.evR))
         }
 
         // Step 5: realized heat + deterministic order (desc risk, tie-break asc symbol).

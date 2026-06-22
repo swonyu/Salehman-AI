@@ -48,6 +48,16 @@ struct StockSageCapitalAllocatorTests {
         #expect(zip(a.positions, a.positions.dropFirst()).allSatisfy { $0.riskFraction >= $1.riskFraction })
     }
 
+    @Test func noSinglePositionExceedsTheKellyCap() {
+        // A lone very-strong idea (raw half-Kelly ≈ 0.28 > 0.20) under a generous maxHeat must
+        // still be capped at Kelly's 20% per-position limit — not sit at ~half-Kelly (up to 50%).
+        let a = Alloc.allocate(ideas: [idea("AAA", price: 100, stop: 90, target: 400, conviction: 0.99)],
+                               account: 100_000, maxHeat: 0.50)
+        #expect(a.positions.count == 1)
+        #expect(a.positions[0].riskFraction <= 0.20 + 1e-9)   // capped, not up to 0.50
+        #expect(a.positions[0].halfKelly > 0.20)              // raw half-Kelly WAS above the cap (transparency)
+    }
+
     @Test func unscaledWhenRequestedHeatBelowCap() {
         // A weak-edge buy whose half-Kelly is under the cap → no scaling, riskFraction == halfKelly.
         let a = Alloc.allocate(ideas: [idea("LOW", price: 100, stop: 95, target: 110, conviction: 0.3)],

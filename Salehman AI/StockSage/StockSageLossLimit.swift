@@ -39,12 +39,18 @@ struct LossLimitState: Sendable, Equatable {
 }
 
 enum StockSageLossLimit {
-    nonisolated static let caveat = "A behavioral brake, not a probability edge — a losing streak does NOT make the next trade likelier to lose; markets have no memory. It only sees trades you LOGGED, and only CLOSED trades count toward today's tally. Period reset is calendar-based in local time."
+    nonisolated static let caveat = "A behavioral brake, not a probability edge — a losing streak does NOT make the next trade likelier to lose; markets have no memory. It only sees trades you LOGGED, and only CLOSED trades count toward today's tally. Period boundaries are UTC, matching the journal's own aggregation."
+
+    /// Fixed UTC Gregorian calendar so the day/week halt windows agree with the journal's
+    /// UTC-pinned reporting and never drift with device timezone, locale firstWeekday, or DST.
+    nonisolated static let utcCalendar: Calendar = {
+        var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!; return c
+    }()
 
     /// Aggregate realized losses + the consecutive-loss run vs `policy`. Open trades (no
-    /// closedAt) contribute 0; a breakeven (R==0) or a win breaks the loss run.
+    /// closedAt) contribute 0; a breakeven or a win breaks the loss run.
     nonisolated static func evaluate(closedTrades: [TradeRecord], policy: LossLimitPolicy,
-                                     now: Date, calendar: Calendar = .current) -> LossLimitState {
+                                     now: Date, calendar: Calendar = utcCalendar) -> LossLimitState {
         let closed = closedTrades.filter { $0.closedAt != nil }
         let dayStart = calendar.startOfDay(for: now)
         let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? dayStart
@@ -60,13 +66,17 @@ enum StockSageLossLimit {
         }
         let day = realized(since: dayStart), week = realized(since: weekStart)
 
-        // Consecutive most-recent losses; a breakeven (R==0) or a win breaks the run.
+        // Consecutive most-recent losses; a breakeven or a win breaks the run. Judge by realized
+        // P&L (a closed loser with stop==entry has a real negative profit but a NIL R — using R
+        // alone would make it invisible and mis-link the streak); fall back to R when P&L is absent.
         let recent = closed.compactMap { t -> (Date, Double)? in
-            guard let c = t.closedAt, let rr = t.realizedR else { return nil }
-            return (c, rr)
+            guard let c = t.closedAt else { return nil }
+            if let p = t.realizedProfit { return (c, p) }
+            if let rr = t.realizedR { return (c, rr) }
+            return nil
         }.sorted { $0.0 > $1.0 }
         var lossRun = 0
-        for (_, rr) in recent { if rr < 0 { lossRun += 1 } else { break } }
+        for (_, v) in recent { if v < 0 { lossRun += 1 } else { break } }
 
         // Each limit is a positive magnitude; a loss makes the realized figure negative.
         var halts: [String] = [], warn = false
