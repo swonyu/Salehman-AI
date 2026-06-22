@@ -33,6 +33,28 @@ struct StockSageAlertsTests {
         #expect(StockSageAlerts.detect(previous: [idea("X", 50, .buy)], current: [idea("X", 51, .strongBuy)]).isEmpty)
     }
 
+    @Test func shortStopBreachFiresOnCrossUp() {
+        // A SHORT stops ABOVE entry — a stop-out is price crossing UP through the stop (a real loss).
+        let a = StockSageAlerts.detect(previous: [idea("X", 107, .sell, stop: 108, target: 84)],
+                                       current:  [idea("X", 109, .sell, stop: 108, target: 84)])
+        #expect(a.contains { $0.kind == .stopBreach })
+        // A WINNING short (price falling toward the 84 target) must NOT fire a stop breach.
+        #expect(!StockSageAlerts.detect(previous: [idea("X", 109, .sell, stop: 108, target: 84)],
+                                        current:  [idea("X", 107, .sell, stop: 108, target: 84)])
+            .contains { $0.kind == .stopBreach })
+    }
+
+    @Test func shortTargetHitFiresOnCrossDown() {
+        // A SHORT targets BELOW entry — target hit is price crossing DOWN through the target.
+        let a = StockSageAlerts.detect(previous: [idea("X", 86, .sell, stop: 108, target: 84)],
+                                       current:  [idea("X", 83, .sell, stop: 108, target: 84)])
+        #expect(a.contains { $0.kind == .targetHit })
+        // Still above the target → no target hit yet.
+        #expect(!StockSageAlerts.detect(previous: [idea("X", 90, .sell, stop: 108, target: 84)],
+                                        current:  [idea("X", 86, .sell, stop: 108, target: 84)])
+            .contains { $0.kind == .targetHit })
+    }
+
     @Test func stopBreachFiresOnlyOnCrossDown() {
         let prev = [idea("X", 105, .buy, stop: 100)]
         let cur  = [idea("X", 99, .buy, stop: 100)]

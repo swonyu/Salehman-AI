@@ -6961,6 +6961,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SAFETY BUG FIX — alert stop/target crossing is now SIDE-AWARE (was long-only)
+**Files:** `StockSage/StockSageAlerts.swift` (detect side-aware), `Salehman AITests/StockSageAlertsTests.swift` (+2 short-side tests).
+**What (journal/portfolio bughunt w9ecjev4i #1, HIGH — LIVE via StockSageStore alertsEnabled):** detect() hardcoded long-only crossing directions. A SHORT (sell/reduce) stops ABOVE entry and targets BELOW, so: (a) a short STOPPED OUT at a loss (price rising through the stop) fired NO alert, and (b) a WINNING short (price falling toward target) fired a FALSE stopBreach. Fix: `isShort = bearish.contains(action)` (bearish={.sell,.reduce}; Set.contains is Hashable-based so it is safe in the nonisolated func) → short stopBreach when price crosses UP through stop (prev<stop && now>=stop), targetHit when it crosses DOWN through target; long unchanged. Restructured the ternaries to if/else (Swift flagged the bool-ternary as too-complex to type-check).
+**Verify:** typecheck EXIT=0; python + 2 new tests — short stop-out 107→109/stop108 fires; winning short 109→107 does NOT; short target 86→83/tgt84 fires; 90→86 not yet. Long tests unchanged.
+**Remaining: JOURNAL_PORTFOLIO_BUGHUNT #2 (latent, no caller) — same inversion in StockSageAlertDecision.evaluate; fix to keep the two detectors in agreement. DECISION_ENGINE #3 momentum triple-count.**
+**Result:** a short blowing through its stop while the owner is away now fires the warning it always should have — and a winning short no longer cries wolf. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

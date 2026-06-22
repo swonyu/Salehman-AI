@@ -58,16 +58,30 @@ enum StockSageAlerts {
                 }
             }
 
-            // Price crossed the advised stop (down through) or target (up through).
-            if let stop = idea.advice.stopPrice, prev.price > stop, idea.price <= stop {
-                alerts.append(IdeaAlert(symbol: idea.symbol, kind: .stopBreach,
-                                        detail: String(format: "Price %.2f broke the %.2f stop", idea.price, stop),
-                                        price: idea.price))
+            // Price crossed the advised stop or target. Direction depends on SIDE: a LONG stops
+            // BELOW / targets ABOVE; a SHORT (sell/reduce) mirrors it — stop ABOVE, target BELOW.
+            // (Was long-only: a short's stop-out was missed and a winning short fired a false stop.)
+            let isShort = bearish.contains(idea.advice.action)
+            let prevP = prev.price, nowP = idea.price
+            if let stop = idea.advice.stopPrice {
+                let breached: Bool
+                if isShort { breached = prevP < stop && nowP >= stop }   // short: crossed UP through stop
+                else { breached = prevP > stop && nowP <= stop }         // long: crossed DOWN through stop
+                if breached {
+                    alerts.append(IdeaAlert(symbol: idea.symbol, kind: .stopBreach,
+                                            detail: String(format: "Price %.2f broke the %.2f stop", nowP, stop),
+                                            price: idea.price))
+                }
             }
-            if let target = idea.advice.targetPrice, prev.price < target, idea.price >= target {
-                alerts.append(IdeaAlert(symbol: idea.symbol, kind: .targetHit,
-                                        detail: String(format: "Price %.2f reached the %.2f target", idea.price, target),
-                                        price: idea.price))
+            if let target = idea.advice.targetPrice {
+                let hit: Bool
+                if isShort { hit = prevP > target && nowP <= target }    // short: crossed DOWN through target
+                else { hit = prevP < target && nowP >= target }          // long: crossed UP through target
+                if hit {
+                    alerts.append(IdeaAlert(symbol: idea.symbol, kind: .targetHit,
+                                            detail: String(format: "Price %.2f reached the %.2f target", nowP, target),
+                                            price: idea.price))
+                }
             }
         }
         return alerts
