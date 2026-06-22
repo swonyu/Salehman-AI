@@ -7093,6 +7093,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · CONCURRENCY FIX — removing a ticker during an in-flight refresh no longer reverts (+ re-caches)
+**Files:** `StockSage/StockSageStore.swift` (refresh commit). Persisted CONCURRENCY_BUGHUNT.md.
+**What (concurrency bughunt wafc1ymeh #1, MED — an await-suspension interleaving MainActor does NOT prevent):** refresh() captures the universe pre-await (incl. FOO), suspends at fetchQuotes; if the user removeSymbol(FOO) lands during the await, refresh resumes, FOO is still priced in `live`, committed=live+preserved re-includes FOO → replaceAll puts the just-removed FOO BACK on screen AND saves it to the cache, so it survives relaunch (loadCachedQuotes never reconciles vs userSymbols). Fix: after the await, reconcile `live` against the CURRENT userSymbols — `liveFiltered` drops user-market rows no longer tracked; committed + cache use liveFiltered. The mid-flight removal now wins; curated rows untouched.
+**Verify:** typecheck EXIT=0. refresh() is async/network — not directly unit-tested; the filter is a pure set-membership guard.
+**Remaining (CONCURRENCY_BUGHUNT.md): #2 (low) StockSageMonitor.stop() doesn't honor Task.isCancelled (post-stop alert + stop→start double-fire); #3 (low) retryFailedIdeas re-reads trackedDefs() after await (a mid-await add falsely listed as "couldn't be fetched") — capture universe once like refreshIdeas.**
+**Result:** a ticker the owner removes stays removed, even if a refresh was mid-flight. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

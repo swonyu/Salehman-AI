@@ -652,11 +652,19 @@ final class StockSageStore: ObservableObject {
         // Preserve user-added tickers this refresh's pre-await snapshot may have
         // missed — e.g. a symbol added DURING the network await would otherwise be
         // wiped by the wholesale replace until the next cycle.
-        let liveKeys = Set(live.map { $0.symbol.uppercased() })
+        // A removeSymbol() that landed DURING the await must win: this refresh's pre-await snapshot
+        // still fetched + priced that ticker, so it sits in `live` and would otherwise revert the
+        // removal on screen AND re-persist it to the cache (surviving relaunch). Drop any user-market
+        // row whose symbol is no longer tracked. Curated rows are untouched (removeSymbol no-ops there).
+        let tracked = Set(userSymbols.map { $0.uppercased() })
+        let liveFiltered = live.filter {
+            $0.market != Self.userMarketLabel || tracked.contains($0.symbol.uppercased())
+        }
+        let liveKeys = Set(liveFiltered.map { $0.symbol.uppercased() })
         let preservedUserRows = symbols.filter {
             $0.market == Self.userMarketLabel && !liveKeys.contains($0.symbol.uppercased())
         }
-        let committed = live + preservedUserRows
+        let committed = liveFiltered + preservedUserRows
         replaceAll(committed, isSample: false)
         lastUpdated = Date()
         // Persist EXACTLY what is on screen (incl. preserved user-added tickers the feed missed this
