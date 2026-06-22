@@ -63,7 +63,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** "What-if (HYPOTHETICAL) … 100 trades ≈ ×Z" renders in warningSoft yellow when multiple>=1 and danger red when <1, reading as "this will lose" rather than a variance path. Render the line in .secondary; the strong NOT-a-prediction caveat already carries the weight.
 **Why:** Color over-emphasizes a neutral compounding estimate as a forecast. Batch with rank 8 (same file, same fix pattern).
 
-### ⬜ #11 — Caveat-presence regression test (MoneyVelocityCopy strings used in views)  [medium/small, test-gap]
+### ✅ DONE #11 — Caveat-presence regression test (MoneyVelocityCopy strings used in views)  [medium/small, test-gap]
 **File:** Salehman AI/StockSage/StockSageGlossary.swift
 **What:** No automated check that the honesty caveats in MoneyVelocityCopy actually appear in a view. Add a test that greps the view sources for each constant name so a future refactor that drops a caveat fails CI.
 **Why:** The caveats ARE the honesty floor; their silent removal is a compliance bug. Cheap insurance.

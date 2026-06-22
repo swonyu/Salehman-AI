@@ -6533,6 +6533,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** The flip-margin chip showed the RAW (buy−sell) margin labeled "pre-tax" — but the number you keep is after the 2% GE sell tax on the sale price (`high`). Now the chip displays the NET margin (`margin − sellTax(high)`), and its color (green/red) reflects net (a thin margin that's positive pre-tax can go negative after tax). The tooltip shows the breakdown "raw X − tax Y = Z (tax live since 2025-05-29)" and the VoiceOver label reads "net margin Z after tax". Reuses `StockSageGEFlip.sellTax` (2%, cap 5M, exempt <50gp). The displayed edge now matches reality. ✅ typecheck clean.
 **Result:** Hardening 1-10, 13, 15, 16 done. NEXT: #17 compounding wipeout label, #18 new-listing flag, #20 dropped-trade count, #11 caveat regression test. Loop continues.
 
+## 2026-06-22 · Hardening #11: Honesty-guard extended to the new money engines
+**Files:** `Salehman AITests/StockSageHonestyGuardTests.swift` (NEW, 3 tests).
+**What & why:** Verified the existing caveat sweep (`StockSageGlossaryTests`) already pins every `MoneyVelocityCopy.all` string + every `MoneyVelocityTerm` + the playbook as hedged — so #11's core ask was already covered (NOT duplicated). What WASN'T covered: the money/risk engines built in this hardening pass. Added a structural guard asserting `StockSagePortfolioHeat.caveat` ("Assumes … a correlated gap …") and `StockSageTimeStop.rationale` (exit: "…a clock, not a sell signal") carry a hedge stem, and that `StockSageNetEdge.defaultCosts` names its asset class — so a future edit dropping a caveat fails CI. PYTHON-VERIFIED both strings hedged. ✅ typecheck clean.
+**Result:** Hardening 1-11, 13, 15, 16 done (15 of 33). NEXT: #17/#18/#20 small bugs (verify each is real first). Loop continues.
+
 ---
 
 ## Standing notes / known issues

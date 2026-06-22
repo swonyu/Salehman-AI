@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 13:34 +03 · Swift files: 245 · Swift LOC: 45510_
+_Generated: 2026-06-22 13:42 +03 · Swift files: 246 · Swift LOC: 45545_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -43112,6 +43112,45 @@ struct StockSageGlossaryTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSageHonestyGuardTests.swift (35 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Honesty guard for the NEW money engines (hardening #11 extension)
+//
+// The existing caveat sweep (StockSageGlossaryTests) pins MoneyVelocityCopy + the glossary.
+// This extends the same structural guard to the money/risk engines added in the 2026-06-22
+// hardening pass, so a future edit that drops a caveat from PortfolioHeat / TimeStop becomes
+// a failing test rather than a silent over-promise.
+
+struct StockSageHonestyGuardTests {
+    private let hedges = ["estimate", "not ", "assum", "surviv", "variance", "ceiling",
+                          "volume", "clock", "may ", "hypothetical", "past", "gap"]
+    private func hedged(_ s: String) -> Bool { let l = s.lowercased(); return hedges.contains { l.contains($0) } }
+
+    @Test func portfolioHeatCarriesACaveat() {
+        let h = StockSagePortfolioHeat.compute(openTrades: [(10, 100, 90)], accountSize: 10_000)!
+        #expect(hedged(h.caveat))   // "Assumes … a correlated gap can hit several at once…"
+    }
+
+    @Test func timeStopRationaleIsHedgedBothStates() {
+        let t0 = Date(timeIntervalSince1970: 0)
+        let exit = StockSageTimeStop.suggest(openedAt: t0, now: Date(timeIntervalSince1970: 20 * 86_400), daysToHold: 10)!
+        #expect(exit.shouldExit && hedged(exit.rationale))   // "…a clock, not a sell signal"
+        let running = StockSageTimeStop.suggest(openedAt: t0, now: Date(timeIntervalSince1970: 5 * 86_400), daysToHold: 10)!
+        #expect(!running.shouldExit)   // running state is a plain count, not a money claim
+    }
+
+    @Test func netEdgeCostsAreLabeledByAssetClass() {
+        // The cost assumption must name its asset class so the UI can label it an estimate.
+        #expect(StockSageNetEdge.defaultCosts(forSymbol: "BTC-USD").assetClass == "crypto")
+        #expect(StockSageNetEdge.defaultCosts(forSymbol: "AAPL").assetClass == "US large-cap")
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSageIndicatorsTests.swift (66 lines) =====
 ```swift
 import Testing
@@ -48549,7 +48588,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7650 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7655 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -55085,6 +55124,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** The flip-margin chip showed the RAW (buy−sell) margin labeled "pre-tax" — but the number you keep is after the 2% GE sell tax on the sale price (`high`). Now the chip displays the NET margin (`margin − sellTax(high)`), and its color (green/red) reflects net (a thin margin that's positive pre-tax can go negative after tax). The tooltip shows the breakdown "raw X − tax Y = Z (tax live since 2025-05-29)" and the VoiceOver label reads "net margin Z after tax". Reuses `StockSageGEFlip.sellTax` (2%, cap 5M, exempt <50gp). The displayed edge now matches reality. ✅ typecheck clean.
 **Result:** Hardening 1-10, 13, 15, 16 done. NEXT: #17 compounding wipeout label, #18 new-listing flag, #20 dropped-trade count, #11 caveat regression test. Loop continues.
 
+## 2026-06-22 · Hardening #11: Honesty-guard extended to the new money engines
+**Files:** `Salehman AITests/StockSageHonestyGuardTests.swift` (NEW, 3 tests).
+**What & why:** Verified the existing caveat sweep (`StockSageGlossaryTests`) already pins every `MoneyVelocityCopy.all` string + every `MoneyVelocityTerm` + the playbook as hedged — so #11's core ask was already covered (NOT duplicated). What WASN'T covered: the money/risk engines built in this hardening pass. Added a structural guard asserting `StockSagePortfolioHeat.caveat` ("Assumes … a correlated gap …") and `StockSageTimeStop.rationale` (exit: "…a clock, not a sell signal") carry a hedge stem, and that `StockSageNetEdge.defaultCosts` names its asset class — so a future edit dropping a caveat fails CI. PYTHON-VERIFIED both strings hedged. ✅ typecheck clean.
+**Result:** Hardening 1-11, 13, 15, 16 done (15 of 33). NEXT: #17/#18/#20 small bugs (verify each is real first). Loop continues.
+
 ---
 
 ## Standing notes / known issues
@@ -58431,7 +58475,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** "What-if (HYPOTHETICAL) … 100 trades ≈ ×Z" renders in warningSoft yellow when multiple>=1 and danger red when <1, reading as "this will lose" rather than a variance path. Render the line in .secondary; the strong NOT-a-prediction caveat already carries the weight.
 **Why:** Color over-emphasizes a neutral compounding estimate as a forecast. Batch with rank 8 (same file, same fix pattern).
 
-### ⬜ #11 — Caveat-presence regression test (MoneyVelocityCopy strings used in views)  [medium/small, test-gap]
+### ✅ DONE #11 — Caveat-presence regression test (MoneyVelocityCopy strings used in views)  [medium/small, test-gap]
 **File:** Salehman AI/StockSage/StockSageGlossary.swift
 **What:** No automated check that the honesty caveats in MoneyVelocityCopy actually appear in a view. Add a test that greps the view sources for each constant name so a future refactor that drops a caveat fails CI.
 **Why:** The caveats ARE the honesty floor; their silent removal is a compliance bug. Cheap insurance.
