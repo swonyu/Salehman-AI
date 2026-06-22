@@ -7322,6 +7322,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · MONEY (placeable order) — best-opportunity card now shows entry/stop/target + CLEAN quant-math audit
+**Files:** `Views/MarketsView.swift` (bestOpportunityCard order-level row + spoken order label).
+**What (DECISIVENESS wk3ls81vm #1):** the "Best opportunity now" card showed the verdict (Est.EV, R:R, Win%, Size, and the shares/$ size-it-now line) but NOT the price levels — so it was a verdict, not a placeable order. Added an Entry/Stop/Target row (adaptivePrice, so sub-dollar shows real magnitude) and a precomputed VoiceOver order label ("...entry X, stop Y, target Z"). Now ticker + side + entry + stop + target + shares + $-at-risk + EV all sit on one card.
+**Verify:** typecheck EXIT=0 (separate step); order label precomputed via a closure OUTSIDE the ViewBuilder (no type-check timeout); >=$1 prices unchanged.
+**ALSO — quant-math correctness audit (workflow wkypyjh8x, 8 agents incl. 2 skeptics + a lead re-derivation): CLEAN, ZERO confirmed formula errors.** Every money/ranking formula independently re-derived vs canonical and matched: Kelly f*=W−(1−W)/R + edge=W·R−(1−W); EV=p·R−(1−p), rewardR cap 50; net R:R=(reward−cost)/(risk+cost), break-even 1/(1+netRR); sizing ⌊acct·f/|entry−stop|⌋; GE gp/hr tax floor+5M cap+50 exempt; bootstrap ruin equity·(1+f·R) + SplitMix64; PSR + DSR expected-max-Sharpe; leverage 100/L; drawdown (1−f)^k; Sharpe/Sortino/Calmar/VaR, sample-stdev n−1, Pearson, beta=cov/var; Wilder RSI/ATR, vol·√252; inverse-vol risk-parity; FX pence/cents ÷100.
+**Result:** the headline action is a complete order; the engine math underneath it is canonically correct. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

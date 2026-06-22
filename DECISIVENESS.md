@@ -2,7 +2,7 @@
 
 12 verified signal-to-dollars gaps (33 agents). #4 earnings-gate bestOpportunity DONE. RE-VERIFY rest.
 
-### ⬜ #1 [high] — Best-opportunity card omits entry/stop/target — the three levels a broker order needs
+### ✅ DONE #1 [high] — Best-opportunity card omits entry/stop/target — the three levels a broker order needs
 **file:** Salehman AI/Views/MarketsView.swift:2431-2448
 **fix:** After the metric HStack at line 2440, add a price row mirroring the ideaCard pattern (lines 2305-2311): ideaMetric(Entry, format idea.price); when idea.advice.stopPrice non-nil ideaMetric(Stop, color danger); when targetPrice non-nil ideaMetric(Target, color successSoft). Puts ticker+side+entry+stop+target+shares+$risk on one card, no tap-through.
 **$:** Turns 'this is your best bet' into a placeable order on its face — entry, stop, and target appear on the action card instead of only inside the detail sheet or an unseen clipboard blob.

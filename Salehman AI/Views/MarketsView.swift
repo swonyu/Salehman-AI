@@ -2461,6 +2461,14 @@ struct MarketsView: View {
     @ViewBuilder private var bestOpportunityCard: some View {
         if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings) {
             let idea = best.idea, ev = best.ev
+            // Spoken full order (precomputed OUTSIDE the ViewBuilder so the multi-clause concat does
+            // not tip the card body over the type-checker budget).
+            let orderLabel: String = {
+                var s = "Best opportunity: \(idea.symbol), \(idea.advice.action.rawValue), estimated EV \(String(format: "%.2f", ev.evR)) R, entry \(adaptivePrice(idea.price))"
+                if let stop = idea.advice.stopPrice { s += ", stop \(adaptivePrice(stop))" }
+                if let target = idea.advice.targetPrice { s += ", target \(adaptivePrice(target))" }
+                return s
+            }()
             VStack(alignment: .leading, spacing: 6) {
             Button { selectedIdea = idea } label: {
                 VStack(alignment: .leading, spacing: 6) {
@@ -2482,6 +2490,17 @@ struct MarketsView: View {
                         }
                         Spacer(minLength: 0)
                     }
+                    // The actual order levels, so the card is a placeable order, not just a verdict.
+                    HStack(spacing: 16) {
+                        ideaMetric("Entry", adaptivePrice(idea.price))
+                        if let stop = idea.advice.stopPrice {
+                            ideaMetric("Stop", adaptivePrice(stop), color: DS.Palette.danger)
+                        }
+                        if let target = idea.advice.targetPrice {
+                            ideaMetric("Target", adaptivePrice(target), color: DS.Palette.successSoft)
+                        }
+                        Spacer(minLength: 0)
+                    }
                     if let stop = idea.advice.stopPrice, let acct = Double(sizerAccount), acct > 0,
                        let rp = Double(sizerRiskPct), rp > 0,
                        let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
@@ -2498,7 +2517,7 @@ struct MarketsView: View {
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.accent.opacity(0.35), lineWidth: 1))
             }
             .buttonStyle(LuxPressStyle())
-            .accessibilityLabel("Best opportunity: \(idea.symbol), estimated EV \(String(format: "%.2f", ev.evR)) R")
+            .accessibilityLabel(orderLabel)
             HStack(spacing: 6) {
                 Spacer()
                 Button {
