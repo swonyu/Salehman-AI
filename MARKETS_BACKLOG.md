@@ -99,7 +99,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** The journal is the system-health source of truth — a wrong close corrupts expectancy/edge stats. Add a confirm sheet showing computed P&L and R-multiple before committing, or a brief undo toast.
 **Files:** Salehman AI/Views/MarketsView.swift:1310-1321
 
-### ⬜ #16 — Validate numeric inputs (Kelly %, journal prices, GE budget)  [medium/small, Inputs/bug]
+### ✅ DONE #16 — Validate numeric inputs (Kelly %, journal prices, GE budget)  [medium/small, Inputs/bug]
 **What:** kellyField and journalField are plain TextFields with no validation — '-50' for win% or a negative price silently clamps to 0/garbage. RuneScape budget parses Int(text) ?? 0 so 'abc' becomes 0 and the user just sees 'budget too small'.
 **Why:** Garbage-in produces silently-wrong sizing and a confusing dead UI. Add decimalPad + range filtering (0-100 for %, 0+ for price/account/budget) and an inline red 'positive numbers only' state.
 **Files:** Salehman AI/Views/MarketsView.swift:1421-1432; Salehman AI/Views/MarketsView.swift:1224-1230; Salehman AI/Views/RuneScapeMarketView.swift:236

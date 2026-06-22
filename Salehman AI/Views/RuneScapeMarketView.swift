@@ -229,7 +229,8 @@ struct RuneScapeMarketView: View {
 
                 // Budget-aware: "with N gp, flip these" (greedy by gp/hour within the budget).
                 Divider().overlay(DS.Palette.surfaceStroke)
-                let budget = Int(geBudgetText) ?? 0
+                let validBudget = StockSageInput.positiveInt(geBudgetText)
+                let budget = validBudget ?? 0
                 let plan = StockSageGEFlip.bestFlipsForBudget(flips, budget: budget)
                 HStack(spacing: 6) {
                     Text("With").font(.system(size: rsFont9)).foregroundStyle(.secondary)
@@ -250,6 +251,9 @@ struct RuneScapeMarketView: View {
                         .font(.system(size: rsFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 } else if budget > 0 {
                     Text("Budget too small to fund a full unit of the fastest flips — raise it.")
+                        .font(.system(size: rsFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                } else if validBudget == nil, !geBudgetText.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Text("Enter a whole number of gp (digits only, no decimals).")
                         .font(.system(size: rsFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                 }
             }

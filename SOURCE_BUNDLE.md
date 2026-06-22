@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 10:25 +03 · Swift files: 234 · Swift LOC: 44773_
+_Generated: 2026-06-22 10:27 +03 · Swift files: 236 · Swift LOC: 44850_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -10221,6 +10221,43 @@ enum StockSageIndicators {
         let past = closes[closes.count - 1 - period]
         guard past != 0, let last = closes.last else { return nil }
         return (last - past) / past * 100
+    }
+}
+```
+
+===== FILE: Salehman AI/StockSage/StockSageInput.swift (33 lines) =====
+```swift
+import Foundation
+
+// MARK: - Numeric input validation
+//
+// The UI parses free-text numeric fields (account size, risk %, journal prices, GE
+// budget) with `Double(text) ?? 0` — so "abc", "1.2.3", a negative, or an out-of-range
+// percent silently become 0/default and quietly produce a wrong $-estimate or P&L.
+// These pure validators return nil on bad input so callers can show an honest hint
+// instead of computing on a fabricated zero. Tolerant of thousands separators + spaces.
+
+enum StockSageInput {
+    private nonisolated static func clean(_ s: String) -> String {
+        s.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: "")
+    }
+
+    /// A finite amount > 0 (money / budget / price). nil otherwise.
+    nonisolated static func positiveAmount(_ s: String) -> Double? {
+        guard let v = Double(clean(s)), v.isFinite, v > 0 else { return nil }
+        return v
+    }
+
+    /// A percent in (0, max]. nil otherwise (default cap 100). For Kelly / risk %.
+    nonisolated static func percent(_ s: String, max: Double = 100) -> Double? {
+        guard let v = Double(clean(s)), v.isFinite, v > 0, v <= max else { return nil }
+        return v
+    }
+
+    /// A whole count > 0 (GE budget gp, share count). Rejects decimals + non-numbers.
+    nonisolated static func positiveInt(_ s: String) -> Int? {
+        guard let v = Int(clean(s)), v > 0 else { return nil }
+        return v
     }
 }
 ```
@@ -30337,7 +30374,7 @@ struct RootView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/RuneScapeMarketView.swift (407 lines) =====
+===== FILE: Salehman AI/Views/RuneScapeMarketView.swift (411 lines) =====
 ```swift
 import SwiftUI
 
@@ -30570,7 +30607,8 @@ struct RuneScapeMarketView: View {
 
                 // Budget-aware: "with N gp, flip these" (greedy by gp/hour within the budget).
                 Divider().overlay(DS.Palette.surfaceStroke)
-                let budget = Int(geBudgetText) ?? 0
+                let validBudget = StockSageInput.positiveInt(geBudgetText)
+                let budget = validBudget ?? 0
                 let plan = StockSageGEFlip.bestFlipsForBudget(flips, budget: budget)
                 HStack(spacing: 6) {
                     Text("With").font(.system(size: rsFont9)).foregroundStyle(.secondary)
@@ -30591,6 +30629,9 @@ struct RuneScapeMarketView: View {
                         .font(.system(size: rsFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 } else if budget > 0 {
                     Text("Budget too small to fund a full unit of the fastest flips — raise it.")
+                        .font(.system(size: rsFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                } else if validBudget == nil, !geBudgetText.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Text("Enter a whole number of gp (digits only, no decimals).")
                         .font(.system(size: rsFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -42633,6 +42674,50 @@ struct StockSageIndicatorsTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSageInputTests.swift (40 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Numeric input validation (pure)
+
+struct StockSageInputTests {
+    typealias I = StockSageInput
+
+    @Test func positiveAmountAcceptsGoodRejectsBad() {
+        #expect(I.positiveAmount("10000") == 10000)
+        #expect(I.positiveAmount("10,000") == 10000)        // thousands separator
+        #expect(I.positiveAmount("  1.5 ") == 1.5)          // whitespace + decimal
+        #expect(I.positiveAmount("0") == nil)               // not > 0
+        #expect(I.positiveAmount("-5") == nil)              // negative
+        #expect(I.positiveAmount("abc") == nil)             // non-numeric
+        #expect(I.positiveAmount("1.2.3") == nil)           // malformed
+        #expect(I.positiveAmount("") == nil)
+    }
+
+    @Test func percentBoundedZeroToMax() {
+        #expect(I.percent("1") == 1)
+        #expect(I.percent("2.5") == 2.5)
+        #expect(I.percent("100") == 100)                    // inclusive max
+        #expect(I.percent("0") == nil)                      // not > 0
+        #expect(I.percent("150") == nil)                    // over default max
+        #expect(I.percent("100.1") == nil)
+        #expect(I.percent("25", max: 20) == nil)            // custom cap
+        #expect(I.percent("nope") == nil)
+    }
+
+    @Test func positiveIntRejectsDecimalsAndNonPositive() {
+        #expect(I.positiveInt("5000000") == 5_000_000)
+        #expect(I.positiveInt("1,000") == 1000)
+        #expect(I.positiveInt("0") == nil)
+        #expect(I.positiveInt("-3") == nil)
+        #expect(I.positiveInt("3.5") == nil)                // Int() rejects decimals
+        #expect(I.positiveInt("ten") == nil)
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSageJournalCSVTests.swift (38 lines) =====
 ```swift
 import Testing
@@ -47768,7 +47853,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7561 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7566 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54215,6 +54300,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** The ideas board could only sort, not filter — to find the strongest setups you scanned the whole list. Added a persisted action filter (Menu): All / Strong Buy / Buys (strongBuy+buy) / Sells (sell+reduce), applied after the sort. Shows "No <filter> ideas in this scan" when a filter is empty. Persisted via @AppStorage so the owner's preferred view sticks. The TradeAdvice.Action enum has no strongSell (strongBuy/buy/hold/avoid/reduce/sell), so "Sells" = sell+reduce.
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 12/32 done. NEXT: #16 input validation. Committed + pushed.
 
+## 2026-06-22 · Backlog #16: Numeric input validation (StockSageInput) + GE-budget hint
+**Files:** `StockSage/StockSageInput.swift` (NEW), `Views/RuneScapeMarketView.swift` (GE budget uses it + invalid hint), `Salehman AITests/StockSageInputTests.swift` (NEW, 3 tests).
+**What & why:** UI fields parsed with `Double(text) ?? 0` / `Int(text) ?? 0`, so "abc"/"1.2.3"/negatives/out-of-range silently became 0 → a wrong $-estimate or P&L with no signal. `StockSageInput` adds pure validators returning nil on bad input: `positiveAmount` (>0, tolerant of ","/spaces), `percent(_:max:)` ((0,max], default 100 — for Kelly/risk %), `positiveInt` (>0, rejects decimals — GE budget/shares). Wired into the GE budget field: invalid non-empty input now shows "Enter a whole number of gp (digits only)" instead of silently flipping to 0. 3 tests, PYTHON-VERIFIED: 10,000→10000, 1.2.3→nil, −5→nil; pct 100→100, 150→nil, 25 cap20→nil; pint 5000000→5000000, 3.5→nil, 1,000→1000. (Reusable for journal-price/sizer fields next.)
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 13/32 done. NEXT: #20 fast-lane warning on summary card / #17 asset-class costs. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
@@ -57672,7 +57762,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** The journal is the system-health source of truth — a wrong close corrupts expectancy/edge stats. Add a confirm sheet showing computed P&L and R-multiple before committing, or a brief undo toast.
 **Files:** Salehman AI/Views/MarketsView.swift:1310-1321
 
-### ⬜ #16 — Validate numeric inputs (Kelly %, journal prices, GE budget)  [medium/small, Inputs/bug]
+### ✅ DONE #16 — Validate numeric inputs (Kelly %, journal prices, GE budget)  [medium/small, Inputs/bug]
 **What:** kellyField and journalField are plain TextFields with no validation — '-50' for win% or a negative price silently clamps to 0/garbage. RuneScape budget parses Int(text) ?? 0 so 'abc' becomes 0 and the user just sees 'budget too small'.
 **Why:** Garbage-in produces silently-wrong sizing and a confusing dead UI. Add decimalPad + range filtering (0-100 for %, 0+ for price/account/budget) and an inline red 'positive numbers only' state.
 **Files:** Salehman AI/Views/MarketsView.swift:1421-1432; Salehman AI/Views/MarketsView.swift:1224-1230; Salehman AI/Views/RuneScapeMarketView.swift:236

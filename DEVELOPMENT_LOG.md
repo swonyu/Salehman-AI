@@ -6444,6 +6444,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** The ideas board could only sort, not filter — to find the strongest setups you scanned the whole list. Added a persisted action filter (Menu): All / Strong Buy / Buys (strongBuy+buy) / Sells (sell+reduce), applied after the sort. Shows "No <filter> ideas in this scan" when a filter is empty. Persisted via @AppStorage so the owner's preferred view sticks. The TradeAdvice.Action enum has no strongSell (strongBuy/buy/hold/avoid/reduce/sell), so "Sells" = sell+reduce.
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 12/32 done. NEXT: #16 input validation. Committed + pushed.
 
+## 2026-06-22 · Backlog #16: Numeric input validation (StockSageInput) + GE-budget hint
+**Files:** `StockSage/StockSageInput.swift` (NEW), `Views/RuneScapeMarketView.swift` (GE budget uses it + invalid hint), `Salehman AITests/StockSageInputTests.swift` (NEW, 3 tests).
+**What & why:** UI fields parsed with `Double(text) ?? 0` / `Int(text) ?? 0`, so "abc"/"1.2.3"/negatives/out-of-range silently became 0 → a wrong $-estimate or P&L with no signal. `StockSageInput` adds pure validators returning nil on bad input: `positiveAmount` (>0, tolerant of ","/spaces), `percent(_:max:)` ((0,max], default 100 — for Kelly/risk %), `positiveInt` (>0, rejects decimals — GE budget/shares). Wired into the GE budget field: invalid non-empty input now shows "Enter a whole number of gp (digits only)" instead of silently flipping to 0. 3 tests, PYTHON-VERIFIED: 10,000→10000, 1.2.3→nil, −5→nil; pct 100→100, 150→nil, 25 cap20→nil; pint 5000000→5000000, 3.5→nil, 1,000→1000. (Reusable for journal-price/sizer fields next.)
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 13/32 done. NEXT: #20 fast-lane warning on summary card / #17 asset-class costs. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
