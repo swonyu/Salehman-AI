@@ -6883,6 +6883,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SIGNAL-TO-DOLLARS #1 — ratcheting "where your stop should be today" (TrailingStop.recompute)
+**Files:** `StockSage/StockSageTrailingStop.swift` (+recompute), `Salehman AITests/StockSageTrailingStopTests.swift` (+1 test). Persisted SIGNAL_TO_DOLLARS.md (17 items, the verified signal-to-dollars sweep).
+**What:** suggest() gives a one-shot Chandelier level anchored to the recent N-bar high — it can drift DOWN on a pullback, surrendering banked profit the backtester assumed locked. New recompute(highs:lows:closes:entryIndex:multiple:period:) lifts the backtester's exact up-only ratchet (trailLevels: anchorHigh=max-since-entry, level=max(level, anchorHigh−k·ATR)) into an owner-facing "where your stop SHOULD be today." Returns the FINAL ratcheted level; nil when the level is ≥ last close (price pulled back THROUGH the trail → you should already be out, not "set a stop here"). Advisory only — the app places no orders. Verified build-ready by the thunked signal-to-dollars sweep (wykgxme0c).
+**Verify:** typecheck EXIT=0 (real exit code); python-verified the Wilder-ATR ratchet THEN tested: clean uptrend → usable level (0<level<lastClose); shallow pullback → stop HELD at 133.0 (did not drop); deep pullback through the trail → nil; entry at last bar / out-of-range → nil.
+**Result:** turns the proven trailing exit into a daily "raise your stop to T" the owner can act on — the kept-profit floor the simulation credits becomes the floor he actually holds. forOpenTrade bridge (#2) + held-position breach alert (#3) build on this. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
