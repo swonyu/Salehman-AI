@@ -7040,6 +7040,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · MONEY-FLOW BUG FIX — logging a SHORT from an idea no longer discards its stop/target
+**Files:** `Views/MarketsView.swift` (prefillTradeFromIdea). Persisted MONEY_FLOW_AUDIT.md (11 items).
+**What (money-flow integration sweep wdzfepgrt #1, HIGH bug):** prefillTradeFromIdea blanked draftStop/draftTarget for sell/reduce ideas (`bearish ? "" : ...`) under a FALSE comment ("Advisor only fills stop/target for long-biased buys"). But the advisor DOES compute a side-correct short stop/target (stopTarget(.sell) → stop ABOVE entry, target BELOW; test stopTargetIsSymmetricForLongsAndShorts). So logging a short from an idea dropped its defined risk → the journal trade had no stop → R undefined. Fix: prefill stopPrice/targetPrice regardless of side (the values are already side-correct); .map/?? still blanks the genuine nil (degenerate-ATR) case.
+**Verify:** typecheck EXIT=0; render UNVERIFIED. A short logged from an idea now carries the advisor's protective stop + target.
+**Remaining (MONEY_FLOW_AUDIT.md): #2 indices/FX surfaced as buyable ideas (^VIX "buy"); #3 shorts top the velocity/fast-lane; #4 regime dropped EV→velocity; #5 after-cost gate dropped in velocity rank; #6 RS-vs-S&P on FX/indices; #7 retry drops benchmark; #8 cache drops user tickers; #9 live per-position "act now" gap; #10 walkForwardDecay unwired; #11 PSR not displayed.**
+**Result:** the journal's short trades keep their risk definition — no more undefined-R shorts from a prefill. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

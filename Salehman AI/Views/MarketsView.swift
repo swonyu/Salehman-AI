@@ -1474,10 +1474,11 @@ struct MarketsView: View {
         let bearish = idea.advice.action == .sell || idea.advice.action == .reduce
         draftSymbol = idea.symbol
         draftEntry = String(format: "%.2f", idea.price)
-        // Advisor only fills stop/target for long-biased buys; a short leaves them
-        // blank for the owner to set (the form requires a protective stop per side).
-        draftStop = bearish ? "" : (idea.advice.stopPrice.map { String(format: "%.2f", $0) } ?? "")
-        draftTarget = bearish ? "" : (idea.advice.targetPrice.map { String(format: "%.2f", $0) } ?? "")
+        // The advisor fills a SIDE-CORRECT stop/target for shorts too (sell stop ABOVE entry, target
+        // BELOW) — prefill them regardless of side so a logged short keeps its defined risk. The
+        // .map/?? still blanks the genuine degenerate case (advisor returned nil, e.g. huge ATR).
+        draftStop = idea.advice.stopPrice.map { String(format: "%.2f", $0) } ?? ""
+        draftTarget = idea.advice.targetPrice.map { String(format: "%.2f", $0) } ?? ""
         draftShares = ""
         draftNote = "From idea: \(idea.advice.action.rawValue), \(Int(idea.advice.conviction * 100))% conviction"
         draftSide = bearish ? .short : .long   // side follows the idea's direction
