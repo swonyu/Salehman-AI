@@ -6759,6 +6759,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · StockSageLeverage — honest leverage/margin engine (liquidation + loss-more-than-account)
+**Files:** NEW `StockSage/StockSageLeverage.swift`, NEW `Salehman AITests/StockSageLeverageTests.swift` (+1 test). Marked LEVERAGE_RISK #2.
+**What:** derives the three numbers leverage actually changes (NONE upside): liquidationMovePct = 100/L (adverse % move that wipes posted equity), liquidationPrice = entry·(1−1/L) for a long (0 for cash — no margin liquidation), drawdownMultiplier = L. `assess(account:notional:entry:)` computes L = notional/account (the same ratio PositionSizer.pctOfAccount produces); `assess(leverage:entry:)` takes an explicit multiple. canLoseMoreThanAccount = L>1 OR an options/short/futures instrument flag — so no caller renders leverage without that truth. Pairs with StockSageGapRisk (a gap THROUGH liquidation loses even more). Permanent caveat embedded (fees/funding only move liquidation CLOSER). Guards → nil.
+**Verify:** typecheck clean; python-verified — 3× → liquidationMovePct 33.33, liquidationPrice 66.67, canLoseMoreThanAccount true; 1× cash → liqPrice 0, canExceed false; $30k notional / $10k account = 3×; option at ≤1× still flagged.
+**Result:** the engine can now state the brutal truth of leverage — a 33% move ends a 3× position and you can owe more than you put in. Completes the loss-honesty trio (sizing → gap → leverage). ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
