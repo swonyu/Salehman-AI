@@ -312,6 +312,10 @@ struct MarketsView: View {
         if store.loadedFromCache, let saved = store.cacheSavedAt {
             return "Last-good (cached) as of \(Self.timeFormatter.string(from: saved)) · refresh for live"
         }
+        if store.isSampleData {
+            // Be unmistakable that these are NOT real prices — tap refresh for live data.
+            return "⚠︎ SAMPLE prices (not real) — tap ↻ to load live data"
+        }
         return "Rule-based momentum signals · educational, not financial advice"
     }
 

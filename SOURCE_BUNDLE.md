@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 14:17 +03 · Swift files: 246 · Swift LOC: 45587_
+_Generated: 2026-06-22 14:26 +03 · Swift files: 246 · Swift LOC: 45591_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -26610,7 +26610,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (3174 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (3178 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -26925,6 +26925,10 @@ struct MarketsView: View {
         }
         if store.loadedFromCache, let saved = store.cacheSavedAt {
             return "Last-good (cached) as of \(Self.timeFormatter.string(from: saved)) · refresh for live"
+        }
+        if store.isSampleData {
+            // Be unmistakable that these are NOT real prices — tap refresh for live data.
+            return "⚠︎ SAMPLE prices (not real) — tap ↻ to load live data"
         }
         return "Rule-based momentum signals · educational, not financial advice"
     }
@@ -46638,6 +46642,160 @@ struct WebToolsOfflineGateTests {
 **File:** Salehman AI/Views/BrowseMarketsView.swift:71
 **Fix:** The Picker uses `.labelsHidden()` (line 74), hiding the 'Asset class' label from sighted users. The segmented options (All/Stocks/ETFs/...) are self-describing, so VoiceOver is fine, but for visual clarity optionally add a small `Text("Asset class").font(.caption2).foregroundStyle(.secondary)` above. Cosmetic; lowest priority.
 
+===== FILE: ALLOC_BACKLOG.md (152 lines) =====
+# Capital-allocation specs (wmfbefkkc, 2026-06-22)
+
+6 specs. Implement top sound items engine-first + test.
+
+## Top 3
+- StockSageCapitalAllocator.allocate — fractional-Kelly multi-idea allocator, heat-capped (rank 1): the core engine, edge-weights deployment by half-Kelly and hard-caps total heat under maxHeat; medium effort, pure composition of ExpectedValue + Kelly + PositionSizer, and the single highest risk-adjusted-growth lever. NOTE the load-bearing fix: KellyResult.halfKelly is a FRACTION already — do NOT divide it by account (the source proposal's `halfKelly/account` is a bug), and rebuild Proposal 1's body which has literal syntax errors (`let actual risk$`, `riskDollars`/`idea` referenced outside the loop).
+- StockSageCapitalAllocator.suggestAdd — marginal allocation against the live book (rank 2): answers the day-to-day question 'I have ONE new idea + an open book, how much do I add?' Heat-headroom capped and correlation-gated via the existing StockSageClusterCheck; medium effort; wires straight into the Size-it-now button.
+- StockSageCapitalAllocator.allocateDeCorrelated — cluster-merged heat-capped allocator (rank 3): the survival upgrade over rank 1 — greedily merges ideas with correlation >= threshold so two crypto names don't count as two bets, penalizing cluster capital, with a clean fallback to allocate() when no return history exists; large effort, the de-correlation that keeps positive-EV ideas from all crashing together.
+
+### ⬜ #1 — StockSageCapitalAllocator.allocate — fractional-Kelly multi-idea allocator, heat-capped  [medium]
+**signature:** ```swift
+struct AllocationPlan: Sendable, Equatable, Identifiable {
+    let symbol: String
+    let shares: Int           // whole shares, rounded DOWN (never over-risk)
+    let notional: Double      // shares * entry
+    let riskDollars: Double   // shares * |entry-stop| (actual $ lost on a stop-out)
+    let riskFraction: Double  // riskDollars / account (the heat this position adds)
+    let evR: Double           // estimated EV in R (ranking key)
+    var id: String { symbol }
+}
+
+enum StockSageCapitalAllocator {
+    /// Deploy capital across N ideas, edge-weighted by half-Kelly, then scaled so
+    /// total open heat <= maxHeat. Returns nil for invalid account/heat or when no
+    /// idea has positive EV. Pure + deterministic.
+    nonisolated static func allocate(
+        ideas: [(symbol: String, entry: Double, stop: Double, target: Double, conviction: Double)],
+        account: Double,
+        maxHeat: Double = 0.08
+    ) -> [AllocationPlan]?
+}
+```
+Mechanics (corrects the proposal's bugs): for each idea call `StockSageExpectedValue.ev(conviction:entry:stop:target:)`, keep only `isPositive`. Kelly fraction = `StockSageKelly.compute(winRate: ExpectedValue.winProbEstimate, payoffRatio: ev.rewardR, accountSize: account).halfKelly` — note `.halfKelly` is ALREADY a FRACTION (do not divide by account; the proposal's `halfKelly/account` is wrong). Sum raw risk fractions; if `Σf > maxHeat`, scale every f by `maxHeat/Σf`. Then size each at `StockSagePositionSizer.size(account:, riskFraction: scaledF, entry:, stop:)` to get whole shares + true riskDollars. Sort by evR desc.
+**testIdea:** Three ideas (BTC edge high / AAPL mid / SPY low), account $10k, maxHeat 0.08. Assert: (a) every plan.riskFraction>0 and Σ riskDollars <= $800 + one-share rounding tolerance; (b) higher-evR idea gets >= riskDollars of lower-evR idea when stop distances are equal; (c) maxHeat=0.20 with raw heat 0.04 → NO rescale, fractions pass through (scaleFactor==1); (d) all-negative-EV ideas → nil; (e) account<=0 or maxHeat>1 → nil; (f) shares are floored (never fractional, never over-risk).
+
+### ⬜ #2 — StockSageCapitalAllocator.suggestAdd — marginal allocation against the live book  [medium]
+**signature:** ```swift
+struct AddSuggestion: Sendable, Equatable {
+    let symbol: String
+    let approved: Bool
+    let riskFraction: Double      // suggested heat to add (0 if blocked)
+    let shares: Int
+    let riskDollars: Double
+    let heatBefore: Double        // current portfolio heat
+    let heatHeadroom: Double      // maxHeat - heatBefore
+    let nearestCorrelation: Double?
+    let reason: String            // why this size / why blocked
+    let caveat: String
+}
+
+enum StockSageCapitalAllocator {
+    /// Marginal sizing for ONE new idea given the open book. Heat-headroom capped,
+    /// correlation-gated. nil if the idea has no defined R (no stop/target) or
+    /// account<=0. Pure + deterministic.
+    nonisolated static func suggestAdd(
+        idea: StockSageIdea,
+        openTrades: [(shares: Double, entry: Double, stop: Double)],
+        holdings: [(symbol: String, returns: [Double])],
+        candidateReturns: [Double],
+        account: Double,
+        maxHeat: Double = 0.10,
+        correlationThreshold: Double = 0.80
+    ) -> AddSuggestion?
+}
+```
+Composes existing engines: EV via `StockSageExpectedValue.ev(for: idea)`; current heat via `StockSagePortfolioHeat.compute(openTrades:accountSize:)`; correlation gate via `StockSageClusterCheck.check(candidate:candidateReturns:holdings:threshold:)`. Suggested fraction = min(halfKelly, remaining heat headroom). Block (approved=false, riskFraction=0) when `ClusterCheck.isConcentrating`.
+**testIdea:** (1) +EV idea, book at 0% heat, uncorrelated → approved, riskFraction≈min(halfKelly, 0.10); (2) book already at 9.5% heat → riskFraction capped to ≈0.005 headroom; (3) candidate corr 0.82 to an open name (>=0.80) → approved=false, riskFraction 0, reason names the cluster peer; (4) idea whose advice has nil stop OR nil target → nil; (5) account<=0 → nil. Integration: prefill the Size-it-now button on the best-opportunity card.
+
+### ⬜ #3 — StockSageCapitalAllocator.allocateDeCorrelated — cluster-merged heat-capped allocator  [large]
+**signature:** ```swift
+enum StockSageCapitalAllocator {
+    /// Like allocate(), but first merges ideas whose pairwise correlation >= threshold
+    /// into one cluster (highest-EV idea represents it, capital penalized by cluster
+    /// size) so correlated bets don't double the same risk. Falls back to plain
+    /// allocate() when historicalReturns is nil/empty. nil on invalid inputs or no
+    /// surviving positive-EV cluster.
+    nonisolated static func allocateDeCorrelated(
+        ideas: [(symbol: String, entry: Double, stop: Double, target: Double, conviction: Double)],
+        account: Double,
+        historicalReturns: [String: [Double]]? = nil,
+        maxHeat: Double = 0.08,
+        correlationThreshold: Double = 0.75,
+        clusterPenalty: Double = 0.5
+    ) -> [AllocationPlan]?  // returns the rank-1 AllocationPlan type, with effectiveIdeas count in a sibling field/return
+}
+```
+Clusters via `StockSagePortfolioAnalytics.correlation(_:_:)` (greedy single-link at threshold). Per cluster keep the max-evR idea; penalty factor `1/(1 + (clusterSize-1)*clusterPenalty)`. Allocate penalized-edge-weighted, then heat-normalize as in rank 1. Reuses `correlation`, `ExpectedValue.ev`, `PositionSizer.size`.
+**testIdea:** (1) BTC+ETH corr 0.9 (>=0.75) cluster, AAPL corr 0.3 standalone → only highest-EV of {BTC,ETH} allocated, at penalty 1/(1+0.5)=0.667; AAPL un-penalized; effectiveIdeas==2 not 3. (2) clusterPenalty=0 → no penalty even when clustered. (3) historicalReturns nil → identical output to allocate(). (4) perfect anti-correlation (-0.95) → no merge, both sized. (5) Σ riskDollars <= maxHeat*account.
+
+### ⬜ #4 — StockSageCapitalAllocator.rebalanceByRiskParity — whole-book equal-risk reweight  [medium]
+**signature:** ```swift
+enum StockSageCapitalAllocator {
+    /// Reweight the whole book from current dollars toward inverse-vol (equal-risk)
+    /// targets, emitting buy/sell trades with a no-trade band. Does NOT add net new
+    /// risk — pure reallocation. nil if nothing invested or no positive-vol holding.
+    nonisolated static func rebalanceByRiskParity(
+        holdings: [RiskParityHolding],          // symbol, currentValue, annualized vol
+        band: Double = 0.03,
+        avgCorrelation: Double? = nil           // optional, to flag crash-regime risk
+    ) -> (plan: RebalancePlan, note: String)?
+}
+```
+Thin composition: `StockSageRiskParity.targets(holdings)` → dict of `targetWeight` → `StockSageRebalance.plan(holdings:targets:band:)`. If `avgCorrelation` (from `PortfolioAnalytics.compute(...).avgCorrelation`) is high (e.g. >=0.7), append a 'correlation-shock — risk-parity benefit shrinks; hold a cash sleeve' note. Reuses RiskParityHolding, targets(), RebalancePlan, Rebalance.plan().
+**testIdea:** (1) AAPL vol 25% / BND 5% / GOLD 15%, equal dollars → targets ∝ 1/vol (BND heaviest); plan sells AAPL, buys BND; deltas sum ≈0. (2) all drifts < band → plan.isBalanced==true, no trades. (3) avgCorrelation 0.9 → note contains the cash-sleeve warning. (4) single positive-vol holding → no rebalance (nil or empty). (5) a holding with vol<=0 is dropped by targets() and excluded from the plan.
+
+### ⬜ #5 — StockSageCapitalAllocator.rebalanceToEdge — edge-weighted whole-book reweight with no-trade band  [medium]
+**signature:** ```swift
+enum StockSageCapitalAllocator {
+    /// Reweight held symbols + new ideas toward EV-edge-weighted targets, suppressing
+    /// churn with a band. New ideas enter only if positive-EV and not correlation-
+    /// blocked. nil if nothing invested or no positive edge anywhere.
+    nonisolated static func rebalanceToEdge(
+        holdings: [(symbol: String, value: Double)],
+        ideas: [StockSageIdea],
+        band: Double = 0.03,
+        maxHeat: Double = 0.10
+    ) -> RebalancePlan?
+}
+```
+Targets = normalized positive `StockSageExpectedValue.ev(for: idea).evR` across held+new symbols (held symbols with no current idea get edge 0 → trimmed). Feed to `StockSageRebalance.plan(holdings:targets:band:)`. Reuses ev(for:), Rebalance.plan, RebalancePlan. Note: edge-weighting differs from risk-parity (rank 4) — this chases EV, rank 4 chases equal risk; ship both, they answer different questions.
+**testIdea:** (1) AAPL (idea EV -0.2R) + MSFT (EV +0.5R) held, new NVDA (EV +0.3R): plan trims AAPL, grows MSFT, adds NVDA. (2) all drifts < band → isBalanced true. (3) a new idea correlated/blocked → excluded with a note (compose ClusterCheck if returns supplied, else size-only). (4) zero positive edge → nil. Honesty: edge decays; targets are EV estimates not fills.
+
+### ⬜ #6 — StockSageAllocationOptimizer.optimizeSharpeDeCorrelated — Sharpe-max QP allocator (stretch)  [large]
+**signature:** ```swift
+enum StockSageAllocationOptimizer {
+    struct OptimizationResult: Sendable, Equatable {
+        let allocations: [AllocationPlan]   // reuse rank-1 type
+        let estPortfolioSharpe: Double?
+        let estPortfolioVol: Double?
+        let converged: Bool
+        let iterations: Int
+        let bindingConstraints: [String]    // any of: heat, kelly, decorr
+        let note: String
+    }
+    /// Maximize w·mu - lambda*w·Sigma·w subject to wi<=halfKelly_i, paired decorr
+    /// caps, and Σheat<=heatCap. Simple projected-gradient/barrier solver (LOCAL
+    /// optimum only). nil on invalid inputs.
+    nonisolated static func optimizeSharpeDeCorrelated(
+        ideas: [(symbol: String, entry: Double, stop: Double, target: Double, conviction: Double)],
+        correlations: [(a: String, b: String, rho: Double)],
+        account: Double,
+        heatCap: Double = 0.08,
+        corrThreshold: Double = 0.75,
+        maxIterations: Int = 100,
+        convergenceTol: Double = 1e-6
+    ) -> OptimizationResult?
+}
+```
+Builds mu from `ExpectedValue.ev` evR, Sigma from supplied rho + per-idea vol (derive from spark/returns). Reuses correlation, ev, PositionSizer for final share sizing. Heavier and only locally optimal — lowest rank because ranks 1-5 already give most of the survival benefit far cheaper.
+**testIdea:** (1) Same 3-idea setup as rank 1 → allocations close to greedy allocate() but lower heat burn / higher Sharpe. (2) low-EV-high-Sharpe vs high-EV-low-Sharpe pair → optimizer tilts toward the Sharpe improver where Kelly-only would not. (3) 10 ideas at 0.95 pairwise, total Kelly ask 50%, heatCap 8% → converges, Σheat<=8%, bindingConstraints contains 'heat'. (4) invalid account → nil. Honesty: local solver, no global-optimum guarantee; Sigma is backward-looking.
+
+## Notes
+All referenced symbols VERIFIED to exist (read the source):\n- StockSageKelly.compute(winRate:payoffRatio:accountSize:) -> KellyResult{edge,fullKelly,halfKelly,quarterKelly,suggestedFraction(capped 0.20),dollarsToRisk,note,caveat}. CRITICAL: halfKelly/quarterKelly/suggestedFraction are FRACTIONS (0-1); dollarsToRisk is the only dollar field. Several proposals misuse `halfKelly/account` or treat halfKelly as dollars — that is a bug; sizes must come from a fraction fed to PositionSizer.size, or from dollarsToRisk directly.\n- StockSageExpectedValue: ev(conviction:entry:stop:target:)->ExpectedValue? and ev(for: StockSageIdea)->ExpectedValue?; ExpectedValue{winProbEstimate,rewardR,evR,isPositive}; winProbEstimate(conviction:) maps 0->0.35,1->0.58. There is NO `ev.edge` or `ev.isPositive` mismatch — use evR/rewardR/isPositive as named. Proposal 1's `ev.evR // edge` comment and Proposal 2's `ev.evR` are fine; but `StockSageExpectedValue.ev(...).ev.isPositive` chaining and the field `edge`/`rewardR` aliases in the proposals must map to evR/rewardR.\n- StockSagePositionSizer.size(account:riskFraction:entry:stop:)->PositionSize?{shares(Int, floored),dollarsAtRisk,notional,pctOfAccount,riskPerShare}. Use this for all share sizing so rounding is consistent and never over-risks.\n- StockSagePortfolioHeat.compute(openTrades:[(shares:Double,entry:Double,stop:Double)], accountSize:)->PortfolioHeat?{dollarsAtRisk,heatPct,level(cool<5%/warm<10%/hot>=10%)}.\n- StockSageClusterCheck.check(candidate:candidateReturns:holdings:[(symbol:,returns:)] ,threshold:0.8)->ClusterCheck?{isConcentrating,highlyCorrelated,nearest,note}. Needs RETURN SERIES, not closes.\n- StockSagePortfolioAnalytics.correlation(_:[Double],_:[Double])->Double (Pearson, aligned on common tail), plus datedReturns/alignByDate/correlationMatrix/averageCorrelation/compute(...).avgCorrelation — all present and usable for the de-correlated and risk-parity specs.\n- StockSageRiskParity.targets([RiskParityHolding{symbol,currentValue,volatility}])->[RiskParityTarget{currentWeight,targetWeight,deltaWeight}]; rebalanceAmounts; vsEqualWeight. Drops vol<=0 holdings.\n- StockSageRebalance.plan(holdings:[(symbol:,value:)], targets:[String:Double], band:0.02)->RebalancePlan?{trades,isBalanced}; equalWeightTargets.\n- StockSageIdea{symbol,market,price,advice:TradeAdvice,spark:[Double]} in StockSageStore.swift. TradeAdvice has action:Action(.buy/.strongBuy/.hold/...), conviction:Double(0-1), stopPrice:Double?, targetPrice:Double?. So ev(for:) returns nil when stop OR target is nil — every spec must handle that.\n- TradeRecord exists (StockSageJournal.swift); StockSageAllocation.assetClass(_:) exists.\n\nPROPOSAL DEDUP/MERGE: the 11 proposals collapse to 6 distinct engines. 'Fractional-Kelly heat-cap allocator', 'Heat-aware Kelly w/ correlation', 'CorrelatedKellyAllocator', 'EdgeAllocation', and 'Kelly-Weighted Multi-Idea' / 'Heat-Capped Correlation-Neutral' are the SAME two engines (plain heat-capped = rank 1; correlation-merged = rank 3) under different names — do NOT build them separately. rank 2 (suggestAdd) and ranks 4-5 (whole-book rebalancers) are genuinely distinct surfaces. rank 6 (Sharpe QP) is a stretch.\n\nNAMING: I unified everything under one `enum StockSageCapitalAllocator` (+ a separate `StockSageAllocationOptimizer` for the QP) so the AllocationPlan struct is shared and there isn't a zoo of allocator types. Reuse one AllocationPlan struct (rank 1) across ranks 1/3/6.\n\nHONESTY (carry verbatim into every engine's caveat string): EV's pWin is winProbEstimate(conviction) — an ESTIMATE in a 35-58% band, NOT a real probability; Kelly is only as good as W and R, which run optimistic, so ship fractional (half/quarter) + the existing 20% hard cap. Correlation/Sigma are BACKWARD-LOOKING and rise toward 1.0 in crashes — exactly when de-correlation is needed most; cluster thresholds (0.75/0.8) are heuristics, not laws. Heat assumes every stop fills AT its level; a correlated gap loses more. Rebalancers ignore spread/slippage/tax/min-lot. NEVER promise growth — the cap prevents ruin, it does not guarantee profit; backtest across real ideas before any live use.\n\nVERIFICATION method: read all 9 named source files + StockSageStore/Advisor for the Idea/Advice shapes; confirmed every called symbol's exact signature and return-field names. No symbol in the final 6 specs is invented. Build/test commands are the canonical xcodebuild scheme 'Salehman AI'; new .swift under 'Salehman AI/StockSage/' auto-compiles (no pbxproj edit). Per repo rules a DEVELOPMENT_LOG.md entry is required after implementing any of these — that's an implementation-time step, not part of this spec task.
 ===== FILE: APPCORE_BACKLOG.md (38 lines) =====
 # App-core bug backlog (app-core-bughunt wa84658v8, 2026-06-22)
 
@@ -57822,6 +57980,34 @@ Wiring (exhaustive switch arms all caught by compiler):
 - `_SESSION_MARKER` now used for primer boundary instead of re-constructing local marker string
 **Result:** Bridge is more robust for long sessions. Screenshot confirmed bridge completed a full Arabic-font task and printed "Grok signalled DONE. Bridge finished." before these fixes landed.
 
+===== FILE: EXIT_BACKLOG.md (26 lines) =====
+# Exit/position-management specs (w0y07qrs9, 2026-06-22)
+
+3 specs. Implement top sound items engine-first + test.
+
+## Top 3
+- ExitMode seam in the backtester — the prerequisite that turns every exit idea into a measured A/B vs the all-at-target baseline; without it, a trailStop()/scaleOut() function that only returns a level or events proves nothing about edge
+- Ratcheting Chandelier exit engine — small, high-confidence; adds the monotonic up-only ratchet that the existing StockSageTrailingStop deliberately omits, and is the single most-cited discipline (a stop that can only rise removes the #1 blow-up behavior)
+- Pure scale-out simulator — converts the already-tested-but-isolated PartialLadder into a backtestable exit mode so the blended-R claim ('scaling out lowers variance, maybe costs a few bps of expectancy') is checked against real fills, honest in both directions
+
+### ⬜ #1 — ExitMode seam in the backtester (the measurement harness every exit engine needs)  [medium]
+**signature:** enum ExitMode: Sendable, Equatable { case allAtTarget; case chandelierTrail(atrMult: Double, period: Int); case scaleOutLadder(rungs: Int); case timeStop(maxBars: Int) }
+
+nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200, costs: StockSageNetEdge.CostAssumption? = nil, exitMode: ExitMode = .allAtTarget) -> BacktestResult
+**testIdea:** Calling run(history, exitMode: .allAtTarget) must return BYTE-FOR-BYTE the same BacktestResult as today's run(history) on AAPL/MSFT (golden-master regression — proves the refactor changed nothing for existing callers). Then a synthetic 60-bar uptrend: .allAtTarget hits +2R; .chandelierTrail exits earlier at a lower-but-positive R; .timeStop(maxBars:5) forces openAtEnd at bar entry+5. Assert each mode produces a DISTINCT, hand-computable R.
+
+### ⬜ #2 — Ratcheting Chandelier exit engine (the upgrade StockSageTrailingStop lacks) + per-bar walk used by ExitMode  [small]
+**signature:** nonisolated static func trailLevels(highs: [Double], lows: [Double], closes: [Double], entryIndex: Int, atrMult: Double = 3.0, period: Int = 14) -> [Double]?  // one ratcheting stop per post-entry bar, monotonic non-decreasing for a long; nil if ATR unavailable
+**testIdea:** 50-bar series, entry at bar 10. New high 110 at bar 30 with ATR=2, mult=3 -> stop 104. New high 115 at bar 40 -> stop 109. Bar 45 retraces to 108 (high still 115) -> stop STAYS 109, never 108-6. Assert: levels is monotonic non-decreasing (zip(levels, levels.dropFirst()).allSatisfy(<=)). Edge: entry == lastIndex -> empty/nil. Cross-check the FINAL element equals StockSageTrailingStop.suggest(...).level on the same window (consistency with the existing static engine).
+
+### ⬜ #3 — Pure scale-out simulator (rung-fill, conservative intra-bar order) feeding the ladder ExitMode  [medium]
+**signature:** struct LadderExitEvent: Sendable, Equatable { let barIndex: Int; let price: Double; let fraction: Double; let r: Double }
+
+nonisolated static func scaleOut(entry: Double, stop: Double, ladder: PartialLadder, opens: [Double], highs: [Double], lows: [Double], startIndex: Int) -> (events: [LadderExitEvent], blendedRealizedR: Double, exitIndex: Int)?
+**testIdea:** 3 equal rungs at +1R/+2R/+3R(=target). (1) bar touching only +1R banks 1/3, remainder rides; (2) stop before any rung -> single full exit at min(stop, open) with R<=0, matching backtester gap honesty; (3) a bar that gaps OPEN above +2R fills rungs 1 and 2 at their resting levels in one bar (not at the gapped open) and flags neither as hollow; (4) blendedRealizedR <= the ladder's theoretical blendedExitR for any winner (banking early can only lower realized R). Tie-break: if a bar touches both a rung and the stop, STOP fills first (matches lines 108-109).
+
+## Notes
+VERIFICATION: All referenced indicators exist in StockSageIndicators.swift — atr (line 84), ema/emaSeries (19-35), sma/rsi/macd/efficiencyRatio/annualizedVolatility/returnOverPeriod. PriceHistory (StockSageQuoteService.swift:211) carries opens/highs/lows/closes/volumes/dates — so candle-internal OHLC ordering IS available for conservative fill simulation. The backtester's exit loop is StockSageBacktester.swift lines 99-119 (single all-at-target walk; stop wins ties at 108-109; adverse-gap honesty via min(stop, open); friction via costs.roundTripBps). \n\nKEY SYNTHESIS DECISION: The three SOUND proposals all plug into the SAME missing seam. Proposals #1 (ScaleOutBacktester) and #3 (pure ScaleOutEngine) are two halves of one item — a pure simulator + the harness that calls it; I merged them: rank-1 is the generic ExitMode harness, rank-3 is the pure ladder simulator it calls. The trailStop proposal partially DUPLICATES the existing StockSageTrailingStop.suggest (which already computes a Chandelier level but does NOT ratchet and is wired into NO backtest) — so I reframed it as 'add the ratchet the existing engine lacks' (trailLevels returning the monotonic series) rather than a fresh standalone level function, and cross-test it against the existing engine for consistency.\n\nWHY THIS RANKING (value/effort, honest edge first): rank-1 is the gate — a level-returning trailStop() or an events-returning scaleOut() proves NOTHING about edge until it can be run head-to-head against .allAtTarget on real history; the golden-master test (identical bytes for existing callers) makes the refactor safe. rank-2 is small + high-confidence + zero-lookahead (each level uses only highs/closes up to that bar) and delivers the one discipline most likely to help (up-only ratchet). rank-3 is medium because intra-bar fill order is the subtle part (gaps must fill at resting rung levels, hollow-rung detection, stop-first tie-break) — but it finally measures the ladder's blended-R claim against reality.\n\nHONESTY CAVEATS (carry into every engine's doc-comment, matching house style): these are RULES, not guarantees — (a) all assume fills AT the level; real gaps/thin liquidity skip rungs and slip stops worse (the backtester's min(stop,open) models the stop case, the ladder must flag hollow rungs); (b) SURVIVORSHIP bias is inherent — backtests run today's listed symbols, not delisted losers, overstating edge (already in the backtester's header comment, keep it); (c) OVERFITTING is bounded only if multipliers/periods/rung-counts stay FIXED, not per-symbol tuned — expose them as params but default them and warn against sweeping; (d) isSignificant (trades>=20) must gate any 'mode X beat mode Y' verdict or the comparison is noise. NO new indicator is needed — every engine composes existing pure functions.
 ===== FILE: EXTERNAL_TOOLS.md (62 lines) =====
 # 🧰 EXTERNAL_TOOLS.md — AI tools & repos in the Salehman AI workflow
 
@@ -57886,6 +58072,50 @@ digest, and saves the full pack to a temp file. Implemented in
 
 _Last updated: 2026-06-08 (added Google Antigravity)._
 
+===== FILE: FASTMONEY_BACKLOG.md (42 lines) =====
+# Fast-money/crypto velocity + decisiveness specs (wtoed5okg, 2026-06-22)
+
+8 specs. Implement top sound items engine-first + test.
+
+## Top 3
+- 7-day trading week for crypto fast lanes (volatility-scaled), honest weekly-R — fixes the real undercount (expectedWeeklyR hardcodes tradingDays:5, the equity calendar) for the genuine 24/7 fast lane, but couples the extra days to a vol-scaled per-trade risk so faster does not mean reckless; buildable today on the existing StockSageIndicators.annualizedVolatility, backward-compatible (default stays 5).
+- Asset-class-aware ATR stop multiple — the flat 2-ATR stop whipsaws high-vol crypto out before the move; an optional realizedVol param widens the stop to 2.5x at ~70% vol and returns byte-identical results for equities when vol is nil, so it is the highest-impact correctness fix with zero regression risk to existing advice.
+- Always-visible best-move action card with crypto 24/7 variance truth — turns the buried bestOpportunityCard into a one-glance EXECUTE-THIS surface on every tab (symbol, entry, stop, size, why) reusing existing bestOpportunity + positionSizer + TodayPlan, with a concrete 24h-range variance line and warning tint for -USD; small effort, removes the biggest friction between the owner and the single best honest move.
+
+### ⬜ #1 — 7-day trading week for crypto fast lanes (volatility-scaled), honest weekly-R  [medium]
+**detail:** expectedWeeklyR(_:maxConcurrent:tradingDays:holds:) in StockSageExpectedValue.swift hardcodes tradingDays:Double=5 — that's the US-equity calendar and it undercounts crypto, which trades 24/7 (~7 days). But 7 days at the SAME per-trade risk is dishonest because crypto carries higher variance, so couple the day-count change to a volatility-scaled risk budget. CONCRETE: (1) add `nonisolated static func tradingDaysForLane(_ ideas:[StockSageIdea], holds:VelocityHoldDays=.defaults) -> Double` returning 7.0 when EVERY fast-lane idea is Crypto (StockSageAllocation.assetClass=="Crypto"), 5.0 when equity-only, and a blended round(5 + 2*cryptoFraction) for mixed — so nothing shifts silently for the existing equity case (default still 5). (2) add `nonisolated static func cryptoRiskScaler(annualizedVol:Double, baseline:Double=0.20) -> Double { Swift.max(1.0, annualizedVol/baseline) }` (vol 0.70 -> 3.5; never below 1, so it can only SHRINK risk, never inflate it). (3) feed annualizedVol from the EXISTING StockSageIndicators.annualizedVolatility(closes) — no new math. (4) overload summary() and playbook() to surface the scaled per-trade risk: 'Crypto ~70% vol -> sizing 0.28%/trade (1% / 3.5x) and a 7-day week; even fast money needs brakes.' Keep the old 5-day signature working (callers in MarketsView.moneyVelocityCard line 2382 unchanged unless they opt in). Merges idea #1 (7-day + vol-scaler) with the trading-day half of #9/#10.
+**testOrCheck:** New StockSageCryptoVelocityTests.swift: (a) all-crypto fast lane -> tradingDaysForLane==7; equity-only -> 5; 1 crypto + 2 equity -> 6 (round(5+2*0.33)). (b) cryptoRiskScaler(0.70)==3.5; (0.25)==1.25; (0.10)==1.0 floor (never <1). (c) weeklyR for an all-crypto lane at 7 days > the same lane at 5 days, but modeled $-at-risk per trade is LOWER after the scaler. (d) caveat-presence sweep: playbook output contains 'vol' and 'estimate'/'not income'. Build+test green via the canonical xcodebuild test command.
+
+### ⬜ #2 — Asset-class-aware ATR stop multiple (crypto volatility floor)  [medium]
+**detail:** StockSageAdvisor.stopTarget(action:price:atr:) (lines 164-178) uses a fixed 2-ATR (8% fallback) for every asset. A crypto at ~70% annualized vol has ~3x an equity's daily noise — a flat 2-ATR stop whipsaws out before the move. CONCRETE, backward-compatible: add an overload `stopTarget(action:price:atr:realizedVol:)` where realizedVol is optional; when nil it returns EXACTLY today's 2-ATR result (zero behavior change for existing callers). When realizedVol is supplied: pick the multiple from a small testable table — vol>=0.70 -> 2.5x, 0.40..<0.70 -> 2.0x, <0.40 -> 1.5x; no-ATR fallback becomes 12% for crypto vs 8% otherwise, scaled by (vol/0.50). Surface it WITHOUT breaking the TradeAdvice struct by appending two fields with defaults: `stopMultiplier:Double=2.0` and `stopReason:String?=nil` (e.g. '2.5x ATR — wider for 70% crypto vol'). Wire realizedVol = StockSageIndicators.annualizedVolatility(closes) inside advise(closes:highs:lows:) and pass it through. Show stopReason inline in MarketsView.ideaDetailSheet (line 2671) next to the stop. Merges idea #2 with the stop half of #1.
+**testOrCheck:** New StockSageAdvisorVolatilityTests.swift: simulated 70%-vol crypto -> 2.5x ATR stop (wider than the 2x baseline on identical bars); 50%-vol -> 2.0x; <30% equity -> 1.5x; nil realizedVol -> byte-identical to current stopTarget (regression guard so equity advice is unchanged); <20 bars -> nil vol -> 2x default. Assert stopReason string mentions the multiple and the vol. Verify in MarketsView that the reason renders.
+
+### ⬜ #3 — Always-visible best-move action card with crypto 24/7 variance truth  [small]
+**detail:** bestOpportunityCard (MarketsView line 2185) lives only inside the Ideas section, so the single highest-EV move is buried until the owner navigates there. moneyVelocityCard (2248) is a summary, not a CTA. CONCRETE: add `@ViewBuilder private var bestOpportunityCTA: some View` placed BETWEEN moneyVelocityCard and sectionPicker (after line 110, before 114) so it shows on EVERY section tab. Three lines, no new fetch — reuse StockSageExpectedValue.bestOpportunity(store.ideas) + the existing positionSizerPanel math + StockSageTodayPlan: (1) bold symbol + action badge; (2) 'Entry ~X.XX, stop Y.YY' + 'N shares ~ $R at risk (P% of acct)' or 'Set account to size'; (3) 'EV +X.XXR' + caveat. Gate on bestOpportunity.ev.evR>0 (don't manufacture a move). For crypto (symbol.hasSuffix("-USD"), the SAME predicate fastLaneStrip already uses at line 2372) tint with the warning palette and append a concrete variance line 'Typical 24h range +/-Z% — size down for 24/7' where Z = annualizedVolatility/sqrt(365). Tap -> existing ideaDetailSheet; Copy -> existing NSPasteboard plan. Dedupes ideas #5 and #6 into one card (the crypto-only card is just a conditional branch, not a second surface).
+**testOrCheck:** QA capture via run-salehman-ai skill: card appears above sectionPicker on watchlist/all/ideas/heatmap/portfolio tabs; with 0 positive-EV ideas it is hidden. Crypto (BTC-USD) -> warning tint + 24h-range line; equity (AAPL) -> accent tint, no crypto line. No-account state shows 'Set account'; account set shows shares + $-at-risk. Tap opens ideaDetailSheet; Copy puts the plan on the pasteboard. Snapshot/geometry: entry font >=12pt, legible in 2-second glance.
+
+### ⬜ #4 — Today's ranked action list — top 3 by velocity with size + gate verdict  [medium]
+**detail:** moneyVelocityCard shows best-by-EV and fastest-by-velocity separately; the owner still has to mentally rank 'do I take #1 or #2 today?'. CONCRETE: add `nonisolated static func rankedActions(_ ideas:[StockSageIdea], account:Double?, riskFraction:Double?, holds:VelocityHoldDays=.defaults, max:Int=3) -> [TodayActionPlan]` to StockSageTodayPlan.swift, plus `struct TodayActionPlan: Sendable { let symbol:String; let velocity:Double; let entry,stop:Double; let target:Double?; let shares:Double?; let dollarsAtRisk:Double?; let gate:TradeGateVerdict }`. Build it by composing already-tested engines only: fastLane() for ordering, velocity(for:) for the number, StockSagePositionSizer.size(...) for shares, StockSageTradeGate.evaluate(...) for the verdict. Add a copyable text builder reusing the existing StockSageTodayPlan.build() formatting ('#1. BTC-USD | +0.051R/day | entry .. stop .. target .. | N sh ($R) | CLEAR'). Render a 'Today's plan' card in the Ideas section under bestOpportunityCard (line 2185 area) with a 'Copy all 3' button. Blocked gate -> strike-through + 'DO NOT TRADE' badge so a blocked plan can't be copied clean. Merges ideas #9 (ranked top-3) and #10 (single best-bet YES/NO is just rankedActions with max:1 -> the YES/NO card reuses the same struct).
+**testOrCheck:** New StockSageTodayPlanRankedTests.swift: rankedActions order == fastLane order, capped at 3; each plan has stop & (shares xor nil-account); gate verdict matches StockSageTradeGate.evaluate on the same inputs; copy text parses to N lines each with symbol+velocity+stop; blocked idea -> gate.decision==blocked and the row is flagged. Caveat-sweep: copy text contains 'estimate' and a per-trade risk-cap line. Crypto suffix shown upfront.
+
+### ⬜ #5 — Fast-lane momentum-quality re-rank (velocity x momentum), with reversal caveat  [small]
+**detail:** fastLane() ranks pure EV/day but ignores whether the short-horizon momentum is actually HOT or just technically positive — a flat/mean-reverting setup at the same velocity is a whipsaw trap. CONCRETE: add `nonisolated static func momentumQuality(for idea:StockSageIdea, closes:[Double]) -> Double` returning 0..1 from signals the advisor ALREADY computes via StockSageIndicators (RSI in the trend zone, MACD histogram>0, positive returnOverPeriod over ~21 bars). Add `rankByVelocityWeighted(_:closes:holds:)` that sorts by velocity*momentumQuality desc (falls back to plain velocity when closes are unavailable, so behavior is unchanged without history). Surface a small green/red 'Momentum' dot + 20-close sparkline in fastLaneStrip (line 2355) beside each velocity. Honest label: 'Fastest + momentum hot — a 1-day blip is not a 3-12d win.' Idea #3 verbatim, deduped against the velocity engine.
+**testOrCheck:** New StockSageMomentumQualityTests.swift: strong-uptrend closes (RSI 55-70, MACD>0, +mom) -> quality near 1.0; choppy/flat closes -> near 0; missing closes -> rankByVelocityWeighted == rankByVelocity (regression). Optional offline backtest harness comparing pure-velocity vs weighted rank on 2024 crypto/equity bars: report 3d+12d P&L, win rate, max drawdown — ship only if weighted shows tighter drawdown at equal Sharpe (honest: it may not, and the test records that).
+
+### ⬜ #6 — Conviction-scaled position size, regime-gated, hard-capped at 2%/trade  [medium]
+**detail:** The advisor already scales suggestedWeight by (0.4 + 0.6*conviction) capped at maxWeight 0.20 (lines 147-154), but per-trade RISK is flat 1% regardless of conviction or regime. CONCRETE: add `enum StockSageConvictionScaler { static func scaledRiskFraction(base:Double=0.01, conviction:Double, regimeBias:Double) -> Double }` = base * min(1.5, 0.5 + conviction) * regimeBias, re-capped at 0.02 and floored at 0.005. regimeBias comes from the EXISTING MarketRegime.sizingBias (StockSageRegime.swift line 104, already 0.25 crisis .. 1.25 bull). Wire into StockSageTodayPlan.build()/rankedActions and show TWO size lines on the action card: base (1%) and conviction-scaled (muted color + tooltip). HONESTY is load-bearing here: the tooltip MUST say 'Conviction scales SIZE, not odds — conviction is rule strength, not win probability; bigger positions amplify both wins and losses. Never skip the stop.' Idea #7, kept honest by tying the cap to the real risk-of-ruin philosophy already in the journal.
+**testOrCheck:** New StockSageConvictionScalerTests.swift across conviction {0.2,0.5,0.8,1.0} x regime {crisis,bear,bull}: conviction<0.3 never exceeds base; conviction 0.8 + bull (bias 1.2) ~ 0.0144 and never >0.02; crisis always <=0.005 (50% of base). Replay the journal's worst losing trades to confirm the scaler INCREASES variance on false signals (documented, not hidden) while shrinking size on low-conviction chop. UI snapshot shows the 'scales size, not odds' caveat.
+
+### ⬜ #7 — Separate crypto vs equity fast-lane boards + live cross-correlation flag  [medium]
+**detail:** fastLane() blends crypto (3d hold) and equity (12d hold) into one list; fastLaneConcentration() flags an all-one-class top-3 but the owner still eyeballs the mix. CONCRETE: in MarketsView replace the single fastLaneStrip (line 2355) list with two sub-boards built by partitioning fastLane(store.ideas) on StockSageAllocation.assetClass: 'Crypto fast lane (~3d)' and 'Equity swing lane (~12d)', top 5 each, plus a Picker 'Both / Crypto / Equities'. Add `nonisolated static func laneCorrelation(crypto:[StockSageIdea], equity:[StockSageIdea], histories:[String:[Double]]) -> Double?` reusing the existing correlation helper in the portfolio analytics, displayed as 'Correlation now: 0.72 (moving together — poor hedge)'. When crypto sum-velocity > equity*1.5, show the existing warning palette flag: 'Fastest rotation is 24/7 crypto — gap risk; size down if you sleep.' HONEST label that you cannot hedge 24/7 crypto with 9:30-4 equities. Idea #4. Lower rank: most value already delivered by the concentration warning + the crypto tinting in #3.
+**testOrCheck:** QA capture: two boards render with correct partition (BTC-USD/ETH-USD under crypto, AAPL/MSFT under equity); toggle hides the other board; correlation row shows a number in [-1,1]; crypto-dominant case shows the red gap-risk flag. Unit test laneCorrelation on known series. Caveat-sweep: 'you can't sleep hedged' text present.
+
+### ⬜ #8 — Hypothetical time-to-double at measured weekly R (clearly labeled scenario)  [small]
+**detail:** weeklyR exists but is buried in playbook text; the owner can't convert '+0.5R/week' into 'when am I 2x?'. CONCRETE: add `enum StockSageCompoundingHorizon { static func weeksToTarget(weeklyR:Double, target:Double=2.0, periodsPerYear:Double=52) -> Double? }` solving t = ln(target)/ln(1 + weeklyR/52); return nil for weeklyR<=0 and 0 for target<=1. Render ONE row under moneyVelocityCard's existing 'Expected weekly R': 'Hypothetical double time (zero slippage, re-cycles held, no blowup): ~10-11 months [?]'. HONESTY is the whole point and must be enforced by the test: the label says HYPOTHETICAL, the tooltip says 'a scenario, not a forecast — actual is slower and riskier (slippage, partial fills, reversal losses, regime shifts)', and the doc-comment notes the model is typically 2-3x faster than the journal's realized time-to-double. Idea #8. Lowest rank — pure motivation surface, no edge, easy to over-promise, so it ships last and most heavily caveated.
+**testOrCheck:** New StockSageCompoundingHorizonTests.swift: weeksToTarget(0.5)~44 weeks (~230-250 business days); weeklyR<=0 -> nil; target 1.0 -> 0; weeklyR 0.1 -> ~5-6 years. UI snapshot: the row literally contains 'Hypothetical' and the tooltip contains 'not a forecast' + 'slower and riskier'. Sanity-check note in the test comparing model output vs a journal-derived realized double-time (expect 2-3x gap).
+
+## Notes
+Verified against the live code before ranking. Real, reused: StockSageAllocation.assetClass detects crypto via the `-USD` suffix (StockSageAllocation.swift:31); StockSageIndicators.annualizedVolatility(closes, periodsPerYear:252) already exists (StockSageIndicators.swift:118) so every vol-scaling spec is buildable with no new math; StockSageExpectedValue.expectedWeeklyR hardcodes tradingDays:Double=5 (the precise undercount the #1 spec fixes); bestOpportunity/fastLane/summary/playbook/fastLaneConcentration are all real; MarketsView has moneyVelocityCard (2248), bestOpportunityCard (2185), fastLaneStrip (2355), sectionPicker (114/364), ideaDetailSheet (2671), positionSizerPanel, tradeGateView, and ALREADY branches on idea.symbol.hasSuffix(\"-USD\") for the crypto badge (2372) — so the crypto-tint specs reuse an existing predicate; StockSageTodayPlan.build + StockSageTradeGate.evaluate + StockSagePositionSizer.size are real composable engines; MarketRegime.sizingBias (StockSageRegime.swift:104) is the real input for the conviction-scaler.\n\nDeduplication performed: (a) ideas #1 (7-day + vol-scaler) and #10/#9's trading-day notion -> merged into rank 1; the STOP half of #1 -> merged into rank 2 with idea #2. (b) ideas #5 (general best-move card) and #6 (crypto-only card) -> rank 3 as one card with a conditional crypto branch, not two surfaces. (c) ideas #9 (ranked top-3) and #10 (single best-bet YES/NO) -> rank 4; the YES/NO card is just rankedActions(max:1) over the same TodayActionPlan struct.\n\nRanking logic = fast-honest-money impact first: correctness fixes to the velocity/stop math that the owner already trades on (ranks 1-2) beat new surfaces (3-4) beat ranking refinements (5-6) beat secondary boards and the motivational scenario (7-8). The time-to-double card ranks last on purpose — it carries the highest over-promise risk and no edge, so it ships most heavily caveated.\n\nHonesty floor preserved on every spec: each keeps its variance caveat, the vol-scaler can only SHRINK risk (floored at 1.0x, never inflates), conviction 'scales size not odds', and the double-time card is enforced-labeled HYPOTHETICAL by its own test. Standing repo directive reminder for whoever implements: append a dated DEVELOPMENT_LOG.md entry per change and keep build+tests green via the canonical xcodebuild commands. Symbols referenced (BTC-USD, ETH-USD, SOL-USD, AAPL, MSFT) all resolve to Crypto/Equity under the verified assetClass convention.
 ===== FILE: GROK_SALEHMAN_IMPROVER.md (144 lines) =====
 # Grok Project Pack — Salehman AI Improver & Release
 
