@@ -6898,6 +6898,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · GRAND-SWEEP #1 — Probabilistic & Deflated Sharpe engine (selection-bias haircut)
+**Files:** NEW `StockSage/StockSageDeflatedSharpe.swift`, NEW `Salehman AITests/StockSageDeflatedSharpeTests.swift`.
+**What:** a backtest Sharpe is biased UP two ways — short/skewed/fat-tailed streams overstate it, and scanning N symbols and surfacing the BEST makes the winner a selection-bias artifact. New pure engine (Bailey & López de Prado): PSR = P(true Sharpe > benchmark) haircut for n + skew + non-excess kurtosis; expectedMaxSharpe(trials:varTrialSharpe:) = the Sharpe a winner must clear to beat luck; DSR = PSR vs that bar; passes = DSR > 0.95. Includes nonisolated normalCDF (erf), inverseNormalCDF (Acklam rational approx), and moments(skew/kurtosis). Every formula python-verified vs reference BEFORE coding.
+**Verify:** typecheck EXIT=0 (real exit code); python-verified then tested — normalCDF/inverse exact at 0.5/0.975/±1.96/0; PSR in [0,1], rises with n, falls with negative skew; expectedMaxSharpe 0 at ≤1 trial, rises with trials; DSR<PSR for >1 trial, falls as trials rise, DSR==PSR at 1 trial; symmetric sample → 0 skew; <4 pts / zero-variance → nil. Caveat names the independence assumption (correlated scans → DSR itself optimistic).
+**Follow-up (tracked):** wire into Backtester.summarize (skew/kurtosis from rs, PSR) + StockSageStrategyBacktest.aggregate (trials=results.count, varTrialSharpe=Var(results.sharpe), DSR) as defaulted Optional fields → .empty stays valid. Engine landed first + independently verified.
+**Result:** the math to tell a real edge from a multiple-testing mirage now exists, pure + tested. The keystone honesty fix — every downstream Kelly/EV/velocity decision inherits the backtest Sharpe. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
