@@ -6702,6 +6702,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · Markets-UI audit fixes — brake risk% + fast-lane strip R/$ parity
+**Files:** `Views/MarketsView.swift` (moneyVelocityCard brake; fast-lane strip weeklyR). Persisted MARKETS_UI_AUDIT.md, JOURNAL_ATTRIBUTION.md, OSRS_MONEY.md.
+**What:** the Markets-UI audit (own workflow) found 5 real bugs. Fixed 2 clear money-display ones: (#1 HIGH) the drawdown "Brake" line hardcoded "1%/trade" in BOTH the model (summary() default fraction) and the label/VoiceOver while the rest of the card honors the user's editable Risk % — now threads `sizerRiskPct` into summary(fraction:) and reads `s.riskFraction` back into the label + a11y, so magnitude AND wording track the real risk. (#5 MEDIUM) the fast-lane STRIP showed R/week at the default 5-day count above a $/week computed at tradingDaysForLane (5-7) — same bug class as the header fix (4cf5bdd) on a line I'd missed; the strip's expectedWeeklyR now passes tradingDaysForLane so R and $ are lock-step.
+**Verify:** typecheck clean. UNVERIFIED render (Mac build). Queued REAL findings in MARKETS_UI_AUDIT.md: #2 best-opportunity card shows no go/no-go gate verdict (can size a "Don't take" setup blind), #3 land on Ideas + auto-populate (best move is 3 taps away), #4 sizer %-vs-floored-$ mismatch.
+**Result:** the brake now reflects YOUR risk, and the fast-lane R/$ lines reconcile. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

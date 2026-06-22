@@ -2246,7 +2246,10 @@ struct MarketsView: View {
     // Money-velocity summary — one-glance header (best bet · fastest · est. weekly R),
     // visible across every section. Tappable to the best opportunity's plan.
     @ViewBuilder private var moneyVelocityCard: some View {
-        let s = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds)
+        // Honor the user's editable Risk % so the drawdown brake's magnitude AND its label
+        // track the same fraction the rest of the card uses (was a hardcoded 1%).
+        let rf = (Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil }) ?? 0.01
+        let s = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, fraction: rf, holds: velocityHolds)
         if s.hasContent {
             VStack(alignment: .leading, spacing: 6) {
             Button {
@@ -2306,10 +2309,10 @@ struct MarketsView: View {
                         }
                     }
                     if let ddPct = s.worstRunDrawdownPct, let losses = s.worstRunLosses {
-                        Text(String(format: "⚠︎ Brake — your worst run (%d) at 1%%/trade ≈ −%.1f%% to the account. %@", losses, ddPct * 100, MoneyVelocityCopy.drawdownBrake))
+                        Text(String(format: "⚠︎ Brake — your worst run (%d) at %d%%/trade ≈ −%.1f%% to the account. %@", losses, Int((s.riskFraction * 100).rounded()), ddPct * 100, MoneyVelocityCopy.drawdownBrake))
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
-                            .accessibilityLabel(String(format: "Risk warning: worst losing run %d trades at 1 percent risk is about %.1f percent drawdown. Size to survive variance.", losses, ddPct * 100))
+                            .accessibilityLabel(String(format: "Risk warning: worst losing run %d trades at %d percent risk is about %.1f percent drawdown. Size to survive variance.", losses, Int((s.riskFraction * 100).rounded()), ddPct * 100))
                     }
                     if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds), conc.isConcentrated {
                         Text("⚠︎ Fast lane is concentrated — your top \(conc.total) fastest are all \(conc.dominantClass); that's closer to one bet, not \(conc.total). Diversify or size them as one.")
@@ -2379,7 +2382,7 @@ struct MarketsView: View {
                         .accessibilityLabel("\(idea.symbol): \(String(format: "%+.3f", v)) R per day velocity\(idea.symbol.hasSuffix("-USD") ? ", 24/7 volatile" : ""). Tap for the plan.")
                     }
                 }
-                if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, holds: velocityHolds) {
+                if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds), holds: velocityHolds) {
                     Text(String(format: "≈ %+.1fR/week if you run the top %d — estimate, high variance, assumes you take and re-cycle these. Not a promise.", wk, Swift.min(3, lane.count)))
                         .font(.system(size: mvFont9, weight: .medium))
                         .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
