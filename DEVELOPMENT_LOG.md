@@ -6987,6 +6987,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · DISPLAY-HONESTY FIX — sub-dollar P&L no longer renders as "-0" (%+.0f → %+.2f)
+**Files:** `Views/MarketsView.swift` (5 P&L display sites). Persisted UI_FORMAT_AUDIT.md (9 findings).
+**What (UI-format sweep w3r6h3yl5 #2/#3/#4, HIGH/MED — VERIFIED):** open-trade unrealized P&L (:1469), closed-trade realized P&L (:1520), the journal "Realized P&L" headline (:1075), and the two VoiceOver labels (:1510/:1532) all formatted dollar P&L with %+.0f. Because shares is a Double, sub-$1 P&L is routine — so a real −$0.45 realized loss rendered red "−0" and a +$0.30 win read green "+0", misleading per-trade ledger data the owner reconciles against a broker. Changed all 5 to %+.2f (matching the file's $%.2f convention). (Total R at :2655 is R-multiples, left as-is.)
+**Verify:** typecheck EXIT=0; render UNVERIFIED (Mac). A sub-dollar win/loss now shows its real cents with the correct sign.
+**Remaining (UI_FORMAT_AUDIT.md): #1 (HIGH) portfolioTotals launders cost basis into "value" + green $0 P&L when unpriced (overlaps DATA_INTEGRITY #4); #5 %-decimal; #6 avg win/loss zero-sign; #7 gp/hour Int truncation; #8/#9 width minimumScaleFactor.**
+**Result:** the per-trade and total realized P&L the owner reconciles now shows real cents, not a rounded-to-zero "-0". ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

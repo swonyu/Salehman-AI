@@ -1072,7 +1072,7 @@ struct MarketsView: View {
                                color: s.totalR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                     ideaMetric("Avg R", String(format: "%+.2f", s.avgR),
                                color: s.avgR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
-                    ideaMetric("Realized P&L", String(format: "%+.0f", s.totalProfit),
+                    ideaMetric("Realized P&L", String(format: "%+.2f", s.totalProfit),
                                color: s.totalProfit >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                     Spacer(minLength: 0)
                 }
@@ -1466,7 +1466,7 @@ struct MarketsView: View {
                 Text(String(format: "@ %.2f", trade.entry)).font(.caption2).foregroundStyle(.secondary)
                 Spacer()
                 if let pnl, let r {
-                    Text(String(format: "%+.0f", pnl)).font(.system(size: 11, weight: .semibold))
+                    Text(String(format: "%+.2f", pnl)).font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(pnl >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                     Text(String(format: "%+.2fR", r)).font(.caption2).foregroundStyle(.secondary).frame(width: 48, alignment: .trailing)
                 } else {
@@ -1507,7 +1507,7 @@ struct MarketsView: View {
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(trade.side.rawValue) \(trade.symbol), entry \(String(format: "%.2f", trade.entry))"
-            + (pnl.map { String(format: ", unrealized %+.0f", $0) } ?? ", no live price")
+            + (pnl.map { String(format: ", unrealized %+.2f", $0) } ?? ", no live price")
             + (r.map { String(format: ", %+.2f R", $0) } ?? ""))
     }
 
@@ -1529,7 +1529,7 @@ struct MarketsView: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(trade.symbol), \(String(format: "%.2f to %.2f", trade.entry, trade.exitPrice ?? 0)), realized \(String(format: "%+.0f", pnl))"
+        .accessibilityLabel("\(trade.symbol), \(String(format: "%.2f to %.2f", trade.entry, trade.exitPrice ?? 0)), realized \(String(format: "%+.2f", pnl))"
             + (trade.realizedR.map { String(format: ", %+.2f R", $0) } ?? ""))
         .confirmationDialog("Delete this logged trade?",
                             isPresented: Binding(get: { pendingJournalDeleteID == trade.id },
