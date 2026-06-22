@@ -29,6 +29,26 @@ struct NetEdge: Sendable, Equatable {
     }
 }
 
+/// The round-trip cost broken into its real legs (all in price units PER SHARE) so the owner
+/// can see WHICH friction eats the edge — not just one collapsed number. Every leg is a LABELED
+/// ESTIMATE, never a venue quote. Spread/slippage bps are round-trip by convention; the taker
+/// fee is charged on BOTH fills; financing is the overnight/borrow leg (0 for a same-day cash long).
+struct AllInCost: Sendable, Equatable {
+    let spreadCost: Double
+    let slippageCost: Double
+    let commissionCost: Double
+    let financingCost: Double
+    let takerFeeCost: Double
+    nonisolated var total: Double { spreadCost + slippageCost + commissionCost + financingCost + takerFeeCost }
+    /// The largest single leg — the "what's eating the edge" line for the UI.
+    nonisolated var dominantLeg: String {
+        let legs: [(String, Double)] = [("spread", spreadCost), ("slippage", slippageCost),
+                                        ("commission", commissionCost), ("financing", financingCost),
+                                        ("takerFee", takerFeeCost)]
+        return legs.max { $0.1 < $1.1 }?.0 ?? "spread"
+    }
+}
+
 enum StockSageNetEdge {
     /// A LABELED, asset-class default cost assumption — crypto and thin foreign listings
     /// carry far wider spreads than US large-caps or FX majors. Estimates, not quotes.
@@ -37,6 +57,22 @@ enum StockSageNetEdge {
         let slippageBps: Double
         let assetClass: String
         nonisolated var roundTripBps: Double { spreadBps + slippageBps }
+    }
+
+    /// Itemize the round-trip friction per share. ADDITIVE — `evaluate()` is untouched. Financing
+    /// is rate·holdDays (0 for a same-day or cash position — the caller passes the borrow rate only
+    /// when it applies); the taker fee is charged on BOTH fills (the crypto "GE-2% tax" analog).
+    /// All bps/rates are caller-supplied LABELED ESTIMATES, never scraped venue numbers.
+    nonisolated static func allInCost(entry: Double, spreadBps: Double = 0, slippageBps: Double = 0,
+                                      commissionPerShare: Double = 0, takerFeeBps: Double = 0,
+                                      annualFinancingRate: Double = 0, holdDays: Double = 0) -> AllInCost {
+        let e = Swift.max(0, entry)
+        return AllInCost(
+            spreadCost: e * Swift.max(0, spreadBps) / 10_000,
+            slippageCost: e * Swift.max(0, slippageBps) / 10_000,
+            commissionCost: Swift.max(0, commissionPerShare),
+            financingCost: e * Swift.max(0, annualFinancingRate) * Swift.max(0, holdDays) / 365,
+            takerFeeCost: e * 2 * Swift.max(0, takerFeeBps) / 10_000)   // both fills
     }
 
     /// Pick a sensible round-trip cost estimate from the symbol's asset class (suffix).

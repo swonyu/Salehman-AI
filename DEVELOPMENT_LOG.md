@@ -6817,6 +6817,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · TAX_REALCOST #1 — AllInCost: itemized round-trip friction (what eats the edge)
+**Files:** `StockSage/StockSageNetEdge.swift` (+AllInCost struct + allInCost), `Salehman AITests/StockSageNetEdgeTests.swift` (+1 test).
+**What:** evaluate() collapses friction into one scalar; AllInCost breaks the round trip into its real legs per share — spread, slippage, commission, financing (rate·holdDays — the overnight/short leg, 0 for a same-day cash position), and the crypto TAKER fee charged on BOTH fills (the GE-2% analog; equities/FX/index pay none). `dominantLeg` names the biggest friction for the UI. ADDITIVE: evaluate() and its 9 tests are byte-for-byte untouched. Every leg is a caller-supplied LABELED ESTIMATE, never a scraped venue number. NOTE: dropped the spec's `isShort` param — it would be a dead knob (like the GapRisk leverage bug the bughunt caught); financing is fully determined by rate·holdDays.
+**Verify:** typecheck clean; python-verified — (8/5bps + $0.04) → 0.08/0.05/0.04, total 0.17, dominant "spread"; financing 100·0.06·10/365 = 0.16438 (10-day) vs 0 (same-day); taker 50000·2·15/10000 = 150; thin scalp (2bps spread vs 20bps taker) → dominant "takerFee".
+**Result:** the cost model can now show the owner WHICH friction kills a setup — and honestly answers "do stocks have a GE tax?" (no for equities, yes-ish for crypto via taker fees). ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

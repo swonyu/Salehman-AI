@@ -2,7 +2,7 @@
 
 7 items — what the owner actually KEEPS (itemized friction + financing + crypto taker + optional after-tax). evaluate() stays byte-for-byte; all additive. RE-VERIFY vs source.
 
-### ⬜ #1 — AllInCost — itemized per-share round-trip friction (spread + slippage + commission + financing + taker)
+### ✅ DONE #1 — AllInCost — itemized per-share round-trip friction (spread + slippage + commission + financing + taker)
 **mechanism:** New pure struct in the EXISTING Salehman AI/StockSage/StockSageNetEdge.swift, added alongside CostAssumption (lines 35-40) WITHOUT touching evaluate() (lines 56-88) or its 9 green tests (StockSageNetEdgeTests.swift lines 10-77). Today evaluate collapses everything into one scalar `cost = max(0,spreadBps+slippageBps)/1e4*entry + max(0,commissionPerShare)` (line 64) — no financing, no crypto-taker, and the caller can't see which leg dominates. AllInCost itemizes the round trip in PRICE units/share. Spread/slippage bps stay round-trip by convention (crossed twice, already baked into the bps label). Financing = `entry * max(0,annualFinancingRate) * max(0,holdDays)/365`, ZERO for a same-day long (holdDays 0); it is the shorts/overnight leg, fed from holdDays or TradeRecord.daysHeld(asOf:) (Journal lines 63-65). Taker fee is the GE-2% analog (mirrors StockSageGEFlip.sellTax, GEFlip lines 58-61): equities/FX/index charge NO notional tax (`takerFeeCost==0`), crypto venues charge ~10-30bps/side on BOTH fills → `entry*(takerFeeBps+takerFeeBps)/1e4`. allInCost is a NEW nonisolated static helper; dominantLeg names the largest leg for the UI 'what's eating the edge' line. This is the foundation every other money-honesty spec composes through, so it ships first.
 
 **signature:** struct AllInCost: Sendable, Equatable {
