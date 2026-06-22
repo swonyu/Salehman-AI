@@ -1624,6 +1624,38 @@ struct MarketsView: View {
                         in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+
+            // Catalog autocomplete — search the full directory (incl. names not yet on
+            // the board) and one-tap add. Hidden once the query already matches a tracked row.
+            let q = newWatchSymbol.trimmingCharacters(in: .whitespaces)
+            let suggestions: [StockSageSymbol] = q.isEmpty ? [] :
+                StockSageUniverse.search(q, limit: 6).filter { sug in
+                    !store.symbols.contains { $0.symbol.uppercased() == sug.symbol.uppercased() }
+                }
+            if !suggestions.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(suggestions) { sug in
+                        Button {
+                            newWatchSymbol = sug.symbol
+                            Task { await addWatchSymbol() }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(sug.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                                    .frame(minWidth: 64, alignment: .leading)
+                                Text(sug.market).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                Spacer(minLength: 0)
+                                Image(systemName: "plus.circle").font(.system(size: 12)).foregroundStyle(DS.Palette.accent)
+                            }
+                            .padding(.vertical, 5).padding(.horizontal, 8).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Add \(sug.symbol), \(sug.market)")
+                    }
+                }
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
+                    .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            }
             if let err = store.addSymbolError {
                 Text(err).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
                     .fixedSize(horizontal: false, vertical: true)

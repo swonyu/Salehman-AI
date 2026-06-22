@@ -217,51 +217,124 @@ struct StockSagePriceHistory: Sendable, Equatable {
 // regions stay visually grouped in feed order. Extend freely — every downstream
 // layer is symbol-agnostic.
 enum StockSageUniverse {
-    /// (friendly market label, tickers). Explicitly typed so the big literal
-    /// type-checks cheaply (Swift's inference chokes on a bare tuple-array).
+    // (friendly market label, tickers). Explicitly typed so the big literals
+    // type-check cheaply (Swift's inference chokes on a bare tuple-array).
+    //
+    // TWO tiers, deliberately separated for the feed's sake:
+    //   • `groups`       — the ANALYZED CORE: history-fetched + live-quoted in bulk
+    //                      (board, ideas ranking, heatmap, allocation). Kept to a
+    //                      liquid, recognizable set so a manual refresh stays sane.
+    //   • `catalogExtra` — DISCOVERY long-tail: searchable + one-tap addable, but NOT
+    //                      bulk-fetched. Adding one fetches just that single quote.
+    // Together they form `catalog`, the searchable directory behind the add-ticker box —
+    // so the owner can find effectively any liquid stock without hammering the feed.
+
     private static let groups: [(label: String, tickers: [String])] = [
+        // ── United States (mega/large cap, by sector) ──
+        ("🇺🇸 US Mega-cap Tech",   ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "AVGO", "TSLA", "ORCL", "AMD"]),
+        ("🇺🇸 US Semis & Hardware", ["INTC", "QCOM", "TXN", "MU", "AMAT", "ADI", "LRCX", "KLAC", "CSCO", "IBM"]),
+        ("🇺🇸 US Software",        ["CRM", "ADBE", "NOW", "INTU", "PANW", "SNPS", "CDNS", "NFLX"]),
+        ("🇺🇸 US Financials",      ["JPM", "BAC", "WFC", "GS", "MS", "C", "BLK", "SCHW", "AXP", "V", "MA"]),
+        ("🇺🇸 US Health",          ["UNH", "JNJ", "LLY", "PFE", "MRK", "ABBV", "TMO", "ABT", "DHR", "AMGN"]),
+        ("🇺🇸 US Consumer",        ["HD", "MCD", "NKE", "SBUX", "COST", "WMT", "PG", "KO", "PEP", "DIS"]),
+        ("🇺🇸 US Energy & Industrials", ["XOM", "CVX", "COP", "BA", "CAT", "GE", "HON", "UPS", "RTX", "LMT"]),
+        ("📊 ETFs (broad & sector)", ["SPY", "QQQ", "DIA", "IWM", "VTI", "XLK", "XLF", "XLE", "XLV", "GLD", "SLV", "TLT"]),
+        // ── International (blue chips by exchange) ──
         ("🇸🇦 Tadawul (TASI)",     ["2222.SR", "1120.SR", "7010.SR", "2010.SR", "1180.SR", "2350.SR"]),
-        ("🇺🇸 United States",      ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "JPM"]),
-        ("🇬🇧 London (LSE)",       ["SHEL.L", "AZN.L", "HSBA.L", "ULVR.L"]),
-        ("🇩🇪 Frankfurt (XETRA)",  ["SAP.DE", "SIE.DE", "ALV.DE"]),
-        ("🇫🇷 Paris (Euronext)",   ["MC.PA", "OR.PA"]),
-        ("🇯🇵 Tokyo (TSE)",        ["7203.T", "6758.T", "9984.T"]),
-        ("🇭🇰 Hong Kong (HKEX)",   ["0700.HK", "9988.HK"]),
+        ("🇬🇧 London (LSE)",       ["SHEL.L", "AZN.L", "HSBA.L", "ULVR.L", "BP.L", "GSK.L"]),
+        ("🇩🇪 Frankfurt (XETRA)",  ["SAP.DE", "SIE.DE", "ALV.DE", "BMW.DE"]),
+        ("🇫🇷 Paris (Euronext)",   ["MC.PA", "OR.PA", "AIR.PA", "TTE.PA"]),
+        ("🇯🇵 Tokyo (TSE)",        ["7203.T", "6758.T", "9984.T", "8306.T"]),
+        ("🇭🇰 Hong Kong (HKEX)",   ["0700.HK", "9988.HK", "3690.HK"]),
         ("🇨🇳 Shanghai (SSE)",     ["600519.SS"]),
-        ("🇰🇷 Seoul (KRX)",        ["005930.KS"]),
-        ("🇮🇳 Mumbai (NSE)",       ["RELIANCE.NS", "TCS.NS", "INFY.NS"]),
+        ("🇰🇷 Seoul (KRX)",        ["005930.KS", "000660.KS"]),
+        ("🇮🇳 Mumbai (NSE)",       ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS"]),
         ("🇹🇼 Taiwan (TWSE)",      ["2330.TW", "2317.TW"]),
         ("🇸🇬 Singapore (SGX)",    ["D05.SI", "O39.SI"]),
-        ("🇦🇺 Sydney (ASX)",       ["BHP.AX", "CBA.AX"]),
+        ("🇦🇺 Sydney (ASX)",       ["BHP.AX", "CBA.AX", "CSL.AX"]),
         ("🇧🇷 São Paulo (B3)",     ["PETR4.SA", "VALE3.SA", "ITUB4.SA"]),
         ("🇲🇽 Mexico (BMV)",       ["AMXB.MX", "WALMEX.MX"]),
-        ("🇨🇦 Toronto (TSX)",      ["RY.TO", "SHOP.TO"]),
+        ("🇨🇦 Toronto (TSX)",      ["RY.TO", "SHOP.TO", "ENB.TO"]),
         ("🇨🇭 Zurich (SIX)",       ["NESN.SW", "ROG.SW", "NOVN.SW"]),
         ("🇳🇱 Amsterdam (Euronext)", ["ASML.AS", "ADYEN.AS"]),
-        ("🇪🇸 Madrid (BME)",       ["SAN.MC", "IBE.MC"]),
-        ("🇮🇹 Milan (Borsa)",      ["ENI.MI", "ISP.MI"]),
+        ("🇪🇸 Madrid (BME)",       ["SAN.MC", "IBE.MC", "ITX.MC"]),
+        ("🇮🇹 Milan (Borsa)",      ["ENI.MI", "ISP.MI", "RACE.MI"]),
         ("🇸🇪 Stockholm (OMX)",    ["VOLV-B.ST", "ERIC-B.ST"]),
         ("🇦🇪 UAE (ADX/DFM)",      ["FAB.AD", "EMAAR.DU"]),
         ("🇶🇦 Qatar (QSE)",        ["QNBK.QA"]),
         ("🇪🇬 Egypt (EGX)",        ["COMI.CA"]),
         ("🇿🇦 Johannesburg (JSE)", ["NPN.JO", "AGL.JO"]),
-        ("🌍 World indices",       ["^GSPC", "^IXIC", "^DJI", "^FTSE", "^GDAXI", "^STOXX50E", "^N225", "^HSI", "^NSEI", "^TWII", "^STI", "^BVSP", "^AXJO", "^TASI.SR"]),
+        ("🌍 World indices",       ["^GSPC", "^IXIC", "^DJI", "^RUT", "^VIX", "^FTSE", "^GDAXI", "^FCHI", "^STOXX50E", "^N225", "^HSI", "^NSEI", "^TWII", "^STI", "^BVSP", "^AXJO", "^GSPTSE", "^TASI.SR"]),
         // Forex (Yahoo `=X` pairs) — trades ~24×5; SAR included for the owner's home currency.
-        ("💱 Forex (24×5)",        ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "USDSAR=X", "USDCNY=X"]),
+        ("💱 Forex (24×5)",        ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "USDSAR=X", "USDCNY=X", "AUDUSD=X", "USDCAD=X", "USDCHF=X"]),
         // Crypto (Yahoo `-USD`) — trades 24/7 and is far more volatile than equities.
-        ("₿ Crypto (24/7)",        ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD"]),
+        ("₿ Crypto (24/7)",        ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "BNB-USD", "ADA-USD", "DOGE-USD", "AVAX-USD", "DOT-USD", "LINK-USD"]),
     ]
 
-    static let worldwide: [StockSageSymbol] = {
+    // Discovery long-tail — searchable + addable, NOT bulk-fetched. Real, liquid Yahoo
+    // tickers; if one ever fails to price on add, the add box says so honestly.
+    private static let catalogExtra: [(label: String, tickers: [String])] = [
+        ("🇺🇸 US Tech & Growth",   ["GOOG", "MRVL", "ON", "MCHP", "NXPI", "SNOW", "PLTR", "CRWD", "DDOG", "ZS", "NET", "WDAY", "TEAM", "DELL", "HPQ", "UBER", "ABNB", "COIN", "SQ", "PYPL", "SHOP", "MDB", "DOCU", "ROKU", "PINS"]),
+        ("🇺🇸 US Financials+",     ["SPGI", "MCO", "ICE", "CME", "COF", "USB", "PNC", "TFC", "BX", "KKR", "APO", "MET", "PRU", "AIG", "TRV"]),
+        ("🇺🇸 US Health+",         ["VRTX", "REGN", "BMY", "GILD", "CVS", "MDT", "ISRG", "ZTS", "SYK", "BDX", "HCA", "CI", "ELV", "BSX", "MRNA"]),
+        ("🇺🇸 US Consumer+",       ["LOW", "TGT", "TJX", "BKNG", "PM", "MDLZ", "CL", "EL", "KHC", "GIS", "KMB", "MNST", "YUM", "CMG", "MAR"]),
+        ("🇺🇸 US Energy/Industrial+", ["EOG", "SLB", "PSX", "MPC", "VLO", "OXY", "WMB", "KMI", "DE", "MMM", "GD", "NOC", "FDX", "EMR", "ETN", "ITW", "PH"]),
+        ("🇺🇸 US Comms/Utility/Materials", ["T", "VZ", "TMUS", "CMCSA", "CHTR", "NEE", "DUK", "SO", "D", "LIN", "SHW", "FCX", "NEM", "APD", "DOW"]),
+        ("🇺🇸 US Real Estate",     ["PLD", "AMT", "EQIX", "SPG", "O", "CCI", "PSA", "WELL"]),
+        ("📊 ETFs+ (broad/intl/bond)", ["VOO", "VEA", "VWO", "EFA", "EEM", "XLY", "XLP", "XLI", "XLU", "XLB", "XLRE", "XLC", "SMH", "SOXX", "ARKK", "USO", "HYG", "LQD", "VNQ", "SCHD", "DVY", "IEF", "AGG", "BND", "EWJ", "FXI", "EWZ", "INDA"]),
+        ("🇬🇧 London+",            ["BARC.L", "LLOY.L", "VOD.L", "RIO.L", "BATS.L", "DGE.L", "NWG.L", "TSCO.L"]),
+        ("🇩🇪 Frankfurt+",         ["BAS.DE", "BAYN.DE", "VOW3.DE", "MBG.DE", "DTE.DE", "DBK.DE", "IFX.DE", "ADS.DE"]),
+        ("🇫🇷 Paris+",             ["SAN.PA", "BNP.PA", "SU.PA", "AI.PA", "EL.PA", "CS.PA"]),
+        ("🇯🇵 Tokyo+",             ["6861.T", "9433.T", "6098.T", "7974.T", "8035.T", "4063.T"]),
+        ("🇭🇰 Hong Kong+",         ["0941.HK", "1299.HK", "0005.HK", "0388.HK", "1810.HK"]),
+        ("🇨🇳 Shanghai+",          ["601318.SS", "600036.SS", "601888.SS"]),
+        ("🇰🇷 Seoul+",             ["005380.KS", "035420.KS"]),
+        ("🇮🇳 Mumbai+",            ["ICICIBANK.NS", "BHARTIARTL.NS", "SBIN.NS", "HINDUNILVR.NS"]),
+        ("🌏 Asia-Pacific+",       ["2454.TW", "U11.SI", "NAB.AX", "WBC.AX", "WES.AX"]),
+        ("🌎 Americas+",           ["BBDC4.SA", "GFNORTEO.MX", "TD.TO", "CNR.TO", "BN.TO"]),
+        ("🇪🇺 Europe+",            ["UBSG.SW", "ZURN.SW", "INGA.AS", "PRX.AS", "BBVA.MC", "UCG.MI", "ATCO-A.ST", "INVE-B.ST"]),
+        ("💱 Forex+",              ["NZDUSD=X", "EURGBP=X", "EURJPY=X", "GBPJPY=X"]),
+        ("₿ Crypto+",              ["MATIC-USD", "LTC-USD", "BCH-USD", "ATOM-USD", "UNI-USD", "ETC-USD", "NEAR-USD", "APT-USD"]),
+    ]
+
+    private static func build(_ gs: [(label: String, tickers: [String])]) -> [StockSageSymbol] {
+        gs.flatMap { g in g.tickers.map { StockSageSymbol(symbol: $0, market: g.label) } }
+    }
+
+    static let worldwide: [StockSageSymbol] = build(groups)
+
+    /// Distinct exchanges/regions covered — surfaced in the live banner ("N markets").
+    static let marketCount: Int = groups.count
+
+    /// The full searchable directory: analyzed core + discovery long-tail, deduped
+    /// (first occurrence wins, so a core symbol keeps its core market label).
+    static let catalog: [StockSageSymbol] = {
+        var seen: Set<String> = []
         var out: [StockSageSymbol] = []
-        for group in groups {
-            for ticker in group.tickers {
-                out.append(StockSageSymbol(symbol: ticker, market: group.label))
-            }
+        for s in build(groups) + build(catalogExtra) where seen.insert(s.symbol.uppercased()).inserted {
+            out.append(s)
         }
         return out
     }()
 
-    /// Distinct exchanges/regions covered — surfaced in the live banner ("N markets").
-    static let marketCount: Int = groups.count
+    /// Case-insensitive catalog search for the add-ticker autocomplete: exact match
+    /// first, then prefix, then substring, then a market-label hit. Pure + bounded.
+    static func search(_ query: String, limit: Int = 8) -> [StockSageSymbol] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !q.isEmpty else { return [] }
+        var scored: [(sym: StockSageSymbol, score: Int)] = []
+        for s in catalog {
+            let sym = s.symbol.uppercased()
+            let score: Int
+            if sym == q { score = 0 }
+            else if sym.hasPrefix(q) { score = 1 }
+            else if sym.contains(q) { score = 2 }
+            else if s.market.uppercased().contains(q) { score = 3 }
+            else { continue }
+            scored.append((s, score))
+        }
+        return scored
+            .sorted { $0.score != $1.score ? $0.score < $1.score : $0.sym.symbol.count < $1.sym.symbol.count }
+            .prefix(limit).map(\.sym)
+    }
 }
