@@ -7195,6 +7195,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · SELF-REGRESSION #4 caught + fixed — half-timestamped GE spread rendered as live
+**Files:** `RuneScape/RuneScapeModels.swift` (oldestLegAge/isStale), `Views/RuneScapeMarketView.swift` (caution), `Salehman AITests/RuneScapeTests.swift` (+assert).
+**What (regression-hunt w3jle6jup, introduced by my own edbc2bf):** oldestLegAge compactMapped nil timestamps away before .min(), so a spread with BOTH legs priced but only ONE timestamped (a shape parseLatest can decode — high/highTime/low/lowTime are independent) was aged on the present leg alone → isStale false → a half-unverifiable spread rendered full-opacity with no caution: the exact live-looking-but-unverifiable case edbc2bf set out to kill. Fix: when both legs priced but EXACTLY ONE carries a trade time, oldestLegAge returns nil (cannot age it honestly) and isStale returns true (unverifiable → treat as stale). Both-nil stays not-stale (feed provides no times → cannot judge), both-timed unchanged. The row caution now renders without an age when unverifiable ("⚠︎ stale; may not fill at this spread").
+**Verify:** typecheck EXIT=0; RE-TRACED the staleness test truth table (half-dated→stale+nil-age; both-nil→not-stale+nil-age unchanged; both-timed→unchanged) + added the half-dated assertion. 4th self-introduced regression caught by a periodic regression-hunt.
+**Result:** a partially-timestamped GE spread is now flagged unverifiable instead of sold as a live flip — the only-real-data rule holds even on a malformed feed shape. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

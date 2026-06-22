@@ -321,8 +321,10 @@ struct RuneScapeMarketView: View {
                     Text("≈ \(RSFormat.gp(Int(gph)))/hr").font(.caption2)
                         .foregroundStyle(DS.Palette.successSoft).opacity(stale ? 0.5 : 1)
                 }
-                if stale, let age = priceAge {
-                    Text("⚠︎ \(rsAgeLabel(age)) — stale; may not fill at this spread")
+                if stale {
+                    // Show the age when we can compute it; for a half-timestamped (unverifiable) spread
+                    // priceAge is nil — still warn, just without a misleading age.
+                    Text("⚠︎ " + (priceAge.map { "\(rsAgeLabel($0)) — " } ?? "") + "stale; may not fill at this spread")
                         .font(.system(size: rsFont8, weight: .medium)).foregroundStyle(DS.Palette.warningSoft)
                         .lineLimit(1)
                 }

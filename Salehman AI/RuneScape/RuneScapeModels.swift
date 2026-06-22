@@ -45,6 +45,10 @@ struct RuneScapePrice: Sendable, Equatable {
     /// thin item's "sell" leg can be days stale while shown green, so the UI must qualify it. nil if
     /// neither leg carries a feed timestamp.
     nonisolated func oldestLegAge(asOf now: Date) -> TimeInterval? {
+        // If both legs are priced, both must carry a trade time to age the spread honestly. A priced
+        // leg with a missing time can't be aged, so don't report the OTHER leg's (misleadingly fresh)
+        // age — return nil and let isStale treat the half-timestamped spread as unverifiable.
+        if high != nil, low != nil, (highTime == nil) != (lowTime == nil) { return nil }
         let ts = [highTime, lowTime].compactMap { $0 }
         guard let oldest = ts.min() else { return nil }
         return Swift.max(0, now.timeIntervalSince(oldest))
@@ -53,6 +57,9 @@ struct RuneScapePrice: Sendable, Equatable {
     /// The spread is stale when its older leg hasn't traded within `maxAge` (default 60 min, matching
     /// the plugin's maxStaleMinutes) — the margin may no longer be fillable.
     nonisolated func isStale(maxAge: TimeInterval = 3600, asOf now: Date) -> Bool {
+        // Both legs priced but EXACTLY ONE has a trade time → the feed gives times yet one leg is
+        // unverifiable → treat as stale. (Neither leg timestamped = feed provides none → can't judge.)
+        if high != nil, low != nil, (highTime == nil) != (lowTime == nil) { return true }
         guard let age = oldestLegAge(asOf: now) else { return false }
         return age > maxAge
     }

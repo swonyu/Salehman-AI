@@ -22,9 +22,14 @@ struct RuneScapeParseTests {
         let fresh = RuneScapePrice(high: 100, highTime: now.addingTimeInterval(-300),
                                    low: 90, lowTime: now.addingTimeInterval(-120))
         #expect(!fresh.isStale(asOf: now))
-        // No feed timestamps → can't judge → nil age, not stale.
+        // No feed timestamps at all → can't judge → nil age, not stale.
         let undated = RuneScapePrice(high: 100, highTime: nil, low: 90, lowTime: nil)
         #expect(undated.oldestLegAge(asOf: now) == nil && !undated.isStale(asOf: now))
+        // Both legs PRICED but only one timestamped → unverifiable freshness → stale, and not ageable
+        // (a half-undated spread must NOT render as a fresh flip — caught as a self-regression).
+        let halfDated = RuneScapePrice(high: 100, highTime: now.addingTimeInterval(-60), low: 90, lowTime: nil)
+        #expect(halfDated.isStale(asOf: now))
+        #expect(halfDated.oldestLegAge(asOf: now) == nil)
     }
 
     @Test func parsesLatestPricesAndMargin() {
