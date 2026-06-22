@@ -41,6 +41,18 @@ struct StockSageExpectedValueTests {
                       spark: [])
     }
 
+    @Test func velocityRewardsFastTurnover() {
+        // Same EV (1.228), but crypto hold 3 beats equity hold 12.
+        let equity = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        let crypto = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
+        let ve = EV.velocity(for: equity)!, vc = EV.velocity(for: crypto)!
+        #expect(abs(ve - 1.228 / 12) < 1e-9)
+        #expect(abs(vc - 1.228 / 3) < 1e-9)
+        #expect(vc > ve)
+        #expect(EV.expectedHoldDays(forSymbol: "^GSPC") == nil)                            // index → no velocity
+        #expect(EV.velocity(for: idea("EURUSD=X", conviction: 0.9, stop: 90, target: 130)) == nil)
+    }
+
     @Test func bestOpportunityPicksHighestPositiveEVBuy() {
         let a = idea("A", action: .buy, conviction: 0.2, stop: 90, target: 120)        // EV 0.188
         let b = idea("B", action: .strongBuy, conviction: 0.9, stop: 90, target: 130)  // EV 1.228

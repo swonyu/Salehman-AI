@@ -10,8 +10,9 @@ import AppKit   // NSPasteboard for the trade-plan copy
 struct MarketsView: View {
     @State private var section: MarketSection
     @State private var sort: MarketSort = .feed
-    /// Ideas board: rank by expected value (best BET first) vs the default signal rank.
-    @State private var sortIdeasByEV = true
+    /// Ideas board ordering: by expected value, EV-per-day velocity, or signal rank.
+    private enum IdeaSort: String, CaseIterable { case ev = "Expected value", velocity = "EV / day", signal = "Signal rank" }
+    @State private var ideaSort: IdeaSort = .ev
     @ObservedObject private var store = StockSageStore.shared
     @ObservedObject private var portfolio = StockSagePortfolio.shared
     @ObservedObject private var journal = StockSageJournalStore.shared
@@ -1676,10 +1677,9 @@ struct MarketsView: View {
             } else {
                 HStack(spacing: 8) {
                     Text("Sort:").font(.system(size: 10)).foregroundStyle(.secondary)
-                    Picker("", selection: $sortIdeasByEV) {
-                        Text("Expected value").tag(true)
-                        Text("Signal rank").tag(false)
-                    }.labelsHidden().pickerStyle(.segmented).frame(width: 220)
+                    Picker("", selection: $ideaSort) {
+                        ForEach(IdeaSort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }.labelsHidden().pickerStyle(.segmented).frame(width: 300)
                     Spacer()
                 }
                 VStack(spacing: DS.Space.sm) {
@@ -1694,7 +1694,11 @@ struct MarketsView: View {
     /// The ideas in display order — by expected value (best bet first) or the
     /// store's default signal rank.
     private var displayedIdeas: [StockSageIdea] {
-        sortIdeasByEV ? StockSageExpectedValue.rankByEV(store.ideas) : store.ideas
+        switch ideaSort {
+        case .ev:       return StockSageExpectedValue.rankByEV(store.ideas)
+        case .velocity: return StockSageExpectedValue.rankByVelocity(store.ideas)
+        case .signal:   return store.ideas
+        }
     }
 
     private var ideasHeader: some View {
@@ -1725,7 +1729,7 @@ struct MarketsView: View {
                 .buttonStyle(LuxPressStyle()).disabled(store.isLoadingIdeas)
             }
             if let when = store.ideasUpdated {
-                Text("Analyzed \(Self.timeFormatter.string(from: when)) · ranked by \(sortIdeasByEV ? "expected value" : "signal rank")")
+                Text("Analyzed \(Self.timeFormatter.string(from: when)) · ranked by \(ideaSort.rawValue.lowercased())")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             if let err = store.ideasError {
@@ -2225,6 +2229,13 @@ struct MarketsView: View {
                             .foregroundStyle(ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft)
                             .fixedSize(horizontal: false, vertical: true)
                             .help(StockSageExpectedValue.caveat)
+                    }
+                }
+                if let vel = StockSageExpectedValue.velocity(for: idea) {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "gauge.with.dots.needle.67percent").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(String(format: "≈ %+.3fR/day velocity (EV ÷ typical hold) — faster turnover compounds faster. An estimate.", vel))
+                            .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 if a.suggestedWeight > 0, store.regime != nil {

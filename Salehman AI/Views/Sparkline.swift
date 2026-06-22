@@ -37,7 +37,10 @@ enum SparkSeries {
 struct Sparkline: Shape {
     let values: [Double]
 
-    func path(in rect: CGRect) -> Path {
+    // `nonisolated` — Shape.path(in:) is a nonisolated protocol requirement, but the
+    // project defaults every type to MainActor isolation; without this the conformance
+    // "crosses into main actor-isolated code" (a Swift 6 data-race error in Xcode).
+    nonisolated func path(in rect: CGRect) -> Path {
         var path = Path()
         let norm = SparkSeries.normalize(values)
         guard norm.count >= 2, rect.width > 0, rect.height > 0 else { return path }

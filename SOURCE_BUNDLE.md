@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 04:02 +03 · Swift files: 209 · Swift LOC: 42001_
+_Generated: 2026-06-22 04:15 +03 · Swift files: 209 · Swift LOC: 42058_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -9379,7 +9379,7 @@ enum StockSageEarnings {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageExpectedValue.swift (69 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageExpectedValue.swift (100 lines) =====
 ```swift
 import Foundation
 
@@ -9414,6 +9414,37 @@ enum StockSageExpectedValue {
         let rewardR = reward / risk
         let p = winProbEstimate(conviction: conviction)
         return ExpectedValue(winProbEstimate: p, rewardR: rewardR, evR: p * rewardR - (1 - p))
+    }
+
+    /// Typical hold in days by asset class — crypto turns over fast (24/7), equities
+    /// swing. nil for index/FX (not traded for velocity here). A rough default, not
+    /// a per-symbol measurement.
+    nonisolated static func expectedHoldDays(forSymbol symbol: String) -> Double? {
+        switch StockSageAllocation.assetClass(symbol) {
+        case "Crypto": return 3
+        case "Equity": return 12
+        default: return nil
+        }
+    }
+
+    /// Velocity = EV ÷ expected hold = expected R PER DAY, so a fast-turnover setup
+    /// beats a slow swing of equal EV (more compounding cycles). nil if no EV or no
+    /// hold estimate. An estimate on an estimate — the UI says so.
+    nonisolated static func velocity(for idea: StockSageIdea) -> Double? {
+        guard let e = ev(for: idea), let hold = expectedHoldDays(forSymbol: idea.symbol), hold > 0 else { return nil }
+        return e.evR / hold
+    }
+
+    /// Ideas ranked by velocity (EV/day) desc; ideas without a velocity fall last (stable).
+    nonisolated static func rankByVelocity(_ ideas: [StockSageIdea]) -> [StockSageIdea] {
+        ideas.enumerated().sorted { a, b in
+            switch (velocity(for: a.element), velocity(for: b.element)) {
+            case let (x?, y?): return x == y ? a.offset < b.offset : x > y
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (nil, nil): return a.offset < b.offset
+            }
+        }.map(\.element)
     }
 
     /// EV for a ranked idea, or nil when it lacks a stop/target (no defined R:R).
@@ -24958,7 +24989,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (2587 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (2598 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -24972,8 +25003,9 @@ import AppKit   // NSPasteboard for the trade-plan copy
 struct MarketsView: View {
     @State private var section: MarketSection
     @State private var sort: MarketSort = .feed
-    /// Ideas board: rank by expected value (best BET first) vs the default signal rank.
-    @State private var sortIdeasByEV = true
+    /// Ideas board ordering: by expected value, EV-per-day velocity, or signal rank.
+    private enum IdeaSort: String, CaseIterable { case ev = "Expected value", velocity = "EV / day", signal = "Signal rank" }
+    @State private var ideaSort: IdeaSort = .ev
     @ObservedObject private var store = StockSageStore.shared
     @ObservedObject private var portfolio = StockSagePortfolio.shared
     @ObservedObject private var journal = StockSageJournalStore.shared
@@ -26638,10 +26670,9 @@ struct MarketsView: View {
             } else {
                 HStack(spacing: 8) {
                     Text("Sort:").font(.system(size: 10)).foregroundStyle(.secondary)
-                    Picker("", selection: $sortIdeasByEV) {
-                        Text("Expected value").tag(true)
-                        Text("Signal rank").tag(false)
-                    }.labelsHidden().pickerStyle(.segmented).frame(width: 220)
+                    Picker("", selection: $ideaSort) {
+                        ForEach(IdeaSort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }.labelsHidden().pickerStyle(.segmented).frame(width: 300)
                     Spacer()
                 }
                 VStack(spacing: DS.Space.sm) {
@@ -26656,7 +26687,11 @@ struct MarketsView: View {
     /// The ideas in display order — by expected value (best bet first) or the
     /// store's default signal rank.
     private var displayedIdeas: [StockSageIdea] {
-        sortIdeasByEV ? StockSageExpectedValue.rankByEV(store.ideas) : store.ideas
+        switch ideaSort {
+        case .ev:       return StockSageExpectedValue.rankByEV(store.ideas)
+        case .velocity: return StockSageExpectedValue.rankByVelocity(store.ideas)
+        case .signal:   return store.ideas
+        }
     }
 
     private var ideasHeader: some View {
@@ -26687,7 +26722,7 @@ struct MarketsView: View {
                 .buttonStyle(LuxPressStyle()).disabled(store.isLoadingIdeas)
             }
             if let when = store.ideasUpdated {
-                Text("Analyzed \(Self.timeFormatter.string(from: when)) · ranked by \(sortIdeasByEV ? "expected value" : "signal rank")")
+                Text("Analyzed \(Self.timeFormatter.string(from: when)) · ranked by \(ideaSort.rawValue.lowercased())")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             if let err = store.ideasError {
@@ -27187,6 +27222,13 @@ struct MarketsView: View {
                             .foregroundStyle(ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft)
                             .fixedSize(horizontal: false, vertical: true)
                             .help(StockSageExpectedValue.caveat)
+                    }
+                }
+                if let vel = StockSageExpectedValue.velocity(for: idea) {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "gauge.with.dots.needle.67percent").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(String(format: "≈ %+.3fR/day velocity (EV ÷ typical hold) — faster turnover compounds faster. An estimate.", vel))
+                            .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 if a.suggestedWeight > 0, store.regime != nil {
@@ -31382,7 +31424,7 @@ struct ShortcutsView: View {
 }
 ```
 
-===== FILE: Salehman AI/Views/Sparkline.swift (53 lines) =====
+===== FILE: Salehman AI/Views/Sparkline.swift (56 lines) =====
 ```swift
 import SwiftUI
 
@@ -31423,7 +31465,10 @@ enum SparkSeries {
 struct Sparkline: Shape {
     let values: [Double]
 
-    func path(in rect: CGRect) -> Path {
+    // `nonisolated` — Shape.path(in:) is a nonisolated protocol requirement, but the
+    // project defaults every type to MainActor isolation; without this the conformance
+    // "crosses into main actor-isolated code" (a Swift 6 data-race error in Xcode).
+    nonisolated func path(in rect: CGRect) -> Path {
         var path = Path()
         let norm = SparkSeries.normalize(values)
         guard norm.count >= 2, rect.width > 0, rect.height > 0 else { return path }
@@ -40096,7 +40141,7 @@ struct StockSageEarningsTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageExpectedValueTests.swift (64 lines) =====
+===== FILE: Salehman AITests/StockSageExpectedValueTests.swift (76 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -40139,6 +40184,18 @@ struct StockSageExpectedValueTests {
                       advice: TradeAdvice(action: action, conviction: conviction, regime: .bullTrend, rationale: [],
                                           stopPrice: stop, targetPrice: target, suggestedWeight: 0.05, caveat: "x"),
                       spark: [])
+    }
+
+    @Test func velocityRewardsFastTurnover() {
+        // Same EV (1.228), but crypto hold 3 beats equity hold 12.
+        let equity = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        let crypto = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
+        let ve = EV.velocity(for: equity)!, vc = EV.velocity(for: crypto)!
+        #expect(abs(ve - 1.228 / 12) < 1e-9)
+        #expect(abs(vc - 1.228 / 3) < 1e-9)
+        #expect(vc > ve)
+        #expect(EV.expectedHoldDays(forSymbol: "^GSPC") == nil)                            // index → no velocity
+        #expect(EV.velocity(for: idea("EURUSD=X", conviction: 0.9, stop: 90, target: 130)) == nil)
     }
 
     @Test func bestOpportunityPicksHighestPositiveEVBuy() {
@@ -44896,7 +44953,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7270 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7281 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -51051,6 +51108,17 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Files:** `StockSage/StockSageExpectedValue.swift` (+`bestOpportunity`), `Views/MarketsView.swift` (top-of-Ideas card), `Salehman AITests/StockSageExpectedValueTests.swift` (+1 test).
 **What & why:** Money-velocity #3 — the most direct answer to "what do I buy NOW." `bestOpportunity(_:)` returns the buy-family idea with the highest POSITIVE EV (nil if none — never manufactures one). A prominent accent card at the TOP of the Ideas section shows symbol · action · Est. EV · R:R · est. win% · suggested size, tappable straight to its detail sheet, with the "estimate from conviction, NOT a forecast" caveat baked in. 1 test, HAND-VERIFIED: among A(EV 0.188 buy), B(EV 1.228 strong-buy), C(sell→excluded), D(buy EV −0.30→excluded) → picks B; no positive-EV buy → nil.
 **Result:** ✅ `tools/typecheck.sh` clean. Task #53 done. 46 big features today (#9–#53). The owner opens Ideas and the single best bet is right at the top, one tap from a full plan. NEXT: velocity score (EV ÷ expected hold); review due after ~1 more. Autonomous /loop — active-dev.
+
+## 2026-06-21 · NEW FEATURE: Velocity score — EV per day (money velocity)
+**Files:** `StockSage/StockSageExpectedValue.swift` (+`expectedHoldDays`/`velocity`/`rankByVelocity`), `Views/MarketsView.swift` (3-way sort + EV/day line), `Salehman AITests/StockSageExpectedValueTests.swift` (+1 test).
+**What & why:** Directly serves "fastest" — a setup that resolves in 3 days compounds far more than an equal-EV one that takes 12. `velocity(for:) = EV ÷ expectedHoldDays`, where hold is a per-asset-class default (crypto ~3d, equity ~12d; index/FX → nil/skip — a rough default, not a per-symbol measurement, and the UI says estimate). So a crypto setup outranks an equal-EV equity swing. The ideas board sort is now 3-way — **Expected value / EV per day / Signal rank** — and the detail sheet shows "≈ +0.41R/day velocity (EV ÷ typical hold)." 1 test, HAND-VERIFIED: same EV 1.228 → crypto 1.228/3 > equity 1.228/12; ^GSPC/EURUSD=X → nil (no velocity).
+**Result:** ✅ `tools/typecheck.sh` clean. Task #54 done. 47 big features today (#9–#54). The board can now rank by money-MADE-per-day, not just per-trade — rewarding the turnover speed the owner asked for, honestly hedged. **Launching a review workflow** over the 2 unreviewed (best-now + velocity). Autonomous /loop — active-dev.
+
+## 2026-06-21 · 🔴 BUILD FIX (owner's Xcode) + hardened typecheck gate; pass-23 clean
+**Files:** `Views/Sparkline.swift`, `tools/typecheck.sh`.
+**What & why:** The owner's real Xcode build (full Swift 6 strict concurrency) flagged: "Conformance of 'Sparkline' to protocol 'Shape' crosses into main actor-isolated code." `Shape.path(in:)` is a NONISOLATED protocol requirement, but the project's `SWIFT_DEFAULT_ACTOR_ISOLATION=MainActor` made `Sparkline.path(in:)` MainActor-isolated → illegal conformance. → marked `path(in:)` **`nonisolated`** (its only input is the Sendable `let values`). **Root-cause the miss:** `tools/typecheck.sh` lacked `-strict-concurrency=complete`, so it didn't run the conformance-isolation check Xcode does. → added `-strict-concurrency=complete` to the gate; re-ran it across all 209 files — **clean** (Sparkline was the only Shape conformance / only error of this class; no other latent concurrency build-blockers).
+**Also:** Features review pass-23 (best-opportunity-now + velocity) returned **0 findings** — both clean.
+**Result:** ✅ hardened `tools/typecheck.sh` green. The gate now matches Xcode's concurrency strictness, so this class of error gets caught locally before a build. SOURCE_BUNDLE regenerated. Twenty-five review workflows → **48 confirmed defects fixed**. Committed+pushed the fix so origin/main builds. NEXT: compounding tracker. Autonomous /loop — active-dev.
 
 ---
 

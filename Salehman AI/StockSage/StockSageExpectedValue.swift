@@ -33,6 +33,37 @@ enum StockSageExpectedValue {
         return ExpectedValue(winProbEstimate: p, rewardR: rewardR, evR: p * rewardR - (1 - p))
     }
 
+    /// Typical hold in days by asset class — crypto turns over fast (24/7), equities
+    /// swing. nil for index/FX (not traded for velocity here). A rough default, not
+    /// a per-symbol measurement.
+    nonisolated static func expectedHoldDays(forSymbol symbol: String) -> Double? {
+        switch StockSageAllocation.assetClass(symbol) {
+        case "Crypto": return 3
+        case "Equity": return 12
+        default: return nil
+        }
+    }
+
+    /// Velocity = EV ÷ expected hold = expected R PER DAY, so a fast-turnover setup
+    /// beats a slow swing of equal EV (more compounding cycles). nil if no EV or no
+    /// hold estimate. An estimate on an estimate — the UI says so.
+    nonisolated static func velocity(for idea: StockSageIdea) -> Double? {
+        guard let e = ev(for: idea), let hold = expectedHoldDays(forSymbol: idea.symbol), hold > 0 else { return nil }
+        return e.evR / hold
+    }
+
+    /// Ideas ranked by velocity (EV/day) desc; ideas without a velocity fall last (stable).
+    nonisolated static func rankByVelocity(_ ideas: [StockSageIdea]) -> [StockSageIdea] {
+        ideas.enumerated().sorted { a, b in
+            switch (velocity(for: a.element), velocity(for: b.element)) {
+            case let (x?, y?): return x == y ? a.offset < b.offset : x > y
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (nil, nil): return a.offset < b.offset
+            }
+        }.map(\.element)
+    }
+
     /// EV for a ranked idea, or nil when it lacks a stop/target (no defined R:R).
     nonisolated static func ev(for idea: StockSageIdea) -> ExpectedValue? {
         guard let stop = idea.advice.stopPrice, let target = idea.advice.targetPrice else { return nil }

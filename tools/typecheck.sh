@@ -30,6 +30,7 @@ find "Salehman AI" -name '*.swift' -not -path '*External Artifacts*' -print0 \
       -target arm64-apple-macosx26.5 \
       -swift-version 6 \
       -default-isolation MainActor \
+      -strict-concurrency=complete \
       -D DEBUG \
       -enable-upcoming-feature MemberImportVisibility \
       -module-name SalehmanAI \
