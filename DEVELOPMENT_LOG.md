@@ -7102,6 +7102,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · MONEY-FLOW #9 (HIGH gap) — live per-position "ACT NOW" verdict on open trades
+**Files:** `StockSage/StockSageJournal.swift` (OpenAction + openActions), `Views/MarketsView.swift` (urgent banner over Open section), `Salehman AITests/StockSageJournalTests.swift` (+test).
+**What (money-flow sweep wdzfepgrt #9):** the journal did POST-MORTEM analytics only — a held position crossing its real stop fired NOTHING (StockSageAlertDecision/Monitor run over the WATCHLIST, never journal.open). New pure `openActions(_ trades:mark:)` emits a side-aware verdict per OPEN trade from the current mark — stopHit / targetHit / nearStop (−0.75…−1R) / inProfit / holding — reusing the trade's own stop/target/rMultiple (long stops below + targets above; short mirrored). Urgent (stop/target hit) sorts first. MarketsView renders the URGENT ones as a red/green "⚠︎ SYM — STOP HIT: …" banner above the Open list, so a position needing action is visible the moment the owner opens the tab. Advisory only; no orders placed.
+**Verify:** typecheck EXIT=0; +test — long stopHit@89/targetHit@130/nearStop@92.5/inProfit@120; short mirrored (stop@111/target@79); no-mark→empty; urgent sorts before in-profit. Engine unit-tested; UI render UNVERIFIED (Mac).
+**Result:** the owner away a week now gets a real "your open position hit its stop — act" signal from their actual journal, not just watchlist alerts on names they don't hold. The biggest money-flow GAP closed. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

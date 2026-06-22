@@ -18,6 +18,30 @@ struct StockSageJournalTests {
                     exitPrice: exit, closedAt: exit == nil ? nil : Date(timeIntervalSince1970: 100))
     }
 
+    @Test func openActionsGivesSideAwareLiveVerdicts() {
+        func open(_ side: TradeRecord.Side, _ stop: Double, _ target: Double?) -> TradeRecord {
+            TradeRecord(symbol: "X", side: side, entry: 100, stop: stop, target: target, shares: 10,
+                        openedAt: Date(timeIntervalSince1970: 0))
+        }
+        func at(_ p: Double) -> (String) -> Double? { { _ in p } }
+        let long = open(.long, 90, 130)
+        #expect(StockSageJournal.openActions([long], mark: at(89)).first?.kind == .stopHit)     // at/below stop
+        #expect(StockSageJournal.openActions([long], mark: at(130)).first?.kind == .targetHit)  // at target
+        #expect(StockSageJournal.openActions([long], mark: at(92.5)).first?.kind == .nearStop)  // −0.75R
+        #expect(StockSageJournal.openActions([long], mark: at(120)).first?.kind == .inProfit)   // +2R
+        // Short mirrors it: stop ABOVE, target BELOW.
+        let short = open(.short, 110, 80)
+        #expect(StockSageJournal.openActions([short], mark: at(111)).first?.kind == .stopHit)   // at/above stop
+        #expect(StockSageJournal.openActions([short], mark: at(79)).first?.kind == .targetHit)  // at/below target
+        // No mark / closed trade → skipped.
+        #expect(StockSageJournal.openActions([long], mark: { _ in nil }).isEmpty)
+        // Urgent (stop hit) sorts before in-profit.
+        let y = TradeRecord(symbol: "Y", side: .long, entry: 100, stop: 90, target: 130, shares: 10,
+                            openedAt: Date(timeIntervalSince1970: 0))
+        let two = StockSageJournal.openActions([long, y], mark: { $0 == "X" ? 120 : 89 })
+        #expect(two.first?.symbol == "Y" && two.first?.kind == .stopHit)
+    }
+
     @Test func perBucketReliabilityGatesSmallSamples() {
         // The min-n honesty gate: a thin bucket is "too few to tell", a full one is reliable.
         #expect(!StockSageJournal.bucketReliability(closedWithR: 4).isReliable)   // < 5 default

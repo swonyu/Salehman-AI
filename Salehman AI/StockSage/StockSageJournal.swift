@@ -148,6 +148,21 @@ struct BucketReliability: Sendable, Equatable {
     nonisolated var tooFewLabel: String { "too few to tell (n=\(n), need \(minN))" }
 }
 
+/// A live "what to do RIGHT NOW" verdict for one OPEN trade, from its current mark price. The
+/// journal otherwise only does post-mortem analytics — this is the only surface that acts on a
+/// position while it is still open. Advisory only: the app places no orders.
+struct OpenAction: Sendable, Equatable, Identifiable {
+    enum Kind: String, Sendable { case stopHit = "STOP HIT", targetHit = "TARGET HIT",
+                                       nearStop = "Near stop", inProfit = "In profit", holding = "Holding" }
+    let symbol: String
+    let kind: Kind
+    let detail: String
+    let rNow: Double?      // current R-multiple at the mark (nil if entry == stop)
+    var id: String { symbol }
+    /// Stop/target hit → the owner must act now.
+    nonisolated var isUrgent: Bool { kind == .stopHit || kind == .targetHit }
+}
+
 /// Best/worst closed trade + the current consecutive win-or-loss streak.
 struct JournalStreak: Sendable, Equatable {
     let bestR: Double
@@ -563,6 +578,45 @@ enum StockSageJournal {
     }
     nonisolated static func reliability(_ s: SidePnL, minN: Int = 5) -> BucketReliability {
         BucketReliability(n: s.closedWithR, minN: minN)   // R-defined sample, not raw closed count
+    }
+
+    /// Live "act now" verdict per OPEN trade from a current mark price. Side-aware (a long stops
+    /// BELOW / targets ABOVE; a short mirrors it), reusing the trade's own stop/target/R. Urgent
+    /// (stop/target hit) sorts first, then by |R|. Closed trades and unpriced symbols are skipped.
+    nonisolated static func openActions(_ trades: [TradeRecord], mark: (String) -> Double?) -> [OpenAction] {
+        let acts = trades.compactMap { t -> OpenAction? in
+            guard t.isOpen, let px = mark(t.symbol) else { return nil }
+            let isLong = t.side == .long
+            let rNow = t.rMultiple(at: px)
+            // Stop hit — long: at/below the stop; short: at/above.
+            if isLong ? px <= t.stop : px >= t.stop {
+                return OpenAction(symbol: t.symbol, kind: .stopHit,
+                                  detail: String(format: "%.2f at/through your %.2f stop — risk is realized; exit or re-confirm the thesis.", px, t.stop),
+                                  rNow: rNow)
+            }
+            // Target hit — long: at/above the target; short: at/below.
+            if let tgt = t.target, (isLong ? px >= tgt : px <= tgt) {
+                return OpenAction(symbol: t.symbol, kind: .targetHit,
+                                  detail: String(format: "%.2f reached your %.2f target — take profit or trail the stop.", px, tgt),
+                                  rNow: rNow)
+            }
+            // Within the last 25% before the stop (−0.75R … −1R).
+            if let r = rNow, r > -1, r <= -0.75 {
+                return OpenAction(symbol: t.symbol, kind: .nearStop,
+                                  detail: String(format: "%.2f is near your stop (now %+.2fR) — be ready to act.", px, r),
+                                  rNow: r)
+            }
+            if let r = rNow, r > 0 {
+                return OpenAction(symbol: t.symbol, kind: .inProfit,
+                                  detail: String(format: "up %+.2fR — consider trailing the stop to lock it in.", r),
+                                  rNow: r)
+            }
+            return OpenAction(symbol: t.symbol, kind: .holding, detail: "holding — no level crossed.", rNow: rNow)
+        }
+        return acts.sorted { a, b in
+            if a.isUrgent != b.isUrgent { return a.isUrgent }
+            return abs(a.rNow ?? 0) > abs(b.rNow ?? 0)
+        }
     }
 
     /// Disclaimer for every per-bucket attribution row — descriptive of the past, not predictive.

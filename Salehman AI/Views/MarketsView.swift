@@ -1316,6 +1316,17 @@ struct MarketsView: View {
                         .accessibilityLabel("Portfolio heat: \(Int(heat.heatPct * 100)) percent of account at open risk across \(heat.openCount) trades")
                     }
                     Text("Open").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                    // Live "act now": OPEN trades that have crossed their stop or target need action
+                    // while the owner is away — the only surface that acts on a position in real time.
+                    let urgentActs = StockSageJournal.openActions(journal.open, mark: { currentPrice($0) })
+                        .filter(\.isUrgent)
+                    ForEach(urgentActs) { act in
+                        Text("⚠︎ \(act.symbol) — \(act.kind.rawValue): \(act.detail)")
+                            .font(.system(size: mvFont9, weight: .semibold))
+                            .foregroundStyle(act.kind == .stopHit ? DS.Palette.danger : DS.Palette.successSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityLabel("\(act.symbol) \(act.kind.rawValue). \(act.detail)")
+                    }
                     ForEach(journal.open) { journalOpenRow($0) }
                 }
                 if !journal.closed.isEmpty {
