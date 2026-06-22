@@ -7219,6 +7219,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · MONEY (alpha) — earnings rank-flag badge: the demotion is now LEGIBLE on the card
+**Files:** `StockSage/StockSageExpectedValue.swift` (EarningsRankFlag + earningsRankFlag), `Views/MarketsView.swift` (ideaCard chip + a11y label), `Salehman AITests/StockSageExpectedValueTests.swift` (+test).
+**What (ALPHA_EDGE_SWEEP w9lozzift #3, companion to #1):** the earnings rank demotion shipped earlier was a SILENT re-order — an idea dropped with no on-screen reason. New EarningsRankFlag enum (.demoted(daysUntil:)/.approaching/.clear/.unknown) + pure earningsRankFlag(for:earnings:) read the SAME cached EarningsProximity (no Date math, no network). isDemoted is true ONLY for .imminent, mirroring earningsRankPenalty>0 exactly, so the badge can never disagree with the actual rank shift. ideaCard now shows a "⚠︎ earnings ~Nd" chip (warning tint when demoted, secondary when approaching, with the EarningsProximity.note on .help) and the VoiceOver label speaks "earnings imminent in about N days — demoted in the rank". clear + unknown stay quiet (only-real-data: an unknown date surfaces nothing, never a false alarm).
+**Verify:** typecheck EXIT=0; +test (imminent→.demoted(2), soon→.approaching(7), clear→.clear(40), no-date→.unknown; isDemoted true only for demoted; badge non-empty only for demoted/approaching). RE-TRACED: pure additive function + nested enum, no existing behavior changed.
+**Result:** when an idea steps aside for a clean peer the night before earnings, the owner now SEES why (and VoiceOver hears it) — the rank is honest AND legible. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

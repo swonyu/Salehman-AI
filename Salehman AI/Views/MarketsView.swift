@@ -2225,6 +2225,8 @@ struct MarketsView: View {
 
     private func ideaCard(_ idea: StockSageIdea) -> some View {
         let a = idea.advice
+        // Legible reason for the earnings-aware rank: a chip when earnings are imminent/approaching.
+        let earnFlag = StockSageExpectedValue.earningsRankFlag(for: idea, earnings: store.earnings)
         return VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -2243,6 +2245,14 @@ struct MarketsView: View {
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background((ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft).opacity(0.14), in: Capsule())
                         .help("Estimated expected value per trade (conviction→win-prob estimate × reward:risk). An estimate, not a forecast.")
+                }
+                if !earnFlag.badge.isEmpty {
+                    Text(earnFlag.badge)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(earnFlag.isDemoted ? DS.Palette.warningSoft : .secondary)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background((earnFlag.isDemoted ? DS.Palette.warningSoft : DS.Palette.surfaceStroke).opacity(0.14), in: Capsule())
+                        .help(store.earnings[idea.symbol.uppercased()]?.note ?? "Upcoming earnings — binary event risk; a protective stop may gap through it.")
                 }
                 Button { Task { await store.runBacktest(symbol: idea.symbol) } } label: {
                     Image(systemName: "clock.arrow.circlepath")
@@ -2296,7 +2306,14 @@ struct MarketsView: View {
         // dropped the label and left the tap non-activatable).
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .accessibilityLabel("\(idea.symbol), \(a.action.rawValue), conviction \(Int(a.conviction * 100)) percent")
+        .accessibilityLabel("\(idea.symbol), \(a.action.rawValue), conviction \(Int(a.conviction * 100)) percent"
+            + ({ () -> String in
+                switch earnFlag {
+                case .demoted(let d):     return ", earnings imminent in about \(d) days — demoted in the rank"
+                case .approaching(let d): return ", earnings approaching in about \(d) days"
+                case .clear, .unknown:    return ""
+                }
+            }()))
         .accessibilityHint("Opens full advice and backtest")
         .accessibilityAction { selectedIdea = idea }
         .accessibilityAction(named: "Backtest") { Task { await store.runBacktest(symbol: idea.symbol) } }

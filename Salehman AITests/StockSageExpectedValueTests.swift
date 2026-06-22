@@ -94,6 +94,25 @@ struct StockSageExpectedValueTests {
         #expect(1000 + 50.0 < 2000 && 2000 < 500_000 && 500_000 < 1_000_000)
     }
 
+    @Test func earningsRankFlagExplainsTheDemotion() {
+        typealias Flag = EV.EarningsRankFlag
+        let earnings: [String: EarningsProximity] = [
+            "AAPL": EarningsProximity(daysUntil: 2, severity: .imminent),
+            "MSFT": EarningsProximity(daysUntil: 7, severity: .soon),
+            "NVDA": EarningsProximity(daysUntil: 40, severity: .clear),
+        ]
+        #expect(EV.earningsRankFlag(for: idea("AAPL", conviction: 0.8, stop: 98, target: 110), earnings: earnings) == .demoted(daysUntil: 2))
+        #expect(EV.earningsRankFlag(for: idea("MSFT", conviction: 0.8, stop: 98, target: 110), earnings: earnings) == .approaching(daysUntil: 7))
+        #expect(EV.earningsRankFlag(for: idea("NVDA", conviction: 0.8, stop: 98, target: 110), earnings: earnings) == .clear(daysUntil: 40))
+        #expect(EV.earningsRankFlag(for: idea("TSLA", conviction: 0.8, stop: 98, target: 110), earnings: earnings) == .unknown)   // no date → unknown
+        // isDemoted mirrors earningsRankPenalty > 0 exactly — the badge can never disagree with the rank shift.
+        #expect(Flag.demoted(daysUntil: 2).isDemoted)
+        #expect(!Flag.approaching(daysUntil: 7).isDemoted && !Flag.clear(daysUntil: 40).isDemoted && !Flag.unknown.isDemoted)
+        // Badge surfaces only the actionable cases (imminent/approaching); clear + unknown are quiet.
+        #expect(!Flag.demoted(daysUntil: 2).badge.isEmpty && !Flag.approaching(daysUntil: 7).badge.isEmpty)
+        #expect(Flag.clear(daysUntil: 40).badge.isEmpty && Flag.unknown.badge.isEmpty)
+    }
+
     @Test func velocityLaneIsBuyOnly() {
         // A SHORT with a valid positive-EV 2:1 setup must NOT enter the velocity / Fast Lane (it
         // cannot compound like a long, and the best-opportunity card already bars it) — even though

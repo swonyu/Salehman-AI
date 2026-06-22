@@ -27,7 +27,7 @@ nonisolated static func breakoutConfirmation(closes: [Double], highs: [Double], 
 
 **edgeRationale:** Buying breakouts on thin volume is the classic way retail gives money back — the false breakout reverses and stops you out. Gating the entry on REAL volume participation downgrades exactly those traps before capital is committed, and the explicit .volumeAbsent state stops the app pretending an FX/index 'breakout' is volume-confirmed when no volume exists to confirm it.
 
-### ⬜ #3 [earnings-rank] — Per-idea earnings rank-flag annotation: surface WHY an idea was de-prioritized (or that its earnings are unknown) without re-fetching
+### ✅ DONE #3 [earnings-rank] — Per-idea earnings rank-flag annotation: surface WHY an idea was de-prioritized (or that its earnings are unknown) without re-fetching
 **mechanism:** Companion that makes Spec 1's silent re-order LEGIBLE and testable at the idea level. A pure function earningsRankFlag(for:earnings:) maps the SAME real EarningsProximity to a small honest enum: .demoted(daysUntil:) for .imminent (exactly Spec 1's penalized case), .approaching for .soon, .clear for .clear, .unknown when the symbol has no fetched date (or isn't equity — matching the fetch guard at StockSageEarnings.swift:56). Reads cached daysUntil straight from EarningsProximity (no Date math, no network) so it is byte-deterministic. isDemoted is true ONLY for .imminent — the predicate that mirrors earningsRankPenalty(...) > 0, so the badge can never disagree with the actual rank shift.
 
 **signature:** enum EarningsRankFlag: Sendable, Equatable { case demoted(daysUntil: Int); case approaching(daysUntil: Int); case clear(daysUntil: Int); case unknown; var isDemoted: Bool; var badge: String }

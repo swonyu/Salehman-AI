@@ -137,6 +137,37 @@ enum StockSageExpectedValue {
         return prox.severity == .imminent ? 2000 : 0
     }
 
+    /// Why an idea sits where it does on the earnings-aware board — the legible companion to
+    /// earningsRankPenalty, so the silent re-order shows its reason. Reads the SAME cached
+    /// EarningsProximity (no Date math, no network). `isDemoted` mirrors `earningsRankPenalty > 0` exactly,
+    /// so the on-card badge can never disagree with the actual rank shift.
+    enum EarningsRankFlag: Sendable, Equatable {
+        case demoted(daysUntil: Int)      // .imminent (≤3d) — the penalized, ranked-down case
+        case approaching(daysUntil: Int)  // .soon (≤10d) — event risk nearing, not yet penalized
+        case clear(daysUntil: Int)        // .clear (>10d) — no immediate event risk
+        case unknown                      // no fetched date (or not equity) — never assumed dangerous
+
+        var isDemoted: Bool { if case .demoted = self { return true }; return false }
+        /// Short on-card badge; empty for the quiet clear/unknown cases (nothing to surface).
+        var badge: String {
+            switch self {
+            case .demoted(let d):     return "⚠︎ earnings ~\(d)d"
+            case .approaching(let d): return "earnings ~\(d)d"
+            case .clear, .unknown:    return ""
+            }
+        }
+    }
+
+    nonisolated static func earningsRankFlag(for idea: StockSageIdea,
+                                             earnings: [String: EarningsProximity]) -> EarningsRankFlag {
+        guard let prox = earnings[idea.symbol.uppercased()] else { return .unknown }
+        switch prox.severity {
+        case .imminent: return .demoted(daysUntil: prox.daysUntil)
+        case .soon:     return .approaching(daysUntil: prox.daysUntil)
+        case .clear:    return .clear(daysUntil: prox.daysUntil)
+        }
+    }
+
     private nonisolated static func evRankKey(for idea: StockSageIdea) -> Double? {
         guard let base = qualityAdjustedEVR(for: idea) else { return nil }
         var key = base
