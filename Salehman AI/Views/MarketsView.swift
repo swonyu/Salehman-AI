@@ -2986,7 +2986,9 @@ struct MarketsView: View {
                         guard risk > 0 else { return nil }
                         return abs(tgt - idea.price) / risk
                     }()
-                    let rf = Double(sizerRiskPct).map { $0 / 100 } ?? 0.01
+                    // Floor 0/negative risk to 1% (matches TodayPlan.build + the velocity sibling at
+                    // 2491) so the on-screen gate and the COPIED broker plan can't disagree on go/no-go.
+                    let rf = (Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil }) ?? 0.01
                     let gate = StockSageTradeGate.evaluate(
                         hasStop: a.stopPrice != nil, rewardToRisk: rr, riskFraction: rf,
                         daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil)

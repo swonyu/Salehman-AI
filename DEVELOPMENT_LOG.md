@@ -7145,6 +7145,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · HONESTY FIX — trade GATE no longer contradicts the copied broker plan (risk%=0)
+**Files:** `Views/MarketsView.swift` (detail-sheet trade-gate riskFraction).
+**What (only-real-data verification wtexg5a6u #1, MED — most dangerous: flips a go/no-go verdict):** the idea-detail trade gate computed `rf = Double(sizerRiskPct).map { $0/100 } ?? 0.01` — `.map` only catches a parse FAILURE, so Risk%="0" gave rf=0.0 (not the 0.01 floor). StockSageTradeGate.evaluate then failed "risk fraction must be positive" → the on-screen gate showed BLOCKED / "Don't take this trade", while the COPIED today-plan (TodayPlan.build floors rf to 0.01) showed the gate clear for the SAME idea — a direct contradiction in a trade-AUTHORIZATION figure the owner could paste into a broker. Fix: floor with the proven sibling pattern (used at 1167/2491) `Double(sizerRiskPct).flatMap { $0 > 0 ? $0/100 : nil } ?? 0.01`, so both surfaces see the same risk and can't disagree.
+**Verify:** typecheck EXIT=0; grep confirms NO other unfloored `Double(sizerRiskPct).map {` remains. Render UNVERIFIED (Mac).
+**Remaining (REALDATA_VERIFICATION.md): #2 OSRS fastestFlipsStrip/budget-optimizer not stale-guarded (per-row IS); #3 P&L %+0.0% when cost==0 but value>0; #4 Est./week R caveat-consistency.**
+**Result:** the gate and the broker plan now agree on every idea — no contradictory trade authorization. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
