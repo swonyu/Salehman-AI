@@ -1535,6 +1535,9 @@ struct MarketsView: View {
         let mark = currentPrice(trade.symbol)
         let pnl = mark.map { trade.profit(at: $0) }
         let r = mark.flatMap { trade.rMultiple(at: $0) }
+        // The FULL live verdict for this position (not just the urgent banner) so every open trade
+        // shows its next step: hold / near-stop / in-profit / stop-or-target hit.
+        let act = StockSageJournal.openActions([trade], mark: { currentPrice($0) }).first
         return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Text(trade.symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).frame(width: 64, alignment: .leading).lineLimit(1)
@@ -1568,6 +1571,12 @@ struct MarketsView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Time stop: held \(ts.daysHeld) days, past the \(plannedHold) day plan")
             }
+            if let act {
+                Text("\(act.kind.rawValue) — \(act.detail)")
+                    .font(.system(size: mvFont9, weight: act.isUrgent ? .semibold : .regular))
+                    .foregroundStyle(openActionColor(act.kind))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if closingTradeID == trade.id {
                 HStack(spacing: 8) {
                     journalField("Exit px", text: $closeExitText, width: 80)
@@ -1585,7 +1594,19 @@ struct MarketsView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(trade.side.rawValue) \(trade.symbol), entry \(String(format: "%.2f", trade.entry))"
             + (pnl.map { String(format: ", unrealized %+.2f", $0) } ?? ", no live price")
-            + (r.map { String(format: ", %+.2f R", $0) } ?? ""))
+            + (r.map { String(format: ", %+.2f R", $0) } ?? "")
+            + (act.map { ", \($0.kind.rawValue): \($0.detail)" } ?? ""))
+    }
+
+    /// Color the per-position live verdict by urgency: red stop-hit, amber near-stop, green
+    /// target-hit/in-profit, muted holding.
+    private func openActionColor(_ kind: OpenAction.Kind) -> Color {
+        switch kind {
+        case .stopHit:              return DS.Palette.danger
+        case .nearStop:             return DS.Palette.warningSoft
+        case .targetHit, .inProfit: return DS.Palette.successSoft
+        case .holding:              return .secondary
+        }
     }
 
     private func journalClosedRow(_ trade: TradeRecord) -> some View {

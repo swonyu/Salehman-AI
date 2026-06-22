@@ -7,7 +7,7 @@
 **fix:** After the metric HStack at line 2440, add a price row mirroring the ideaCard pattern (lines 2305-2311): ideaMetric(Entry, format idea.price); when idea.advice.stopPrice non-nil ideaMetric(Stop, color danger); when targetPrice non-nil ideaMetric(Target, color successSoft). Puts ticker+side+entry+stop+target+shares+$risk on one card, no tap-through.
 **$:** Turns 'this is your best bet' into a placeable order on its face — entry, stop, and target appear on the action card instead of only inside the detail sheet or an unseen clipboard blob.
 
-### ⬜ #2 [high] — Open positions only show a verdict when stop/target is already hit — near-stop / in-profit / hold calls are computed then discarded
+### ✅ DONE #2 [high] — Open positions only show a verdict when stop/target is already hit — near-stop / in-profit / hold calls are computed then discarded
 **file:** Salehman AI/Views/MarketsView.swift:1354-1362; journalOpenRow 1534-1589
 **fix:** Stop filtering openActions to .isUrgent. Render the full per-position verdict — inline in journalOpenRow as a one-line act.detail colored by kind (danger=stopHit, warning=nearStop, success=inProfit/targetHit, secondary=holding), or as a non-filtered list above the rows. Model already sorts urgent-first then by |R| (StockSageJournal.swift:616-619); dropping the filter surfaces nearStop/inProfit without reordering. Every string is already an action verb (advisory only).
 **$:** Surfaces the exact 'act now' calls that protect capital and lock gains: a position at -0.8R (one tick from the stop) or +2R (begging to be trailed) currently shows a number with no instruction.

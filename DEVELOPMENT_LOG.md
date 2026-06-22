@@ -7262,6 +7262,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · MONEY (manage open positions) — every open trade now shows its full live verdict
+**Files:** `Views/MarketsView.swift` (journalOpenRow per-position verdict + openActionColor).
+**What (DECISIVENESS wk3ls81vm #2):** StockSageJournal.openActions already computes a side-aware verdict for EVERY open position (stopHit/targetHit/nearStop/inProfit/holding + detail + rNow), but the UI only surfaced it via a banner FILTERED to .isUrgent — so a position at −0.8R (one tick from the stop) or +2R (begging to be trailed) showed a P&L number with NO instruction. Fix: journalOpenRow now renders this trade's full openActions verdict inline ("Near stop — ...", "In profit — ...", "Holding — ..."), colored by kind (red stopHit, amber nearStop, green target/inProfit, muted holding), bolded when urgent, and the VoiceOver label speaks it. Reuses the same engine (single-element openActions call) — advisory-only verbs, no new logic.
+**Verify:** typecheck EXIT=0. RE-TRACED: openActions engine UNCHANGED (already tested); this is an additive UI render of an existing model + a color helper → no test impact. The urgent banner (line 1354 filter) is untouched and still summarizes.
+**Result:** an away owner now sees the next step for EVERY held position — protect a near-stop, trail a winner, or hold — not just the already-triggered ones. Capital management reaches the screen. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
