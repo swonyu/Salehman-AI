@@ -6454,6 +6454,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** The idea-sheet net-edge line hardcoded ~15bps round-trip for everything — but a BTC scalp pays far more spread than an AAPL swing. `defaultCosts(forSymbol:)` returns a LABELED `CostAssumption` by asset class from the suffix: crypto 50bps, intl single-listing 30, US large-cap 13, index 8, FX 7. The line now reads "After ~50bps est. crypto costs: net R:R 2.8:1 (gross 2.9:1)" — honest about which asset class's frictions are assumed. 1 test, PYTHON-VERIFIED: round-trips crypto 50 / FX 7 / index 8 / intl 30 / US 13; same 100→90/130 setup nets strictly LESS for crypto (2.81) than US (2.95).
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 14/32 done. NEXT: #20 fast-lane warning on summary card. Committed + pushed.
 
+## 2026-06-22 · Backlog #20: Fast-lane concentration warning on the money-velocity summary card
+**Files:** `Views/MarketsView.swift` (summary card reuses `StockSageExpectedValue.fastLaneConcentration`).
+**What & why:** The fast-lane concentration warning ("your top N fastest are all crypto — closer to one bet") lived only on the fast-lane strip; a trader reading just the summary card missed it. Replicated it onto the summary card (above the summary caption) with the same engine + a VoiceOver label, so the velocity headline carries its own concentration caveat. Honest: same hedged wording.
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 15/32 done. NEXT: #14 watchlist quick-remove / #19 short-side stops. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues

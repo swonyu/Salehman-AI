@@ -2245,6 +2245,12 @@ struct MarketsView: View {
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                             .accessibilityLabel(String(format: "Risk warning: worst losing run %d trades at 1 percent risk is about %.1f percent drawdown. Size to survive variance.", losses, ddPct * 100))
                     }
+                    if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds), conc.isConcentrated {
+                        Text("⚠︎ Fast lane is concentrated — your top \(conc.total) fastest are all \(conc.dominantClass); that's closer to one bet, not \(conc.total). Diversify or size them as one.")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                            .accessibilityLabel("Velocity warning: the fastest \(conc.total) ideas are all \(conc.dominantClass) — concentration risk; size them as one bet")
+                    }
                     Text(MoneyVelocityCopy.summary)
                         .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }

@@ -119,7 +119,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Asymmetry leads to over-risky or undersized shorts on exactly the signals the engine generated. Mirror the logic: stop = price + 2*atr, target = price - 2*risk, same risk budget; add a `side` field to TradeAdvice. Needs tests.
 **Files:** Salehman AI/StockSage/StockSageAdvisor.swift:137-162
 
-### ⬜ #20 — Replicate fast-lane concentration warning onto the money-velocity summary card  [medium/small, Money-velocity/ux]
+### ✅ DONE #20 — Replicate fast-lane concentration warning onto the money-velocity summary card  [medium/small, Money-velocity/ux]
 **What:** The 'top N fastest are all crypto — one bet in disguise' warning only renders inside fastLaneStrip (≥2 setups). The summary card shows the fastest symbol + weekly-R but never checks concentration, so a glance at the summary can read '3 diversified setups' when it's 3 BTC trades.
 **Why:** Velocity-chasing hides correlation risk — the owner's fastest-money instinct is exactly where this bites. Run the same isConcentrated check inside moneyVelocityCard and render a one-line yellow alert.
 **Files:** Salehman AI/Views/MarketsView.swift:2096-2186; Salehman AI/Views/MarketsView.swift:2235-2238
