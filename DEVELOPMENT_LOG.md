@@ -6727,6 +6727,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · StockSageGapRisk — beyond-stop loss engine (a stop is a TRIGGER, not a fill)
+**Files:** NEW `StockSage/StockSageGapRisk.swift`, NEW `Salehman AITests/StockSageGapRiskTests.swift` (+1 test). Persisted LEVERAGE_RISK.md.
+**What:** every sizing/risk engine assumes a stop fills AT its level; the backtester only models adverse gaps backward. `StockSageGapRisk.scenario(side:entry:stop:shares:gapPct:accountEquity:leverage:)` quantifies FORWARD what a gap THROUGH the stop actually costs: a long gaps below to stop·(1−gapPct), realized loss = entry − fill, rMultiple = loss/risk (ALWAYS > 1R when gapPct>0 — the point), dollarsLost/beyondPlanDollars/accountLossPct. SHORT mirrors it (gaps up). SACRED: accountLossPct is NEVER clamped at 100% — a big gap (esp. with leverage) can lose MORE than the account, and the verdict says so. `worstCase` returns a canonical ladder (weekend 5% / earnings 8% / crypto-flash 20% / halt-reopen 35%); `fromPosition` bridges a sized PositionSize. Guards → nil (entry==stop, non-positive shares/equity/prices, negative gap, non-positive leverage). Permanent caveat embedded.
+**Verify:** typecheck clean; python-verified — baseline gap0 = 1.0R/$0 beyond; long 10% gap = fill 85.5, 2.9R, $1450 lost ($950 beyond planned $500); short 10% = 3.1R; 35% gap on $1k equity = accountLossPct 3.825 (exceedsAccount, un-clamped); worstCase ascending.
+**Result:** the engine can now tell the owner the TRUTH that a stop doesn't cap the loss — overnight/crypto gaps and leverage can lose more than the account. The strongest honesty surface yet. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
