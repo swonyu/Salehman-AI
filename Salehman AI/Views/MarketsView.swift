@@ -552,6 +552,15 @@ struct MarketsView: View {
         StockSageCurrency.majorUnitValue(symbol: symbol, rawValue: perShare * shares)
     }
 
+    /// Format a price/cost so a SUB-DOLLAR value never rounds to "0.00" and reads as a free position
+    /// (a $0.0023 micro-cap/coin basis must show "0.0023", not "0.00"). ≥ $1 keeps the familiar 2 dp.
+    private func adaptivePrice(_ v: Double) -> String {
+        let a = abs(v)
+        if a >= 1 || a == 0 { return String(format: "%.2f", v) }
+        if a >= 0.01 { return String(format: "%.4f", v) }
+        return String(format: "%.6f", v)                          // sub-cent → show real magnitude
+    }
+
     /// CCY→USD rates for every currency held (direct CCYUSD=X, else inverse 1/USDCCY=X; USD = 1).
     private var fxRatesToUSD: [String: Double] {
         var rates: [String: Double] = ["USD": 1]
@@ -764,12 +773,12 @@ struct MarketsView: View {
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(p.symbol).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                Text("\(numString(p.shares)) sh @ \(String(format: "%.2f", p.costBasis))")
+                Text("\(numString(p.shares)) sh @ \(adaptivePrice(p.costBasis))")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(price == nil ? "— no price" : String(format: "%.2f", value))
+                Text(price == nil ? "— no price" : adaptivePrice(value))
                     .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                     .contentTransition(.numericText())
                     .animation(DS.Motion.smooth, value: value)

@@ -7287,6 +7287,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · FORMAT FIX — sub-penny cost basis no longer renders as a free "@ 0.00" position
+**Files:** `Views/MarketsView.swift` (adaptivePrice helper + position cost/value rows).
+**What (UI_FORMAT_AUDIT wkdzud2tl #1, MED — sharpest, corrupts the P&L model):** the position row printed cost basis + value with a fixed `%.2f`, so a sub-dollar holding (DOGE/XRP/ADA, or a user-entered micro-cap; costBasis is only guarded >= 0) rounded to "@ 0.00" — reading as a FREE position with infinite return. New adaptivePrice(_:) widens precision below $1 (>=$1 → 2dp unchanged; [0.01,1) → 4dp; <0.01 → 6dp) so $0.0023 shows "0.002300", not "0.00". Applied to BOTH the cost-basis (767) and live value (772) rows so they stay consistent.
+**Verify:** typecheck EXIT=0; python-verified bands (0.0023→0.002300, 0.05→0.0500, 123.45→123.45 unchanged, 0→0.00). RE-TRACED: >=$1 path is byte-identical to the old %.2f → no normal-stock display change; view-layer helper, no test touches it.
+**Remaining (UI_FORMAT_AUDIT #2-#4): rebalance/allocation sum mixed-currency 1:1 then label "$"; humanDollars K/M band-top overflow ($1000K→$1.0M); RSFormat.gp K/M band-top overflow.**
+**Result:** a micro-priced holding shows its real cost — no fabricated zero-cost/infinite-return position. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
