@@ -2754,6 +2754,23 @@ struct MarketsView: View {
                         Text("The rules never triggered a long entry over this window.")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
+                    // Real-edge confidence: PSR (sample/skew/fat-tail haircut) + out-of-sample decay (overfit).
+                    if let psr = bt.probabilisticSharpe {
+                        Text(String(format: "Real-edge confidence (PSR): %.0f%% — P(true Sharpe > 0) after a sample/skew/fat-tail haircut; >95%% is the honest bar.", psr * 100))
+                            .font(.caption2)
+                            .foregroundStyle(psr > 0.95 ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .help(StockSageDeflatedSharpe.caveat)
+                    }
+                    if let d = bt.decay {
+                        let tail = d.isRedFlag ? " — RED FLAG: likely overfit; the edge collapsed out-of-sample."
+                                               : (d.oosSignificant ? "." : " — OOS sample thin (<20), low confidence.")
+                        Text(String(format: "Out-of-sample: kept %.0f%% of the edge (in-sample %+.2fR → out-of-sample %+.2fR)%@",
+                                    d.decayRatio * 100, d.isAvgR, d.oosAvgR, tail))
+                            .font(.caption2)
+                            .foregroundStyle(d.isRedFlag ? DS.Palette.danger : .secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if let u = store.underwater, !u.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {

@@ -7154,6 +7154,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · ORPHAN-WATCH (c)+(#11) — WalkForwardDecay + PSR surfaced in the backtest panel
+**Files:** `StockSage/StockSageBacktester.swift` (BacktestResult.decay + summarize), `Views/MarketsView.swift` (backtestPanel rows).
+**What:** the last big unwired backtester engines now reach the owner. (c) WalkForwardDecay: summarize() computes it when trades.count >= 8 (a real 70/30 split, OOS >= 2) into new defaulted Optional BacktestResult.decay; the panel shows "Out-of-sample: kept N% of the edge (IS +x.xxR → OOS +x.xxR)" — RED (overfit) when isRedFlag, or "OOS thin (<20)" when not yet significant. (#11) probabilisticSharpe (already computed, never shown): a "Real-edge confidence (PSR): N% — P(true Sharpe > 0) after a sample/skew/fat-tail haircut; >95% is the honest bar" row, green over 95%, engine caveat on .help.
+**Verify:** typecheck EXIT=0. RE-TRACED BacktestResult tests: decay is defaulted Optional (nil) → .empty + all == .empty comparisons byte-stable; summarize tests use <8 trades → decay nil, none check it; aggregate returns StrategyResult (untouched). No test breaks.
+**Result:** the owner can now SEE whether a backtest's edge is real (PSR) and whether it survived out-of-sample (decay) — the two overfit/selection-bias guards that were computed-or-buildable but invisible. Orphan-watch (a)(b)(c) + PSR all surfaced; only TrailingStop.recompute (d) + ExitModes (e) remain. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

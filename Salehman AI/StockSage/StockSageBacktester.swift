@@ -49,15 +49,19 @@ struct BacktestResult: Sendable, Equatable {
     /// + fat tails. nil when there are too few trades (<4) or no dispersion to judge. A raw Sharpe
     /// from a short, skewed record overstates the edge; this says how likely it is actually positive.
     let probabilisticSharpe: Double?
+    /// In-sample vs out-of-sample edge decay (overfit red-flag). nil for too few trades to split.
+    let decay: WalkForwardDecay?
 
     /// Defaulted new fields so older constructions (empty, tests) stay valid.
     nonisolated init(trades: Int, wins: Int, winRate: Double, avgR: Double, totalR: Double,
                      maxDrawdownR: Double, sharpe: Double, avgHoldBars: Double,
-                     avgWinR: Double = 0, avgLossR: Double = 0, probabilisticSharpe: Double? = nil) {
+                     avgWinR: Double = 0, avgLossR: Double = 0, probabilisticSharpe: Double? = nil,
+                     decay: WalkForwardDecay? = nil) {
         self.trades = trades; self.wins = wins; self.winRate = winRate; self.avgR = avgR
         self.totalR = totalR; self.maxDrawdownR = maxDrawdownR; self.sharpe = sharpe
         self.avgHoldBars = avgHoldBars; self.avgWinR = avgWinR; self.avgLossR = avgLossR
         self.probabilisticSharpe = probabilisticSharpe
+        self.decay = decay
     }
 
     /// Below this, the numbers are noise — the UI must say so.
@@ -350,11 +354,14 @@ enum StockSageBacktester {
             return StockSageDeflatedSharpe.probabilisticSharpe(observedSharpe: sharpe, nTrades: trades.count,
                                                                skew: m.skew, kurtosis: m.kurtosis)
         }()
+        // In-sample vs out-of-sample edge decay (overfit guard). Needs enough trades for a real
+        // 70/30 split (≥ 8 → OOS slice ≥ 2); below that it's meaningless, so leave it nil.
+        let decay = trades.count >= 8 ? walkForwardDecay(trades) : nil
 
         return BacktestResult(trades: trades.count, wins: wins,
                               winRate: Double(wins) / Double(trades.count),
                               avgR: avgR, totalR: totalR, maxDrawdownR: maxDD,
                               sharpe: sharpe, avgHoldBars: avgHold,
-                              avgWinR: avgWinR, avgLossR: avgLossR, probabilisticSharpe: psr)
+                              avgWinR: avgWinR, avgLossR: avgLossR, probabilisticSharpe: psr, decay: decay)
     }
 }
