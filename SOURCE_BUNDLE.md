@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 12:52 +03 · Swift files: 242 · Swift LOC: 45326_
+_Generated: 2026-06-22 13:00 +03 · Swift files: 243 · Swift LOC: 45395_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -42267,6 +42267,79 @@ struct StockSageBacktesterTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSageBoundaryTests.swift (69 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Engine boundary sweep (hardening #5)
+//
+// Pins the exact off-by-one / sign-flip boundaries on money math so a silent change to a
+// `>=` vs `>` or a rounding direction becomes a conscious, failing-test decision. Every
+// literal was read from the engine source and python-verified.
+
+struct StockSageBoundaryTests {
+
+    @Test func kellyEdgeAtPayoffOne() {
+        // W=.70, R=1 → edge = .70·1 − .30 = .40; f* = .70 − .30/1 = .40; suggested = half = .20 (== cap).
+        let k = StockSageKelly.compute(winRate: 0.70, payoffRatio: 1.0, accountSize: 10_000)
+        #expect(abs(k.edge - 0.40) < 1e-9)
+        #expect(abs(k.fullKelly - 0.40) < 1e-9)
+        #expect(abs(k.suggestedFraction - 0.20) < 1e-9)
+    }
+
+    @Test func rewardRiskQualityBoundaries() {
+        // risk fixed at 10; quality = ratio>=2.5 strong, >=1.5 fair, else poor.
+        func q(_ target: Double) -> RewardRisk.Quality? {
+            StockSageRewardRisk.assess(entry: 100, stop: 90, target: target)?.quality
+        }
+        #expect(q(125) == .strong)   // 2.5 — inclusive
+        #expect(q(124) == .fair)     // 2.4
+        #expect(q(115) == .fair)     // 1.5 — inclusive
+        #expect(q(114) == .poor)     // 1.4
+        #expect(StockSageRewardRisk.assess(entry: 100, stop: 100, target: 110) == nil)  // zero risk → nil
+    }
+
+    @Test func riskOfRuinBoundaries() {
+        // (1−f)^losses; fraction must be in (0,1).
+        let s = StockSageRiskOfRuin.scenario(losses: 1, fraction: 0.99)!
+        #expect(abs(s.drawdownPct - 0.99) < 1e-9)        // 1 − 0.01
+        #expect(s.isSteep)
+        #expect(StockSageRiskOfRuin.scenario(losses: 5, fraction: 1.0) == nil)   // not < 1
+        #expect(StockSageRiskOfRuin.scenario(losses: 0, fraction: 0.01) == nil)  // streak < 1
+    }
+
+    @Test func rMultipleExactAndUndefined() {
+        let t = TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
+                            openedAt: Date(timeIntervalSince1970: 0), exitPrice: nil, closedAt: nil)
+        #expect(abs((t.rMultiple(at: 110) ?? 0) - 1.0) < 1e-9)   // +10 profit / 10 risk = +1R
+        let noRisk = TradeRecord(symbol: "X", side: .long, entry: 100, stop: 100, target: nil, shares: 1,
+                                 openedAt: Date(timeIntervalSince1970: 0), exitPrice: nil, closedAt: nil)
+        #expect(noRisk.rMultiple(at: 110) == nil)                // entry==stop → undefined, not infinite
+    }
+
+    @Test func netEdgeCostEqualsReward() {
+        // 100bps on a 100 entry = $1 cost == the $1 gross reward → net reward 0 → netRR 0.
+        let e = StockSageNetEdge.evaluate(entry: 100, stop: 90, target: 101, spreadBps: 100, slippageBps: 0)!
+        #expect(abs(e.costPerShare - 1.0) < 1e-9)
+        #expect(abs(e.netRR - 0.0) < 1e-9)
+    }
+
+    @Test func positionSizerTinyAccountZeroShares() {
+        // $1 risk budget / $10 per share = 0.1 → floored to 0 shares (never over-risk), still valid.
+        let ps = StockSagePositionSizer.size(account: 100, riskFraction: 0.01, entry: 100, stop: 90)!
+        #expect(ps.shares == 0 && ps.dollarsAtRisk == 0)
+        #expect(StockSagePositionSizer.size(account: 100, riskFraction: 0.01, entry: 100, stop: 100) == nil)  // zero risk/share
+    }
+
+    @Test func currencyAndRebalanceZeroGuards() {
+        #expect(StockSageCurrency.breakdown(holdings: [(0, "USD")], ratesToBase: [:], base: "USD") == nil)
+        #expect(StockSageRebalance.plan(holdings: [("A", 0)], targets: ["A": 1]) == nil)
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSageClusterCheckTests.swift (40 lines) =====
 ```swift
 import Testing
@@ -48353,7 +48426,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7625 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7630 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54864,6 +54937,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** A trade that hasn't worked in the time you gave it ties up capital that could compound elsewhere — a slow leak the loss column never shows. `StockSageTimeStop.suggest(openedAt:now:daysToHold:)` → daysHeld/daysRemaining/shouldExit (held≥plan) + rationale; pure (explicit `now`). `TradeRecord.daysHeld(asOf:)` (to closedAt if closed). The journal open row nudges "⏳ Held N of ~M planned days — time-stop reached…" once a position outlives its asset-class velocity window (crypto 3d / equity 12d default). Honest: a CLOCK, not a sell signal — says nothing about whether the trade still works. 3 tests, PYTHON-VERIFIED: day5/10→(5,5,false), day10→(10,0,true,reached), day12→(12,−2,true), same-day→0, daysToHold 0→nil, now-before-open clamps to 0; TradeRecord.daysHeld open→to now (7), closed→to closedAt (4, ignores now). ✅ typecheck clean.
 **Result:** Hardening 1,2,3,4,6,7 done. NEXT: #5 boundary test sweep, then #8-10 honesty polish / OSRS features. Loop continues.
 
+## 2026-06-22 · Hardening #5: Engine boundary test sweep (8 tests, source-verified)
+**Files:** `Salehman AITests/StockSageBoundaryTests.swift` (NEW, 8 tests).
+**What & why:** Pins the exact off-by-one / sign-flip boundaries on money math so a silent `>=`→`>` or rounding flip becomes a failing test. Each literal was READ from the engine source then PYTHON-VERIFIED: Kelly W=.70/R=1 → edge .40, fullKelly .40, suggested .20 (half==cap); RewardRisk quality at risk=10 → target 125=2.5 strong (inclusive), 124 fair, 115=1.5 fair (inclusive), 114 poor, zero-risk→nil; RiskOfRuin (1−f)^losses → losses 1/f .99 → drawdown .99 + isSteep, f 1.0→nil, losses 0→nil; rMultiple long 100/90 at 110 → +1R exact, entry==stop→nil; NetEdge 100bps on 100 entry = $1 cost == $1 reward → netRR exactly 0; PositionSizer $1 budget/$10 share → 0 shares (floored, valid), zero risk/share→nil; Currency/Rebalance zero-value holdings→nil. ✅ typecheck clean.
+**Result:** Hardening 1-7 (minus 8-10) done. NEXT: #8-10 honesty-color/caveat polish batch, then OSRS money features (#13/#15/#16). Loop continues at 4.7-min cadence.
+
 ---
 
 ## Standing notes / known issues
@@ -58180,7 +58258,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** New nonisolated StockSagePortfolioHeat.compute(openTrades:accountSize:) summing shares·|entry-stop| ÷ account → heatPct + verdict + caveat. Render on Markets header: green<5%, yellow<10%, red>10%, tap for per-trade breakdown. Dedup: merges the three input entries (engine, honesty-gap, UI).
 **Why:** Highest-value missing safeguard: 10 trades @1% = 10% live exposure that a gap hits all at once, with no current surface showing it. Caveat must note correlated gaps.
 
-### ⬜ #5 — StockSage engine boundary test-gap sweep  [high/medium, test-gap]
+### ✅ DONE #5 — StockSage engine boundary test-gap sweep  [high/medium, test-gap]
 **File:** Salehman AITests/StockSageTests.swift
 **What:** One PR adding the missing boundary tests: Kelly W=0.70/R=1→edge=0.40 (R=1≠zero edge); RewardRisk 1.4999→poor & 2.4999→fair (>= not >); NetEdge cost==grossReward→netRR=0; PositionSizer tiny account→0 shares; Journal profitFactor==1.0 & breakeven expectancy≈0; classifyHealth PF==1.5 boundary; RiskOfRuin fraction=0.99 near-wipeout; rMultiple exact +1R; Rebalance negative-holding→0; VelocityHistory maxDays<=0→keeps 1; Currency all-zero→nil; GEFlip budget==one-flip-capital.
 **Why:** All are silent off-by-one / sign-flip risks on money math, each tiny, batchable into a single green sweep. High value per minute.

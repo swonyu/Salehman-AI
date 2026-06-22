@@ -33,7 +33,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** New nonisolated StockSagePortfolioHeat.compute(openTrades:accountSize:) summing shares·|entry-stop| ÷ account → heatPct + verdict + caveat. Render on Markets header: green<5%, yellow<10%, red>10%, tap for per-trade breakdown. Dedup: merges the three input entries (engine, honesty-gap, UI).
 **Why:** Highest-value missing safeguard: 10 trades @1% = 10% live exposure that a gap hits all at once, with no current surface showing it. Caveat must note correlated gaps.
 
-### ⬜ #5 — StockSage engine boundary test-gap sweep  [high/medium, test-gap]
+### ✅ DONE #5 — StockSage engine boundary test-gap sweep  [high/medium, test-gap]
 **File:** Salehman AITests/StockSageTests.swift
 **What:** One PR adding the missing boundary tests: Kelly W=0.70/R=1→edge=0.40 (R=1≠zero edge); RewardRisk 1.4999→poor & 2.4999→fair (>= not >); NetEdge cost==grossReward→netRR=0; PositionSizer tiny account→0 shares; Journal profitFactor==1.0 & breakeven expectancy≈0; classifyHealth PF==1.5 boundary; RiskOfRuin fraction=0.99 near-wipeout; rMultiple exact +1R; Rebalance negative-holding→0; VelocityHistory maxDays<=0→keeps 1; Currency all-zero→nil; GEFlip budget==one-flip-capital.
 **Why:** All are silent off-by-one / sign-flip risks on money math, each tiny, batchable into a single green sweep. High value per minute.

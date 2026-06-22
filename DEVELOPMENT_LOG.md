@@ -6508,6 +6508,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** A trade that hasn't worked in the time you gave it ties up capital that could compound elsewhere — a slow leak the loss column never shows. `StockSageTimeStop.suggest(openedAt:now:daysToHold:)` → daysHeld/daysRemaining/shouldExit (held≥plan) + rationale; pure (explicit `now`). `TradeRecord.daysHeld(asOf:)` (to closedAt if closed). The journal open row nudges "⏳ Held N of ~M planned days — time-stop reached…" once a position outlives its asset-class velocity window (crypto 3d / equity 12d default). Honest: a CLOCK, not a sell signal — says nothing about whether the trade still works. 3 tests, PYTHON-VERIFIED: day5/10→(5,5,false), day10→(10,0,true,reached), day12→(12,−2,true), same-day→0, daysToHold 0→nil, now-before-open clamps to 0; TradeRecord.daysHeld open→to now (7), closed→to closedAt (4, ignores now). ✅ typecheck clean.
 **Result:** Hardening 1,2,3,4,6,7 done. NEXT: #5 boundary test sweep, then #8-10 honesty polish / OSRS features. Loop continues.
 
+## 2026-06-22 · Hardening #5: Engine boundary test sweep (8 tests, source-verified)
+**Files:** `Salehman AITests/StockSageBoundaryTests.swift` (NEW, 8 tests).
+**What & why:** Pins the exact off-by-one / sign-flip boundaries on money math so a silent `>=`→`>` or rounding flip becomes a failing test. Each literal was READ from the engine source then PYTHON-VERIFIED: Kelly W=.70/R=1 → edge .40, fullKelly .40, suggested .20 (half==cap); RewardRisk quality at risk=10 → target 125=2.5 strong (inclusive), 124 fair, 115=1.5 fair (inclusive), 114 poor, zero-risk→nil; RiskOfRuin (1−f)^losses → losses 1/f .99 → drawdown .99 + isSteep, f 1.0→nil, losses 0→nil; rMultiple long 100/90 at 110 → +1R exact, entry==stop→nil; NetEdge 100bps on 100 entry = $1 cost == $1 reward → netRR exactly 0; PositionSizer $1 budget/$10 share → 0 shares (floored, valid), zero risk/share→nil; Currency/Rebalance zero-value holdings→nil. ✅ typecheck clean.
+**Result:** Hardening 1-7 (minus 8-10) done. NEXT: #8-10 honesty-color/caveat polish batch, then OSRS money features (#13/#15/#16). Loop continues at 4.7-min cadence.
+
 ---
 
 ## Standing notes / known issues
