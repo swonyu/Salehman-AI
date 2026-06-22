@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 10:33 +03 · Swift files: 236 · Swift LOC: 44896_
+_Generated: 2026-06-22 10:38 +03 · Swift files: 236 · Swift LOC: 44926_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -8548,7 +8548,7 @@ final class RuneScapeStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageAdvisor.swift (168 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageAdvisor.swift (179 lines) =====
 ```swift
 import Foundation
 
@@ -8688,25 +8688,17 @@ enum StockSageAdvisor {
         // stop, target, and position size — which contradicted the recommendation.
         let isBuy = action == .buy || action == .strongBuy
 
-        // Stop & target (long-biased framing; a short mirrors it).
-        var stop: Double? = nil
-        var target: Double? = nil
-        if isBuy {
-            if let atr, atr > 0 {
-                let s = price - 2 * atr                  // 2-ATR swing stop
-                stop = s
-                target = price + 2 * (price - s)         // 2:1 reward:risk
-            } else {
-                let s = price * 0.92                      // fallback 8% stop (no OHLC)
-                stop = s
-                target = price + 2 * (price - s)
-            }
-        }
+        let isSell = action == .sell || action == .reduce
+
+        // Stop & target — symmetric: a long stops BELOW / targets ABOVE; a short mirrors it
+        // (stop ABOVE entry, target BELOW). 2-ATR swing stop, 2:1 reward:risk; 8% fallback.
+        let (stop, target) = Self.stopTarget(action: action, price: price, atr: atr)
 
         // Position size: risk budget ÷ stop distance %, scaled by conviction, capped.
+        // Distance is absolute so a short (stop > price) sizes the same as a long.
         var weight = 0.0
-        if isBuy, let stop, stop < price {
-            let stopDistPct = (price - stop) / price
+        if (isBuy || isSell), let stop {
+            let stopDistPct = abs(price - stop) / price
             if stopDistPct > 0 {
                 weight = (riskPerTrade / stopDistPct) * (0.4 + 0.6 * conviction)
                 weight = Swift.min(weight, maxWeight)
@@ -8716,6 +8708,25 @@ enum StockSageAdvisor {
         return TradeAdvice(action: action, conviction: conviction, regime: regime,
                            rationale: rationale, stopPrice: stop, targetPrice: target,
                            suggestedWeight: weight, caveat: caveat)
+    }
+
+    /// Symmetric 2-ATR swing stop + 2:1 target for an actionable buy/sell. Long: stop
+    /// below, target above. Short (sell/reduce): stop ABOVE entry, target BELOW. 8% stop
+    /// fallback when no ATR. (nil, nil) for hold/avoid or a non-positive price. Pure.
+    nonisolated static func stopTarget(action: TradeAdvice.Action, price: Double, atr: Double?)
+        -> (stop: Double?, target: Double?) {
+        let isBuy = action == .buy || action == .strongBuy
+        let isSell = action == .sell || action == .reduce
+        guard (isBuy || isSell), price > 0 else { return (nil, nil) }
+        let dist = (atr.map { $0 > 0 ? 2 * $0 : price * 0.08 }) ?? price * 0.08
+        if isBuy {
+            let s = price - dist
+            return (s, price + 2 * (price - s))
+        } else {
+            let s = price + dist
+            let t = price - 2 * (s - price)
+            return (s, t > 0 ? t : nil)        // a degenerate (huge-ATR) negative target is dropped
+        }
     }
 }
 ```
@@ -41509,7 +41520,7 @@ struct SparkSeriesTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageAdvisorTests.swift (133 lines) =====
+===== FILE: Salehman AITests/StockSageAdvisorTests.swift (152 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -41519,6 +41530,25 @@ import Foundation
 //
 // These pin each indicator to a hand-computable result so a future tweak is a
 // conscious change. Evidence/intent: MARKETS_INTELLIGENCE_RESEARCH.md.
+
+struct StockSageAdvisorStopTargetTests {
+    typealias A = StockSageAdvisor
+
+    @Test func stopTargetIsSymmetricForLongsAndShorts() {
+        // Long with ATR: stop BELOW, target ABOVE, 2:1.
+        let long = A.stopTarget(action: .strongBuy, price: 100, atr: 5)
+        #expect(long.stop == 90 && long.target == 120)
+        // Short (sell) with ATR: stop ABOVE, target BELOW, 2:1 — the mirror.
+        let short = A.stopTarget(action: .sell, price: 100, atr: 5)
+        #expect(short.stop == 110 && short.target == 80)
+        // 8% stop fallback when no ATR.
+        #expect(A.stopTarget(action: .buy, price: 100, atr: nil).stop == 92)
+        #expect(A.stopTarget(action: .reduce, price: 100, atr: nil).stop == 108)
+        // Non-actionable actions get nothing.
+        #expect(A.stopTarget(action: .hold, price: 100, atr: 5).stop == nil)
+        #expect(A.stopTarget(action: .avoid, price: 100, atr: 5).target == nil)
+    }
+}
 
 struct StockSageIndicatorTests {
 
@@ -47899,7 +47929,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7576 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7581 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54361,6 +54391,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** The fast-lane concentration warning ("your top N fastest are all crypto — closer to one bet") lived only on the fast-lane strip; a trader reading just the summary card missed it. Replicated it onto the summary card (above the summary caption) with the same engine + a VoiceOver label, so the velocity headline carries its own concentration caveat. Honest: same hedged wording.
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 15/32 done. NEXT: #14 watchlist quick-remove / #19 short-side stops. Committed + pushed.
 
+## 2026-06-22 · Backlog #19: Symmetric stop/target for SHORT (sell/reduce) ideas
+**Files:** `StockSage/StockSageAdvisor.swift` (extract `stopTarget(action:price:atr:)` + short branch + generalized sizing), `Salehman AITests/StockSageAdvisorTests.swift` (+1 test).
+**What & why:** The advisor set stop/target ONLY for buys (`if isBuy`), so sell/reduce ideas had NO stop, target, R:R, EV, or size — the bearish half of the board was un-actionable. Extracted a pure `stopTarget` helper: a long stops BELOW / targets ABOVE; a short (sell/reduce) MIRRORS it — stop ABOVE entry, target BELOW — both 2-ATR swing / 2:1, 8% fallback; hold/avoid get nothing; a degenerate negative short target is dropped. Position sizing generalized to `abs(price - stop)` so a short sizes like a long. Safe downstream: `RewardRisk.assess`, `ExpectedValue.ev`, and `NetEdge.evaluate` all use `abs()`, so shorts now get correct R:R/EV/net-edge automatically. 1 test, PYTHON-VERIFIED: long 100/atr5 → (90,120); short → (110,80); buy fallback stop 92; reduce fallback stop 108; hold → nil.
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 16/32 (half done). NEXT: #14 watchlist quick-remove. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues
@@ -57833,7 +57868,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Silent omission in a risk gate is the dangerous kind. Add a dropped:[String] field to risk-parity output ('excluded X — no vol data') and a faint 'Cluster check unavailable (insufficient history)' note when check() is nil.
 **Files:** Salehman AI/StockSage/StockSageRiskParity.swift:68; Salehman AI/Views/MarketsView.swift:2577-2583
 
-### ⬜ #19 — Symmetric stop/target for short (Sell/Reduce) recommendations  [medium/medium, Advisor/feature]
+### ✅ DONE #19 — Symmetric stop/target for short (Sell/Reduce) recommendations  [medium/medium, Advisor/feature]
 **What:** Only .buy/.strongBuy populate stopPrice/targetPrice; .sell/.reduce return nil for both ('long-biased framing'). A trader acting on a Sell idea gets no protective stop or target and must eyeball it.
 **Why:** Asymmetry leads to over-risky or undersized shorts on exactly the signals the engine generated. Mirror the logic: stop = price + 2*atr, target = price - 2*risk, same risk budget; add a `side` field to TradeAdvice. Needs tests.
 **Files:** Salehman AI/StockSage/StockSageAdvisor.swift:137-162

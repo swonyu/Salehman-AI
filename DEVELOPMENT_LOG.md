@@ -6459,6 +6459,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** The fast-lane concentration warning ("your top N fastest are all crypto — closer to one bet") lived only on the fast-lane strip; a trader reading just the summary card missed it. Replicated it onto the summary card (above the summary caption) with the same engine + a VoiceOver label, so the velocity headline carries its own concentration caveat. Honest: same hedged wording.
 **Result:** ✅ `tools/typecheck.sh` clean. Backlog 15/32 done. NEXT: #14 watchlist quick-remove / #19 short-side stops. Committed + pushed.
 
+## 2026-06-22 · Backlog #19: Symmetric stop/target for SHORT (sell/reduce) ideas
+**Files:** `StockSage/StockSageAdvisor.swift` (extract `stopTarget(action:price:atr:)` + short branch + generalized sizing), `Salehman AITests/StockSageAdvisorTests.swift` (+1 test).
+**What & why:** The advisor set stop/target ONLY for buys (`if isBuy`), so sell/reduce ideas had NO stop, target, R:R, EV, or size — the bearish half of the board was un-actionable. Extracted a pure `stopTarget` helper: a long stops BELOW / targets ABOVE; a short (sell/reduce) MIRRORS it — stop ABOVE entry, target BELOW — both 2-ATR swing / 2:1, 8% fallback; hold/avoid get nothing; a degenerate negative short target is dropped. Position sizing generalized to `abs(price - stop)` so a short sizes like a long. Safe downstream: `RewardRisk.assess`, `ExpectedValue.ev`, and `NetEdge.evaluate` all use `abs()`, so shorts now get correct R:R/EV/net-edge automatically. 1 test, PYTHON-VERIFIED: long 100/atr5 → (90,120); short → (110,80); buy fallback stop 92; reduce fallback stop 108; hold → nil.
+**Result:** ✅ `tools/typecheck.sh` clean. Backlog 16/32 (half done). NEXT: #14 watchlist quick-remove. Committed + pushed.
+
 ---
 
 ## Standing notes / known issues

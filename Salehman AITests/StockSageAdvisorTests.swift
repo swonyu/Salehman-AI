@@ -7,6 +7,25 @@ import Foundation
 // These pin each indicator to a hand-computable result so a future tweak is a
 // conscious change. Evidence/intent: MARKETS_INTELLIGENCE_RESEARCH.md.
 
+struct StockSageAdvisorStopTargetTests {
+    typealias A = StockSageAdvisor
+
+    @Test func stopTargetIsSymmetricForLongsAndShorts() {
+        // Long with ATR: stop BELOW, target ABOVE, 2:1.
+        let long = A.stopTarget(action: .strongBuy, price: 100, atr: 5)
+        #expect(long.stop == 90 && long.target == 120)
+        // Short (sell) with ATR: stop ABOVE, target BELOW, 2:1 — the mirror.
+        let short = A.stopTarget(action: .sell, price: 100, atr: 5)
+        #expect(short.stop == 110 && short.target == 80)
+        // 8% stop fallback when no ATR.
+        #expect(A.stopTarget(action: .buy, price: 100, atr: nil).stop == 92)
+        #expect(A.stopTarget(action: .reduce, price: 100, atr: nil).stop == 108)
+        // Non-actionable actions get nothing.
+        #expect(A.stopTarget(action: .hold, price: 100, atr: 5).stop == nil)
+        #expect(A.stopTarget(action: .avoid, price: 100, atr: 5).target == nil)
+    }
+}
+
 struct StockSageIndicatorTests {
 
     @Test func smaAveragesTheWindow() {

@@ -136,25 +136,17 @@ enum StockSageAdvisor {
         // stop, target, and position size — which contradicted the recommendation.
         let isBuy = action == .buy || action == .strongBuy
 
-        // Stop & target (long-biased framing; a short mirrors it).
-        var stop: Double? = nil
-        var target: Double? = nil
-        if isBuy {
-            if let atr, atr > 0 {
-                let s = price - 2 * atr                  // 2-ATR swing stop
-                stop = s
-                target = price + 2 * (price - s)         // 2:1 reward:risk
-            } else {
-                let s = price * 0.92                      // fallback 8% stop (no OHLC)
-                stop = s
-                target = price + 2 * (price - s)
-            }
-        }
+        let isSell = action == .sell || action == .reduce
+
+        // Stop & target — symmetric: a long stops BELOW / targets ABOVE; a short mirrors it
+        // (stop ABOVE entry, target BELOW). 2-ATR swing stop, 2:1 reward:risk; 8% fallback.
+        let (stop, target) = Self.stopTarget(action: action, price: price, atr: atr)
 
         // Position size: risk budget ÷ stop distance %, scaled by conviction, capped.
+        // Distance is absolute so a short (stop > price) sizes the same as a long.
         var weight = 0.0
-        if isBuy, let stop, stop < price {
-            let stopDistPct = (price - stop) / price
+        if (isBuy || isSell), let stop {
+            let stopDistPct = abs(price - stop) / price
             if stopDistPct > 0 {
                 weight = (riskPerTrade / stopDistPct) * (0.4 + 0.6 * conviction)
                 weight = Swift.min(weight, maxWeight)
@@ -164,5 +156,24 @@ enum StockSageAdvisor {
         return TradeAdvice(action: action, conviction: conviction, regime: regime,
                            rationale: rationale, stopPrice: stop, targetPrice: target,
                            suggestedWeight: weight, caveat: caveat)
+    }
+
+    /// Symmetric 2-ATR swing stop + 2:1 target for an actionable buy/sell. Long: stop
+    /// below, target above. Short (sell/reduce): stop ABOVE entry, target BELOW. 8% stop
+    /// fallback when no ATR. (nil, nil) for hold/avoid or a non-positive price. Pure.
+    nonisolated static func stopTarget(action: TradeAdvice.Action, price: Double, atr: Double?)
+        -> (stop: Double?, target: Double?) {
+        let isBuy = action == .buy || action == .strongBuy
+        let isSell = action == .sell || action == .reduce
+        guard (isBuy || isSell), price > 0 else { return (nil, nil) }
+        let dist = (atr.map { $0 > 0 ? 2 * $0 : price * 0.08 }) ?? price * 0.08
+        if isBuy {
+            let s = price - dist
+            return (s, price + 2 * (price - s))
+        } else {
+            let s = price + dist
+            let t = price - 2 * (s - price)
+            return (s, t > 0 ? t : nil)        // a degenerate (huge-ATR) negative target is dropped
+        }
     }
 }

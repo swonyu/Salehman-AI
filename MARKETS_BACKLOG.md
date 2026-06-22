@@ -114,7 +114,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Silent omission in a risk gate is the dangerous kind. Add a dropped:[String] field to risk-parity output ('excluded X — no vol data') and a faint 'Cluster check unavailable (insufficient history)' note when check() is nil.
 **Files:** Salehman AI/StockSage/StockSageRiskParity.swift:68; Salehman AI/Views/MarketsView.swift:2577-2583
 
-### ⬜ #19 — Symmetric stop/target for short (Sell/Reduce) recommendations  [medium/medium, Advisor/feature]
+### ✅ DONE #19 — Symmetric stop/target for short (Sell/Reduce) recommendations  [medium/medium, Advisor/feature]
 **What:** Only .buy/.strongBuy populate stopPrice/targetPrice; .sell/.reduce return nil for both ('long-biased framing'). A trader acting on a Sell idea gets no protective stop or target and must eyeball it.
 **Why:** Asymmetry leads to over-risky or undersized shorts on exactly the signals the engine generated. Mirror the logic: stop = price + 2*atr, target = price - 2*risk, same risk budget; add a `side` field to TradeAdvice. Needs tests.
 **Files:** Salehman AI/StockSage/StockSageAdvisor.swift:137-162
