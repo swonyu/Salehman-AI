@@ -7005,6 +7005,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · RED-TEST FIX (self-caught regression) — side-aware AlertDecision flipped a pre-existing test
+**Files:** `Salehman AITests/StockSageAlertDecisionTests.swift` (stopBreachOutranksASignalChange).
+**What (session regression-hunt w78t3kvm6 #1, HIGH — my own regression):** commit bb72411 made StockSageAlertDecision.evaluate side-aware but only ADDED a new short test; it did not update the pre-existing stopBreachOutranksASignalChange, which fed a strongSell with a stop BELOW price (90) + a DOWN cross — the OLD long-only stop-out. Under the correct new logic a short stops on an UP cross, so that input now returns .newStrongSell, not .stopBreach → the test was RED. typecheck never caught it (typecheck does NOT run tests — a logic-flipped assertion compiles fine). Rewrote the case to a coherent SHORT stop-out (strongSell, 105→111 UP through stop 110) that still proves stop-breach outranks the signal change.
+**Verify:** typecheck EXIT=0; traced the new input → stopBreach; scanned both alert test files — this was the ONLY stale case (other 5 AlertDecision + all detect tests pass under the new logic). 
+**PROCESS GUARD (new): when changing engine LOGIC that has existing tests, RE-READ those tests — a flipped outcome compiles green but fails at run-time, invisible to typecheck. The session regression-hunt is the safety net for this.**
+**Result:** suite back to GREEN; both alert detectors AND their tests are now side-correct. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

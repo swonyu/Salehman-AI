@@ -61,9 +61,10 @@ struct StockSageAlertDecisionTests {
     }
 
     @Test func stopBreachOutranksASignalChange() {
-        // Both a fresh stop cross AND a new strong-sell signal → the stop breach wins (more actionable).
-        let a = AD.evaluate(symbol: "X", recommendation: .strongSell, price: 89, priorPrice: 95,
-                            stop: 90, target: 120, lastAlertedRecommendation: nil)
+        // A SHORT (strongSell) stops ABOVE: both a fresh stop cross (105 → 111 UP through 110) AND a
+        // new strong-sell signal fire this update → the stop breach wins (it is checked first).
+        let a = AD.evaluate(symbol: "X", recommendation: .strongSell, price: 111, priorPrice: 105,
+                            stop: 110, target: 80, lastAlertedRecommendation: nil)
         #expect(a?.kind == .stopBreach)
     }
 }
