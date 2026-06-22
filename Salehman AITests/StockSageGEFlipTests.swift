@@ -78,4 +78,15 @@ struct StockSageGEFlipTests {
         #expect(ranked.map(\.itemId) == [2, 1])                       // B (70000) before A (19500); C gone
         #expect(ranked.first?.profitPerItem == 28)
     }
+
+    @Test func minMarginFloorMatchesThePlugin() {
+        let a = listing(1, "A", low: 1000, high: 1100, limit: 1000)   // post-tax profit 78
+        let b = listing(2, "B", low: 100, high: 130, limit: 10000)    // post-tax profit 28 (< 50 floor)
+        // Engine default (0) is a pure ranker — keeps both.
+        #expect(StockSageGEFlip.flips([a, b]).count == 2)
+        // The plugin's min-margin floor (50, the value the user-facing strip passes) drops the 28-gp flip.
+        let floored = StockSageGEFlip.flips([a, b], minMargin: StockSageGEFlip.defaultMinMargin)
+        #expect(floored.map(\.profitPerItem) == [78])
+        #expect(StockSageGEFlip.defaultMinMargin == 50)
+    }
 }

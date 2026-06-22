@@ -204,7 +204,8 @@ struct RuneScapeMarketView: View {
     // Fastest flips — the GE money-velocity strip: top flips by gp/HOUR (margin × buy
     // limit ÷ 4h), not raw margin. An estimate that assumes you fill the buy limit.
     @ViewBuilder private var fastestFlipsStrip: some View {
-        let flips = StockSageGEFlip.flips(rows)
+        // Match the RuneLite plugin's shipped min-margin floor so the two surfaces agree on the same prices.
+        let flips = StockSageGEFlip.flips(rows, minMargin: StockSageGEFlip.defaultMinMargin)
         if flips.count >= 2 {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {

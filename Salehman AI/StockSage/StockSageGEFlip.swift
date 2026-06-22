@@ -69,15 +69,23 @@ enum StockSageGEFlip {
         return Double(profit) * Double(buyLimit) / windowHours
     }
 
-    /// Build and rank flips (gp/hour desc) from priced listings. Listings without a
-    /// buy limit, missing prices, or no profit after tax are dropped.
-    nonisolated static func flips(_ listings: [RuneScapeListing], rate: Double = defaultRate) -> [GEFlip] {
+    /// The RuneLite plugin (source of truth) drops flips whose post-tax margin is below this at its
+    /// shipped default — the macOS flip list should match so the two surfaces agree on identical prices.
+    nonisolated static let defaultMinMargin = 50
+
+    /// Build and rank flips (gp/hour desc) from priced listings. Listings without a buy limit,
+    /// missing prices, or post-tax profit below `minMargin` are dropped. `minMargin` defaults to 0
+    /// (the engine is a pure ranker); user-facing surfaces pass `defaultMinMargin` to match the plugin.
+    nonisolated static func flips(_ listings: [RuneScapeListing], rate: Double = defaultRate,
+                                  minMargin: Int = 0) -> [GEFlip] {
         listings.compactMap { l -> GEFlip? in
             guard let buy = l.price.low, let sell = l.price.high, let limit = l.item.buyLimit,
                   let gph = gpPerHour(buy: buy, sell: sell, buyLimit: limit, rate: rate) else { return nil }
             let tax = sellTax(sell, rate: rate)
+            let profit = sell - buy - tax
+            guard profit >= minMargin else { return nil }   // below the plugin's min-margin floor → drop
             return GEFlip(itemId: l.item.id, name: l.item.name, buyPrice: buy, sellPrice: sell,
-                          buyLimit: limit, taxPerItem: tax, profitPerItem: sell - buy - tax, gpPerHour: gph)
+                          buyLimit: limit, taxPerItem: tax, profitPerItem: profit, gpPerHour: gph)
         }
         .sorted { $0.gpPerHour > $1.gpPerHour }
     }

@@ -7058,6 +7058,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · OSRS PARITY FIX — GE flip list now applies the plugin's min-margin floor
+**Files:** `StockSage/StockSageGEFlip.swift` (flips minMargin), `Views/RuneScapeMarketView.swift` (pass floor), `Salehman AITests/StockSageGEFlipTests.swift` (+test).
+**What (OSRS bughunt wv2v508ni #1, HIGH):** StockSageGEFlip.flips gated only on profit>0, so the macOS "Fastest flips" strip surfaced tiny-margin flips (e.g. post-tax 28gp) the RuneLite plugin (source of truth) drops at its shipped default minMargin=50 — the two surfaces returned different flip sets from identical prices. Fix: added `minMargin: Int = 0` to flips() + a `defaultMinMargin = 50` constant; the user-facing fastestFlipsStrip now passes defaultMinMargin. Engine default stays 0 (pure ranker) — RE-TRACED: the existing flipsRankByGpPerHourDesc test passes a profit-28 flip and expects it ranked first, which only holds at the 0 default; the UI applies the 50 floor.
+**Verify:** typecheck EXIT=0. +test: default keeps both; minMargin 50 drops the 28-gp flip, keeps the 78; defaultMinMargin==50.
+**Remaining (OSRS_BUGHUNT.md): #2 (HIGH, sacred only-real-data) — RuneScapePrice.highTime/lowTime are parsed but consumed NOWHERE, so a days-old sell leg renders as a live-green spread + net-margin chip; consume the timestamps → "Xh old" markers, de-emphasize/label stale legs, reword header "updated" vs "Live".**
+**Result:** the macOS flip list and the RuneLite plugin now agree on which flips clear the margin floor. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
