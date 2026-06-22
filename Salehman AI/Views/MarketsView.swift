@@ -577,11 +577,20 @@ struct MarketsView: View {
         var cost = 0.0, value = 0.0
         let rates = fxRatesToUSD
         for p in portfolio.positions {
-            guard let rate = rates[StockSageCurrency.currencyForSymbol(p.symbol)] else { continue }
+            // Exclude untracked-FX AND unpriced holdings. Crucially, NO `?? costBasis` fallback for
+            // value — substituting cost basis would fabricate value == cost ⇒ a fake green $0 P&L.
+            guard let rate = rates[StockSageCurrency.currencyForSymbol(p.symbol)],
+                  let px = currentPrice(p.symbol) else { continue }
             cost += holdingValue(p.symbol, perShare: p.costBasis, shares: p.shares) * rate
-            value += holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares) * rate
+            value += holdingValue(p.symbol, perShare: px, shares: p.shares) * rate
         }
         return (cost, value)
+    }
+
+    /// Held symbols with NO live price — EXCLUDED from the USD total (never valued at cost basis),
+    /// surfaced in the summary so the headline value/P&L is honestly "priced holdings only".
+    private var unpricedHoldings: [String] {
+        portfolio.positions.filter { currentPrice($0.symbol) == nil }.map(\.symbol)
     }
 
     private var portfolioSection: some View {
@@ -640,12 +649,22 @@ struct MarketsView: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("Total P&L (USD)").font(.caption).foregroundStyle(.secondary)
-                    Text((up ? "+" : "") + String(format: "$%.2f (%+.1f%%)", pl, plPct))
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
-                        .contentTransition(.numericText())
-                        .animation(DS.Motion.smooth, value: pl)
+                    if t.value == 0, t.cost == 0, !portfolio.positions.isEmpty {
+                        // Nothing priced/convertible → don't paint a fake green +$0.00 P&L.
+                        Text("— no priced holdings").font(.system(size: 15, weight: .semibold)).foregroundStyle(.secondary)
+                    } else {
+                        Text((up ? "+" : "") + String(format: "$%.2f (%+.1f%%)", pl, plPct))
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
+                            .contentTransition(.numericText())
+                            .animation(DS.Motion.smooth, value: pl)
+                    }
                 }
+            }
+            if !unpricedHoldings.isEmpty {
+                Text("\(unpricedHoldings.count) holding\(unpricedHoldings.count == 1 ? "" : "s") with no live price (\(unpricedHoldings.prefix(3).joined(separator: ", "))) — excluded; value/P&L is priced holdings only.")
+                    .font(.system(size: 9)).foregroundStyle(DS.Palette.warningSoft)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if !untrackedFXCurrencies.isEmpty {
                 Text("Excludes \(untrackedFXCurrencies.joined(separator: ", ")) holdings — no FX rate to convert to USD (track \(untrackedFXCurrencies.first ?? "")USD=X). P&L uses today's FX, so it blends asset + currency moves.")

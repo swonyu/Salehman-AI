@@ -6996,6 +6996,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · ONLY-REAL-DATA FIX — portfolio total no longer launders cost basis into "value" (fake green $0 P&L)
+**Files:** `Views/MarketsView.swift` (portfolioTotals + unpricedHoldings + summary note/guard).
+**What (UI-format sweep w3r6h3yl5 #1, HIGH):** portfolioTotals valued each holding at `currentPrice ?? costBasis`, so a holding with NO live price was valued at its cost basis → value == cost → a confident "Portfolio value (USD)" + a GREEN +$0.00 (+0.0%) P&L fabricated from no market data. Fix: drop the `?? costBasis` fallback — `guard let px = currentPrice(...)` EXCLUDES unpriced (and untracked-FX) holdings from BOTH value and cost, so the headline is honestly priced-holdings-only. New `unpricedHoldings` surfaces "N holdings with no live price — excluded; value/P&L is priced holdings only," and when NOTHING is priced the P&L renders a neutral "— no priced holdings" instead of a green $0.
+**Verify:** typecheck EXIT=0; render UNVERIFIED (Mac). No live price ⇒ excluded + flagged, never valued at cost with a fake green break-even.
+**Remaining (UI_FORMAT_AUDIT.md): #5 %-decimal; #6 avg win/loss zero-sign; #7 gp/hour Int trunc; #8/#9 width. DATA_INTEGRITY #4 (SAMPLE seed prices are non-nil so still render — separate scope decision); #6 what-if sheet banner; FEED_CACHE #2-7.**
+**Result:** the portfolio headline is now market value of what can actually be priced — never cost basis wearing a "value" label with a fake green P&L. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
