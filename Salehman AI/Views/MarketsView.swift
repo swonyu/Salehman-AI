@@ -1006,6 +1006,11 @@ struct MarketsView: View {
                     }
                     Text("Expectancy = R you make per trade on average. Positive = the system has paid you so far; it's a record, not a promise.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    let excludedNoR = journal.closed.count - edge.closedWithR
+                    if excludedNoR > 0 {
+                        Text("\(excludedNoR) closed trade\(excludedNoR == 1 ? "" : "s") excluded from the edge — logged with entry == stop, so R is undefined (no risk to measure against).")
+                            .font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                    }
                     if let ci = journal.expectancyCI {
                         Text(ci.note).font(.caption2)
                             .foregroundStyle(ci.isSignificant ? DS.Palette.successSoft : DS.Palette.warningSoft)

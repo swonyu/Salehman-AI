@@ -6538,6 +6538,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** Verified the existing caveat sweep (`StockSageGlossaryTests`) already pins every `MoneyVelocityCopy.all` string + every `MoneyVelocityTerm` + the playbook as hedged — so #11's core ask was already covered (NOT duplicated). What WASN'T covered: the money/risk engines built in this hardening pass. Added a structural guard asserting `StockSagePortfolioHeat.caveat` ("Assumes … a correlated gap …") and `StockSageTimeStop.rationale` (exit: "…a clock, not a sell signal") carry a hedge stem, and that `StockSageNetEdge.defaultCosts` names its asset class — so a future edit dropping a caveat fails CI. PYTHON-VERIFIED both strings hedged. ✅ typecheck clean.
 **Result:** Hardening 1-11, 13, 15, 16 done (15 of 33). NEXT: #17/#18/#20 small bugs (verify each is real first). Loop continues.
 
+## 2026-06-22 · Hardening #20: Surface edge-excluded (entry==stop) trades
+**Files:** `Views/MarketsView.swift` (journal edge note).
+**What & why:** VERIFIED real: `StockSageJournal.edge` computes from `compactMap { realizedR }`, so a closed trade logged with entry==stop (rMultiple nil — no defined risk) silently vanishes from expectancy/payoff/PF while still counting in the closed total — the edge then reads as if computed on all closed trades. The edge UI now shows "N closed trade(s) excluded from the edge — logged with entry == stop, so R is undefined" whenever `journal.closed.count > edge.closedWithR`. Honest about the sample the edge actually used. ✅ typecheck clean.
+**Result:** Hardening 1-11, 13, 15, 16, 20 done (16 of 33). NEXT: verify #17 (compounding wipeout) + #18 (new-listing flag), then MARKETS_BACKLOG #32/#31/#26. Loop continues.
+
 ---
 
 ## Standing notes / known issues

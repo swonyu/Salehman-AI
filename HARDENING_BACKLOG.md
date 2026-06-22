@@ -108,7 +108,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** Add optional CostProfile(commissionPct,slippagePct,bidAskPct); compute()? reduces suggested fraction by net-of-cost edge and exposes costAdjustment + updated caveat; costs>edge → zero size. Test cost cuts fraction and zero-edge case.
 **Why:** 10-50bps round-trip costs quietly eat a 1% edge; forcing the owner to name them is honest and changes sizing.
 
-### ⬜ #20 — Closed trades with entry==stop (no R) silently dropped from edge stats  [low/small, bug]
+### ✅ DONE #20 — Closed trades with entry==stop (no R) silently dropped from edge stats  [low/small, bug]
 **File:** Salehman AI/StockSage/StockSageJournal.swift
 **What:** Line 469 compactMaps realizedR; a CLOSED trade with entry==stop has realizedR=nil and vanishes, shrinking sample size invisibly. Count no-defined-risk closed trades and flag them, or reject entry==stop at TradeRecord.init.
 **Why:** Lowers the edge sample without telling the user; for a closed trade zero-risk is anomalous and should be flagged not hidden.

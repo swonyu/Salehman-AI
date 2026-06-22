@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 13:42 +03 · Swift files: 246 · Swift LOC: 45545_
+_Generated: 2026-06-22 13:49 +03 · Swift files: 246 · Swift LOC: 45550_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -26587,7 +26587,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (3169 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (3174 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -27597,6 +27597,11 @@ struct MarketsView: View {
                     }
                     Text("Expectancy = R you make per trade on average. Positive = the system has paid you so far; it's a record, not a promise.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    let excludedNoR = journal.closed.count - edge.closedWithR
+                    if excludedNoR > 0 {
+                        Text("\(excludedNoR) closed trade\(excludedNoR == 1 ? "" : "s") excluded from the edge — logged with entry == stop, so R is undefined (no risk to measure against).")
+                            .font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                    }
                     if let ci = journal.expectancyCI {
                         Text(ci.note).font(.caption2)
                             .foregroundStyle(ci.isSignificant ? DS.Palette.successSoft : DS.Palette.warningSoft)
@@ -48588,7 +48593,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7655 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7660 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -55129,6 +55134,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** Verified the existing caveat sweep (`StockSageGlossaryTests`) already pins every `MoneyVelocityCopy.all` string + every `MoneyVelocityTerm` + the playbook as hedged — so #11's core ask was already covered (NOT duplicated). What WASN'T covered: the money/risk engines built in this hardening pass. Added a structural guard asserting `StockSagePortfolioHeat.caveat` ("Assumes … a correlated gap …") and `StockSageTimeStop.rationale` (exit: "…a clock, not a sell signal") carry a hedge stem, and that `StockSageNetEdge.defaultCosts` names its asset class — so a future edit dropping a caveat fails CI. PYTHON-VERIFIED both strings hedged. ✅ typecheck clean.
 **Result:** Hardening 1-11, 13, 15, 16 done (15 of 33). NEXT: #17/#18/#20 small bugs (verify each is real first). Loop continues.
 
+## 2026-06-22 · Hardening #20: Surface edge-excluded (entry==stop) trades
+**Files:** `Views/MarketsView.swift` (journal edge note).
+**What & why:** VERIFIED real: `StockSageJournal.edge` computes from `compactMap { realizedR }`, so a closed trade logged with entry==stop (rMultiple nil — no defined risk) silently vanishes from expectancy/payoff/PF while still counting in the closed total — the edge then reads as if computed on all closed trades. The edge UI now shows "N closed trade(s) excluded from the edge — logged with entry == stop, so R is undefined" whenever `journal.closed.count > edge.closedWithR`. Honest about the sample the edge actually used. ✅ typecheck clean.
+**Result:** Hardening 1-11, 13, 15, 16, 20 done (16 of 33). NEXT: verify #17 (compounding wipeout) + #18 (new-listing flag), then MARKETS_BACKLOG #32/#31/#26. Loop continues.
+
 ---
 
 ## Standing notes / known issues
@@ -58520,7 +58530,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** Add optional CostProfile(commissionPct,slippagePct,bidAskPct); compute()? reduces suggested fraction by net-of-cost edge and exposes costAdjustment + updated caveat; costs>edge → zero size. Test cost cuts fraction and zero-edge case.
 **Why:** 10-50bps round-trip costs quietly eat a 1% edge; forcing the owner to name them is honest and changes sizing.
 
-### ⬜ #20 — Closed trades with entry==stop (no R) silently dropped from edge stats  [low/small, bug]
+### ✅ DONE #20 — Closed trades with entry==stop (no R) silently dropped from edge stats  [low/small, bug]
 **File:** Salehman AI/StockSage/StockSageJournal.swift
 **What:** Line 469 compactMaps realizedR; a CLOSED trade with entry==stop has realizedR=nil and vanishes, shrinking sample size invisibly. Count no-defined-risk closed trades and flag them, or reject entry==stop at TradeRecord.init.
 **Why:** Lowers the edge sample without telling the user; for a closed trade zero-risk is anomalous and should be flagged not hidden.
