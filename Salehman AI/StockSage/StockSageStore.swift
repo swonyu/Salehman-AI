@@ -222,8 +222,13 @@ final class StockSageStore: ObservableObject {
             var out: [StockSageIdea] = []
             for sym in defs {
                 guard let history = histories[sym.symbol.uppercased()], let price = history.latestClose else { continue }
-                // Don't measure a benchmark against itself (RS would be a meaningless 0).
-                let bench = sym.symbol.uppercased() == "^GSPC" ? nil : benchmark
+                // An index LEVEL (^GSPC/^VIX) is not a buyable instrument — never surface it as a
+                // buy/stop/target/size idea (it would also pollute the EV/velocity/allocator math).
+                guard StockSageAllocation.assetClass(sym.symbol) != "Index" else { continue }
+                // Relative-strength-vs-S&P only means something for EQUITIES — pass the benchmark only
+                // there so FX/crypto don't get a meaningless "Leading/Lagging the S&P" term (and an
+                // index never benchmarks against itself, now moot since indices are excluded above).
+                let bench = StockSageAllocation.assetClass(sym.symbol) == "Equity" ? benchmark : nil
                 let advice = StockSageAdvisor.advise(history: history, benchmark: bench)
                 let spark = SparkSeries.downsample(Array(history.closes.suffix(63)))
                 out.append(StockSageIdea(symbol: sym.symbol, market: sym.market,

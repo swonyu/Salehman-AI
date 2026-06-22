@@ -7067,6 +7067,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · MONEY-FLOW FIX — indices no longer surfaced as buyable ideas (+ RS-vs-S&P only for equities)
+**Files:** `StockSage/StockSageStore.swift` (buildIdeas).
+**What (money-flow sweep wdzfepgrt #2 HIGH + #6 MED):** buildIdeas advised EVERY symbol as a long equity, so an index LEVEL like ^GSPC/^VIX surfaced as a "Strong Buy" with a stop/target/weight (you cannot buy an index level) and polluted the downstream EV/velocity/allocator math; and the ^GSPC benchmark was passed to FX/crypto, adding a meaningless "Leading/Lagging the S&P ±0.08" term (and wrong-signed for ^VIX). Fix (StockSageAllocation.assetClass labels Index/Forex/Crypto/Equity): `guard assetClass(sym.symbol) \!= "Index" else { continue }` drops indices entirely; `let bench = assetClass(sym.symbol) == "Equity" ? benchmark : nil` passes the S&P benchmark ONLY to equities (FX/crypto → nil → advise() no-ops the RS term).
+**Verify:** typecheck EXIT=0. RE-TRACED: buildIdeas is not directly unit-tested (EV/advisor tests construct ideas/advise directly) → no test breaks. The ideas board, EV ranking, velocity lane and allocator now see only real, buyable instruments.
+**Remaining (MONEY_FLOW_AUDIT.md): #4 regime into velocity; #7 retry benchmark; #8 cache user tickers; #9/#10/#11 gaps. OSRS #2 stale-as-live.**
+**Result:** no more "^VIX Strong Buy" — the idea engine only proposes instruments you can actually buy, scored with a benchmark that means something for their asset class. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
