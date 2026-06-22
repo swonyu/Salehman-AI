@@ -1070,7 +1070,7 @@ struct MarketsView: View {
                     Text(String(format: "What-if (HYPOTHETICAL): at your measured %+.2fR/trade & 1%%/trade, 100 trades ≈ ×%.2f. %@",
                                 proj.expectancyR, proj.multiple, MoneyVelocityCopy.growthProjection))
                         .font(.caption2)
-                        .foregroundStyle(proj.multiple >= 1 ? DS.Palette.warningSoft : DS.Palette.danger)
+                        .foregroundStyle(.secondary)   // neutral: a hypothetical projection, not a warning or a promise
                         .fixedSize(horizontal: false, vertical: true)
                         .help("A deterministic compounding of your measured average R — it ignores variance and drawdown, which make the real path lower and bumpier. Not advice, not a forecast.")
                 }
@@ -2265,7 +2265,7 @@ struct MarketsView: View {
                        let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, holds: velocityHolds) {
                         Text(String(format: "≈ +$%.0f/week at $%.0f acct, %.1f%% risk — %@", usd, acct, rp, MoneyVelocityCopy.weeklyDollars))
                             .font(.system(size: mvFont9, weight: .medium))
-                            .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
+                            .foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)   // neutral: an estimate, not a realized gain
                     }
                     if let d = velocityHistory.lastDelta, abs(d) >= 0.05 {
                         Text(String(format: "Since last session: weekly-R %@ %.1fR — %@", d >= 0 ? "↑" : "↓", abs(d), MoneyVelocityCopy.ownHistory))
@@ -2378,7 +2378,7 @@ struct MarketsView: View {
                        let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, holds: velocityHolds) {
                         Text(String(format: "≈ +$%.0f/week at $%.0f account, %.1f%% risk — estimate, high variance, NOT income.", usd, acct, rp))
                             .font(.system(size: mvFont9, weight: .medium))
-                            .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
+                            .foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)   // neutral: estimate, not a realized gain
                     }
                 }
                 if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds), conc.isConcentrated {

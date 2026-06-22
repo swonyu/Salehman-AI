@@ -6513,6 +6513,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** Pins the exact off-by-one / sign-flip boundaries on money math so a silent `>=`→`>` or rounding flip becomes a failing test. Each literal was READ from the engine source then PYTHON-VERIFIED: Kelly W=.70/R=1 → edge .40, fullKelly .40, suggested .20 (half==cap); RewardRisk quality at risk=10 → target 125=2.5 strong (inclusive), 124 fair, 115=1.5 fair (inclusive), 114 poor, zero-risk→nil; RiskOfRuin (1−f)^losses → losses 1/f .99 → drawdown .99 + isSteep, f 1.0→nil, losses 0→nil; rMultiple long 100/90 at 110 → +1R exact, entry==stop→nil; NetEdge 100bps on 100 entry = $1 cost == $1 reward → netRR exactly 0; PositionSizer $1 budget/$10 share → 0 shares (floored, valid), zero risk/share→nil; Currency/Rebalance zero-value holdings→nil. ✅ typecheck clean.
 **Result:** Hardening 1-7 (minus 8-10) done. NEXT: #8-10 honesty-color/caveat polish batch, then OSRS money features (#13/#15/#16). Loop continues at 4.7-min cadence.
 
+## 2026-06-22 · Hardening #8/#9/#10: Honesty-color + caveat polish (batch)
+**Files:** `Views/MarketsView.swift` (weekly-$ ×2 + growth projection color), `StockSage/StockSageGlossary.swift` (gp/hour caveat).
+**What & why:** Three surfaces dressed an ESTIMATE in colors that implied more than an estimate. (#8) The "≈ +$X/week" velocity figures (summary card + fast-lane) were success-green — green reads as a realized gain; switched to neutral textSecondary (the "estimate, NOT income" label stays). (#10) The HYPOTHETICAL forward growth projection was colored warningSoft/danger — alarm colors over-dramatize a neutral what-if; switched to .secondary (the "HYPOTHETICAL" label stays). (#9) The gp/hour glossary said "real fills depend on volume" — strengthened to "A CEILING, not a rate you'll hit … real fills are VOLUME-GATED — a thin item can take hours to fill (or never), so a high gp/hour on low volume is mostly theoretical." ✅ typecheck clean.
+**Result:** Hardening 1-10 done (the confirmed bugs, both features, the test sweep, the honesty polish). NEXT: OSRS money features #13 (ROI/capital-efficiency) / #15 (partial-profit ladder) / #16 (tax-aware net margin). Loop continues.
+
 ---
 
 ## Standing notes / known issues

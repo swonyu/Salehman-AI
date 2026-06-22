@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 13:00 +03 · Swift files: 243 · Swift LOC: 45395_
+_Generated: 2026-06-22 13:08 +03 · Swift files: 243 · Swift LOC: 45395_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -10046,7 +10046,7 @@ enum StockSageGlossary {
         case .drawdownSurvival:
             return "k losing trades in a row at risk f shrink the account by (1 − f)^k. The counterweight to velocity: size so a normal losing streak stays survivable — staying in the game is how velocity pays off."
         case .gpPerHour:
-            return "OSRS flip velocity: (sell − buy − GE tax) × the 4-hour buy limit ÷ 4h = gp per hour. An estimate that assumes you fill the limit; real fills depend on volume."
+            return "OSRS flip velocity: (sell − buy − GE tax) × the 4-hour buy limit ÷ 4h = gp per hour. A CEILING, not a rate you'll hit: it assumes you fill the ENTIRE buy limit and resell instantly. Real fills are VOLUME-GATED — a thin item can take hours to fill (or never), so a high gp/hour on low volume is mostly theoretical."
         }
     }
 
@@ -27607,7 +27607,7 @@ struct MarketsView: View {
                     Text(String(format: "What-if (HYPOTHETICAL): at your measured %+.2fR/trade & 1%%/trade, 100 trades ≈ ×%.2f. %@",
                                 proj.expectancyR, proj.multiple, MoneyVelocityCopy.growthProjection))
                         .font(.caption2)
-                        .foregroundStyle(proj.multiple >= 1 ? DS.Palette.warningSoft : DS.Palette.danger)
+                        .foregroundStyle(.secondary)   // neutral: a hypothetical projection, not a warning or a promise
                         .fixedSize(horizontal: false, vertical: true)
                         .help("A deterministic compounding of your measured average R — it ignores variance and drawdown, which make the real path lower and bumpier. Not advice, not a forecast.")
                 }
@@ -28802,7 +28802,7 @@ struct MarketsView: View {
                        let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, holds: velocityHolds) {
                         Text(String(format: "≈ +$%.0f/week at $%.0f acct, %.1f%% risk — %@", usd, acct, rp, MoneyVelocityCopy.weeklyDollars))
                             .font(.system(size: mvFont9, weight: .medium))
-                            .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
+                            .foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)   // neutral: an estimate, not a realized gain
                     }
                     if let d = velocityHistory.lastDelta, abs(d) >= 0.05 {
                         Text(String(format: "Since last session: weekly-R %@ %.1fR — %@", d >= 0 ? "↑" : "↓", abs(d), MoneyVelocityCopy.ownHistory))
@@ -28915,7 +28915,7 @@ struct MarketsView: View {
                        let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, holds: velocityHolds) {
                         Text(String(format: "≈ +$%.0f/week at $%.0f account, %.1f%% risk — estimate, high variance, NOT income.", usd, acct, rp))
                             .font(.system(size: mvFont9, weight: .medium))
-                            .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
+                            .foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)   // neutral: estimate, not a realized gain
                     }
                 }
                 if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds), conc.isConcentrated {
@@ -48426,7 +48426,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7630 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7635 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54942,6 +54942,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **What & why:** Pins the exact off-by-one / sign-flip boundaries on money math so a silent `>=`→`>` or rounding flip becomes a failing test. Each literal was READ from the engine source then PYTHON-VERIFIED: Kelly W=.70/R=1 → edge .40, fullKelly .40, suggested .20 (half==cap); RewardRisk quality at risk=10 → target 125=2.5 strong (inclusive), 124 fair, 115=1.5 fair (inclusive), 114 poor, zero-risk→nil; RiskOfRuin (1−f)^losses → losses 1/f .99 → drawdown .99 + isSteep, f 1.0→nil, losses 0→nil; rMultiple long 100/90 at 110 → +1R exact, entry==stop→nil; NetEdge 100bps on 100 entry = $1 cost == $1 reward → netRR exactly 0; PositionSizer $1 budget/$10 share → 0 shares (floored, valid), zero risk/share→nil; Currency/Rebalance zero-value holdings→nil. ✅ typecheck clean.
 **Result:** Hardening 1-7 (minus 8-10) done. NEXT: #8-10 honesty-color/caveat polish batch, then OSRS money features (#13/#15/#16). Loop continues at 4.7-min cadence.
 
+## 2026-06-22 · Hardening #8/#9/#10: Honesty-color + caveat polish (batch)
+**Files:** `Views/MarketsView.swift` (weekly-$ ×2 + growth projection color), `StockSage/StockSageGlossary.swift` (gp/hour caveat).
+**What & why:** Three surfaces dressed an ESTIMATE in colors that implied more than an estimate. (#8) The "≈ +$X/week" velocity figures (summary card + fast-lane) were success-green — green reads as a realized gain; switched to neutral textSecondary (the "estimate, NOT income" label stays). (#10) The HYPOTHETICAL forward growth projection was colored warningSoft/danger — alarm colors over-dramatize a neutral what-if; switched to .secondary (the "HYPOTHETICAL" label stays). (#9) The gp/hour glossary said "real fills depend on volume" — strengthened to "A CEILING, not a rate you'll hit … real fills are VOLUME-GATED — a thin item can take hours to fill (or never), so a high gp/hour on low volume is mostly theoretical." ✅ typecheck clean.
+**Result:** Hardening 1-10 done (the confirmed bugs, both features, the test sweep, the honesty polish). NEXT: OSRS money features #13 (ROI/capital-efficiency) / #15 (partial-profit ladder) / #16 (tax-aware net margin). Loop continues.
+
 ---
 
 ## Standing notes / known issues
@@ -58273,17 +58278,17 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** nonisolated static func suggest(openedAt:now:daysToHold:) -> TimeStopSuggestion?(shouldExit,daysHeld,daysRemaining,rationale). Add TradeRecord.daysHeld computed prop; flag in RiskFlags when isOpen && daysHeld>daysToHold. Test exact day boundaries, nil dates, same-day=0.
 **Why:** Directly serves "make money faster": frees capital from stale positions. Pure discipline rule, not a signal — honest by construction.
 
-### ⬜ #8 — Weekly-$ velocity estimate rendered in success-green overstates confidence  [medium/small, honesty]
+### ✅ DONE #8 — Weekly-$ velocity estimate rendered in success-green overstates confidence  [medium/small, honesty]
 **File:** Salehman AI/Views/MarketsView.swift
 **What:** The "≈ +$X/week … NOT income" line (and the fast-lane strip twin) renders in DS.Palette.successSoft green, visually reading as a guaranteed win. Move the $ figure to .secondary, lead with the hedge, keep green only for labeled risk warnings. (Reported line numbers drifted; locate by the format string "+$%.0f/week".)
 **Why:** Green + plus-sign on a money estimate conflates risk with reward — undercuts the inline caveat.
 
-### ⬜ #9 — GE flip gp/hour glossary caveat understates volume dependency  [medium/small, honesty]
+### ✅ DONE #9 — GE flip gp/hour glossary caveat understates volume dependency  [medium/small, honesty]
 **File:** Salehman AI/StockSage/StockSageGlossary.swift
 **What:** Line 67 says "assumes you fill the limit; real fills depend on volume." For an item trading 50/day, trying to move 500 makes gp/hour off by ~90%. Extend the copy: for <100 trades/day actual gp/hour may be 10-50% of the estimate; re-check after each flip. One-line copy change.
 **Why:** Cheapest honesty fix in the set; the gp/hour number is the OSRS headline metric and is most wrong exactly where it looks best (illiquid items).
 
-### ⬜ #10 — Growth/what-if projections color-coded as warning/danger over-dramatize a neutral estimate  [medium/small, honesty]
+### ✅ DONE #10 — Growth/what-if projections color-coded as warning/danger over-dramatize a neutral estimate  [medium/small, honesty]
 **File:** Salehman AI/Views/MarketsView.swift
 **What:** "What-if (HYPOTHETICAL) … 100 trades ≈ ×Z" renders in warningSoft yellow when multiple>=1 and danger red when <1, reading as "this will lose" rather than a variance path. Render the line in .secondary; the strong NOT-a-prediction caveat already carries the weight.
 **Why:** Color over-emphasizes a neutral compounding estimate as a forecast. Batch with rank 8 (same file, same fix pattern).

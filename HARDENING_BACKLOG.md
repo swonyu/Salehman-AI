@@ -48,17 +48,17 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** nonisolated static func suggest(openedAt:now:daysToHold:) -> TimeStopSuggestion?(shouldExit,daysHeld,daysRemaining,rationale). Add TradeRecord.daysHeld computed prop; flag in RiskFlags when isOpen && daysHeld>daysToHold. Test exact day boundaries, nil dates, same-day=0.
 **Why:** Directly serves "make money faster": frees capital from stale positions. Pure discipline rule, not a signal — honest by construction.
 
-### ⬜ #8 — Weekly-$ velocity estimate rendered in success-green overstates confidence  [medium/small, honesty]
+### ✅ DONE #8 — Weekly-$ velocity estimate rendered in success-green overstates confidence  [medium/small, honesty]
 **File:** Salehman AI/Views/MarketsView.swift
 **What:** The "≈ +$X/week … NOT income" line (and the fast-lane strip twin) renders in DS.Palette.successSoft green, visually reading as a guaranteed win. Move the $ figure to .secondary, lead with the hedge, keep green only for labeled risk warnings. (Reported line numbers drifted; locate by the format string "+$%.0f/week".)
 **Why:** Green + plus-sign on a money estimate conflates risk with reward — undercuts the inline caveat.
 
-### ⬜ #9 — GE flip gp/hour glossary caveat understates volume dependency  [medium/small, honesty]
+### ✅ DONE #9 — GE flip gp/hour glossary caveat understates volume dependency  [medium/small, honesty]
 **File:** Salehman AI/StockSage/StockSageGlossary.swift
 **What:** Line 67 says "assumes you fill the limit; real fills depend on volume." For an item trading 50/day, trying to move 500 makes gp/hour off by ~90%. Extend the copy: for <100 trades/day actual gp/hour may be 10-50% of the estimate; re-check after each flip. One-line copy change.
 **Why:** Cheapest honesty fix in the set; the gp/hour number is the OSRS headline metric and is most wrong exactly where it looks best (illiquid items).
 
-### ⬜ #10 — Growth/what-if projections color-coded as warning/danger over-dramatize a neutral estimate  [medium/small, honesty]
+### ✅ DONE #10 — Growth/what-if projections color-coded as warning/danger over-dramatize a neutral estimate  [medium/small, honesty]
 **File:** Salehman AI/Views/MarketsView.swift
 **What:** "What-if (HYPOTHETICAL) … 100 trades ≈ ×Z" renders in warningSoft yellow when multiple>=1 and danger red when <1, reading as "this will lose" rather than a variance path. Render the line in .secondary; the strong NOT-a-prediction caveat already carries the weight.
 **Why:** Color over-emphasizes a neutral compounding estimate as a forecast. Batch with rank 8 (same file, same fix pattern).
