@@ -8,6 +8,17 @@ struct StockSagePositionSizerTests {
 
     typealias PS = StockSagePositionSizer
 
+    @Test func sizeRejectsNonFiniteInputsInsteadOfCrashing() {
+        // "inf"/"infinity" in a field parses to +Infinity, passes `> 0`, and would trap at
+        // Int(.infinity) — a hard crash that persists via UserDefaults. Now returns nil.
+        #expect(PS.size(account: .infinity, riskFraction: 0.01, entry: 100, stop: 90) == nil)
+        #expect(PS.size(account: 10_000, riskFraction: .infinity, entry: 100, stop: 90) == nil)
+        #expect(PS.size(account: 10_000, riskFraction: 0.01, entry: .infinity, stop: 90) == nil)
+        #expect(PS.size(account: .nan, riskFraction: 0.01, entry: 100, stop: 90) == nil)
+        // A normal size is unchanged.
+        #expect(PS.size(account: 10_000, riskFraction: 0.01, entry: 100, stop: 90)?.shares == 10)
+    }
+
     @Test func summaryLineStatesSharesRiskAndHonestyCaveat() {
         // account 10000 · 1% · entry 100 · stop 90 → risk/share 10, budget 100 → 10 shares, $100 at risk, 10% acct.
         let ps = PS.size(account: 10000, riskFraction: 0.01, entry: 100, stop: 90)!

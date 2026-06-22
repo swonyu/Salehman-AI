@@ -21,11 +21,16 @@ enum StockSagePositionSizer {
     /// inputs (non-positive) or entry == stop (undefined risk → not infinite size).
     nonisolated static func size(account: Double, riskFraction: Double,
                                  entry: Double, stop: Double) -> PositionSize? {
-        guard account > 0, riskFraction > 0, entry > 0, stop > 0 else { return nil }
+        // .isFinite matters: a field of "inf"/"infinity" parses to +Infinity, which passes `> 0`
+        // and would trap at Int(.infinity) below (a hard crash that persists via UserDefaults).
+        guard account > 0, riskFraction > 0, entry > 0, stop > 0,
+              account.isFinite, riskFraction.isFinite, entry.isFinite, stop.isFinite else { return nil }
         let riskPerShare = abs(entry - stop)
         guard riskPerShare > 0 else { return nil }
         let riskBudget = account * riskFraction
-        let shares = Int((riskBudget / riskPerShare).rounded(.down))
+        let raw = (riskBudget / riskPerShare).rounded(.down)
+        guard raw.isFinite, raw >= 0, raw <= Double(Int.max) else { return nil }   // never Int(.infinity)/overflow
+        let shares = Int(raw)
         let notional = Double(shares) * entry
         return PositionSize(
             shares: shares,

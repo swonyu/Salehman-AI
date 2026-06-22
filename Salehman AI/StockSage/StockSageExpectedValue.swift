@@ -246,9 +246,9 @@ enum StockSageExpectedValue {
     nonisolated static func expectedWeeklyDollars(_ ideas: [StockSageIdea], account: Double, riskFraction: Double,
                                                   maxConcurrent: Int = 3, tradingDays: Double = 5,
                                                   holds: VelocityHoldDays = .defaults) -> Double? {
-        guard account > 0, riskFraction > 0,
+        guard account > 0, riskFraction > 0, account.isFinite, riskFraction.isFinite,
               let wkR = expectedWeeklyR(ideas, maxConcurrent: maxConcurrent, tradingDays: tradingDays, holds: holds) else { return nil }
-        return wkR * account * riskFraction
+        return wkR * account * riskFraction   // finite inputs → never "+$inf/week"
     }
 
     /// Trading days per week for the fast lane. Equities trade ~5 days; crypto is 24/7 (~7).

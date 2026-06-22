@@ -7110,6 +7110,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · CRASH FIX — "inf" in Acct $ / Risk % no longer hard-crashes the sizer (persisted re-crash)
+**Files:** `StockSage/StockSagePositionSizer.swift` (size guards), `StockSage/StockSageExpectedValue.swift` (expectedWeeklyDollars), `Salehman AITests/StockSagePositionSizerTests.swift` (+test).
+**What (settings bughunt wqew7tt6u #1 HIGH crash + #2 MED):** typing "inf"/"infinity" into the Acct $ or Risk % field → Double("inf")=+Infinity, which is non-nil and passes the `> 0` guards, then `Int((riskBudget/riskPerShare).rounded(.down))` = Int(.infinity) → Swift runtime TRAP (hard crash). The value persists in UserDefaults, so the app re-crashes on every relaunch the moment an idea-detail with a stop renders. Fix at the ENGINE (protects ALL call sites: detail sheet, copy-plan, what-if): size() now also requires account/riskFraction/entry/stop .isFinite, and guards the Int conversion (raw.isFinite, 0…Int.max) → nil instead of a trap. #2: expectedWeeklyDollars added .isFinite so an inf account no longer renders "+$inf/week".
+**Verify:** typecheck EXIT=0; +test — inf account / inf rf / inf entry / nan → nil; a normal size still 10 shares. RE-TRACED sizer tests: valid finite inputs byte-identical (the guards only reject non-finite). NO secret-leak / .auto-spend findings (sacred rules clean).
+**Remaining (SETTINGS_BUGHUNT.md): #3 risk%-0 fallback mismatch at the trade-gate; #4 Ollama schemeless URL goes mute (prepend http://); #5 reachability cache not invalidated on URL change.**
+**Result:** a fat-fingered "inf" can no longer brick the app on relaunch, and no money figure reads "+$inf". ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
