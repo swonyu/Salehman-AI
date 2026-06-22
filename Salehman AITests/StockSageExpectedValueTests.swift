@@ -186,6 +186,19 @@ struct StockSageExpectedValueTests {
         #expect(EV.bestOpportunity([clean])?.idea.symbol == "AAPL")
     }
 
+    @Test func hairThinStopCannotOverrunTheRegimeBan() {
+        // Pre-cap, a regime-banned SELL with a near-zero stop (risk 1e-5) scored ~2,000,000 R and
+        // beat the −1,000,000 ban penalty — crowning a short #1 in a BULL tape. rewardR caps at 50.
+        let bull = MarketRegime(state: .trendingBull, riskScore: 0.6, signals: [], sizingBias: 1.1, caveat: "x")
+        let cleanBuy  = idea("WIN", action: .buy,  conviction: 1.0, stop: 90, target: 120)
+        let knifeSell = idea("EXPLOIT", action: .sell, conviction: 1.0, stop: 100.00001, target: 80)
+        #expect(EV.rankByEV([cleanBuy, knifeSell], regime: bull).first?.symbol == "WIN")
+        // The cap itself: a degenerate hair-thin stop yields rewardR 50, not millions.
+        #expect(EV.ev(conviction: 1.0, entry: 100, stop: 100.00001, target: 80)?.rewardR == 50)
+        // A normal setup is unaffected (4:1 stays 4:1).
+        #expect(EV.ev(conviction: 0.9, entry: 100, stop: 90, target: 130)?.rewardR == 4)
+    }
+
     @Test func regimeGateKeepsBannedSideFromTopRank() {
         let bear   = MarketRegime(state: .trendingBear, riskScore: -0.5, signals: [], sizingBias: 0.5,  caveat: "x")
         let bull   = MarketRegime(state: .trendingBull, riskScore: 0.6,  signals: [], sizingBias: 1.1,  caveat: "x")

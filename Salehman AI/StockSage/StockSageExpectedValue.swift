@@ -69,7 +69,11 @@ enum StockSageExpectedValue {
     nonisolated static func ev(conviction: Double, entry: Double, stop: Double, target: Double) -> ExpectedValue? {
         let risk = abs(entry - stop), reward = abs(target - entry)
         guard risk > 0, reward > 0 else { return nil }
-        let rewardR = reward / risk
+        // Cap reward:risk at a sane ceiling. A hair-thin stop (risk → 0) otherwise makes rewardR
+        // unbounded, which overruns the FIXED regime/cost/conviction demotion constants in the rank
+        // key (−1_000_000 / −500_000 / −1000) and lets a BANNED side rank #1. No real setup exceeds
+        // 50:1 reward:risk; beyond it the stop is degenerate, not a genuine edge.
+        let rewardR = Swift.min(reward / risk, 50)
         let p = winProbEstimate(conviction: conviction)
         return ExpectedValue(winProbEstimate: p, rewardR: rewardR, evR: p * rewardR - (1 - p))
     }

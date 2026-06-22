@@ -6943,6 +6943,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · CORE-MONEY BUG FIX — cap reward:risk so a hair-thin stop can't overrun the regime ban
+**Files:** `StockSage/StockSageExpectedValue.swift` (ev() rewardR cap), `Salehman AITests/StockSageExpectedValueTests.swift` (+regression test). Persisted DECISION_ENGINE_BUGHUNT.md.
+**What (decision-engine bughunt wptj7zxb1 #1, HIGH — survived 2-skeptic refute):** ev() computed rewardR = reward/risk guarding only risk>0, so a hair-thin stop (risk≈1e-5) made rewardR≈2,000,000 → evR≈1.16M → qualityAdjustedEVR base ≫ the FIXED demotion constants in the rank key (regime −1_000_000, cost −500_000, conviction/velocity −1000). Result: a regime-BANNED short could rank #1 in a BULL tape — defeating the exact gate bannedFromTopRank exists for; clearsCostAfterFrictions didn't save it (tiny risk → ~0 break-even → clears). Fix: `rewardR = Swift.min(reward / risk, 50)` — no real setup exceeds 50:1; beyond it the stop is degenerate. Cap (50) < smallest penalty (1000) so the gates always dominate again.
+**Verify:** typecheck EXIT=0; python-checked (20/1e-5 → 50; 40/10 → 4 unaffected; 50<1000). +regression test: a banned knife-stop SELL no longer ranks above a clean BUY in a bull regime; rewardR cap == 50; normal 4:1 stays 4.
+**Remaining (DECISION_ENGINE_BUGHUNT.md): #2 (MED) range-bound regime can still emit StrongBuy+plan (gate buy family on \!trending); #3 (LOW) 126-bar momentum triple-counted (mom+relStr+volAdjMom collinear → clamp the combined contribution).**
+**Result:** the "best opportunity" ranking can no longer be hijacked by a degenerate stop into surfacing a regime-banned trade. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
