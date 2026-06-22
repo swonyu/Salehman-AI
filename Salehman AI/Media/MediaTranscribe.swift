@@ -54,10 +54,23 @@ enum MediaTranscribe {
     static func transcribe(_ source: Source) async -> String {
         switch source {
         case .youtube(let s):
+            // Network-bound: honor the web-access / Offline gate that every other
+            // network surface respects (the Settings copy promises "no network call
+            // leaves this Mac" in Offline mode — enforce it here too).
+            guard ToolPolicy.isExternalAllowed else {
+                return ToolPolicy.webToolsDisabledReason() ?? "Web access is turned off."
+            }
             return await youTube(s)
         case .localFile(let url):
+            // On-device Speech — no network, so it stays ungated.
             return await Transcriber.transcribe(url)
         case .remoteMedia(let url):
+            guard ToolPolicy.isExternalAllowed else {
+                return ToolPolicy.webToolsDisabledReason() ?? "Web access is turned off."
+            }
+            // SSRF guard: a pasted http URL must not be able to reach localhost /
+            // cloud-metadata / LAN hosts (same protection Web.fetch enforces).
+            if let reason = Web.ssrfRejectionReason(url) { return reason }
             guard let local = await download(url) else { return "Couldn't download that media URL." }
             return await Transcriber.transcribe(local)
         }

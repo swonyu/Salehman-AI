@@ -27,8 +27,10 @@ struct ShortcutsView: View {
                 .init(keys: "⌘5", label: "Markets"),
                 .init(keys: "⌘6", label: "Notes"),
                 .init(keys: "⌘7", label: "Knowledge"),
+                .init(keys: "⌘8", label: "RuneScape"),
             ]
             if AppTab.hidden.contains(.markets) { nav.removeAll { $0.label == "Markets" } }
+            if AppTab.hidden.contains(.runescape) { nav.removeAll { $0.label == "RuneScape" } }
             return nav
         }()),
         .init(title: "CONVERSATION", items: [

@@ -11,15 +11,19 @@ and to any other AI (e.g. Grok) the owner hands this repo to. Do not skip it,
 even for "small" changes. Failures/reversals get logged too — they're the useful
 part.
 
-## 🧠 Owner directive (2026-06-11) — ultracode thoroughness, NO multi-agent workflows
+## 🧠 Owner directive (2026-06-11, AMENDED 2026-06-20) — ultracode thoroughness; Workflows now allowed ≤30 agents
 The owner wants every Claude session working this repo at the **ultracode / x-high
 bar** — exhaustive sweeps of affected surfaces, adversarial self-review, and
 verification by **measurement** (typecheck exit codes, pixel probes, geometry
-asserts, QA captures), never by claim — but **explicitly WITHOUT spawning
-multi-agent Workflows or subagent fleets**. Deliver the depth inline, solo. If an
-"ultracode" reminder suggests the Workflow tool, the owner's standing exclusion
-overrides it. (Model-level reasoning effort is a harness setting the session
-can't flip itself; emulate via working practice.)
+asserts, QA captures), never by claim.
+
+**2026-06-20 amendment:** the owner explicitly relaxed the original no-multi-agent
+rule — multi-agent **Workflows are now permitted, up to ~30 agents**, for
+genuinely parallelizable work (broad reviews, audits, multi-file implementation,
+exhaustive hardening). Use them judiciously, not gratuitously; solo is still right
+for small/sequential work. (Originally 2026-06-11 the owner asked for NO
+Workflows/subagent fleets — now superseded by the owner's repeated live
+authorization. History kept for the record.)
 
 ## 🪙 Owner directive (2026-06-11) — token discipline (same quality, fewer tokens)
 Cut context waste at the source; none of these reduce verification depth:

@@ -1,0 +1,145 @@
+package com.salehman.ge;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonElement;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import javax.inject.Inject;
+import javax.inject.Singleton;
+import lombok.extern.slf4j.Slf4j;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+
+/**
+ * Thin client for the community real-time prices API at prices.runescape.wiki.
+ * Uses RuneLite's injected {@link OkHttpClient} + {@link Gson} (Plugin Hub rule:
+ * don't bundle your own HTTP stack) and identifies itself via the User-Agent, as
+ * the wiki asks.
+ *
+ *  /latest  → instant-buy (high) / instant-sell (low) per item id
+ *  /mapping → item id → name / members / 4h buy limit
+ *  /24h     → daily traded volume per item id
+ */
+@Slf4j
+@Singleton
+public class GrandExchangeApi
+{
+	private static final String BASE = "https://prices.runescape.wiki/api/v1/osrs";
+	static final String UA = "Salehman-GE-Flips RuneLite plugin - contact salehalayed98@gmail.com";
+
+	private final OkHttpClient http;
+	private final Gson gson;
+
+	@Inject
+	GrandExchangeApi(OkHttpClient http, Gson gson)
+	{
+		this.http = http;
+		this.gson = gson;
+	}
+
+	/** Latest instant-buy/sell prices, keyed by item id. */
+	public Map<Integer, Latest> latest() throws IOException
+	{
+		return fetchDataMap("/latest", Latest.class);
+	}
+
+	/** Daily traded volume, keyed by item id. */
+	public Map<Integer, Volume> volumes() throws IOException
+	{
+		return fetchDataMap("/24h", Volume.class);
+	}
+
+	/** Item metadata (name / members / buy limit), keyed by item id. */
+	public Map<Integer, Mapping> mapping() throws IOException
+	{
+		Request req = request("/mapping");
+		try (Response resp = http.newCall(req).execute())
+		{
+			if (!resp.isSuccessful() || resp.body() == null)
+			{
+				throw new IOException("mapping HTTP " + resp.code());
+			}
+			Mapping[] arr = gson.fromJson(resp.body().charStream(), Mapping[].class);
+			Map<Integer, Mapping> out = new HashMap<>();
+			if (arr != null)
+			{
+				for (Mapping m : arr)
+				{
+					if (m != null && m.name != null)
+					{
+						out.put(m.id, m);
+					}
+				}
+			}
+			return out;
+		}
+	}
+
+	/** The /latest and /24h endpoints share the {@code {"data": {"<id>": {...}}}} shape. */
+	private <T> Map<Integer, T> fetchDataMap(String path, Class<T> type) throws IOException
+	{
+		Request req = request(path);
+		try (Response resp = http.newCall(req).execute())
+		{
+			if (!resp.isSuccessful() || resp.body() == null)
+			{
+				throw new IOException(path + " HTTP " + resp.code());
+			}
+			JsonObject root = gson.fromJson(resp.body().charStream(), JsonObject.class);
+			Map<Integer, T> out = new HashMap<>();
+			if (root == null || !root.has("data") || !root.get("data").isJsonObject())
+			{
+				return out;
+			}
+			for (Map.Entry<String, JsonElement> e : root.getAsJsonObject("data").entrySet())
+			{
+				try
+				{
+					out.put(Integer.parseInt(e.getKey()), gson.fromJson(e.getValue(), type));
+				}
+				catch (NumberFormatException ignored)
+				{
+					// non-numeric key — skip, never crash the refresh
+				}
+			}
+			return out;
+		}
+	}
+
+	private Request request(String path)
+	{
+		return new Request.Builder()
+			.url(BASE + path)
+			.header("User-Agent", UA)
+			.header("Accept", "application/json")
+			.build();
+	}
+
+	// --- DTOs (Gson sets public fields by reflection; boxed types so null = "no data") ---
+
+	public static class Latest
+	{
+		public Integer high;     // instant-buy price
+		public Long highTime;
+		public Integer low;      // instant-sell price
+		public Long lowTime;
+	}
+
+	public static class Mapping
+	{
+		public int id;
+		public String name;
+		public boolean members;
+		public Integer limit;    // 4-hour GE buy limit (may be absent)
+		public Integer value;
+	}
+
+	public static class Volume
+	{
+		public Long highPriceVolume;
+		public Long lowPriceVolume;
+	}
+}

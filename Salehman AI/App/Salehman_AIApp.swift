@@ -103,6 +103,10 @@ struct Salehman_AIApp: App {
                     .keyboardShortcut("6", modifiers: .command)
                 Button("Knowledge") { app.selectedTab = .knowledge }
                     .keyboardShortcut("7", modifiers: .command)
+                if !AppTab.hidden.contains(.runescape) {
+                    Button("RuneScape") { app.selectedTab = .runescape }
+                        .keyboardShortcut("8", modifiers: .command)
+                }
                 Divider()
                 Button("Keyboard Shortcuts") { app.showShortcutsRequested = true }
                     .keyboardShortcut("/", modifiers: .command)

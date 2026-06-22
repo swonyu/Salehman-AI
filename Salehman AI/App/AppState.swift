@@ -57,18 +57,21 @@ final class AppState: ObservableObject {
 /// The top-level surfaces.
 enum AppTab: String, CaseIterable, Identifiable {
     // Order defines the tab-bar layout AND ⌘-number mapping: Today (Home) first.
-    case today, chat, code, agents, markets, scratchpad, knowledge
+    // `runescape` is appended last so ⌘1–7 stay put; its pill renders right
+    // after Markets (pills follow `allCases` order, minus the corner tabs).
+    case today, chat, code, agents, markets, scratchpad, knowledge, runescape
     var id: String { rawValue }
 
-    /// Owner directive (2026-06-12): "HIDE THE MARKETS TAB UNTIL FURTHER
-    /// NOTICE." A hidden tab disappears from every navigation surface (tab
-    /// bar, View menu ⌘-number, command palette, shortcuts sheet, Today nav
-    /// card, the tab-bar market pill) — but its view stays compiled and
-    /// programmatically reachable (`app.selectedTab = .markets` still works,
-    /// so the QA harness keeps capturing it). The remaining ⌘-numbers keep
-    /// their tabs (⌘5 simply does nothing) so muscle memory survives the
-    /// restore. **Restore = make this set empty.**
-    nonisolated static let hidden: Set<AppTab> = [.markets]
+    /// The hide-set mechanism (a hidden tab vanishes from every navigation
+    /// surface at once — tab bar, View-menu ⌘-number, command palette, shortcuts
+    /// sheet, Today nav card, the tab-bar market pill — while its view stays
+    /// compiled and programmatically reachable for the QA harness).
+    ///
+    /// History: Markets was hidden 2026-06-12 ("HIDE THE MARKETS TAB UNTIL
+    /// FURTHER NOTICE") while it was sample-only. **Restored 2026-06-20** at the
+    /// owner's request once a live worldwide feed landed — the set is now empty.
+    /// To hide a tab again, add it here.
+    nonisolated static let hidden: Set<AppTab> = []
 
     /// The user-visible tab roster — navigation surfaces iterate THIS, never
     /// `allCases`, so a hidden tab vanishes everywhere at once.
@@ -93,6 +96,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .markets:    return "Markets"
         case .scratchpad: return "Notes"
         case .knowledge:  return "Knowledge"
+        case .runescape:  return "RuneScape"
         }
     }
 
@@ -105,6 +109,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .markets:    return "chart.line.uptrend.xyaxis"
         case .scratchpad: return "checklist"
         case .knowledge:  return "books.vertical.fill"
+        case .runescape:  return "building.columns.fill"
         }
     }
 }

@@ -14,6 +14,7 @@ struct RootView: View {
     @State private var visitedKnowledge = false
     @State private var visitedToday = false
     @State private var visitedCode = false
+    @State private var visitedRunescape = false
     // The chat is the HEAVIEST view tree in the app and the default tab is Today —
     // building ContentView at launch was a large slice of "the app always lags
     // when launched" (launch profile: main thread pegged in AttributeGraph /
@@ -96,6 +97,13 @@ struct RootView: View {
                             .allowsHitTesting(app.selectedTab == .today)
                             .animation(DS.Motion.spring, value: app.selectedTab)
                     }
+
+                    if visitedRunescape || app.selectedTab == .runescape {
+                        RuneScapeMarketView()
+                            .opacity(app.selectedTab == .runescape ? 1 : 0)
+                            .allowsHitTesting(app.selectedTab == .runescape)
+                            .animation(DS.Motion.spring, value: app.selectedTab)
+                    }
                 }
 
                 // Always-visible shortcut hints, pinned to the bottom.
@@ -111,6 +119,7 @@ struct RootView: View {
             if tab == .scratchpad { visitedScratchpad = true }
             if tab == .knowledge  { visitedKnowledge = true }
             if tab == .today      { visitedToday = true }
+            if tab == .runescape  { visitedRunescape = true }
         }
         // Signals ContentView owns the UI for (its Settings/Live sheets, new-chat,
         // chat search): if the chat isn't mounted yet, mount + re-deliver.

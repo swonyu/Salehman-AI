@@ -21,6 +21,9 @@ final class StockSageMonitor {
 
     private var task: Task<Void, Never>?
     private(set) var isRunning = false
+    /// The last strong recommendation fired per symbol, so we don't re-spam the
+    /// SAME alert every cycle (only a NEW or CHANGED strong signal notifies).
+    private var lastAlerted: [String: StockSageRecommendation] = [:]
 
     enum MonitorError: LocalizedError {
         case alreadyRunning
@@ -41,6 +44,9 @@ final class StockSageMonitor {
 
         task = Task { [weak self] in
             while !Task.isCancelled {
+                // Evaluate on LIVE quotes: pull a fresh worldwide snapshot before
+                // each cycle (no-ops cleanly when offline / web access is off).
+                await StockSageStore.shared.refresh()
                 await self?.runCycle()
                 // Throttle under pressure: concurrencyLimit() folds in both
                 // memory pressure and thermal state. <=1 means "the machine is
@@ -66,14 +72,20 @@ final class StockSageMonitor {
     @discardableResult
     func runCycle(notify: Bool = true) async -> [StockSageSignal] {
         var strong: [StockSageSignal] = []
+        var nowStrong: [String: StockSageRecommendation] = [:]
         for symbol in StockSageStore.shared.fetchAllSymbols() {
             guard let signal = StockSageSignalEngine.generateSignal(for: symbol) else { continue }
             guard signal.recommendation == .strongBuy || signal.recommendation == .strongSell else { continue }
             strong.append(signal)
-            if notify {
+            nowStrong[signal.symbol] = signal.recommendation
+            // Fire only when this symbol's strong signal is NEW or has FLIPPED
+            // (Strong Buy ⇄ Strong Sell) — not the same alert on every poll.
+            if notify, lastAlerted[signal.symbol] != signal.recommendation {
                 await sendAlert(signal: signal, market: symbol.market)
             }
         }
+        // Forget symbols that fell out of "strong" so they can alert again later.
+        if notify { lastAlerted = nowStrong }
         return strong
     }
 

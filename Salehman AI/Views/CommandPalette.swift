@@ -39,6 +39,9 @@ struct CommandPalette: View {
         if !AppTab.hidden.contains(.markets) {
             c.append(.init(title: "Go to Markets", subtitle: "", icon: "chart.line.uptrend.xyaxis") { app.selectedTab = .markets })
         }
+        if !AppTab.hidden.contains(.runescape) {
+            c.append(.init(title: "Go to RuneScape", subtitle: "Live Grand Exchange item prices", icon: "building.columns.fill") { app.selectedTab = .runescape })
+        }
         c += [
             .init(title: "Go to Notes", subtitle: "Your notes & tasks scratchpad", icon: "checklist") { app.selectedTab = .scratchpad },
             .init(title: "Go to Knowledge", subtitle: "Chat with your documents", icon: "books.vertical.fill") { app.selectedTab = .knowledge },
