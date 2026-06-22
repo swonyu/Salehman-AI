@@ -1517,7 +1517,7 @@ struct MarketsView: View {
             Text(trade.symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.85)).frame(width: 64, alignment: .leading).lineLimit(1)
             Text(String(format: "%.2f→%.2f", trade.entry, trade.exitPrice ?? 0)).font(.caption2).foregroundStyle(.secondary)
             Spacer()
-            Text(String(format: "%+.0f", pnl)).font(.system(size: 11, weight: .semibold))
+            Text(String(format: "%+.2f", pnl)).font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(pnl >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
             if let r = trade.realizedR {
                 Text(String(format: "%+.2fR", r)).font(.caption2).foregroundStyle(.secondary).frame(width: 48, alignment: .trailing)
