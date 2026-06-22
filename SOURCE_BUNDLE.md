@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 12:31 +03 · Swift files: 238 · Swift LOC: 45136_
+_Generated: 2026-06-22 12:33 +03 · Swift files: 238 · Swift LOC: 45140_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -11160,7 +11160,7 @@ struct StockSageSymbol: Sendable, Equatable, Identifiable {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageMonitor.swift (110 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageMonitor.swift (114 lines) =====
 ```swift
 import Foundation
 import UserNotifications
@@ -11254,8 +11254,12 @@ final class StockSageMonitor {
                 await sendAlert(signal: signal, market: symbol.market)
             }
         }
-        // Forget symbols that fell out of "strong" so they can alert again later.
-        if liveNotify { lastAlerted = nowStrong }
+        // MERGE rather than replace: update the symbols that are strong now, but KEEP the
+        // last-alerted state of symbols that left "strong". Replacing with only the
+        // currently-strong set would forget a symbol that went strong→hold, so a
+        // strong→hold→strong round-trip would re-fire the identical alert the user already
+        // saw. A genuine flip (Strong Buy⇄Strong Sell) still alerts — the rec differs.
+        if liveNotify { for (sym, rec) in nowStrong { lastAlerted[sym] = rec } }
         return strong
     }
 
@@ -48147,7 +48151,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7616 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7619 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -54647,7 +54651,10 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ## 2026-06-22 · salehman-hardening-sweep workflow landed (50 agents, 2.4M tokens) → HARDENING_BACKLOG.md
 **What:** The whole-app adversarial bug-hunt + money-feature workflow returned 71 findings → 20 confirmed bugs → a 33-item value-ranked, source-verified backlog (`HARDENING_BACKLOG.md`). Top confirmed: playbook 1%-label drift (honesty), holdingPeriod drops breakeven trades, monitor strong→hold→strong re-fire, + PortfolioHeat/TimeStop features + a boundary test sweep.
-**Hardening #1 + #6 (honesty):** `Views/MarketsView`→`StockSage/StockSageExpectedValue.swift` — `MoneyVelocityCopy` playbook hardcoded "1%/trade" while `summary(fraction:)` modeled the drawdown brake at a VARIABLE fraction (label-vs-math drift, an honesty-floor violation at fraction≠0.01). Added `riskFraction` to `MoneyVelocitySummary` (defaulted nonisolated init so existing callers/3 tests still compile), threaded `fraction` through, and the playbook now renders `Int(riskFraction*100)%/trade`. +test: fraction 0.02 → "2%/trade", not "1%/trade". ✅ typecheck clean.
+**Hardening #1 + #6 (honesty):** `Views/MarketsView`→`StockSage/StockSageExpectedValue.swift` — `MoneyVelocityCopy` playbook hardcoded "1%/trade" while `summary(fraction:)` modeled the drawdown brake at a VARIABLE fraction (label-vs-math drift, an honesty-floor violation at fraction≠0.01). Added `riskFraction` to `MoneyVelocitySummary` (defaulted nonisolated init so existing callers/3 tests still compile), threaded `fraction` through, and the playbook now renders `Int(riskFraction*100)%/trade`. +test: fraction 0.02 → "2%/trade", not "1%/trade". ✅ typecheck clean. Committed 46b4f2b.
+**Hardening #2 (bug):** `StockSage/StockSageJournal.swift` — `holdingPeriod` filtered wins (`>0`) and losses (`<0`), so a breakeven (scratch, profit==0) matched neither and silently vanished from the averages + counts, biasing the discipline read by an invisible sample. Fold scratch into the non-win bucket (`<= 0`) and relabel "losers"→"non-winners" (a scratch is not a loss). +test (exit==entry counts, days visible). Committed 0221437.
+**Hardening #3 (bug):** `StockSage/StockSageMonitor.swift` — `runCycle` did `lastAlerted = nowStrong`, dropping symbols that left "strong", so a strongBuy→hold→strongBuy round-trip re-fired the identical alert. Now MERGES (`for (sym,rec) in nowStrong { lastAlerted[sym] = rec }`) — keeps last-alerted state across non-strong states; a genuine flip (rec differs) still alerts. ✅ typecheck clean.
+**Result:** Top 3 confirmed honesty/correctness bugs fixed. NEXT: #5 boundary test sweep, #4 PortfolioHeat, #7 TimeStop. Loop continues autonomously.
 
 ---
 
@@ -57955,7 +57962,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** Lines 370-371 filter wins as profit>0 and losses as profit<0; a closed trade with realizedProfit==0 matches neither and vanishes from avgWinDays/avgLossDays and the win/loss counts. Confirmed in source.
 **Why:** Biases the discipline metric by dropping a real holding-period sample invisibly. Add an avgBreakEvenDays bucket or fold breakeven into the non-win average.
 
-### ⬜ #3 — Alert dedup re-fires on strongBuy→hold→strongBuy round-trip  [high/small, bug]
+### ✅ DONE #3 — Alert dedup re-fires on strongBuy→hold→strongBuy round-trip  [high/small, bug]
 **File:** Salehman AI/StockSage/StockSageMonitor.swift
 **What:** Line 89 already guards so the SAME strong state on consecutive polls does NOT re-alert (severity is therefore medium, not high). But line 94 `lastAlerted = nowStrong` drops any symbol that left strong, so a symbol that goes strong→hold→strong fires the identical alert again. Persist last-alerted per symbol across non-strong states; only reset on a genuine flip.
 **Why:** Repeats an alert the user already saw — erodes trust in the notification, the one push surface.

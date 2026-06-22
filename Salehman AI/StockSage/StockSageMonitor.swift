@@ -90,8 +90,12 @@ final class StockSageMonitor {
                 await sendAlert(signal: signal, market: symbol.market)
             }
         }
-        // Forget symbols that fell out of "strong" so they can alert again later.
-        if liveNotify { lastAlerted = nowStrong }
+        // MERGE rather than replace: update the symbols that are strong now, but KEEP the
+        // last-alerted state of symbols that left "strong". Replacing with only the
+        // currently-strong set would forget a symbol that went strong→hold, so a
+        // strong→hold→strong round-trip would re-fire the identical alert the user already
+        // saw. A genuine flip (Strong Buy⇄Strong Sell) still alerts — the rec differs.
+        if liveNotify { for (sym, rec) in nowStrong { lastAlerted[sym] = rec } }
         return strong
     }
 

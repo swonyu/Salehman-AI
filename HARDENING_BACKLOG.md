@@ -23,7 +23,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** Lines 370-371 filter wins as profit>0 and losses as profit<0; a closed trade with realizedProfit==0 matches neither and vanishes from avgWinDays/avgLossDays and the win/loss counts. Confirmed in source.
 **Why:** Biases the discipline metric by dropping a real holding-period sample invisibly. Add an avgBreakEvenDays bucket or fold breakeven into the non-win average.
 
-### ⬜ #3 — Alert dedup re-fires on strongBuy→hold→strongBuy round-trip  [high/small, bug]
+### ✅ DONE #3 — Alert dedup re-fires on strongBuy→hold→strongBuy round-trip  [high/small, bug]
 **File:** Salehman AI/StockSage/StockSageMonitor.swift
 **What:** Line 89 already guards so the SAME strong state on consecutive polls does NOT re-alert (severity is therefore medium, not high). But line 94 `lastAlerted = nowStrong` drops any symbol that left strong, so a symbol that goes strong→hold→strong fires the identical alert again. Persist last-alerted per symbol across non-strong states; only reset on a genuine flip.
 **Why:** Repeats an alert the user already saw — erodes trust in the notification, the one push surface.
