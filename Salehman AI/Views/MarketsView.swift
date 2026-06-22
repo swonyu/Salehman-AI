@@ -1791,7 +1791,10 @@ struct MarketsView: View {
     private func signalCard(_ sym: StockSageSymbol) -> some View {
         let signal = StockSageSignalEngine.generateSignal(for: sym)
         let change = sym.latest?.changePercent ?? 0
-        let up = change >= 0
+        // A 0.00% day is FLAT, not a green gain — match the ±0.05% neutral band heatColor/sparkColor
+        // already use, so the same field never reads as an up-move here and neutral elsewhere.
+        let flat = abs(change) <= 0.05
+        let up = change > 0
         let hovered = hoveredSignalID == sym.id
         return HStack(spacing: DS.Space.md) {
             VStack(alignment: .leading, spacing: 2) {
@@ -1807,7 +1810,7 @@ struct MarketsView: View {
                         .animation(DS.Motion.smooth, value: p)
                 }
                 HStack(spacing: 3) {
-                    Image(systemName: up ? "arrow.up.right" : "arrow.down.right").font(.system(size: mvFont9, weight: .bold))
+                    Image(systemName: flat ? "minus" : (up ? "arrow.up.right" : "arrow.down.right")).font(.system(size: mvFont9, weight: .bold))
                         .contentTransition(.symbolEffect(.replace))
                         .animation(DS.Motion.smooth, value: up)
                     Text(String(format: "%+.2f%%", change))
@@ -1815,7 +1818,7 @@ struct MarketsView: View {
                         .contentTransition(.numericText())
                         .animation(DS.Motion.smooth, value: change)
                 }
-                .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
+                .foregroundStyle(flat ? Color.secondary : (up ? DS.Palette.successSoft : DS.Palette.danger))
             }
             if let signal {
                 VStack(alignment: .trailing, spacing: 3) {
@@ -2720,6 +2723,7 @@ struct MarketsView: View {
                             .foregroundStyle(lev.canLoseMoreThanAccount ? DS.Palette.danger : DS.Palette.warningSoft)
                             .fixedSize(horizontal: false, vertical: true)
                             .help(StockSageLeverage.caveat)
+                            .accessibilityLabel("Leverage warning. " + lev.verdict)
                     }
                     // Gap risk: a stop is a TRIGGER, not a fill — show the worst-case 20% gap-through loss.
                     let gapSide: TradeSide = (idea.advice.action == .sell || idea.advice.action == .reduce) ? .short : .long
@@ -2730,6 +2734,7 @@ struct MarketsView: View {
                             .foregroundStyle(gap.exceedsAccount ? DS.Palette.danger : DS.Palette.warningSoft)
                             .fixedSize(horizontal: false, vertical: true)
                             .help(StockSageGapRisk.caveat)
+                            .accessibilityLabel("Gap risk warning. " + gap.verdict)
                     }
                 } else {
                     Text("Enter a valid account size and risk %.").font(.system(size: mvFont9)).foregroundStyle(.secondary)

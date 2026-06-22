@@ -6825,6 +6825,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · A11y/honesty — flat≠green-gain in signalCard; VoiceOver labels on leverage/gap verdicts
+**Files:** `Views/MarketsView.swift` (signalCard flat band + 2 accessibilityLabels). Persisted A11Y_VISUAL_AUDIT.md.
+**What (a11y-visual audit wu8rtkq6m):** (#5, honesty) signalCard used `up = change >= 0`, so a 0.00% day rendered GREEN with an up-arrow while heatColor/sparkColor treat |change|≤0.05% as neutral — the same field read as a gain on one card, flat on another. Now `flat = abs(change) <= 0.05`: a flat day shows a "minus" glyph + Color.secondary, matching the other two surfaces. (#7, safety a11y) the leverage + gap-risk verdict lines I added in 7ff40c4 had no accessibilityLabel, so VoiceOver spoke the raw ⚠︎ glyph in front of the can-lose-more-than-account / 20%-gap-through-stop figures; added "Leverage warning. …" / "Gap risk warning. …" labels (matching the brake/concentration pattern).
+**Verify:** typecheck clean; render UNVERIFIED (Mac). Color is no longer the only cue for flat, and the safety verdicts read intelligibly in VoiceOver.
+**Remaining (A11Y_VISUAL_AUDIT.md): #1 money-velocity card label silences weekly $/R; #2 best-opp label EV-only; #3 size-it-now leverage color-only; #4 rebalance $ at 9pt; #6 compounding color-only; #8 ideaMetric sizes.**
+**Result:** two glanceability/honesty gaps closed; a flat tape no longer looks like a win. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
