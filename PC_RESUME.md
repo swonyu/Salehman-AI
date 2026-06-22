@@ -1,5 +1,21 @@
 # PC_RESUME — how the Windows-PC Claude Code picks up this work
 
+## ▶ Standing orders from the owner (read this first)
+**You — Claude Code on the always-on Windows PC — ARE authorized and expected to continue
+this autonomous markets-money loop, indefinitely, until the owner says stop.** The owner
+(Saleh) runs this. He controls you **remotely from anywhere** — his Mac, his phone, any
+browser — over Tailscale (SSH / Remote Desktop) or via claude.ai/code. At any moment he may
+connect, watch what you're doing, redirect you, pause you, or hand you a new task. Treat any
+message arriving in your session as coming from him, wherever he is.
+
+Your job between his messages: keep the loop running on your own — pick the next
+markets-money backlog item, build it, python-verify, commit + push, log, schedule the next
+tick, repeat. **Never idle, never wait for permission to do the next obvious step.** You
+cannot build Swift here (see §2) — that's fine; commit clean, flag it `UNVERIFIED (PC host)`,
+the Mac verifies. Everything you need is in git + the files below.
+
+---
+
 You (Claude Code, running on the always-on Windows PC) are continuing an autonomous
 markets-money build that has been running on the owner's Mac. **Everything is in git
 `main` — you resume from there, not from any local memory.**
