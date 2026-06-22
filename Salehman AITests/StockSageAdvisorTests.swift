@@ -154,6 +154,19 @@ struct StockSageAdvisorTests {
         }
     }
 
+    @Test func rangeRegimeDoesNotEmitATrendFollowingStrongBuy() {
+        // Strong rise, then 20 bars of chop ABOVE the moving averages: the trend terms want a
+        // Strong Buy, but the recent 20-bar efficiency ratio ≈ 0 → regime .range. A trend-DRIVEN
+        // buy in no-edge chop must become Avoid (stand aside), never a Strong Buy + trade plan.
+        let rise = (0..<230).map { 50.0 + Double($0) * (125.0 / 229) }
+        let tail = (0..<20).map { $0 % 2 == 0 ? 170.0 : 178.0 }   // high chop → not oversold → no bounce
+        let a = StockSageAdvisor.advise(closes: rise + tail)
+        #expect(a.regime == .range)
+        #expect(a.action == .avoid)        // gated: not StrongBuy/Buy (no oversold mean-reversion)
+        #expect(a.stopPrice == nil)        // avoid → no actionable trade plan
+        #expect(a.suggestedWeight == 0)
+    }
+
     @Test func cleanDowntrendIsASellWithNoLongSize() {
         let closes = (1...250).reversed().map(Double.init)
         let a = StockSageAdvisor.advise(closes: closes)

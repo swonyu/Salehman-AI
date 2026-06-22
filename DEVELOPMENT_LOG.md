@@ -6952,6 +6952,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · CORE-MONEY BUG FIX — range regime no longer emits a trend-following Strong Buy
+**Files:** `StockSage/StockSageAdvisor.swift` (regime gate on action), `Salehman AITests/StockSageAdvisorTests.swift` (+test). Persisted JOURNAL_PORTFOLIO_BUGHUNT.md.
+**What (decision-engine bughunt wptj7zxb1 #2, MED — survived refute):** advise() derived `action` from raw `score` with no regime gate, so a noisy-but-rising name (trend/momentum/MACD push score ≥ 0.5, but the 20-bar efficiencyRatio < 0.30 → regime forced .range) emitted a Strong Buy with a stop/target/size — directly contradicting the engine's own "prefer Avoid in chop" design (advise() L183-184). Fix: in a non-trending regime, a trend-DRIVEN buy (.strongBuy/.buy) becomes .avoid; ONLY an oversold mean-reversion bounce (rsi<30 in range, tracked by new rangeOversoldBounce flag) may buy there, and never as a STRONG call. Used `if case` (not ==) for the nonisolated enum match.
+**Verify:** typecheck EXIT=0; +test — a 250-bar rise-then-chop-above-MAs series (python-verified er≈0.02 <0.30, price 178 > sma50 170 > sma200 131, RSI not oversold) now returns regime .range + action .avoid + nil stop + 0 weight (was Strong Buy + plan). Clean uptrends (high er → trending) unaffected.
+**Result:** a "Range-bound" card can no longer show Strong Buy with a trade plan — the action matches the regime the engine itself assigns. NEXT: alerts long-only crossing bug (w9ecjev4i #1, LIVE — short stop-outs missed / false short stop alerts).
+**Result:** ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

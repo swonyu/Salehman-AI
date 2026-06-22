@@ -126,8 +126,9 @@ enum StockSageAdvisor {
 
         // Regime: trending vs choppy decides how to read RSI.
         let trending = er >= 0.30
+        var rangeOversoldBounce = false   // a legit mean-reversion buy in a range (vs a trend-follow trap)
         if !trending {
-            if rsi < 30 { score += 0.25; rationale.append(String(format: "RSI %.0f oversold in a range — bounce setup", rsi)) }
+            if rsi < 30 { score += 0.25; rangeOversoldBounce = true; rationale.append(String(format: "RSI %.0f oversold in a range — bounce setup", rsi)) }
             else if rsi > 70 { score -= 0.25; rationale.append(String(format: "RSI %.0f overbought in a range — fade setup", rsi)) }
         } else {
             if rsi > 80 { score -= 0.10; rationale.append("RSI > 80 — extended; trail stops") }
@@ -182,13 +183,21 @@ enum StockSageAdvisor {
 
         // Score → action. In a choppy regime with no edge, prefer "Avoid" (stand
         // aside) over "Hold" — the research is clear that forcing trades in chop loses.
-        let action: TradeAdvice.Action
+        var action: TradeAdvice.Action
         switch score {
         case 0.5...:        action = .strongBuy
         case 0.2..<0.5:     action = .buy
         case -0.2..<0.2:    action = trending ? .hold : .avoid
         case -0.5 ..< -0.2: action = .reduce
         default:            action = .sell
+        }
+        // Chop has no trend edge — the design (above) prefers Avoid in a range. A trend-DRIVEN buy
+        // in a non-trending regime becomes Avoid (stand aside); only an oversold mean-reversion
+        // bounce may buy there, and never as a STRONG call. Stops a "Range-bound" card from
+        // showing Strong Buy + a full trade plan, which contradicted its own regime label.
+        if !trending {
+            if case .strongBuy = action { action = rangeOversoldBounce ? .buy : .avoid }
+            else if case .buy = action, !rangeOversoldBounce { action = .avoid }
         }
         let conviction = Swift.min(abs(score), 1.0)
         // Only a buy-family verdict gets an actionable trade plan. Gating on the
