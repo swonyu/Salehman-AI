@@ -70,6 +70,7 @@ enum ExitMode: Sendable, Equatable {
     case allAtTarget
     case timeStop(maxBars: Int)
     case chandelierTrail(atrMult: Double, period: Int)
+    case scaleOutLadder(rungs: Int)
 }
 
 enum StockSageBacktester {
@@ -133,6 +134,17 @@ enum StockSageBacktester {
                                          opens: [Double], highs: [Double], lows: [Double], closes: [Double],
                                          n: Int, mode: ExitMode)
         -> (exitIdx: Int, exitPrice: Double, outcome: BacktestTrade.Outcome) {
+        // Scale-out ladder: a multi-fill exit collapsed to one equivalent (blended-R) fill so
+        // run()'s single-exit accounting still holds. Degenerate ladder → fall through to the
+        // fixed walk below (no crash).
+        if case let .scaleOutLadder(rungs) = mode {
+            let entry = opens[entryIdx]
+            if entry > stop,
+               let res = scaleOutLadderExit(entryIdx: entryIdx, entry: entry, stop: stop, target: target,
+                                            opens: opens, highs: highs, lows: lows, closes: closes, n: n, rungs: rungs) {
+                return (res.exitIdx, entry + res.blendedR * (entry - stop), res.outcome)
+            }
+        }
         // Precompute the ratcheting trail once for the chandelier mode (nil otherwise — and
         // nil if ATR can't be computed, in which case we fall back to the fixed stop, no crash).
         var trail: [Double]? = nil
@@ -157,6 +169,43 @@ enum StockSageBacktester {
             j += 1
         }
         return (n - 1, closes[n - 1], .openAtEnd)
+    }
+
+    /// Scale-out ladder exit for a LONG: bank an equal fraction at each `StockSagePartialLadder`
+    /// rung as price reaches it, the remainder riding. Fills happen at the RESTING rung level
+    /// even when a bar gaps through it (a gap can't pay you more than your limit). The stop
+    /// applies to whatever is still open and WINS ties (checked before rungs). Returns the
+    /// blended realized R across all chunks, the bar the position fully closes, and a
+    /// representative outcome. nil if the ladder is degenerate. Realized R ≤ the ladder's
+    /// theoretical blendedExitR — banking early can only lower it (equal only when every rung
+    /// fills). `internal` so it's unit-tested directly.
+    nonisolated static func scaleOutLadderExit(entryIdx: Int, entry: Double, stop: Double, target: Double,
+                                               opens: [Double], highs: [Double], lows: [Double], closes: [Double],
+                                               n: Int, rungs: Int)
+        -> (exitIdx: Int, blendedR: Double, outcome: BacktestTrade.Outcome)? {
+        guard entry > stop,
+              let ladder = StockSagePartialLadder.levels(entry: entry, stop: stop, target: target, rungs: rungs)
+        else { return nil }
+        let risk = entry - stop
+        var remaining = 1.0, realized = 0.0, nextRung = 0
+        var j = entryIdx
+        while j < n {
+            // Stop wins ties: the still-open fraction exits at the gap-honest stop fill.
+            if lows[j] <= stop {
+                realized += remaining * (Swift.min(stop, opens[j]) - entry) / risk
+                return (j, realized, .stop)
+            }
+            // Bank each rung reached this bar at its RESTING price (not the gapped high).
+            while nextRung < ladder.rungs.count, highs[j] >= ladder.rungs[nextRung].price {
+                realized += ladder.rungs[nextRung].fraction * ladder.rungs[nextRung].rMultiple
+                remaining -= ladder.rungs[nextRung].fraction
+                nextRung += 1
+            }
+            if nextRung >= ladder.rungs.count { return (j, realized, .target) }   // last rung == target
+            j += 1
+        }
+        realized += remaining * (closes[n - 1] - entry) / risk   // remainder closes at the last bar
+        return (n - 1, realized, .openAtEnd)
     }
 
     /// Ratcheting Chandelier trail for a LONG. For each bar AFTER entry, the raw stop is

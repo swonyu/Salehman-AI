@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 16:00 +03 · Swift files: 246 · Swift LOC: 46040_
+_Generated: 2026-06-22 16:09 +03 · Swift files: 246 · Swift LOC: 46109_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -9021,7 +9021,7 @@ enum StockSageAllocation {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageBacktester.swift (259 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageBacktester.swift (308 lines) =====
 ```swift
 import Foundation
 
@@ -9095,6 +9095,7 @@ enum ExitMode: Sendable, Equatable {
     case allAtTarget
     case timeStop(maxBars: Int)
     case chandelierTrail(atrMult: Double, period: Int)
+    case scaleOutLadder(rungs: Int)
 }
 
 enum StockSageBacktester {
@@ -9158,6 +9159,17 @@ enum StockSageBacktester {
                                          opens: [Double], highs: [Double], lows: [Double], closes: [Double],
                                          n: Int, mode: ExitMode)
         -> (exitIdx: Int, exitPrice: Double, outcome: BacktestTrade.Outcome) {
+        // Scale-out ladder: a multi-fill exit collapsed to one equivalent (blended-R) fill so
+        // run()'s single-exit accounting still holds. Degenerate ladder → fall through to the
+        // fixed walk below (no crash).
+        if case let .scaleOutLadder(rungs) = mode {
+            let entry = opens[entryIdx]
+            if entry > stop,
+               let res = scaleOutLadderExit(entryIdx: entryIdx, entry: entry, stop: stop, target: target,
+                                            opens: opens, highs: highs, lows: lows, closes: closes, n: n, rungs: rungs) {
+                return (res.exitIdx, entry + res.blendedR * (entry - stop), res.outcome)
+            }
+        }
         // Precompute the ratcheting trail once for the chandelier mode (nil otherwise — and
         // nil if ATR can't be computed, in which case we fall back to the fixed stop, no crash).
         var trail: [Double]? = nil
@@ -9182,6 +9194,43 @@ enum StockSageBacktester {
             j += 1
         }
         return (n - 1, closes[n - 1], .openAtEnd)
+    }
+
+    /// Scale-out ladder exit for a LONG: bank an equal fraction at each `StockSagePartialLadder`
+    /// rung as price reaches it, the remainder riding. Fills happen at the RESTING rung level
+    /// even when a bar gaps through it (a gap can't pay you more than your limit). The stop
+    /// applies to whatever is still open and WINS ties (checked before rungs). Returns the
+    /// blended realized R across all chunks, the bar the position fully closes, and a
+    /// representative outcome. nil if the ladder is degenerate. Realized R ≤ the ladder's
+    /// theoretical blendedExitR — banking early can only lower it (equal only when every rung
+    /// fills). `internal` so it's unit-tested directly.
+    nonisolated static func scaleOutLadderExit(entryIdx: Int, entry: Double, stop: Double, target: Double,
+                                               opens: [Double], highs: [Double], lows: [Double], closes: [Double],
+                                               n: Int, rungs: Int)
+        -> (exitIdx: Int, blendedR: Double, outcome: BacktestTrade.Outcome)? {
+        guard entry > stop,
+              let ladder = StockSagePartialLadder.levels(entry: entry, stop: stop, target: target, rungs: rungs)
+        else { return nil }
+        let risk = entry - stop
+        var remaining = 1.0, realized = 0.0, nextRung = 0
+        var j = entryIdx
+        while j < n {
+            // Stop wins ties: the still-open fraction exits at the gap-honest stop fill.
+            if lows[j] <= stop {
+                realized += remaining * (Swift.min(stop, opens[j]) - entry) / risk
+                return (j, realized, .stop)
+            }
+            // Bank each rung reached this bar at its RESTING price (not the gapped high).
+            while nextRung < ladder.rungs.count, highs[j] >= ladder.rungs[nextRung].price {
+                realized += ladder.rungs[nextRung].fraction * ladder.rungs[nextRung].rMultiple
+                remaining -= ladder.rungs[nextRung].fraction
+                nextRung += 1
+            }
+            if nextRung >= ladder.rungs.count { return (j, realized, .target) }   // last rung == target
+            j += 1
+        }
+        realized += remaining * (closes[n - 1] - entry) / risk   // remainder closes at the last bar
+        return (n - 1, realized, .openAtEnd)
     }
 
     /// Ratcheting Chandelier trail for a LONG. For each bar AFTER entry, the raw stop is
@@ -42590,7 +42639,7 @@ struct StockSageBacktestTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageBacktesterTests.swift (171 lines) =====
+===== FILE: Salehman AITests/StockSageBacktesterTests.swift (191 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -42704,6 +42753,26 @@ struct StockSageBacktesterTests {
         let s = StockSageBacktester.simulateExit(entryIdx: 1, stop: 5, target: 20,
                     opens: opens, highs: highs, lows: lows2, closes: closes, n: 6, mode: .timeStop(maxBars: 2))
         #expect(s.outcome == .stop && s.exitIdx == 2 && s.exitPrice == 5)
+    }
+
+    @Test func scaleOutLadderBanksRungsHonestlyAtRestingLevels() {
+        // entry 100, stop 90 (risk 10), target 120 (2R), 2 rungs → rung1 @110 (1R), rung2 @120 (2R),
+        // each half. blendedExitR = 0.5·1 + 0.5·2 = 1.5. (python-verified fills)
+        let blended = StockSagePartialLadder.levels(entry: 100, stop: 90, target: 120, rungs: 2)!.blendedExitR
+        #expect(abs(blended - 1.5) < 1e-9)
+        // Full winner: price reaches both rungs → realized == blendedExitR exactly.
+        let full = StockSageBacktester.scaleOutLadderExit(entryIdx: 0, entry: 100, stop: 90, target: 120,
+            opens: [100,105,112,118], highs: [101,111,121,121], lows: [99,104,111,117], closes: [100,110,120,120], n: 4, rungs: 2)!
+        #expect(full.exitIdx == 2 && abs(full.blendedR - 1.5) < 1e-9 && full.outcome == .target)
+        // Rung 1 then a stop: banking the first half turns a would-be −1R into net 0R (< theoretical).
+        let partial = StockSageBacktester.scaleOutLadderExit(entryIdx: 0, entry: 100, stop: 90, target: 120,
+            opens: [100,105,108], highs: [101,111,109], lows: [99,104,88], closes: [100,110,90], n: 3, rungs: 2)!
+        #expect(partial.outcome == .stop && abs(partial.blendedR - 0.0) < 1e-9)
+        #expect(partial.blendedR < blended)                      // banking early can only lower realized R
+        // A bar that GAPS over both rungs fills at the resting 110/120, NOT the 125 high.
+        let gap = StockSageBacktester.scaleOutLadderExit(entryIdx: 0, entry: 100, stop: 90, target: 120,
+            opens: [100,105,124], highs: [101,109,125], lows: [99,104,123], closes: [100,108,124], n: 3, rungs: 2)!
+        #expect(abs(gap.blendedR - 1.5) < 1e-9 && gap.outcome == .target)   // not inflated by the gap
     }
 
     @Test func chandelierTrailBanksTheGainEarlierThanAllAtTarget() {
@@ -49333,7 +49402,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7753 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7761 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -55970,6 +56039,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · EXIT #3 — scale-out ladder simulator (.scaleOutLadder) — EXIT backlog complete
+**Files:** `StockSage/StockSageBacktester.swift` (ExitMode +scaleOutLadder; +scaleOutLadderExit), `Salehman AITests/StockSageBacktesterTests.swift` (+1 test).
+**What:** `.scaleOutLadder(rungs)` ExitMode + pure `scaleOutLadderExit`. Banks an equal fraction at each StockSagePartialLadder rung as price reaches it, the remainder riding; the stop applies to whatever is still open and WINS ties (checked before rungs); a bar that GAPS through a rung fills at the RESTING rung level, never the gapped high (a gap can't pay more than your limit). Collapses the multi-fill exit to one equivalent blended-R fill so run()'s single-exit accounting holds. Golden master intact (scaleOutLadder branch only triggers for that mode).
+**Verify:** typecheck clean; python-verified — blendedExitR(100/90/120,2)=1.5; full winner realized==1.5 (==theoretical, the boundary); rung1-then-stop = 0R (banking the half turned a −1R into net 0, < theoretical); gap-over-both-rungs fills at 110/120 not the 125 high → 1.5 not inflated. Test asserts all three + realized ≤ theoretical.
+**Result:** EXIT_BACKLOG COMPLETE — the backtester now A/B-measures all-at-target vs time-stop vs ratcheting-trail vs scale-out, all no-look-ahead, on REAL history. Exits are where most edge is won/lost; now it's measurable. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -58531,7 +58608,7 @@ nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200,
 **signature:** nonisolated static func trailLevels(highs: [Double], lows: [Double], closes: [Double], entryIndex: Int, atrMult: Double = 3.0, period: Int = 14) -> [Double]?  // one ratcheting stop per post-entry bar, monotonic non-decreasing for a long; nil if ATR unavailable
 **testIdea:** 50-bar series, entry at bar 10. New high 110 at bar 30 with ATR=2, mult=3 -> stop 104. New high 115 at bar 40 -> stop 109. Bar 45 retraces to 108 (high still 115) -> stop STAYS 109, never 108-6. Assert: levels is monotonic non-decreasing (zip(levels, levels.dropFirst()).allSatisfy(<=)). Edge: entry == lastIndex -> empty/nil. Cross-check the FINAL element equals StockSageTrailingStop.suggest(...).level on the same window (consistency with the existing static engine).
 
-### ⬜ #3 — Pure scale-out simulator (rung-fill, conservative intra-bar order) feeding the ladder ExitMode  [medium]
+### ✅ DONE #3 — Pure scale-out simulator (rung-fill, conservative intra-bar order) feeding the ladder ExitMode  [medium]
 **signature:** struct LadderExitEvent: Sendable, Equatable { let barIndex: Int; let price: Double; let fraction: Double; let r: Double }
 
 nonisolated static func scaleOut(entry: Double, stop: Double, ladder: PartialLadder, opens: [Double], highs: [Double], lows: [Double], startIndex: Int) -> (events: [LadderExitEvent], blendedRealizedR: Double, exitIndex: Int)?

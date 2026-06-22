@@ -17,7 +17,7 @@ nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200,
 **signature:** nonisolated static func trailLevels(highs: [Double], lows: [Double], closes: [Double], entryIndex: Int, atrMult: Double = 3.0, period: Int = 14) -> [Double]?  // one ratcheting stop per post-entry bar, monotonic non-decreasing for a long; nil if ATR unavailable
 **testIdea:** 50-bar series, entry at bar 10. New high 110 at bar 30 with ATR=2, mult=3 -> stop 104. New high 115 at bar 40 -> stop 109. Bar 45 retraces to 108 (high still 115) -> stop STAYS 109, never 108-6. Assert: levels is monotonic non-decreasing (zip(levels, levels.dropFirst()).allSatisfy(<=)). Edge: entry == lastIndex -> empty/nil. Cross-check the FINAL element equals StockSageTrailingStop.suggest(...).level on the same window (consistency with the existing static engine).
 
-### ⬜ #3 — Pure scale-out simulator (rung-fill, conservative intra-bar order) feeding the ladder ExitMode  [medium]
+### ✅ DONE #3 — Pure scale-out simulator (rung-fill, conservative intra-bar order) feeding the ladder ExitMode  [medium]
 **signature:** struct LadderExitEvent: Sendable, Equatable { let barIndex: Int; let price: Double; let fraction: Double; let r: Double }
 
 nonisolated static func scaleOut(entry: Double, stop: Double, ladder: PartialLadder, opens: [Double], highs: [Double], lows: [Double], startIndex: Int) -> (events: [LadderExitEvent], blendedRealizedR: Double, exitIndex: Int)?

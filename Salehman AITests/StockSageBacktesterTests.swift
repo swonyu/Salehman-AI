@@ -112,6 +112,26 @@ struct StockSageBacktesterTests {
         #expect(s.outcome == .stop && s.exitIdx == 2 && s.exitPrice == 5)
     }
 
+    @Test func scaleOutLadderBanksRungsHonestlyAtRestingLevels() {
+        // entry 100, stop 90 (risk 10), target 120 (2R), 2 rungs → rung1 @110 (1R), rung2 @120 (2R),
+        // each half. blendedExitR = 0.5·1 + 0.5·2 = 1.5. (python-verified fills)
+        let blended = StockSagePartialLadder.levels(entry: 100, stop: 90, target: 120, rungs: 2)!.blendedExitR
+        #expect(abs(blended - 1.5) < 1e-9)
+        // Full winner: price reaches both rungs → realized == blendedExitR exactly.
+        let full = StockSageBacktester.scaleOutLadderExit(entryIdx: 0, entry: 100, stop: 90, target: 120,
+            opens: [100,105,112,118], highs: [101,111,121,121], lows: [99,104,111,117], closes: [100,110,120,120], n: 4, rungs: 2)!
+        #expect(full.exitIdx == 2 && abs(full.blendedR - 1.5) < 1e-9 && full.outcome == .target)
+        // Rung 1 then a stop: banking the first half turns a would-be −1R into net 0R (< theoretical).
+        let partial = StockSageBacktester.scaleOutLadderExit(entryIdx: 0, entry: 100, stop: 90, target: 120,
+            opens: [100,105,108], highs: [101,111,109], lows: [99,104,88], closes: [100,110,90], n: 3, rungs: 2)!
+        #expect(partial.outcome == .stop && abs(partial.blendedR - 0.0) < 1e-9)
+        #expect(partial.blendedR < blended)                      // banking early can only lower realized R
+        // A bar that GAPS over both rungs fills at the resting 110/120, NOT the 125 high.
+        let gap = StockSageBacktester.scaleOutLadderExit(entryIdx: 0, entry: 100, stop: 90, target: 120,
+            opens: [100,105,124], highs: [101,109,125], lows: [99,104,123], closes: [100,108,124], n: 3, rungs: 2)!
+        #expect(abs(gap.blendedR - 1.5) < 1e-9 && gap.outcome == .target)   // not inflated by the gap
+    }
+
     @Test func chandelierTrailBanksTheGainEarlierThanAllAtTarget() {
         // A long that rises to a peak then pulls back. Stop 90 / target 200 are never hit, so
         // all-at-target rides to the last bar's close (112); the ratcheting trail catches the
