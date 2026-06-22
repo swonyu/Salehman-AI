@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 09:09 +03 · Swift files: 224 · Swift LOC: 43907_
+_Generated: 2026-06-22 09:18 +03 · Swift files: 226 · Swift LOC: 44016_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -13128,6 +13128,64 @@ enum StockSageStrategyBacktest {
 }
 ```
 
+===== FILE: Salehman AI/StockSage/StockSageTodayPlan.swift (54 lines) =====
+```swift
+import Foundation
+
+// MARK: - Today's plan
+//
+// Composes the already-tested pieces — the best positive-EV opportunity, its pre-trade
+// GATE verdict, and the position SIZE — into one copyable, ordered checklist: "here's
+// the single best thing to do right now, whether the gate clears it, and exactly how
+// big." Pure builder over verified engines. Honesty: estimates, not advice; clearing
+// the gate isn't a win, it's "not obviously reckless."
+
+enum StockSageTodayPlan {
+    /// Build the plan text for one idea (typically the best opportunity). Returns a
+    /// multi-line checklist. `account`/`riskFraction` add the concrete share size when set.
+    nonisolated static func build(idea: StockSageIdea, ev: ExpectedValue?,
+                                  account: Double?, riskFraction: Double?,
+                                  daysToEarnings: Int? = nil) -> String {
+        let a = idea.advice
+        let entry = idea.price
+        let rf = Swift.max(0, riskFraction ?? 0)
+        let rr: Double? = {
+            guard let s = a.stopPrice, let t = a.targetPrice else { return nil }
+            let risk = abs(entry - s)
+            guard risk > 0 else { return nil }
+            return abs(t - entry) / risk
+        }()
+        let gate = StockSageTradeGate.evaluate(hasStop: a.stopPrice != nil, rewardToRisk: rr,
+                                               riskFraction: rf > 0 ? rf : 0.01, daysToEarnings: daysToEarnings)
+
+        var lines = ["Today's plan — estimates, not advice. Size with a stop; risk control > signal."]
+        var n = 1
+        lines.append("\(n). Best bet: \(idea.symbol) (\(a.action.rawValue))"
+            + (ev.map { String(format: " — est. EV %+.2fR", $0.evR) } ?? "")); n += 1
+
+        let gateExtra = (gate.fails > 0 || gate.warns > 0) ? " (\(gate.fails) fail, \(gate.warns) warn)" : ""
+        lines.append("\(n). Gate: \(gate.decision.rawValue)\(gateExtra)"); n += 1
+
+        if let s = a.stopPrice {
+            var size = ""
+            if let acct = account, acct > 0, rf > 0,
+               let ps = StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: entry, stop: s) {
+                size = " — \(ps.shares) shares ≈ \(Int(ps.dollarsAtRisk.rounded())) at risk (\(Int(ps.pctOfAccount.rounded()))% of acct)"
+            }
+            lines.append("\(n). Entry ~\(fmt(entry)), stop \(fmt(s))"
+                + (a.targetPrice.map { ", target \(fmt($0))" } ?? "") + size); n += 1
+        } else {
+            lines.append("\(n). No stop defined — DO NOT enter until you set one (risk is undefined)."); n += 1
+        }
+
+        lines.append("\(n). Rule: risk small per trade, always a stop, never chase. The gate and EV are estimates, not a forecast.")
+        return lines.joined(separator: "\n")
+    }
+
+    private nonisolated static func fmt(_ v: Double) -> String { String(format: "%.2f", v) }
+}
+```
+
 ===== FILE: Salehman AI/StockSage/StockSageTradeGate.swift (88 lines) =====
 ```swift
 import Foundation
@@ -25750,7 +25808,7 @@ final class MarketStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/Views/MarketsView.swift (2917 lines) =====
+===== FILE: Salehman AI/Views/MarketsView.swift (2935 lines) =====
 ```swift
 import SwiftUI
 import AppKit   // NSPasteboard for the trade-plan copy
@@ -27752,6 +27810,7 @@ struct MarketsView: View {
     @ViewBuilder private var bestOpportunityCard: some View {
         if let best = StockSageExpectedValue.bestOpportunity(store.ideas) {
             let idea = best.idea, ev = best.ev
+            VStack(alignment: .leading, spacing: 6) {
             Button { selectedIdea = idea } label: {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
@@ -27789,6 +27848,23 @@ struct MarketsView: View {
             }
             .buttonStyle(LuxPressStyle())
             .accessibilityLabel("Best opportunity: \(idea.symbol), estimated EV \(String(format: "%.2f", ev.evR)) R")
+            HStack(spacing: 6) {
+                Spacer()
+                Button {
+                    let plan = StockSageTodayPlan.build(
+                        idea: idea, ev: ev,
+                        account: Double(sizerAccount),
+                        riskFraction: Double(sizerRiskPct).map { $0 / 100 },
+                        daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil)
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(plan, forType: .string)
+                } label: {
+                    Label("Copy today's plan", systemImage: "checklist").font(.system(size: mvFont9, weight: .medium))
+                }
+                .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+                .help("Copy a checklist — best bet, the pre-trade gate verdict, and the size — to the clipboard. Estimates, not advice.")
+            }
+            }
         }
     }
 
@@ -43703,6 +43779,47 @@ struct StockSageStoreTests {
 }
 ```
 
+===== FILE: Salehman AITests/StockSageTodayPlanTests.swift (37 lines) =====
+```swift
+import Testing
+import Foundation
+@testable import Salehman_AI
+
+// MARK: - Today's plan (pure compose)
+
+struct StockSageTodayPlanTests {
+
+    private func idea(_ symbol: String, action: TradeAdvice.Action = .strongBuy, conviction: Double,
+                      stop: Double?, target: Double?) -> StockSageIdea {
+        StockSageIdea(symbol: symbol, market: "M", price: 100,
+                      advice: TradeAdvice(action: action, conviction: conviction, regime: .bullTrend, rationale: [],
+                                          stopPrice: stop, targetPrice: target, suggestedWeight: 0.05, caveat: "x"),
+                      spark: [])
+    }
+
+    @Test func composesBestGateSizeAndCaveat() {
+        let i = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
+        let plan = StockSageTodayPlan.build(idea: i, ev: StockSageExpectedValue.ev(for: i),
+                                            account: 10_000, riskFraction: 0.01)
+        #expect(plan.contains("BTC-USD"))
+        #expect(plan.contains("Gate"))
+        #expect(plan.contains("Clear to trade"))          // stop + 4:1 RR + 1% risk → clears
+        #expect(plan.lowercased().contains("stop"))
+        #expect(plan.lowercased().contains("estimate"))   // honesty
+        #expect(plan.contains("1.") && plan.contains("2.") && plan.contains("3."))
+        #expect(plan.contains("shares"))                  // size present (account+risk supplied)
+    }
+
+    @Test func noStopWarnsAndGateBlocks() {
+        let i = idea("X", conviction: 0.9, stop: nil, target: nil)
+        let plan = StockSageTodayPlan.build(idea: i, ev: nil, account: nil, riskFraction: nil)
+        #expect(plan.lowercased().contains("no stop"))
+        #expect(plan.contains("Don't take this trade"))   // gate blocks on no stop
+        #expect(!plan.contains("shares"))                 // no account → no size line
+    }
+}
+```
+
 ===== FILE: Salehman AITests/StockSageTradeGateTests.swift (49 lines) =====
 ```swift
 import Testing
@@ -46862,7 +46979,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7508 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7513 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -53255,6 +53372,11 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Files:** `StockSage/StockSageJournal.swift` (+`YearlyPnL`/`yearlyPnL` + store accessor), `Views/MarketsView.swift` ("By year" journal section), `Salehman AITests/StockSageJournalTests.swift` (+1 test).
 **What & why:** New-value build #5 — the journal had monthly P&L in R only; added a calendar-year rollup with the **realized $** the owner actually made/lost, plus R, win-rate, and trade count, newest-first — for end-of-year record-keeping. `yearlyPnL(_:)` groups CLOSED trades by UTC year (reusing `TradeRecord.realizedProfit`/`realizedR`). The journal shows "By year (realized — record-keeping, not tax advice): 2026 · 7 tr · 57% win · +$2,340 · +6.1R". Used `.formatted(.number…sign(.always))` for the $ (not the unreliable `%+,.0f` printf grouping). Honest: your own closed trades, NOT tax advice. 1 test, PYTHON-VERIFIED: 2025 = $50/+0.5R/1-of-2 win, 2026 = $100/+2R/1.0 win, sorted [2026, 2025]; empty → [].
 **Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 5 new-value features today (#84–#88). The owner can see realized $ per year at a glance. NEXT: multi-currency portfolio, or a one-tap session/day plan. Committed + pushed. Autonomous /loop — build mode.
+
+## 2026-06-21 · NEW FEATURE: One-tap "today's plan" (best + gate + size checklist)
+**Files:** `StockSage/StockSageTodayPlan.swift` (NEW), `Views/MarketsView.swift` ("Copy today's plan" button on the best-opportunity card), `Salehman AITests/StockSageTodayPlanTests.swift` (NEW, 2 tests).
+**What & why:** New-value build #6 — composes the three tested engines (best positive-EV opportunity, the pre-trade `StockSageTradeGate`, and `StockSagePositionSizer`) into ONE copyable ordered checklist: "1. Best bet: SYM (action) — est. EV +X.XXR · 2. Gate: <clear/caution/blocked> (f fail, w warn) · 3. Entry ~E, stop S, target T — N shares ≈ $X at risk (Y% of acct) · 4. Rule: risk small, always a stop, never chase — estimates, not a forecast." The best-opportunity card gains a "Copy today's plan" button (uses the sizer's account/risk% fields + earnings proximity). Honesty: header says "estimates, not advice"; clearing the gate is framed as "not obviously reckless," not a win. 2 tests, HAND-VERIFIED: clear path (stop+4:1 RR+1% → "Clear to trade", size line with shares); no-stop path → "No stop defined" + gate "Don't take this trade" + no size line.
+**Result:** ✅ `tools/typecheck.sh` clean (strict-concurrency). 6 new-value features today (#84 gate, #85 budget optimizer, #86 rebalance, #87 alert engine, #88 yearly P&L, #89 today's plan). One tap now turns "what's best + is it safe + how big" into a single action. NEXT: multi-currency portfolio (FX convert). Committed + pushed. Autonomous /loop — build mode.
 
 ---
 

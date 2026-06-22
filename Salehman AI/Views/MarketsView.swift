@@ -1998,6 +1998,7 @@ struct MarketsView: View {
     @ViewBuilder private var bestOpportunityCard: some View {
         if let best = StockSageExpectedValue.bestOpportunity(store.ideas) {
             let idea = best.idea, ev = best.ev
+            VStack(alignment: .leading, spacing: 6) {
             Button { selectedIdea = idea } label: {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
@@ -2035,6 +2036,23 @@ struct MarketsView: View {
             }
             .buttonStyle(LuxPressStyle())
             .accessibilityLabel("Best opportunity: \(idea.symbol), estimated EV \(String(format: "%.2f", ev.evR)) R")
+            HStack(spacing: 6) {
+                Spacer()
+                Button {
+                    let plan = StockSageTodayPlan.build(
+                        idea: idea, ev: ev,
+                        account: Double(sizerAccount),
+                        riskFraction: Double(sizerRiskPct).map { $0 / 100 },
+                        daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil)
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(plan, forType: .string)
+                } label: {
+                    Label("Copy today's plan", systemImage: "checklist").font(.system(size: mvFont9, weight: .medium))
+                }
+                .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+                .help("Copy a checklist — best bet, the pre-trade gate verdict, and the size — to the clipboard. Estimates, not advice.")
+            }
+            }
         }
     }
 
