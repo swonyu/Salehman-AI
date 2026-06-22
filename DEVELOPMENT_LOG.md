@@ -6568,6 +6568,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SIGNAL #3 — benchmark relative strength (only reward names that BEAT the index)
+**Files:** `StockSage/StockSageIndicators.swift` (+relativeStrength), `StockSage/StockSageAdvisor.swift` (benchmarkCloses term + advise(history:benchmark:)), `StockSage/StockSageStore.swift` (fetch ^GSPC in parallel, thread through buildIdeas), `Salehman AITests/StockSageIndicatorsTests.swift` (+1 test).
+**What:** the documented momentum edge is OUT-performance, not absolute drift — a stock rising only because the whole market is rising has no real edge. Added pure `relativeStrength(symbolCloses:benchmarkCloses:period:)` = symbol %return − benchmark %return (nil if either series too short; lengths needn't match). `advise(history:benchmark:)` now scores ±0.08: a name leading the S&P gets a confirmation, one lagging it is demoted. refreshIdeas fetches ^GSPC in parallel (nil on failure ⇒ graceful fallback to absolute signals); a benchmark is never measured against itself. advise(closes:) keeps benchmarkCloses nil default ⇒ backtester byte-for-byte unchanged.
+**Verify:** typecheck clean; python-verified — +30% vs +10% ⇒ RS +20pp (lead), reverse ⇒ −20 (lag), either-too-short ⇒ nil. REAL index data only.
+**Result:** ideas now favor genuine market leaders over names just floating up with the tide. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

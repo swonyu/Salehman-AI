@@ -163,13 +163,17 @@ final class StockSageStore: ObservableObject {
         defer { isLoadingIdeas = false }   // stays true across the fetch AND the detached compute
         ideasError = nil
         let universe = trackedDefs()
+        // Fetch the benchmark (^GSPC) in parallel so each idea can be scored on relative
+        // strength vs the index; nil on failure → ideas degrade gracefully to absolute signals.
+        async let benchmarkTask = StockSageQuoteService.fetchHistory("^GSPC", range: "1y")
         let histories = await StockSageQuoteService.fetchHistories(for: universe.map(\.symbol))
+        let benchmark = await benchmarkTask
 
         guard !histories.isEmpty else {
             ideasError = "Couldn't reach the market feed for analysis — try again."
             return
         }
-        let built = await Self.buildIdeas(defs: universe, histories: histories)
+        let built = await Self.buildIdeas(defs: universe, histories: histories, benchmark: benchmark)
         let ranked = built.sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
         // Detect alert events vs the PREVIOUS snapshot before replacing it.
         if alertsEnabled, !ideas.isEmpty {
@@ -212,12 +216,15 @@ final class StockSageStore: ObservableObject {
     /// Build ranked ideas off the main actor (the advisor runs every indicator over each
     /// symbol's full year). Pure over its inputs; everything it touches is Sendable.
     nonisolated static func buildIdeas(defs: [StockSageSymbol],
-                                       histories: [String: StockSagePriceHistory]) async -> [StockSageIdea] {
+                                       histories: [String: StockSagePriceHistory],
+                                       benchmark: StockSagePriceHistory? = nil) async -> [StockSageIdea] {
         await Task.detached(priority: .userInitiated) {
             var out: [StockSageIdea] = []
             for sym in defs {
                 guard let history = histories[sym.symbol.uppercased()], let price = history.latestClose else { continue }
-                let advice = StockSageAdvisor.advise(history: history)
+                // Don't measure a benchmark against itself (RS would be a meaningless 0).
+                let bench = sym.symbol.uppercased() == "^GSPC" ? nil : benchmark
+                let advice = StockSageAdvisor.advise(history: history, benchmark: bench)
                 let spark = SparkSeries.downsample(Array(history.closes.suffix(63)))
                 out.append(StockSageIdea(symbol: sym.symbol, market: sym.market,
                                          price: price, advice: advice, spark: spark))

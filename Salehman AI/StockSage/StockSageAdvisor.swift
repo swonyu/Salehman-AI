@@ -57,16 +57,19 @@ enum StockSageAdvisor {
 
     /// Advice straight from a fetched candle history — wires the live OHLC feed
     /// (`StockSageQuoteService.fetchHistory`) to the rules below, ATR stops included.
-    nonisolated static func advise(history: StockSagePriceHistory) -> TradeAdvice {
-        advise(closes: history.closes, highs: history.highs, lows: history.lows, volumes: history.volumes)
+    nonisolated static func advise(history: StockSagePriceHistory,
+                                   benchmark: StockSagePriceHistory? = nil) -> TradeAdvice {
+        advise(closes: history.closes, highs: history.highs, lows: history.lows,
+               volumes: history.volumes, benchmarkCloses: benchmark?.closes)
     }
 
-    /// Advice from a daily close history (+ optional highs/lows for ATR stops, and
-    /// optional REAL volumes for participation confirmation). Series are newest-last.
-    /// Conservative "Hold" when history is too short. Passing `volumes: nil` (the default)
-    /// leaves the result byte-for-byte identical to before volume confirmation existed.
+    /// Advice from a daily close history (+ optional highs/lows for ATR stops, optional REAL
+    /// volumes for participation confirmation, and optional benchmark closes for relative
+    /// strength). Series are newest-last. Conservative "Hold" when history is too short.
+    /// All the optional inputs default to nil, which leaves the result byte-for-byte
+    /// identical to the close-only signal — so the backtester and other callers are unchanged.
     nonisolated static func advise(closes: [Double], highs: [Double]? = nil, lows: [Double]? = nil,
-                                   volumes: [Double]? = nil) -> TradeAdvice {
+                                   volumes: [Double]? = nil, benchmarkCloses: [Double]? = nil) -> TradeAdvice {
         guard closes.count >= 30, let price = closes.last, price > 0 else {
             return TradeAdvice(action: .hold, conviction: 0, regime: .range,
                                rationale: ["Not enough price history to judge."],
@@ -133,6 +136,16 @@ enum StockSageAdvisor {
             rationale.append(vc.confirmed
                 ? String(format: "Volume-confirmed (recent ×%.1f the prior average)", vc.ratio)
                 : String(format: "Thin volume (recent ×%.1f the prior average) — weak participation", vc.ratio))
+        }
+
+        // Relative strength vs the benchmark (real index closes only): the documented
+        // momentum edge is OUT-performance, not absolute drift. A name leading the S&P gets
+        // a small confirmation; one merely rising with (or lagging) the market is demoted.
+        // ±0.08, additive, and skipped entirely when no benchmark is supplied.
+        if let benchmarkCloses,
+           let rs = StockSageIndicators.relativeStrength(symbolCloses: closes, benchmarkCloses: benchmarkCloses) {
+            if rs > 0 { score += 0.08; rationale.append(String(format: "Leading the S&P (relative strength +%.0f%%)", rs)) }
+            else if rs < 0 { score -= 0.08; rationale.append(String(format: "Lagging the S&P (relative strength %.0f%%)", rs)) }
         }
 
         let regime: TradeAdvice.Regime = trending ? (score >= 0 ? .bullTrend : .bearTrend) : .range

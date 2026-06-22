@@ -83,4 +83,14 @@ struct StockSageIndicatorsTests {
         #expect(I.volumeConfirmation(closes: Array(closes.prefix(10)),
                                      volumes: Array(repeating: 1.0, count: 10)) == nil)
     }
+
+    @Test func relativeStrengthIsSymbolReturnMinusBenchmark() {
+        // +30% symbol vs +10% benchmark over the window → RS +20pp (outperforming).
+        #expect(abs(I.relativeStrength(symbolCloses: [100, 130], benchmarkCloses: [100, 110], period: 1)! - 20) < 1e-9)
+        // Rising in absolute terms but LAGGING the index (+10% vs +30%) → RS −20 (laggard).
+        #expect(I.relativeStrength(symbolCloses: [100, 110], benchmarkCloses: [100, 130], period: 1)! < 0)
+        // Either series too short to measure the period → nil, never a fabricated number.
+        #expect(I.relativeStrength(symbolCloses: [100, 130], benchmarkCloses: [100], period: 1) == nil)
+        #expect(I.relativeStrength(symbolCloses: [100], benchmarkCloses: [100, 110], period: 1) == nil)
+    }
 }

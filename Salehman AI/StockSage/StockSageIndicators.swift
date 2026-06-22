@@ -152,4 +152,17 @@ enum StockSageIndicators {
         let ratio = recentAvg / priorAvg
         return (confirmed: ratio >= 1.0, ratio: ratio)
     }
+
+    /// Benchmark-relative strength: the symbol's % return MINUS the benchmark's (e.g. ^GSPC)
+    /// % return over `period` bars. Positive ⇒ outperforming the index — the part of
+    /// momentum with the most documented forward edge; a name rising only because the whole
+    /// market is rising has RS ≈ 0. nil when either real series is too short to measure
+    /// (so the consumer simply skips the term rather than inventing one). Lengths needn't
+    /// match — each leg's return is measured over its own last `period` bars.
+    nonisolated static func relativeStrength(symbolCloses: [Double], benchmarkCloses: [Double],
+                                             period: Int = 126) -> Double? {
+        guard let symRet = returnOverPeriod(symbolCloses, period: period),
+              let benchRet = returnOverPeriod(benchmarkCloses, period: period) else { return nil }
+        return symRet - benchRet
+    }
 }

@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 14:46 +03 · Swift files: 246 · Swift LOC: 45681_
+_Generated: 2026-06-22 14:57 +03 · Swift files: 246 · Swift LOC: 45724_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -8549,7 +8549,7 @@ final class RuneScapeStore: ObservableObject {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageAdvisor.swift (196 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageAdvisor.swift (209 lines) =====
 ```swift
 import Foundation
 
@@ -8610,16 +8610,19 @@ enum StockSageAdvisor {
 
     /// Advice straight from a fetched candle history — wires the live OHLC feed
     /// (`StockSageQuoteService.fetchHistory`) to the rules below, ATR stops included.
-    nonisolated static func advise(history: StockSagePriceHistory) -> TradeAdvice {
-        advise(closes: history.closes, highs: history.highs, lows: history.lows, volumes: history.volumes)
+    nonisolated static func advise(history: StockSagePriceHistory,
+                                   benchmark: StockSagePriceHistory? = nil) -> TradeAdvice {
+        advise(closes: history.closes, highs: history.highs, lows: history.lows,
+               volumes: history.volumes, benchmarkCloses: benchmark?.closes)
     }
 
-    /// Advice from a daily close history (+ optional highs/lows for ATR stops, and
-    /// optional REAL volumes for participation confirmation). Series are newest-last.
-    /// Conservative "Hold" when history is too short. Passing `volumes: nil` (the default)
-    /// leaves the result byte-for-byte identical to before volume confirmation existed.
+    /// Advice from a daily close history (+ optional highs/lows for ATR stops, optional REAL
+    /// volumes for participation confirmation, and optional benchmark closes for relative
+    /// strength). Series are newest-last. Conservative "Hold" when history is too short.
+    /// All the optional inputs default to nil, which leaves the result byte-for-byte
+    /// identical to the close-only signal — so the backtester and other callers are unchanged.
     nonisolated static func advise(closes: [Double], highs: [Double]? = nil, lows: [Double]? = nil,
-                                   volumes: [Double]? = nil) -> TradeAdvice {
+                                   volumes: [Double]? = nil, benchmarkCloses: [Double]? = nil) -> TradeAdvice {
         guard closes.count >= 30, let price = closes.last, price > 0 else {
             return TradeAdvice(action: .hold, conviction: 0, regime: .range,
                                rationale: ["Not enough price history to judge."],
@@ -8686,6 +8689,16 @@ enum StockSageAdvisor {
             rationale.append(vc.confirmed
                 ? String(format: "Volume-confirmed (recent ×%.1f the prior average)", vc.ratio)
                 : String(format: "Thin volume (recent ×%.1f the prior average) — weak participation", vc.ratio))
+        }
+
+        // Relative strength vs the benchmark (real index closes only): the documented
+        // momentum edge is OUT-performance, not absolute drift. A name leading the S&P gets
+        // a small confirmation; one merely rising with (or lagging) the market is demoted.
+        // ±0.08, additive, and skipped entirely when no benchmark is supplied.
+        if let benchmarkCloses,
+           let rs = StockSageIndicators.relativeStrength(symbolCloses: closes, benchmarkCloses: benchmarkCloses) {
+            if rs > 0 { score += 0.08; rationale.append(String(format: "Leading the S&P (relative strength +%.0f%%)", rs)) }
+            else if rs < 0 { score -= 0.08; rationale.append(String(format: "Lagging the S&P (relative strength %.0f%%)", rs)) }
         }
 
         let regime: TradeAdvice.Regime = trending ? (score >= 0 ? .bullTrend : .bearTrend) : .range
@@ -10178,7 +10191,7 @@ enum StockSageGlossary {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageIndicators.swift (155 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageIndicators.swift (168 lines) =====
 ```swift
 import Foundation
 
@@ -10333,6 +10346,19 @@ enum StockSageIndicators {
         guard priorAvg > 0 else { return nil }   // no real volume to compare against
         let ratio = recentAvg / priorAvg
         return (confirmed: ratio >= 1.0, ratio: ratio)
+    }
+
+    /// Benchmark-relative strength: the symbol's % return MINUS the benchmark's (e.g. ^GSPC)
+    /// % return over `period` bars. Positive ⇒ outperforming the index — the part of
+    /// momentum with the most documented forward edge; a name rising only because the whole
+    /// market is rising has RS ≈ 0. nil when either real series is too short to measure
+    /// (so the consumer simply skips the term rather than inventing one). Lengths needn't
+    /// match — each leg's return is measured over its own last `period` bars.
+    nonisolated static func relativeStrength(symbolCloses: [Double], benchmarkCloses: [Double],
+                                             period: Int = 126) -> Double? {
+        guard let symRet = returnOverPeriod(symbolCloses, period: period),
+              let benchRet = returnOverPeriod(benchmarkCloses, period: period) else { return nil }
+        return symRet - benchRet
     }
 }
 ```
@@ -13065,7 +13091,7 @@ enum StockSageSignalEngine {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageStore.swift (686 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageStore.swift (693 lines) =====
 ```swift
 import Foundation
 import Combine
@@ -13232,13 +13258,17 @@ final class StockSageStore: ObservableObject {
         defer { isLoadingIdeas = false }   // stays true across the fetch AND the detached compute
         ideasError = nil
         let universe = trackedDefs()
+        // Fetch the benchmark (^GSPC) in parallel so each idea can be scored on relative
+        // strength vs the index; nil on failure → ideas degrade gracefully to absolute signals.
+        async let benchmarkTask = StockSageQuoteService.fetchHistory("^GSPC", range: "1y")
         let histories = await StockSageQuoteService.fetchHistories(for: universe.map(\.symbol))
+        let benchmark = await benchmarkTask
 
         guard !histories.isEmpty else {
             ideasError = "Couldn't reach the market feed for analysis — try again."
             return
         }
-        let built = await Self.buildIdeas(defs: universe, histories: histories)
+        let built = await Self.buildIdeas(defs: universe, histories: histories, benchmark: benchmark)
         let ranked = built.sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
         // Detect alert events vs the PREVIOUS snapshot before replacing it.
         if alertsEnabled, !ideas.isEmpty {
@@ -13281,12 +13311,15 @@ final class StockSageStore: ObservableObject {
     /// Build ranked ideas off the main actor (the advisor runs every indicator over each
     /// symbol's full year). Pure over its inputs; everything it touches is Sendable.
     nonisolated static func buildIdeas(defs: [StockSageSymbol],
-                                       histories: [String: StockSagePriceHistory]) async -> [StockSageIdea] {
+                                       histories: [String: StockSagePriceHistory],
+                                       benchmark: StockSagePriceHistory? = nil) async -> [StockSageIdea] {
         await Task.detached(priority: .userInitiated) {
             var out: [StockSageIdea] = []
             for sym in defs {
                 guard let history = histories[sym.symbol.uppercased()], let price = history.latestClose else { continue }
-                let advice = StockSageAdvisor.advise(history: history)
+                // Don't measure a benchmark against itself (RS would be a meaningless 0).
+                let bench = sym.symbol.uppercased() == "^GSPC" ? nil : benchmark
+                let advice = StockSageAdvisor.advise(history: history, benchmark: bench)
                 let spark = SparkSeries.downsample(Array(history.closes.suffix(63)))
                 out.append(StockSageIdea(symbol: sym.symbol, market: sym.market,
                                          price: price, advice: advice, spark: spark))
@@ -43267,7 +43300,7 @@ struct StockSageHonestyGuardTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageIndicatorsTests.swift (86 lines) =====
+===== FILE: Salehman AITests/StockSageIndicatorsTests.swift (96 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -43353,6 +43386,16 @@ struct StockSageIndicatorsTests {
         #expect(I.volumeConfirmation(closes: closes, volumes: Array(repeating: 1.0, count: 24)) == nil)
         #expect(I.volumeConfirmation(closes: Array(closes.prefix(10)),
                                      volumes: Array(repeating: 1.0, count: 10)) == nil)
+    }
+
+    @Test func relativeStrengthIsSymbolReturnMinusBenchmark() {
+        // +30% symbol vs +10% benchmark over the window → RS +20pp (outperforming).
+        #expect(abs(I.relativeStrength(symbolCloses: [100, 130], benchmarkCloses: [100, 110], period: 1)! - 20) < 1e-9)
+        // Rising in absolute terms but LAGGING the index (+10% vs +30%) → RS −20 (laggard).
+        #expect(I.relativeStrength(symbolCloses: [100, 110], benchmarkCloses: [100, 130], period: 1)! < 0)
+        // Either series too short to measure the period → nil, never a fabricated number.
+        #expect(I.relativeStrength(symbolCloses: [100, 130], benchmarkCloses: [100], period: 1) == nil)
+        #expect(I.relativeStrength(symbolCloses: [100], benchmarkCloses: [100, 110], period: 1) == nil)
     }
 }
 ```
@@ -48974,7 +49017,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7687 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7695 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -55545,6 +55588,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SIGNAL #3 — benchmark relative strength (only reward names that BEAT the index)
+**Files:** `StockSage/StockSageIndicators.swift` (+relativeStrength), `StockSage/StockSageAdvisor.swift` (benchmarkCloses term + advise(history:benchmark:)), `StockSage/StockSageStore.swift` (fetch ^GSPC in parallel, thread through buildIdeas), `Salehman AITests/StockSageIndicatorsTests.swift` (+1 test).
+**What:** the documented momentum edge is OUT-performance, not absolute drift — a stock rising only because the whole market is rising has no real edge. Added pure `relativeStrength(symbolCloses:benchmarkCloses:period:)` = symbol %return − benchmark %return (nil if either series too short; lengths needn't match). `advise(history:benchmark:)` now scores ±0.08: a name leading the S&P gets a confirmation, one lagging it is demoted. refreshIdeas fetches ^GSPC in parallel (nil on failure ⇒ graceful fallback to absolute signals); a benchmark is never measured against itself. advise(closes:) keeps benchmarkCloses nil default ⇒ backtester byte-for-byte unchanged.
+**Verify:** typecheck clean; python-verified — +30% vs +10% ⇒ RS +20pp (lead), reverse ⇒ −20 (lag), either-too-short ⇒ nil. REAL index data only.
+**Result:** ideas now favor genuine market leaders over names just floating up with the tide. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -59613,6 +59664,76 @@ ONE BLOCKED IDEA: volumeGate (rank 9) needs trade-volume data the /latest feed d
 HONESTY THROUGHLINE preserved on every spec: gp/hour stays a volume-gated CEILING, fills aren't guaranteed, OSRS is a game economy (not financial advice). The confidence/decay/projection models are explicitly proxies or HYPOTHETICAL, never promises.
 
 Suggested build order for the top 3: do rank 2 first (pure correctness, unblocks honest ranking), then rank 1 (the realized-gp lift — sort by realizedGpPerHour), then rank 3 (alch alternative path). All three are 'small' effort and need no new data source. Add XCTests per the testIdea for each in Salehman AITests/StockSageTests.swift, and remember the owner's standing directive to append a dated DEVELOPMENT_LOG.md entry after implementing.
+===== FILE: PC_RESUME.md (68 lines) =====
+# PC_RESUME — how the Windows-PC Claude Code picks up this work
+
+## ▶ Standing orders from the owner (read this first)
+**You — Claude Code on the always-on Windows PC — ARE authorized and expected to continue
+this autonomous markets-money loop, indefinitely, until the owner says stop.** The owner
+(Saleh) runs this. He controls you **remotely from anywhere** — his Mac, his phone, any
+browser — over Tailscale (SSH / Remote Desktop) or via claude.ai/code. At any moment he may
+connect, watch what you're doing, redirect you, pause you, or hand you a new task. Treat any
+message arriving in your session as coming from him, wherever he is.
+
+Your job between his messages: keep the loop running on your own — pick the next
+markets-money backlog item, build it, python-verify, commit + push, log, schedule the next
+tick, repeat. **Never idle, never wait for permission to do the next obvious step.** You
+cannot build Swift here (see §2) — that's fine; commit clean, flag it `UNVERIFIED (PC host)`,
+the Mac verifies. Everything you need is in git + the files below.
+
+---
+
+You (Claude Code, running on the always-on Windows PC) are continuing an autonomous
+markets-money build that has been running on the owner's Mac. **Everything is in git
+`main` — you resume from there, not from any local memory.**
+
+## 1. Sync first
+```bash
+git pull origin main          # get the latest; HEAD should be at or past commit a96dea8
+```
+The owner's standing instructions are in `CLAUDE.md` (read it). The full backlog of
+specced-but-unbuilt work is in the `*_BACKLOG.md` files; running history is in
+`DEVELOPMENT_LOG.md` (append new entries, never edit old ones).
+
+## 2. The one hard limit on this machine
+**You CANNOT build or verify the Swift app here** — it's a macOS/Xcode app and the
+Windows/WSL toolchain can't compile SwiftUI/AppKit/MainActor isolation. So:
+- `bash tools/typecheck.sh` will NOT work here. Don't rely on it.
+- Make **conservative, small, reviewable** edits. python-verify every test literal you can.
+- In each commit message and the dev-log entry, flag Swift changes **`UNVERIFIED (PC host)`**.
+- The **Mac is the verifier**: the owner runs `git pull` + Xcode build/test there to catch
+  breakage. Keep changes isolated so a single bad edit is easy to revert.
+
+## 3. Where the work stands (as of commit a96dea8, 2026-06-22)
+Just shipped: ranking conviction-gate (no fantasy #1), real-data RuneScape fix,
+SAMPLE-data banner, and **SIGNAL #2 volume confirmation**. Next up, markets-money first:
+- **SIGNAL_BACKLOG**: #3 relativeStrength vs ^GSPC, #6 volAdjustedMomentum, #4 Donchian, #5 walk-forward.
+- **EXIT_BACKLOG**: #1 ExitMode seam (golden-master: `.allAtTarget` == current run() byte-for-byte), #2 ratcheting Chandelier, #3 scale-out simulator.
+- **FASTMONEY_BACKLOG**: #1 crypto 7-day week + vol-scaled risk, #2 asset-class ATR stop, #3 always-visible best-move card, #4 ranked top-3.
+- **ALLOC_BACKLOG**: #1 Kelly heat-capped allocator, #2 suggestAdd, #3 de-correlated.
+- **RANKING_BACKLOG**: #2 regime-gate, #3 journal-calibrated win%, #4 liquidity-gate, … (#1 done).
+- Then OSRS / A11Y / VISUAL / HARDENING / APPCORE backlogs.
+
+## 4. Re-arm the autonomous loop
+Start a `claude` session in this repo and paste the loop prompt below (it's the exact
+prompt the Mac session runs, with the PC caveat folded in). It will pick a backlog item,
+implement it engine-first with a test, commit+push, log, and schedule the next tick.
+
+> Owner is away ~a week, ULTRACODE. MARKETS MONEY ENGINE = priority one; honesty lives in
+> CODE not lectures; **ONLY REAL DATA** (never fabricate/seed market numbers; sample data
+> stays unmistakably labeled). **PC HOST: cannot typecheck Swift — make conservative edits,
+> python-verify literals, mark Swift commits `UNVERIFIED (PC host)`; the Mac is the build gate.**
+> EACH TICK: pull → pick the top markets-money backlog item (SIGNAL #3 → EXIT #1 → FASTMONEY #1
+> → ALLOC #1 → RANKING #2 …) → implement engine-first + python-verified test → commit via
+> `git commit -F - <<'MSG'` → push → append DEVELOPMENT_LOG.md (anchor `^## Standing notes`)
+> → mark the backlog file. Keep money surfaces caveated; secrets only in Keychain; .auto/free
+> never spend. Optionally keep 1–3 markets-money research Workflows in flight. Never idle.
+> Re-schedule the next tick (~4–5 min) with this same prompt. Never stop until the owner returns.
+
+## 5. The brain (separate from this dev loop)
+The always-on local LLM is Ollama (see `WINDOWS_HOST_SETUP.md` §B) — the Mac app points its
+Custom-server brain at this PC. That's independent of the Claude Code dev loop above.
+
 ===== FILE: POLISH_BACKLOG.md (101 lines) =====
 # Polish backlog — curated for owner review
 **Author:** Claude Chat C · **2026-06-11 (evening)** · while owner away (4h autonomous polish).
@@ -60141,7 +60262,7 @@ VERDICT: Markets tab is real-data-only in substance today; sample data is a tran
 **Signature:** `nonisolated static func volumeConfirmation(closes: [Double], volumes: [Double], lookback: Int = 20) -> (confirmed: Bool, ratio: Double)?`
 **Test:** Feed a rising-price series where the last bars carry 2x the 20-bar average volume → expect confirmed == true, ratio ≈ 2.0. Feed the same price path on declining/below-average volume → confirmed == false, ratio < 1. Feed all-zero volumes (FX/index case) → nil (no crash, no fabricated confirmation). Then assert advise(history:) adds at most ±0.05 to score and appends a 'volume-confirmed/divergent' rationale line ONLY when volumes are non-zero, and that advise(closes:highs:lows:) with no volumes is byte-for-byte unchanged.
 
-### #3 — Benchmark-relative strength (only buy names beating the index, the documented momentum edge)  [M — pure helper reusing returnOverPeriod for both legs (~10 lines); wiring is a small additive score term gated on benchmark availability. Index closes (^GSPC/SPY) are already fetched for the regime gauge, so the data path exists.]
+### ✅ DONE #3 — Benchmark-relative strength (only buy names beating the index, the documented momentum edge)  [M — pure helper reusing returnOverPeriod for both legs (~10 lines); wiring is a small additive score term gated on benchmark availability. Index closes (^GSPC/SPY) are already fetched for the regime gauge, so the data path exists.]
 **Signature:** `nonisolated static func relativeStrength(symbolCloses: [Double], benchmarkCloses: [Double], period: Int = 126) -> Double?`
 **Test:** Construct symbol returns of +30% and benchmark +10% over the period → RS > 0 (outperforming). Reverse them → RS < 0. Mismatched-length / too-short series → nil. Then assert a regime-aware consumer (e.g. advise or the ideas ranker) demotes a name that is rising in absolute terms but LAGGING the benchmark, since relative strength is the part of momentum with real forward edge — and that it degrades gracefully (no penalty, no crash) when the benchmark history is absent.
 
