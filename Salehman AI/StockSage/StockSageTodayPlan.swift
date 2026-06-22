@@ -13,7 +13,7 @@ enum StockSageTodayPlan {
     /// multi-line checklist. `account`/`riskFraction` add the concrete share size when set.
     nonisolated static func build(idea: StockSageIdea, ev: ExpectedValue?,
                                   account: Double?, riskFraction: Double?,
-                                  daysToEarnings: Int? = nil) -> String {
+                                  daysToEarnings: Int? = nil, isSample: Bool = false) -> String {
         let a = idea.advice
         let entry = idea.price
         let rf = Swift.max(0, riskFraction ?? 0)
@@ -27,6 +27,11 @@ enum StockSageTodayPlan {
                                                riskFraction: rf > 0 ? rf : 0.01, daysToEarnings: daysToEarnings)
 
         var lines = ["Today's plan — estimates, not advice. Size with a stop; risk control > signal."]
+        // The copied plan is the one artifact pasted into a broker — it MUST carry the
+        // SAMPLE-data warning the on-screen banner shows, so a seed price isn't acted on as real.
+        if isSample {
+            lines.insert("⚠ SAMPLE DATA — illustrative prices, NOT live quotes. Re-price before any order.", at: 0)
+        }
         var n = 1
         lines.append("\(n). Best bet: \(idea.symbol) (\(a.action.rawValue))"
             + (ev.map { String(format: " — est. EV %+.2fR", $0.evR) } ?? "")); n += 1

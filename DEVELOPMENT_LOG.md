@@ -6800,6 +6800,15 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · Honesty — SAMPLE-data warning now in the COPIED today-plan (only-real-data)
+**Files:** `StockSage/StockSageTodayPlan.swift` (+isSample param), `Views/MarketsView.swift` (pass store.isSampleData), `Salehman AITests/StockSageTodayPlanTests.swift` (+1 test). Persisted DECISIVENESS.md.
+**What (first60-decisiveness #3, real honesty/safety gap):** the on-screen sample banner is honest, but "Copy today's plan" dropped it — on a cold launch (isSampleData true, idea.price = seed) the copied string read "Best bet: AAPL … Entry ~123.45, stop 119, 50 shares" with NO marker, so the owner could paste a FABRICATED illustrative price into a broker ticket. build() gains `isSample: Bool = false`; when true it prepends "⚠ SAMPLE DATA — illustrative prices, NOT live quotes. Re-price before any order." The call site passes store.isSampleData. Default false ⇒ existing callers/tests byte-for-byte.
+**Verify:** typecheck clean; test asserts isSample:true → plan contains "SAMPLE" + "re-price", default → no SAMPLE line. The one artifact pasted into a broker now carries the only-real-data caveat.
+**Remaining decisiveness (DECISIVENESS.md): #1 auto-scan ideas on open + land on Ideas (0 taps to best move), #2 inline CLEAR/CAUTION/NO-GO gate pill on glance cards, #4 entry/stop/target on the best card.**
+**Result:** no path now hands the owner a fabricated price as if real. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

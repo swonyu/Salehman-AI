@@ -27,6 +27,19 @@ struct StockSageTodayPlanTests {
         #expect(plan.contains("shares"))                  // size present (account+risk supplied)
     }
 
+    @Test func sampleDataIsFlaggedInTheCopiedPlan() {
+        let i = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        // Sample data → the copied plan (pasted into a broker) must carry the SAMPLE warning.
+        let sample = StockSageTodayPlan.build(idea: i, ev: StockSageExpectedValue.ev(for: i),
+                                              account: 10_000, riskFraction: 0.01, isSample: true)
+        #expect(sample.uppercased().contains("SAMPLE"))
+        #expect(sample.lowercased().contains("re-price"))
+        // Live data (default) → no SAMPLE line, byte-for-byte the original behavior.
+        let live = StockSageTodayPlan.build(idea: i, ev: StockSageExpectedValue.ev(for: i),
+                                            account: 10_000, riskFraction: 0.01)
+        #expect(!live.uppercased().contains("SAMPLE"))
+    }
+
     @Test func noStopWarnsAndGateBlocks() {
         let i = idea("X", conviction: 0.9, stop: nil, target: nil)
         let plan = StockSageTodayPlan.build(idea: i, ev: nil, account: nil, riskFraction: nil)

@@ -2278,7 +2278,8 @@ struct MarketsView: View {
                         idea: idea, ev: ev,
                         account: Double(sizerAccount),
                         riskFraction: Double(sizerRiskPct).map { $0 / 100 },
-                        daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil)
+                        daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
+                        isSample: store.isSampleData)
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(plan, forType: .string)
                 } label: {
