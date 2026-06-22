@@ -6592,6 +6592,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SIGNAL #5 — walk-forward / out-of-sample folds (is the edge stable or one lucky regime?)
+**Files:** `StockSage/StockSageBacktester.swift` (+foldRanges, +walkForward, +subHistory), `Salehman AITests/StockSageBacktesterTests.swift` (+2 tests).
+**What:** `walkForward(_:warmup:folds:)→[BacktestResult]` runs the existing run() over each fold's test window separately, so the owner can see whether the rules HELD across time or just worked once. `foldRanges(n:warmup:folds:)` tiles [warmup,n) into contiguous, non-overlapping windows; each fold gets its own `warmup` prefix of preceding bars (shared indicator history, NOT counted trades — windows never overlap) via a pure `subHistory` slice. Thin folds keep isSignificant=false so a lucky 5-trade fold can't be over-trusted. Composes run() — no new trading logic, no look-ahead added.
+**Verify:** typecheck clean; python-verified fold math — foldRanges(350,50,3)=[(50,150),(150,250),(250,350)] contiguous, starts 50, ends 350, each slice 150 bars (>warmup+5 so it trades); empty when n==warmup. Behavior tests: a strict downtrend yields 0 trades in ALL folds (mirrors the existing no-long-on-downtrend guard); a clean uptrend trades across folds; each ~100-bar fold is not-significant.
+**Result:** completes SIGNAL_BACKLOG (#2 volume, #3 rel-strength, #6 vol-adj momentum, #4 Donchian, #5 walk-forward). The backtest can now expose regime instability the single aggregate hides. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

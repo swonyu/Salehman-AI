@@ -121,6 +121,44 @@ enum StockSageBacktester {
         return summarize(trades)
     }
 
+    /// Contiguous, NON-overlapping test windows that tile the post-warmup region [warmup, n).
+    /// Pure index math (no data) so the partition itself is unit-tested. Empty if folds<1 or
+    /// there are no post-warmup bars.
+    nonisolated static func foldRanges(n: Int, warmup: Int, folds: Int) -> [Range<Int>] {
+        guard folds > 0, n > warmup else { return [] }
+        let testLen = n - warmup
+        return (0..<folds).map { k in
+            (warmup + k * testLen / folds) ..< (warmup + (k + 1) * testLen / folds)
+        }
+    }
+
+    /// Walk-forward / out-of-sample stability: run() over each fold's test window separately,
+    /// so the owner sees whether the edge HOLDS across time or was one lucky regime. Each fold
+    /// gets its own `warmup` prefix of preceding bars (shared history, NOT counted trades — the
+    /// test windows never overlap), then trades only its window. A strategy that worked in one
+    /// stretch shows degraded avgR in the others; thin folds carry isSignificant == false so the
+    /// UI can't over-trust them. Empty when the history is too short to fold.
+    nonisolated static func walkForward(_ history: StockSagePriceHistory, warmup: Int = 200,
+                                        folds: Int = 3) -> [BacktestResult] {
+        let n = history.closes.count
+        guard history.opens.count == n, history.highs.count == n, history.lows.count == n,
+              history.dates.count == n, history.volumes.count == n else { return [] }
+        return foldRanges(n: n, warmup: warmup, folds: folds).map { range in
+            let sliceStart = range.lowerBound - warmup    // ≥ 0 by construction
+            guard sliceStart >= 0 else { return .empty }
+            return run(subHistory(history, from: sliceStart, to: range.upperBound), warmup: warmup)
+        }
+    }
+
+    /// A contiguous [lo, hi) slice of a history across every parallel array.
+    private nonisolated static func subHistory(_ h: StockSagePriceHistory, from lo: Int, to hi: Int)
+        -> StockSagePriceHistory {
+        StockSagePriceHistory(symbol: h.symbol,
+                              dates: Array(h.dates[lo..<hi]), opens: Array(h.opens[lo..<hi]),
+                              highs: Array(h.highs[lo..<hi]), lows: Array(h.lows[lo..<hi]),
+                              closes: Array(h.closes[lo..<hi]), volumes: Array(h.volumes[lo..<hi]))
+    }
+
     /// Aggregate the simulated trades into honest metrics. `internal` (not private) so the
     /// aggregation math is unit-tested directly with synthetic trades.
     nonisolated static func summarize(_ trades: [BacktestTrade]) -> BacktestResult {

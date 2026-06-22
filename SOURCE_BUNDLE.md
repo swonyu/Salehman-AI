@@ -1,6 +1,6 @@
 # 📦 SOURCE_BUNDLE — Salehman AI (complete source)
 
-_Generated: 2026-06-22 15:14 +03 · Swift files: 246 · Swift LOC: 45797_
+_Generated: 2026-06-22 15:23 +03 · Swift files: 246 · Swift LOC: 45858_
 
 > **For any AI or person reading this:** this file is the COMPLETE source of
 > the *Salehman AI* macOS app (SwiftUI, Swift 6), concatenated so you have
@@ -8997,7 +8997,7 @@ enum StockSageAllocation {
 }
 ```
 
-===== FILE: Salehman AI/StockSage/StockSageBacktester.swift (156 lines) =====
+===== FILE: Salehman AI/StockSage/StockSageBacktester.swift (194 lines) =====
 ```swift
 import Foundation
 
@@ -9120,6 +9120,44 @@ enum StockSageBacktester {
             i = exitIdx + 1   // one position at a time — resume after the close
         }
         return summarize(trades)
+    }
+
+    /// Contiguous, NON-overlapping test windows that tile the post-warmup region [warmup, n).
+    /// Pure index math (no data) so the partition itself is unit-tested. Empty if folds<1 or
+    /// there are no post-warmup bars.
+    nonisolated static func foldRanges(n: Int, warmup: Int, folds: Int) -> [Range<Int>] {
+        guard folds > 0, n > warmup else { return [] }
+        let testLen = n - warmup
+        return (0..<folds).map { k in
+            (warmup + k * testLen / folds) ..< (warmup + (k + 1) * testLen / folds)
+        }
+    }
+
+    /// Walk-forward / out-of-sample stability: run() over each fold's test window separately,
+    /// so the owner sees whether the edge HOLDS across time or was one lucky regime. Each fold
+    /// gets its own `warmup` prefix of preceding bars (shared history, NOT counted trades — the
+    /// test windows never overlap), then trades only its window. A strategy that worked in one
+    /// stretch shows degraded avgR in the others; thin folds carry isSignificant == false so the
+    /// UI can't over-trust them. Empty when the history is too short to fold.
+    nonisolated static func walkForward(_ history: StockSagePriceHistory, warmup: Int = 200,
+                                        folds: Int = 3) -> [BacktestResult] {
+        let n = history.closes.count
+        guard history.opens.count == n, history.highs.count == n, history.lows.count == n,
+              history.dates.count == n, history.volumes.count == n else { return [] }
+        return foldRanges(n: n, warmup: warmup, folds: folds).map { range in
+            let sliceStart = range.lowerBound - warmup    // ≥ 0 by construction
+            guard sliceStart >= 0 else { return .empty }
+            return run(subHistory(history, from: sliceStart, to: range.upperBound), warmup: warmup)
+        }
+    }
+
+    /// A contiguous [lo, hi) slice of a history across every parallel array.
+    private nonisolated static func subHistory(_ h: StockSagePriceHistory, from lo: Int, to hi: Int)
+        -> StockSagePriceHistory {
+        StockSagePriceHistory(symbol: h.symbol,
+                              dates: Array(h.dates[lo..<hi]), opens: Array(h.opens[lo..<hi]),
+                              highs: Array(h.highs[lo..<hi]), lows: Array(h.lows[lo..<hi]),
+                              closes: Array(h.closes[lo..<hi]), volumes: Array(h.volumes[lo..<hi]))
     }
 
     /// Aggregate the simulated trades into honest metrics. `internal` (not private) so the
@@ -42437,7 +42475,7 @@ struct StockSageBacktestTests {
 }
 ```
 
-===== FILE: Salehman AITests/StockSageBacktesterTests.swift (81 lines) =====
+===== FILE: Salehman AITests/StockSageBacktesterTests.swift (104 lines) =====
 ```swift
 import Testing
 import Foundation
@@ -42504,6 +42542,29 @@ struct StockSageBacktesterTests {
         // its 200DMA) must never trigger an entry → zero trades.
         let down = history((0..<260).map { Double(260 - $0) })
         #expect(StockSageBacktester.run(down).trades == 0)
+    }
+
+    @Test func foldRangesTileThePostWarmupRegion() {
+        let r = StockSageBacktester.foldRanges(n: 350, warmup: 50, folds: 3)
+        #expect(r.count == 3)
+        #expect(r.first?.lowerBound == 50)               // starts at the first post-warmup bar
+        #expect(r.last?.upperBound == 350)               // covers through the last bar
+        for (a, b) in zip(r, r.dropFirst()) { #expect(a.upperBound == b.lowerBound) }  // contiguous, no overlap/gap
+        #expect(StockSageBacktester.foldRanges(n: 50, warmup: 50, folds: 3).isEmpty)   // no post-warmup bars
+    }
+
+    @Test func walkForwardSurfacesRegimeAcrossFolds() {
+        // A strict downtrend never goes long in ANY fold (the regime is surfaced, not hidden).
+        let down = history((0..<350).map { Double(350 - $0) })
+        let dWF = StockSageBacktester.walkForward(down, warmup: 50, folds: 3)
+        #expect(dWF.count == 3)
+        #expect(dWF.allSatisfy { $0.trades == 0 })
+        // A clean uptrend DOES trade across the folds, and each thin fold is flagged not-significant.
+        let up = history((0..<350).map { 100.0 + Double($0) })
+        let uWF = StockSageBacktester.walkForward(up, warmup: 50, folds: 3)
+        #expect(uWF.count == 3)
+        #expect(uWF.reduce(0) { $0 + $1.trades } > 0)
+        #expect(uWF.allSatisfy { !$0.isSignificant })    // ~100-bar folds are far short of 20 trades
     }
 
     @Test func costsNeverFlatterAndNilIsByteForByte() {
@@ -49090,7 +49151,7 @@ oversight). Per the principles themselves, **custom fills are correct for brand 
 - [Build a SwiftUI app with the new design — WWDC25 session 323 (Apple)](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [SwiftUI for Mac 2025 (TrozWare)](https://troz.net/post/2025/swiftui-mac-2025/)
 
-===== FILE: DEVELOPMENT_LOG.md (7711 lines) =====
+===== FILE: DEVELOPMENT_LOG.md (7719 lines) =====
 # 📓 Development Log — Salehman AI
 
 A running, honest record of changes. Two Claude Code sessions worked this repo in
@@ -55685,6 +55746,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · SIGNAL #5 — walk-forward / out-of-sample folds (is the edge stable or one lucky regime?)
+**Files:** `StockSage/StockSageBacktester.swift` (+foldRanges, +walkForward, +subHistory), `Salehman AITests/StockSageBacktesterTests.swift` (+2 tests).
+**What:** `walkForward(_:warmup:folds:)→[BacktestResult]` runs the existing run() over each fold's test window separately, so the owner can see whether the rules HELD across time or just worked once. `foldRanges(n:warmup:folds:)` tiles [warmup,n) into contiguous, non-overlapping windows; each fold gets its own `warmup` prefix of preceding bars (shared indicator history, NOT counted trades — windows never overlap) via a pure `subHistory` slice. Thin folds keep isSignificant=false so a lucky 5-trade fold can't be over-trusted. Composes run() — no new trading logic, no look-ahead added.
+**Verify:** typecheck clean; python-verified fold math — foldRanges(350,50,3)=[(50,150),(150,250),(250,350)] contiguous, starts 50, ends 350, each slice 150 bars (>warmup+5 so it trades); empty when n==warmup. Behavior tests: a strict downtrend yields 0 trades in ALL folds (mirrors the existing no-long-on-downtrend guard); a clean uptrend trades across folds; each ~100-bar fold is not-significant.
+**Result:** completes SIGNAL_BACKLOG (#2 volume, #3 rel-strength, #6 vol-adj momentum, #4 Donchian, #5 walk-forward). The backtest can now expose regime instability the single aggregate hides. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
@@ -60359,7 +60428,7 @@ VERDICT: Markets tab is real-data-only in substance today; sample data is a tran
 **Signature:** `nonisolated static func donchian(highs: [Double], lows: [Double], period: Int = 20) -> (upper: Double, lower: Double)?`
 **Test:** On a monotonic series, upper == max of last `period` highs, lower == min of last `period` lows; insufficient bars → nil. Then test a breakout helper isBreakout(price:channel:) returns true when the latest close exceeds the prior-bar upper band (computed on bars EXCLUDING the current one, to avoid look-ahead) and false otherwise. Critically assert the channel is built from closes[0..<i], never including bar i, mirroring the backtester's no-look-ahead contract.
 
-### #5 — Walk-forward / out-of-sample split on the backtest (guard against the few-rules overfit the caveat admits)  [M-L — composes the existing run() over sub-ranges; main work is honest fold boundaries and an aggregate consistency metric (e.g. stdev of per-fold avgR) so the owner sees whether the edge is stable or a single lucky regime.]
+### ✅ DONE #5 — Walk-forward / out-of-sample split on the backtest (guard against the few-rules overfit the caveat admits)  [M-L — composes the existing run() over sub-ranges; main work is honest fold boundaries and an aggregate consistency metric (e.g. stdev of per-fold avgR) so the owner sees whether the edge is stable or a single lucky regime.]
 **Signature:** `nonisolated static func walkForward(_ history: StockSagePriceHistory, warmup: Int = 200, folds: Int = 3) -> [BacktestResult]`
 **Test:** Split a long synthetic history into `folds` contiguous out-of-sample windows, run run() on each, and return per-fold results. Assert (a) folds never overlap and collectively cover post-warmup bars, (b) a strategy that only works in fold 1 (engineered regime) shows degraded avgR in folds 2–3 — surfacing instability the single aggregate hides, and (c) folds with <20 trades carry isSignificant == false so the UI can't over-trust a thin fold.
 

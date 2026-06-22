@@ -65,6 +65,29 @@ struct StockSageBacktesterTests {
         #expect(StockSageBacktester.run(down).trades == 0)
     }
 
+    @Test func foldRangesTileThePostWarmupRegion() {
+        let r = StockSageBacktester.foldRanges(n: 350, warmup: 50, folds: 3)
+        #expect(r.count == 3)
+        #expect(r.first?.lowerBound == 50)               // starts at the first post-warmup bar
+        #expect(r.last?.upperBound == 350)               // covers through the last bar
+        for (a, b) in zip(r, r.dropFirst()) { #expect(a.upperBound == b.lowerBound) }  // contiguous, no overlap/gap
+        #expect(StockSageBacktester.foldRanges(n: 50, warmup: 50, folds: 3).isEmpty)   // no post-warmup bars
+    }
+
+    @Test func walkForwardSurfacesRegimeAcrossFolds() {
+        // A strict downtrend never goes long in ANY fold (the regime is surfaced, not hidden).
+        let down = history((0..<350).map { Double(350 - $0) })
+        let dWF = StockSageBacktester.walkForward(down, warmup: 50, folds: 3)
+        #expect(dWF.count == 3)
+        #expect(dWF.allSatisfy { $0.trades == 0 })
+        // A clean uptrend DOES trade across the folds, and each thin fold is flagged not-significant.
+        let up = history((0..<350).map { 100.0 + Double($0) })
+        let uWF = StockSageBacktester.walkForward(up, warmup: 50, folds: 3)
+        #expect(uWF.count == 3)
+        #expect(uWF.reduce(0) { $0 + $1.trades } > 0)
+        #expect(uWF.allSatisfy { !$0.isSignificant })    // ~100-bar folds are far short of 20 trades
+    }
+
     @Test func costsNeverFlatterAndNilIsByteForByte() {
         // A steady uptrend that actually trades (targets 16% above each entry get hit).
         let up = history((0..<260).map { 100.0 + Double($0) })
