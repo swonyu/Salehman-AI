@@ -104,6 +104,7 @@ struct SidePnL: Sendable, Equatable, Identifiable {
     let totalR: Double
     let avgR: Double
     let winRate: Double
+    var closedWithR: Int = 0   // trades with a DEFINED R — the real sample size avgR/totalR average over
     var id: String { side.rawValue }
 }
 
@@ -133,6 +134,7 @@ struct SectorPnL: Sendable, Equatable, Identifiable {
     let wins: Int
     let totalR: Double
     let winRate: Double
+    var closedWithR: Int = 0   // trades with a DEFINED R — the real sample size totalR averages over
     var id: String { sector }
 }
 
@@ -512,7 +514,8 @@ enum StockSageJournal {
             return SidePnL(side: side, trades: ts.count, wins: wins,
                            totalR: rs.reduce(0, +),
                            avgR: rs.isEmpty ? 0 : rs.reduce(0, +) / Double(rs.count),
-                           winRate: Double(wins) / Double(ts.count))
+                           winRate: Double(wins) / Double(ts.count),
+                           closedWithR: rs.count)
         }
     }
 
@@ -542,9 +545,10 @@ enum StockSageJournal {
         for t in closed { groups[StockSageSector.sector(t.symbol), default: []].append(t) }
         return groups.map { sector, ts in
             let wins = ts.filter { ($0.realizedProfit ?? 0) > 0 }.count
-            let totalR = ts.compactMap { $0.realizedR }.reduce(0, +)
-            return SectorPnL(sector: sector, trades: ts.count, wins: wins, totalR: totalR,
-                             winRate: ts.isEmpty ? 0 : Double(wins) / Double(ts.count))
+            let rs = ts.compactMap { $0.realizedR }
+            return SectorPnL(sector: sector, trades: ts.count, wins: wins, totalR: rs.reduce(0, +),
+                             winRate: ts.isEmpty ? 0 : Double(wins) / Double(ts.count),
+                             closedWithR: rs.count)
         }
         .sorted { $0.totalR > $1.totalR }
     }
@@ -555,10 +559,10 @@ enum StockSageJournal {
         BucketReliability(n: n, minN: minN)
     }
     nonisolated static func reliability(_ s: SectorPnL, minN: Int = 5) -> BucketReliability {
-        BucketReliability(n: s.trades, minN: minN)
+        BucketReliability(n: s.closedWithR, minN: minN)   // R-defined sample, not raw closed count
     }
     nonisolated static func reliability(_ s: SidePnL, minN: Int = 5) -> BucketReliability {
-        BucketReliability(n: s.trades, minN: minN)
+        BucketReliability(n: s.closedWithR, minN: minN)   // R-defined sample, not raw closed count
     }
 
     /// Disclaimer for every per-bucket attribution row — descriptive of the past, not predictive.

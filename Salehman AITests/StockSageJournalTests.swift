@@ -24,11 +24,14 @@ struct StockSageJournalTests {
         #expect(StockSageJournal.bucketReliability(closedWithR: 5).isReliable)    // == 5
         let thin = StockSageJournal.bucketReliability(closedWithR: 4)
         #expect(thin.tooFewLabel.contains("n=4") && thin.tooFewLabel.contains("need 5"))
-        // Overloads read the bucket's own trade count.
-        let thinSector = SectorPnL(sector: "Tech", trades: 2, wins: 2, totalR: 4, winRate: 1)
-        let fullSide = SidePnL(side: .long, trades: 8, wins: 5, totalR: 3, avgR: 0.4, winRate: 0.625)
+        // Overloads read the R-DEFINED sample (closedWithR), NOT the raw closed count — a bucket
+        // with 8 closed trades but only 2 with a defined R must still gate (the bughunt fix).
+        let thinSector = SectorPnL(sector: "Tech", trades: 2, wins: 2, totalR: 4, winRate: 1, closedWithR: 2)
+        let fullSide = SidePnL(side: .long, trades: 8, wins: 5, totalR: 3, avgR: 0.4, winRate: 0.625, closedWithR: 6)
+        let thinRSide = SidePnL(side: .long, trades: 8, wins: 5, totalR: 1, avgR: 0.5, winRate: 0.625, closedWithR: 2)
         #expect(!StockSageJournal.reliability(thinSector).isReliable)
         #expect(StockSageJournal.reliability(fullSide).isReliable)
+        #expect(!StockSageJournal.reliability(thinRSide).isReliable)   // 8 closed but only 2 R-defined → gated
         // The row caveat is honest: descriptive of the past, not predictive.
         #expect(StockSageJournal.attributionCaveat.lowercased().contains("not predictive"))
     }

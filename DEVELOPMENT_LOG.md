@@ -6850,6 +6850,14 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-22 · Bughunt FIXES — sizer "$0 at risk" false-comfort + reliability gate used raw count (not closed-with-R)
+**Files:** `Views/MarketsView.swift` (sizer shares>=1 guard), `StockSage/StockSageJournal.swift` (+closedWithR on SidePnL/SectorPnL; reliability uses it), `Salehman AITests/StockSageJournalTests.swift` (+thinRSide case).
+**What (bughunt-recent w9xwnrvyb, 2 CONFIRMED, 0 false positives):** #1 (medium honesty) StockSagePositionSizer.size floors shares with no >0 guard, so a budget too small to fund one share (e.g. $100 acct, 0.1% risk, far stop) returned shares:0 and the panel rendered "Shares 0 / At risk $0 / 0% acct" + "a stop-out costs ~$0 (0.00% of the account)" — reads like a FREE trade. Now `if ps.shares >= 1` renders the metrics+loss; else an honest warningSoft note ("…too small to fund even one share… This is NOT a zero-risk trade"). Leverage/gap lines already self-suppress at 0 shares. #2 (low) the reliability gate I shipped in 2e82865 used s.trades (raw closed count) while avgR averages only over R-defined trades — a bucket with 8 closed but 2 R-defined passed n>=5 and showed avgR off 2 samples. Added `closedWithR` to SidePnL/SectorPnL (from rs.count) and reliability() now gates on it, matching its own `closedWithR n:` contract.
+**Verify:** typecheck clean; test now asserts SidePnL(trades:8, closedWithR:2) gates (the exact leak). In-app form rejects entry==stop so #2 only bit legacy/external records, but the gate is now self-consistent.
+**Result:** the sizer never implies a free trade; the journal gate counts the sample it actually averages over. Two self-caught bugs in my own recent commits. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -2718,19 +2718,26 @@ struct MarketsView: View {
                 if let acct = Double(sizerAccount), let rp = Double(sizerRiskPct),
                    let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: entry, stop: stop) {
                     let leveraged = ps.pctOfAccount > 100
-                    HStack(spacing: 16) {
-                        ideaMetric("Shares", "\(ps.shares)", color: DS.Palette.accent)
-                        ideaMetric("At risk", String(format: "$%.0f", ps.dollarsAtRisk), color: DS.Palette.danger)
-                        ideaMetric("Notional", String(format: "$%.0f", ps.notional))
-                        ideaMetric("% acct", String(format: "%.0f%%", ps.pctOfAccount),
-                                   color: leveraged ? DS.Palette.danger : .white)
-                        Spacer(minLength: 0)
+                    if ps.shares >= 1 {
+                        HStack(spacing: 16) {
+                            ideaMetric("Shares", "\(ps.shares)", color: DS.Palette.accent)
+                            ideaMetric("At risk", String(format: "$%.0f", ps.dollarsAtRisk), color: DS.Palette.danger)
+                            ideaMetric("Notional", String(format: "$%.0f", ps.notional))
+                            ideaMetric("% acct", String(format: "%.0f%%", ps.pctOfAccount),
+                                       color: leveraged ? DS.Palette.danger : .white)
+                            Spacer(minLength: 0)
+                        }
+                        // % of account from the FLOORED dollars-at-risk (was the requested risk %, which
+                        // overstates the loss it sits beside once shares round down).
+                        Text(String(format: "Sizes the LOSS: a stop-out at %.2f costs ~$%.0f (%.2f%% of the account). Not a profit promise.",
+                                    stop, ps.dollarsAtRisk, ps.dollarsAtRisk / acct * 100))
+                            .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        // Floored to 0 shares: the budget cannot fund even one share at this stop. Saying
+                        // "$0 at risk" would read as a free trade — it is an un-takeable one.
+                        Text("Risk %/account too small to fund even one share at this stop distance — raise the account or risk %, or tighten the stop. This is NOT a zero-risk trade.")
+                            .font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                     }
-                    // % of account from the FLOORED dollars-at-risk (was the requested risk %, which
-                    // overstates the loss it sits beside once shares round down).
-                    Text(String(format: "Sizes the LOSS: a stop-out at %.2f costs ~$%.0f (%.2f%% of the account). Not a profit promise.",
-                                stop, ps.dollarsAtRisk, ps.dollarsAtRisk / acct * 100))
-                        .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     // Leverage truth: liquidation distance + can-lose-more-than-account (replaces the static string).
                     if leveraged, let lev = StockSageLeverage.assess(account: acct, notional: ps.notional, entry: entry) {
                         Text("⚠︎ " + lev.verdict)
