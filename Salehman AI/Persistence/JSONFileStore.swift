@@ -22,10 +22,18 @@ nonisolated final class JSONFileStore<T: Codable> {
         self.fileURL = base.appendingPathComponent(filename)
     }
 
-    /// Decoded contents, or `defaultValue` if the file is missing or corrupt.
+    /// Decoded contents, or `defaultValue` if the file is missing. A file that EXISTS but cannot be
+    /// decoded (a truncated/partial write, or a schema change) is RENAMED ASIDE to
+    /// `<name>.corrupt-<uuid>` before returning the default — so the next `save()` cannot silently
+    /// overwrite recoverable data with an empty snapshot (mirrors KnowledgeStore's recovery). Without
+    /// this, one bad/partial write wiped long-term memory, all notes/tasks, and the Code chat history.
     func load(defaultValue: T) -> T {
-        guard let data = try? Data(contentsOf: fileURL) else { return defaultValue }
-        return (try? JSONDecoder().decode(T.self, from: data)) ?? defaultValue
+        guard let data = try? Data(contentsOf: fileURL) else { return defaultValue }   // missing → default
+        if let decoded = try? JSONDecoder().decode(T.self, from: data) { return decoded }
+        // Present but undecodable → preserve it aside so save() starts fresh instead of clobbering it.
+        let aside = fileURL.appendingPathExtension("corrupt-\(UUID().uuidString)")
+        try? fileManager.moveItem(at: fileURL, to: aside)
+        return defaultValue
     }
 
     /// Atomically write `value` as JSON.

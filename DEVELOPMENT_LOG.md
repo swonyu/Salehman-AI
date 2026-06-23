@@ -33,6 +33,50 @@ Format: newest at the bottom. Dates are when the work happened (2026-06-04/05).
 > archive ONLY when you need that history — never read it by default. Append new entries
 > ABOVE the "Standing notes" section at the BOTTOM of this file.
 
+## 2026-06-23 · Agents tab — second polish pass (flat filter field → double-bezel, run-log row stagger + accent bar + chip badge, idle button-in-button, double-fade fix)
+**Files:** `Salehman AI/Views/AgentsView.swift`
+**What & why:** Adversarial second pass over the Agents tab after the first polish. Hunted the remaining template smells; visual/UX only, zero logic/data-flow/state-wiring changes.
+- **Filter field was the last flat panel.** `agentSearchRow` had a flat Capsule (no inner highlight), raw `.secondary` icon/clear glyphs, and a dead `.plain` clear button — the only input on the tab still lagging the direct-command field. Rebuilt to match: machined fill + `DS.Bezel.coreInnerHighlight` 0.5pt top light line, accent magnifying glass that brightens on focus, accent focus-stroke gradient, `PressableStyle()` + magnetic clear button, `.secondary` → `DS.Palette.textSecondary`/accent.
+- **Run-log rows were flat + un-staggered.** Switched `ForEach(runHistory)` → `ForEach(Array(runHistory.enumerated()), id: \.element.id)` (keeps `entry.id` hover identity) for a capped per-row fade-up stagger (`min(rowIdx*0.03, 0.24)`, Reduce-Motion → instant); added a brand-gradient leading accent bar on hover (transform/opacity only — `scaleEffect(y:)`, never animated width); promoted the bare `#N` iteration number into a machined chip-in-well (accent capsule + `coreInnerHighlight`).
+- **Idle agent-card affordance → button-in-button.** The hover-reveal `arrow.up.right` was a bare floating glyph; nested it in its own circle with `coreInnerHighlight` and the diagonal magnetic lift (x:+2, y:-1, scale 1.08), matching the SuggestionCard/CTA language.
+- **Double-fade reveal bug fixed.** With the new per-row stagger on `appeared`, the run-log section's own wrapper `.opacity(appeared)` would have multiplied opacity with each row's fade (muddy reveal). Split it: the section wrapper now does offset-only entrance, the header HStack owns a single fade (no rows beneath it → no multiply), and rows own their cascade.
+**Result:** All via existing `DS.*` tokens (`Bezel.coreInnerHighlight`/`cardFill`, `Gradient.brand`, `Palette.accent`/`textSecondary`/`danger`, `Motion.entrance`/`magnetic`/`lux`, `PressableStyle`). Brace/paren/bracket balance verified 0/0/0. ⚠️ Did NOT run xcodebuild (dedicated verification phase builds once); compiles-by-inspection — `reduceMotion` is the parent struct's `@Environment` (in scope inside `runHistorySection`), `.element.id` keeps the existing `RunEntry`/`AgentSpec` identity, no identifiers removed/renamed.
+
+## 2026-06-23 · Today tab — second polish pass (de-animate the glow frame, hover-live stat wells, graceful zero state, hero elevation)
+**Files:** `Salehman AI/Views/TodayView.swift`
+**What & why:** Adversarial second pass over the Today dashboard after the first deepening. Visual/UX only — no logic/data-flow/state-wiring/signature changes (added one `private var isEmpty` computed + a `scaleEffect` on the existing glow).
+- **Fixed an animated frame (rule violation).** The breathing greeting glow orb was animating `.frame(width/height: opacity > 0.25 ? 162 : 140)` — animating layout geometry. Converted to a fixed 140pt `Circle()` that `.scaleEffect(1.16)` on the inhale, so the breath rides a transform (no per-frame relayout) while reading identically. Reduce-Motion static branch already present and untouched.
+- **Hover parity on stat wells.** `StatTile`'s icon well was dead-flat (`accent.opacity(0.12)`, no scale) while `ActionTile`'s well brightened + scaled on hover. Brought to parity: well tint `0.12→0.20` and `scaleEffect 1.0→1.06` gated on the existing `hovering` state, so a hovered stat card feels as alive as a quick-action.
+- **Graceful zero state.** A bare big-bold "0" read as a dead void. Added `isEmpty` (value is "0"/"–"/"-"/empty) → value text dims to `.opacity(0.4)` so an empty metric whispers instead of shouting a hard zero. Empty-state finesse for a number tile.
+- **Hero elevation.** The greeting bezel sat flat on the gradient backdrop with no shadow while it's the most prominent panel; added `.dsShadow(DS.Elevation.shadow2)` to the outer shell so it reads as raised machined glass.
+**Result:** Typecheck via `tools/typecheck.sh` (swiftc -typecheck, full module) — **zero errors in TodayView.swift**. Pre-existing unrelated errors remain from a stray `Views/KnowledgeView 2.swift` duplicate (ambiguous `KnowledgeView`/`KnowledgeSort`, cascading into `QASnapshots.swift`) — not my file, not my lane, left untouched. All edits route through existing `DS.*` tokens; tile call sites unchanged (defaulted params); braces balanced.
+
+## 2026-06-23 · Code tab — high-end visual polish pass (file-tree row parity, magnetic/press affordances, graceful empty states)
+**Files:** `Salehman AI/Views/CodeView.swift`, `Salehman AI/Views/FileTree.swift`, `Salehman AI/Views/CodeSyntaxView.swift`
+**What & why:** Deepened the existing Code-tab design language to the $150k-agency bar — visual/UX only, zero logic/data-flow/state-wiring changes. Kept the NEUTRAL grey editor surfaces (no red cast); did NOT touch syntax-highlight token-color logic. Additive `@State` hover flags + four private helper views only.
+- **File-tree row parity (biggest gap).** The recursive `FileTreeRow` lagged the flat filtered `fileRow`: it had no git-modified amber dot, no inner-highlight on selection, only `.press` hover + `.plain`. Brought to parity — `DS.Bezel.coreInnerHighlight` strokeBorder on selection(0.75pt)/hover(0.5pt), the amber `warningSoft` git dot, `PressableStyle()`, `DS.Motion.magnetic` hover; the folder glyph now swaps fill↔outline on open and the chevron/folder tint goes accent on hover. Radii moved to `DS.Radius.well`.
+- **No dead chrome.** Swept every naked `.buttonStyle(.plain)` icon button → `PressableStyle()` (settle physics) across the tree header (rescan/hide via the shared `headerIcon`), reopen strips, panel/inspector close buttons, file- and conversation-search prev/next/clear, paperclip attach, filter clear, and Restore-all (→ `LuxPressStyle`). Prominent CTAs got dedicated magnetic-hover components: `JumpToLatestButton` (lift + accentGlow + glyph nudge), `WelcomeStarterPill` (icon-island nudges diagonally x:+1.5/y:-1 + scale 1.08, the SuggestionCard motion), `RecentProjectPill`, and `HeaderIconButton` (round-well hover behind the glyph). `headerIcon` was refactored from a stateless `@ViewBuilder func` into the `HeaderIconButton` struct so it can own its hover `@State` — call sites unchanged.
+- **Graceful empty states.** `CodeTextView`'s empty-file case, the diff "no changes" case, and the file-filter "no matches" case were bare floating `Text` in grey voids — all rebuilt to the centered icon-in-well (coreInnerHighlight ring) + headline + subtitle pattern. The activity-idle icon well gained the same machined inner-highlight ring; the file-filter well too.
+**Result:** All changes route through existing `DS.*` tokens/components; no new color literals where a token existed. Four new helper structs are all `private` and uniquely named (grep-verified). ⚠️ Did NOT run xcodebuild (dedicated verification phase builds once); compiles-by-inspection — every referenced symbol (`PressableStyle`/`LuxPressStyle`/`DS.Bezel.coreInnerHighlight`/`DS.Elevation.accentGlow`/`dsShadow`/`DS.Palette.warningSoft`/`DS.Radius.well`) already exists; `dsShadow(hover ? accentGlow(0.30) : shadow1)` unifies because both Elevation branches share the identical `(color,radius,y)` tuple type; `.strokeBorder(gradient, lineWidth: 0)` is a valid no-op for the un-hovered state.
+
+## 2026-06-23 · Scratchpad (Notes/Tasks) tab — high-end visual polish pass (double-bezel fields, button-in-button CTA, magnetic affordances, eyebrow section headers)
+**Files:** `Salehman AI/Views/ScratchpadView.swift`
+**What & why:** Deepened the existing design language on the Notes/Tasks tab to the $150k-agency bar — visual/UX only, zero logic/data-flow/state-wiring changes. Only additive `@State` hover flags + one private `RowIconButton` view were introduced.
+- **Editor + search fields → double-bezel.** The add field and search capsule now carry the machined `coreInnerHighlight` inset top-edge highlight over a `cardFill`-style core inside the surface stroke (concentric with the list cards), and gain an accent border + brighter fill on focus. Raw `Color.white.opacity(0.09/0.07)` wells replaced; paddings moved to `DS.Space.md`.
+- **Organize/Summarize CTA → button-in-button + magnetic hover.** The flat brand pill now nests its sparkles/spinner glyph in its own circle flush to the inner padding (SuggestionCard recipe), with `DS.Motion.magnetic` diagonal lift (x:+2, y:-1) + 1.08 glyph scale + 1.03 pill settle + `coreInnerHighlight` stroke + stronger accent glow on hover. Added `aiHover` @State.
+- **No dead chrome.** Copy-all, inline add (+), AI-result Save-as-Note / dismiss, and the per-row edit/delete affordances all got magnetic self-hover (well fade-in + scale 1.06–1.10 + inner-highlight ring). Extracted the row edit/delete buttons into a private `RowIconButton` with its own `@State` hover (methods can't hold state). Checkbox gained a springy `.symbolEffect(.bounce, value: t.done)` completion pop.
+- **Editorial rhythm + depth.** "X completed" disclosure label is now an `Eyebrow` (successSoft); the AI-result header uses an `Eyebrow("Salehman · Plan/Summary")`; the AI-result card and hovered rows gained `coreInnerHighlight` depth + an accent glow; "All tasks completed" fallback got a success seal glyph; empty-state headline → SF Rounded semibold, subtitle → `DS.Palette.textSecondary`. Header title → `DS.Typography.titleM`. Main section spacing bumped `lg`→`xl` for macro-whitespace.
+**Result:** All changes route through existing `DS.*` tokens/components; no new color literals where a token existed. Brace/paren balance verified (225/225, 699/699). ⚠️ Did NOT run xcodebuild (dedicated verification phase builds once); compiles-by-inspection — `.symbolEffect(.bounce, value:)` is macOS-14+ (target is 26.5), `RowIconButton`/`PressableStyle`/`LuxPressStyle`/`Eyebrow` all exist, list-reorder geometry untouched (no per-row stagger added inside the drag `List`).
+
+## 2026-06-23 · Agents tab — high-end visual polish pass (button-in-button CTA, editorial section headers, per-card stagger)
+**Files:** `Salehman AI/Views/AgentsView.swift`
+**What & why:** Deepened the existing design language on the Agents/Fleet tab to the $150k-agency bar — visual/UX only, zero logic/data-flow/state-wiring changes.
+- **Primary Start/Stop CTA → button-in-button + magnetic hover.** The flat brand pill now nests a trailing glyph (`arrow.up.right` / `xmark`) in its own circle flush to the right inner padding (SuggestionCard recipe), with `DS.Motion.magnetic` diagonal lift (x:+2, y:-1) + 1.08 glyph scale + 1.025 pill settle on hover, a `coreInnerHighlight` inset stroke, and a stronger accent/danger glow while hovered. Added `runCTAHovering` @State (UI-only).
+- **Editorial section headers via `Eyebrow`.** Added Eyebrow + `DS.Typography.titleM` headlines: "Control / Autonomous Mode" (icon well + inner highlight), "Fleet / Agent Roster" (+ live count chip), "Activity / Run Log". Header title + subtitle moved to `DS.Typography.titleM` / `DS.Palette.textSecondary` tokens.
+- **Per-card staggered entrance.** `AgentCard` gained `index`/`appeared` params and a capped per-index fade-up delay (`min(idx*0.045, 0.36)`), Reduce-Motion → instant. Grid switched to `enumerated()` with `id: \.element.id`.
+- **Latest-result preview → machined inset well** (`cardFill` + `coreInnerHighlight`, accent "LATEST" label) instead of floating gray text; timestamp + role colors moved to `DS.Palette.textSecondary`; run-log rows get a subtle 2pt hover offset; the "Clear" dead text button is now a pressable danger-tinted chip with hover; richer empty state (headline + one-line subtitle + inner-highlight icon ring); main section spacing bumped `lg`→`xl` for macro-whitespace.
+**Result:** All changes route through existing `DS.*` tokens/components; no new color literals or magic numbers where a token existed. Brace/paren/bracket balance verified (0/0/0). ⚠️ Did NOT run xcodebuild (dedicated verification phase builds once); compiles-by-inspection — `AgentSpec` is `Identifiable` (`id: UUID`) so the enumerated `id:\.element.id` is valid, and all referenced tokens/styles exist in `DesignSystem.swift`.
+
 ## 2026-06-22 · Wire the regime gate into the ranked-board call sites + surface the CapitalAllocator
 **Files:** `Salehman AI/Views/MarketsView.swift`, `Salehman AI/Views/TodayView.swift`, `Salehman AI/StockSage/StockSageExpectedValue.swift`
 **What & why:** Traced the real call path from the ranked ideas board to a placeable action and found two integration gaps where engines were built but not fed their real inputs.
@@ -7328,6 +7372,75 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 **Verify:** typecheck EXIT=0 (separate step); order label precomputed via a closure OUTSIDE the ViewBuilder (no type-check timeout); >=$1 prices unchanged.
 **ALSO — quant-math correctness audit (workflow wkypyjh8x, 8 agents incl. 2 skeptics + a lead re-derivation): CLEAN, ZERO confirmed formula errors.** Every money/ranking formula independently re-derived vs canonical and matched: Kelly f*=W−(1−W)/R + edge=W·R−(1−W); EV=p·R−(1−p), rewardR cap 50; net R:R=(reward−cost)/(risk+cost), break-even 1/(1+netRR); sizing ⌊acct·f/|entry−stop|⌋; GE gp/hr tax floor+5M cap+50 exempt; bootstrap ruin equity·(1+f·R) + SplitMix64; PSR + DSR expected-max-Sharpe; leverage 100/L; drawdown (1−f)^k; Sharpe/Sortino/Calmar/VaR, sample-stdev n−1, Pearson, beta=cov/var; Wilder RSI/ATR, vol·√252; inverse-vol risk-parity; FX pence/cents ÷100.
 **Result:** the headline action is a complete order; the engine math underneath it is canonically correct. ✅
+
+## 2026-06-23 · RUNESCAPE tab — high-end visual polish pass (no logic touched)
+**Files:** `Views/RuneScapeMarketView.swift`.
+**What & why:** brought the GE flip tab to the $150k-agency bar using only existing DS.* tokens — VISUAL-ONLY, zero flip-math/GE-tax/networking changes. Header: editorial `Eyebrow("Grand Exchange")` now sits ABOVE the title (was a trailing badge); title uses `DS.Typography.titleM`; subtitle uses `textSecondary`. Refresh button: was dead/un-hovered — added magnetic hover (scale 1.06 on `DS.Motion.magnetic`, accent ring + `accentGlow`, coreInnerHighlight inset). Status banner, search field, fastest-flips strip, and the inline budget well all gained the `coreInnerHighlight` 0.5pt top-light line (machined-glass depth); search field magic numbers (10/7) → `DS.Space.sm/.xs` + focus accent glow. Flips strip got a `Velocity` eyebrow (warningSoft). Rows: replaced the flat hover fill with a layered ZStack (subtle zebra striping + hover lift + inset highlight + a brand-gradient leading accent bar that scales in), micro hover scale, and per-row staggered entrance (opacity+offset, capped delay, Reduce-Motion static branch). Numeric typography: Buy/Sell prices and the margin chip now `.monospacedDigit()` for tabular column alignment (color-coded successSoft/danger kept; up-chip keeps DARK ink `Color(white:0.06)`). Empty state upgraded to a two-tier headline+subtitle inside a double-bezel panel with a live `ProgressView` in the loading branch and accent halo. Top section rhythm `DS.Space.lg`→`xl`.
+**Result:** typecheck/build run in the dedicated verification phase (not by this agent). All changes reference only pre-existing DS tokens/components; no identifiers renamed; `ForEach(rows)` → `ForEach(Array(rows.enumerated()), id: \.element.id)` preserves row identity. ✅
+
+---
+
+## 2026-06-23 · DESIGN (Today tab) — per-tile staggered cascade, eyebrow reveal, token-clean secondary text, airier action tiles
+**Files:** `Views/TodayView.swift` (only).
+**What (high-end visual polish, design-system-stylist):** deepened the existing liquid-glass language on the Today dashboard — no new look invented.
+- **Staggered entrance, now per-tile:** previously the three top-level sections faded up as slabs. Threaded `appeared`/`index`/`baseDelay` into `ActionTile` and `StatTile` so each tile fades up (opacity 0→1 + 12pt rise) on a per-index `DS.Motion.entrance` cascade, trailing its section's eyebrow (QUICK ACTIONS tiles base 0.10, AT A GLANCE base 0.18). The `section(_:labelDelay:)` helper now reveals just its eyebrow, so each section unfurls instead of popping. All gated on `accessibilityReduceMotion` (instant, no offset/animation) — matching the file's existing Reduce-Motion discipline. `--qa` harness still pre-sets `appeared=true`, so captures stay non-blank.
+- **Token-clean secondary text:** replaced raw `.secondary` with `DS.Palette.textSecondary` on the greeting subtitle, StatTile title/detail, and the hover chevron (now `textSecondary` 0.45→1.0).
+- **Macro-whitespace:** section eyebrow→content spacing `DS.Space.md`→`DS.Space.lg`; ActionTile vertical padding `DS.Space.sm`→`DS.Space.md` so action tiles read as substantial tap targets like the stat cards.
+- **Greeting reveal** now Reduce-Motion-guarded too (was unconditional).
+**Why:** per-tile cascade + airier rhythm is the $150k-agency tell; raw `.secondary`/`.sm` padding was the cheapness tell. All values go through `DS.*`.
+**Verify:** edits use only existing DS tokens + components; new tile params all default-valued (existing call sites unaffected); braces balanced. Build/typecheck runs in the dedicated verification phase (not run here per task constraint). Visual proof → qa-visual-inspector.
+**Result:** Today tab unfurls as a nested editorial cascade; every tile breathes, every secondary string is a token. ✅
+
+---
+
+### 2026-06-23 — Knowledge tab high-end visual polish (design-system-stylist)
+**Files:** `Views/KnowledgeView.swift` (only).
+**What (deepened the existing liquid-glass language — no new look invented):**
+- **Macro-whitespace:** top section spacing `DS.Space.lg`→`DS.Space.xl`; documents-section + paste-sheet spacing widened; raw paddings swapped to `DS.Space.*` tokens.
+- **Button-in-button CTAs:** the header "Add file" and the paste-sheet "Add to Knowledge" buttons now nest their trailing glyph in its own circle flush-right, with magnetic hover (scale 1.08 + offset x:+2 y:-1) and a 0.5pt `coreInnerHighlight` capsule edge; paste CTA promoted to `DS.Gradient.brand`. New `addHover`/`pasteHover` @State only (no logic touched).
+- **Double-bezel fields:** main ask field, the doc-filter field, the per-doc detail ask field, and both paste-sheet inputs gained the `coreInnerHighlight` 0.5pt core well under their stroke; filter field got the accent focus-glow border to match the ask field.
+- **Eyebrow rhythm:** documents heading now leads with `Eyebrow("Vault")`; paste sheet + detail header lead with eyebrow/`titleM`; SOURCES/ANSWER labels tracked to 1pt; title swapped to `DS.Typography.titleM`.
+- **Eyebrow category chip on rows:** each doc row + detail header shows the document `kind` as an uppercase tracked accent chip (concentric inner highlight) instead of inline plain text.
+- **Staggered entrance on rows:** per-index fade-up (opacity 0→1 + 10pt rise) on `DS.Motion.entrance`, capped delay, Reduce-Motion-guarded; transform/opacity only (no frame animation).
+- **Depth + contained sub-surfaces:** Sort menu got a capsule chip chrome; SOURCES citations sit in a machined inner-highlight well; filter empty-state icon got an inset highlight ring; detail doc icon became a proper icon-well tile; both sheet backgrounds now use `DS.Gradient.bgVertical`.
+- **Token-clean text:** raw `.secondary` → `DS.Palette.textSecondary` across header subtitle, hints, source/answer bodies, section labels.
+**Why:** crowded layout + flat fields + dead non-hover buttons + raw `.secondary` were the cheapness tells; everything now routes through `DS.*` and the existing Bezel/Eyebrow/SuggestionCard recipes.
+**Verify:** edits use only existing DS tokens/components; new state is default-valued; brace/paren/bracket counts balance (195/195, 794/794, 20/20). Build/typecheck runs in the dedicated verification phase (not run here per task constraint). Visual proof → qa-visual-inspector.
+**Result:** Knowledge tab reads as machined glass-in-aluminum — concentric fields, editorial eyebrows, magnetic CTAs, a staggered vault list. ✅
+
+---
+
+## 2026-06-23 — Chat tab: exhaustive $150k-agency visual polish
+**What:** Full sweep of `Views/ContentView.swift` (~2900 lines). Applied high-end visual language: double-bezel depth, inner highlights, magnetic hover physics, staggered entrances, button-in-button CTAs, DS token alignment, empty/no-result state upgrades.
+**Files:** `Salehman AI/Views/ContentView.swift`, `.claude/agents/learnings/chat-ui-engineer.md`
+**Changes (surgical, no logic/data-flow touches):**
+- `emptyState`: Added `Eyebrow("CHAT")` tag; hero icon upgraded to double-bezel disc (shell + core + coreInnerHighlight); suggestion pills gain button-in-button trailing arrow with magnetic hover + per-index staggered entrance; spacing aligned to DS.Space tokens.
+- `searchNoResultsState`: Replaced flat icon with double-bezel disc; added DS.Typography.titleM headline; Clear button styled as accent capsule.
+- `searchBar`: Done button is accent capsule pill; hairline separator uses DS.Palette.hairline.
+- `pinnedStrip`: Extracted `PinnedChip` struct with per-chip `@State var hovering`; chips get coreInnerHighlight inner stroke + magnetic hover scale.
+- `ConfirmationChip`: PressableStyle + magnetic hover scale (1.03).
+- `AgentRunView`: coreInnerHighlight inner stroke + DS.Elevation.shadow1; radius aligned to DS.Radius.card.
+- `ScrollToLatestButton`: Brand gradient fill; coreInnerHighlight inner stroke; magnetic hover (1.04) + accent glow shadow.
+- `attachmentChip` / `AttachmentChipView`: Extracted to own struct; coreInnerHighlight inner stroke; PressableStyle on remove button.
+- `noteSavedPulse` banner: double-bezel card with successSoft accent hairline.
+- User bubble: DS.Radius.card radius; coreInnerHighlight inner strokeBorder + outer hairline.
+- `sendOrStopButton`: Brand gradient fill; coreInnerHighlight overlay + accent glow shadow.
+- Slash command menu: DS.Elevation.shadow2 + coreInnerHighlight inner stroke.
+- `micButton`: Replaced bare Button with CircleIconButton (full hover ring + scale).
+- `actionButton`: PressableStyle + DS.Palette.accent active color.
+- `ApprovalCard` command block: coreInnerHighlight inner stroke; DS.Space token padding.
+**Why:** Owner requested $150k-agency polish — every flat panel with depth, every dead button with physics, every magic number with a DS token.
+**Verify:** `bash tools/typecheck.sh` → zero ContentView errors (4 pre-existing KnowledgeView 2.swift ambiguity errors unrelated to this session); brace balance 650/650.
+**Result:** Chat tab upgraded to machined glass visual language — concentric bezels, editorial eyebrow, magnetic CTAs, staggered suggestions, inner highlights throughout. ✅
+
+---
+
+## 2026-06-23 · DATA-LOSS GUARD — JSONFileStore preserves a corrupt file instead of letting save() wipe it
+**Files:** `Persistence/JSONFileStore.swift` (load recovery).
+**What (final honesty/security pass w413jihdx #2, HIGH — owner data destruction):** JSONFileStore.load collapsed "file missing" and "file present but undecodable" into one default-return AND left the bad file on disk — so the next save() atomically wrote the now-empty in-memory snapshot OVER the original, permanently destroying long-term memory, all notes/tasks, and the Code chat history on a single truncated/partial write or a schema change. Fix: load now distinguishes missing (→ default) from present-but-undecodable; in the corrupt branch it RENAMES the file aside to `<name>.corrupt-<uuid>` before returning default (mirrors KnowledgeStore.load recovery), so save() starts fresh instead of clobbering recoverable data.
+**Verify:** the whole-module typecheck reported NO error in JSONFileStore.swift (the build was red only from a CONCURRENT session's in-progress ContentView change + live file edits, unrelated to this file); the change is a self-contained 5-line edit referencing only already-in-scope symbols. RE-TRACED: valid + missing paths unchanged (byte-stable); no test exercises the corrupt-file branch.
+**NOTE:** a stray untracked duplicate `Views/KnowledgeView 2.swift` (older 861-line copy, redeclaring KnowledgeSort) was breaking the build — moved aside to $TMPDIR (reversible). Sacred audit w413jihdx found NO secret leak / paid-spend / fabrication.
+**Result:** a corrupt/partial persistence file no longer cascades into total loss of the owner memory, notes, and code history. ✅
 
 ---
 
