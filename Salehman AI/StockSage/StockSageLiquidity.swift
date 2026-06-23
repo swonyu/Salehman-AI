@@ -73,8 +73,14 @@ enum StockSageLiquidity {
     nonisolated static func humanDollars(_ v: Double) -> String {
         switch v {
         case 1_000_000_000...: return String(format: "$%.1fB", v / 1_000_000_000)
-        case 1_000_000...:     return String(format: "$%.0fM", v / 1_000_000)
-        case 1_000...:         return String(format: "$%.0fK", v / 1_000)
+        case 1_000_000...:
+            // %.0f can round a band-top (e.g. 999.5M–999.99M) UP to "1000M"; promote to B instead.
+            let m = v / 1_000_000
+            return m >= 999.5 ? String(format: "$%.1fB", v / 1_000_000_000) : String(format: "$%.0fM", m)
+        case 1_000...:
+            // …and 999_950–999_999 would round to "1000K"; promote to M instead.
+            let k = v / 1_000
+            return k >= 999.5 ? String(format: "$%.1fM", v / 1_000_000) : String(format: "$%.0fK", k)
         default:               return String(format: "$%.0f", v)
         }
     }

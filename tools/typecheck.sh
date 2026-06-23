@@ -20,8 +20,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 DEV="$(xcode-select -p)"
-SDK="$DEV/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+# Resolve swiftc + SDK for BOTH a full-Xcode install AND a CommandLineTools-only
+# layout. A CLT-only install (or a CLT reinstall that drops the Xcode-style
+# Toolchains/Platforms symlinks) keeps swiftc at usr/bin and the SDK at SDKs/ —
+# fall back to those so the type-check keeps working without xcrun (which can't
+# write its cache to /var/folders under the agent sandbox).
 SWIFTC="$DEV/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+[ -x "$SWIFTC" ] || SWIFTC="$DEV/usr/bin/swiftc"
+SDK="$DEV/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+[ -d "$SDK" ] || SDK="$DEV/SDKs/MacOSX.sdk"
 CACHE="${TMPDIR:-/tmp}/salehman_mcache"
 
 find "Salehman AI" -name '*.swift' -not -path '*External Artifacts*' -print0 \

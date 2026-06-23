@@ -7444,6 +7444,16 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-23 · FORMAT FIX (humanDollars band-top) + typecheck.sh env-robustness + TOOLCHAIN NOTE
+**Files:** `StockSage/StockSageLiquidity.swift` (+test `StockSageLiquidityTests.swift`), `tools/typecheck.sh`.
+**What (UI_FORMAT_AUDIT #3):** StockSageLiquidity.humanDollars picked the K/M unit on the raw value but formatted with %.0f, so a band-top (e.g. 999_950) rounded UP to "$1000K" / "$1000M" instead of "$1.0M" / "$1.0B". Fixed: when the divided value rounds to >= 999.5, promote to the next unit. Existing format ($45M, $800K, $2.3B) unchanged; +test pins the boundaries (999_950→$1.0M, 999_500_000→$1.0B, 999_499_999→$999M).
+**typecheck.sh:** made swiftc + SDK resolution robust to a CommandLineTools-only layout — fall back to $DEV/usr/bin/swiftc and $DEV/SDKs/MacOSX.sdk when the Xcode-style Toolchains/Platforms paths are absent. (The disk-full recovery left a CLT-only toolchain; the old hardcoded XcodeDefault.xctoolchain path no longer existed → typecheck.sh was failing with EXIT 127.)
+**Verify:** python-verified the humanDollars boundaries; RE-TRACED the existing humanDollarsFormatsScale test (all pass). swiftc now runs (path fix works) and reports ZERO errors in the changed files — the ONLY remaining whole-module errors are 8x "external macro SwiftUIMacros.StateMacro not found" in DesignSystem.swift.
+**🟥 ENVIRONMENT (owner action):** the full Xcode toolchain (with the SwiftUI @State/@Binding MACRO plugin) is MISSING — only CommandLineTools remains after the disk-full. swiftc compiles plain Swift but cannot expand SwiftUI macros, so whole-module typecheck + xcodebuild are BLOCKED until Xcode (or a toolchain with SwiftUIMacros) is reinstalled. App engine code (non-SwiftUI) still type-checks; SwiftUI views cannot be verified locally until then.
+**Result:** band-top dollar labels correct; typecheck.sh survives the CLT layout; toolchain gap flagged for the owner. ✅
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -57,5 +57,9 @@ struct StockSageLiquidityTests {
         #expect(LQ.humanDollars(2_300_000_000) == "$2.3B")
         #expect(LQ.humanDollars(45_000_000) == "$45M")
         #expect(LQ.humanDollars(800_000) == "$800K")
+        // Band-top rounding: %.0f would overflow the unit ("$1000K"/"$1000M") — promote instead.
+        #expect(LQ.humanDollars(999_950) == "$1.0M")
+        #expect(LQ.humanDollars(999_500_000) == "$1.0B")
+        #expect(LQ.humanDollars(999_499_999) == "$999M")   // under the threshold → stays M
     }
 }
