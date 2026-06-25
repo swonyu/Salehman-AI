@@ -86,7 +86,9 @@ public class FlipFinderTest
 		volumes.put(3, volume(0, 0));
 
 		// Synthetic items have null timestamps → ageSeconds -1 → staleness filter is a no-op.
-		List<FlipItem> flips = FlipFinder.rank(latest, volumes, mapping, config(0, 100), 1_000_000L);
+		// Pin the sort to POTENTIAL_PROFIT explicitly (the config default is now REALIZED_VELOCITY).
+		List<FlipItem> flips = FlipFinder.rank(latest, volumes, mapping,
+			config(0, 100, SalehmanGeConfig.SortBy.POTENTIAL_PROFIT), 1_000_000L);
 		assertEquals(2, flips.size());
 		assertEquals("A", flips.get(0).name);   // higher profit/limit ranks first
 		assertEquals("B", flips.get(1).name);
@@ -133,5 +135,149 @@ public class FlipFinderTest
 		assertEquals("B", flips.get(0).name);                  // 70000 gp/hr beats 19500 (fast turnover)
 		assertEquals(70000.0, flips.get(0).gpPerHour, 1e-9);
 		assertEquals(19500.0, flips.get(1).gpPerHour, 1e-9);
+	}
+
+	@Test
+	public void fillConfidenceDecaysFromFreshToFloor()
+	{
+		assertEquals(1.0, FlipFinder.fillConfidence(-1), 1e-9);       // unknown age → full confidence
+		assertEquals(1.0, FlipFinder.fillConfidence(0), 1e-9);        // brand new
+		assertEquals(1.0, FlipFinder.fillConfidence(90), 1e-9);       // edge of the fresh window
+		assertEquals(0.7542, FlipFinder.fillConfidence(3600), 1e-3);  // ~1h → ~0.75 (backlog target)
+		assertEquals(0.75, FlipFinder.fillConfidence(3660), 1e-9);    // exact t=1/3 crossover → 0.75
+		assertEquals(0.25, FlipFinder.fillConfidence(10800), 1e-9);   // 3h → floor exactly
+		assertEquals(0.25, FlipFinder.fillConfidence(20000), 1e-9);   // beyond floor stays clamped
+	}
+
+	@Test
+	public void realizedVelocityDownranksStaleFatFlip()
+	{
+		Map<Integer, GrandExchangeApi.Latest> latest = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Mapping> mapping = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Volume> volumes = new HashMap<>();
+		long now = 100_000L;
+
+		// A: fresh (30s old). postTax 28, limit 10000 → 70000 gp/hr theoretical, conf 1.0.
+		latest.put(1, latest(130, 100, now - 30, now - 30));
+		mapping.put(1, mapping(1, "A", 10000, false));
+		volumes.put(1, volume(5000, 5000));
+		// B: stale (3h old). postTax 78, limit 10257 → ~200011 gp/hr theoretical BUT conf 0.25
+		// → ~50003 realized, which loses to A's 70000.
+		latest.put(2, latest(1100, 1000, now - 10800, now - 10800));
+		mapping.put(2, mapping(2, "B", 10257, false));
+		volumes.put(2, volume(5000, 5000));
+
+		List<FlipItem> flips = FlipFinder.rank(latest, volumes, mapping, configRealizedNoStaleFilter(), now);
+		assertEquals(2, flips.size());
+		assertEquals("A", flips.get(0).name);                  // fresh realized 70000 beats stale 50003
+		assertEquals("B", flips.get(1).name);
+		assertEquals(1.0, flips.get(0).fillConfidence, 1e-9);
+		assertEquals(0.25, flips.get(1).fillConfidence, 1e-9);
+		assertEquals(70000.0, flips.get(0).realizedGpPerHour, 1e-6);  // fresh: realized == theoretical
+	}
+
+	@Test
+	public void realizedEqualsTheoreticalWhenTimestampsMissing()
+	{
+		Map<Integer, GrandExchangeApi.Latest> latest = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Mapping> mapping = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Volume> volumes = new HashMap<>();
+		latest.put(1, latest(1100, 1000));     // null timestamps → ageSeconds -1 → confidence 1.0
+		mapping.put(1, mapping(1, "A", 1000, false));
+		volumes.put(1, volume(5000, 5000));
+
+		List<FlipItem> flips = FlipFinder.rank(latest, volumes, mapping, config(0, 100), 1_000_000L);
+		assertEquals(1, flips.size());
+		assertEquals(1.0, flips.get(0).fillConfidence, 1e-9);
+		assertEquals(flips.get(0).gpPerHour, flips.get(0).realizedGpPerHour, 1e-9);
+	}
+
+	@Test
+	public void mappingCacheHasTtlAndDoesNotCacheEmptyResults() throws Exception
+	{
+		Map<Integer, GrandExchangeApi.Mapping> good = new HashMap<>();
+		good.put(1, mapping(1, "A", 10, false));
+		final int[] calls = {0};
+		GrandExchangeApi api = new GrandExchangeApi(null, null)
+		{
+			@Override
+			public Map<Integer, GrandExchangeApi.Mapping> mapping()
+			{
+				calls[0]++;
+				return calls[0] == 1 ? good : new HashMap<>(); // 1st good, then empty
+			}
+		};
+		FlipFinder ff = new FlipFinder(api);
+		assertEquals(1, ff.getMapping(0L).size());                 // first fetch
+		assertEquals(1, calls[0]);
+		assertEquals(1, ff.getMapping(1000L).size());              // within TTL → served from cache
+		assertEquals(1, calls[0]);                                 // no extra fetch
+		// TTL expired → refetch returns EMPTY → must NOT poison the cache; keep the stale-good one.
+		assertEquals(1, ff.getMapping(FlipFinder.MAPPING_TTL_MS + 1L).size());
+		assertEquals(2, calls[0]);
+	}
+
+	// --- additional helpers ---
+
+	private SalehmanGeConfig config(int minMargin, int minVolume, SalehmanGeConfig.SortBy sort)
+	{
+		return new SalehmanGeConfig()
+		{
+			@Override
+			public int minMargin()
+			{
+				return minMargin;
+			}
+
+			@Override
+			public int minVolume()
+			{
+				return minVolume;
+			}
+
+			@Override
+			public SortBy sortBy()
+			{
+				return sort;
+			}
+		};
+	}
+
+	private GrandExchangeApi.Latest latest(int high, int low, long highTime, long lowTime)
+	{
+		GrandExchangeApi.Latest l = latest(high, low);
+		l.highTime = highTime;
+		l.lowTime = lowTime;
+		return l;
+	}
+
+	private SalehmanGeConfig configRealizedNoStaleFilter()
+	{
+		return new SalehmanGeConfig()
+		{
+			@Override
+			public int minMargin()
+			{
+				return 0;
+			}
+
+			@Override
+			public int minVolume()
+			{
+				return 100;
+			}
+
+			@Override
+			public SortBy sortBy()
+			{
+				return SortBy.REALIZED_VELOCITY;
+			}
+
+			@Override
+			public int maxStaleMinutes()
+			{
+				return 0;   // don't hard-filter the 3h-old flip; the point is to RANK it low
+			}
+		};
 	}
 }

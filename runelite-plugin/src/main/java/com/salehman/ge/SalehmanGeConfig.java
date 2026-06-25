@@ -14,7 +14,8 @@ public interface SalehmanGeConfig extends Config
 		POTENTIAL_PROFIT,
 		ROI,
 		MARGIN,
-		VELOCITY        // gp/hour — fastest-compounding flips (money velocity)
+		VELOCITY,           // gp/hour (theoretical) — fastest-compounding flips
+		REALIZED_VELOCITY   // gp/hour × freshness confidence — down-ranks stale quotes
 	}
 
 	@ConfigItem(
@@ -87,12 +88,13 @@ public interface SalehmanGeConfig extends Config
 	@ConfigItem(
 		keyName = "sortBy",
 		name = "Sort by",
-		description = "Rank flips by total potential profit, ROI %, per-item margin, or velocity (gp/hour).",
+		description = "Rank by potential profit, ROI %, per-item margin, velocity (gp/hour), or "
+			+ "realized velocity (gp/hour discounted by quote freshness — the default).",
 		position = 7
 	)
 	default SortBy sortBy()
 	{
-		return SortBy.POTENTIAL_PROFIT;
+		return SortBy.REALIZED_VELOCITY;
 	}
 
 	@ConfigItem(
@@ -122,10 +124,33 @@ public interface SalehmanGeConfig extends Config
 	@ConfigItem(
 		keyName = "maxStaleMinutes",
 		name = "Max quote age (min, 0 = off)",
-		description = "Skip flips whose newest instant-buy/sell trade is older than this — a wide spread on stale prices isn't really tradeable. 0 disables the filter.",
+		description = "Skip flips whose OLDER instant-buy/sell leg is older than this — a wide spread on stale prices isn't really tradeable. 0 disables the filter.",
 		position = 10
 	)
 	default int maxStaleMinutes()
+	{
+		return 60;
+	}
+
+	@ConfigItem(
+		keyName = "autoRefresh",
+		name = "Auto-refresh",
+		description = "Re-fetch live prices automatically on an interval.",
+		position = 11
+	)
+	default boolean autoRefresh()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "refreshSeconds",
+		name = "Refresh interval (s)",
+		description = "Seconds between auto-refreshes (when Auto-refresh is on).",
+		position = 12
+	)
+	@Range(min = 10, max = 600)
+	default int refreshSeconds()
 	{
 		return 60;
 	}

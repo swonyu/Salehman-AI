@@ -36,7 +36,15 @@ public class GrandExchangeApi
 	@Inject
 	GrandExchangeApi(OkHttpClient http, Gson gson)
 	{
-		this.http = http;
+		// Reuse RuneLite's shared client (its connection pool / proxy / UA cookie handling)
+		// but impose our own timeouts so a hung request can't freeze the refresh forever.
+		// newBuilder() shares the same Dispatcher/ConnectionPool, so this is cheap.
+		// Null-tolerant: unit tests subclass this with a null client and override the fetches.
+		this.http = http == null ? null : http.newBuilder()
+			.connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+			.readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+			.callTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+			.build();
 		this.gson = gson;
 	}
 

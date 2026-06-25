@@ -20,10 +20,14 @@ public class FlipFinder
 	// GE buy limits reset every 4 hours — the window the gp/hour velocity is spread over.
 	static final double GE_WINDOW_HOURS = 4.0;
 
+	// Item mapping is near-static; cache it but re-fetch occasionally (new items ship).
+	static final long MAPPING_TTL_MS = 6L * 60 * 60 * 1000; // 6h
+
 	private final GrandExchangeApi api;
 	// volatile: the panel triggers refresh on background threads, so the lazy init
 	// can race — publish the fully-built map atomically (a rare double-fetch is benign).
 	private volatile Map<Integer, GrandExchangeApi.Mapping> mappingCache;
+	private volatile long mappingFetchedAtMs;
 
 	@Inject
 	FlipFinder(GrandExchangeApi api)
@@ -33,15 +37,48 @@ public class FlipFinder
 
 	public List<FlipItem> findFlips(SalehmanGeConfig config) throws IOException
 	{
-		Map<Integer, GrandExchangeApi.Mapping> mapping = mappingCache;
-		if (mapping == null)
-		{
-			mapping = api.mapping();               // ~static; fetch once
-			mappingCache = mapping;
-		}
+		Map<Integer, GrandExchangeApi.Mapping> mapping = getMapping(System.currentTimeMillis());
 		Map<Integer, GrandExchangeApi.Latest> latest = api.latest();
 		Map<Integer, GrandExchangeApi.Volume> volumes = api.volumes();
 		return rank(latest, volumes, mapping, config, System.currentTimeMillis() / 1000L);
+	}
+
+	/**
+	 * Cached item mapping with a TTL and an empty-result guard. The old code cached the
+	 * first fetch forever — and an empty/failed fetch would have poisoned the cache
+	 * permanently. Here we only replace the cache with a NON-empty result, and fall back
+	 * to the stale-but-usable cache if a refresh comes back empty. {@code nowMs} is a
+	 * parameter so the TTL is unit-testable. Package-private for the test.
+	 */
+	Map<Integer, GrandExchangeApi.Mapping> getMapping(long nowMs) throws IOException
+	{
+		Map<Integer, GrandExchangeApi.Mapping> cached = mappingCache;
+		if (cached != null && !cached.isEmpty() && nowMs - mappingFetchedAtMs < MAPPING_TTL_MS)
+		{
+			return cached;
+		}
+		try
+		{
+			Map<Integer, GrandExchangeApi.Mapping> fresh = api.mapping();
+			if (fresh != null && !fresh.isEmpty())
+			{
+				mappingCache = fresh;
+				mappingFetchedAtMs = nowMs;
+				return fresh;
+			}
+		}
+		catch (IOException e)
+		{
+			// The real failure mode is a thrown IOException (HTTP error / malformed body),
+			// not an empty return. Don't discard a good cached mapping over a transient blip.
+			if (cached != null && !cached.isEmpty())
+			{
+				return cached;
+			}
+			throw e;
+		}
+		// Refresh returned empty (no cache to fall back on): serve nothing rather than poison.
+		return cached != null ? cached : java.util.Collections.emptyMap();
 	}
 
 	/** Pure ranking — separated from I/O so it can be tested with fixed inputs.
@@ -120,8 +157,15 @@ public class FlipFinder
 				continue;
 			}
 
+			// Discount the theoretical gp/hour by how fresh the quotes are: a stale spread
+			// is the #1 reason a flip looks great but never fills. realizedGpPerHour is what
+			// the REALIZED_VELOCITY sort ranks on. Proxy for fill-probability, not a promise.
+			double confidence = fillConfidence(ageSeconds);
+			double realizedGpPerHour = gpPerHour * confidence;
+
 			flips.add(new FlipItem(id, m.name, buyPrice, sellPrice, margin, tax, postTax,
-				roi, limit, volume, potential, gpPerHour, m.members, ageSeconds));
+				roi, limit, volume, potential, gpPerHour, realizedGpPerHour, confidence,
+				m.members, ageSeconds));
 		}
 
 		flips.sort(comparator(config.sortBy()));
@@ -131,18 +175,47 @@ public class FlipFinder
 
 	private static Comparator<FlipItem> comparator(SalehmanGeConfig.SortBy sortBy)
 	{
+		// Tie-break by id so ranking is deterministic — HashMap iteration order is not,
+		// so equal-keyed flips would otherwise shuffle between refreshes (and tests).
+		Comparator<FlipItem> tie = Comparator.comparingInt((FlipItem f) -> f.id);
 		switch (sortBy)
 		{
 			case ROI:
-				return Comparator.comparingDouble((FlipItem f) -> f.roi).reversed();
+				return Comparator.comparingDouble((FlipItem f) -> f.roi).reversed().thenComparing(tie);
 			case MARGIN:
-				return Comparator.comparingInt((FlipItem f) -> f.postTaxMargin).reversed();
+				return Comparator.comparingInt((FlipItem f) -> f.postTaxMargin).reversed().thenComparing(tie);
 			case VELOCITY:
-				return Comparator.comparingDouble((FlipItem f) -> f.gpPerHour).reversed();
+				return Comparator.comparingDouble((FlipItem f) -> f.gpPerHour).reversed().thenComparing(tie);
+			case REALIZED_VELOCITY:
+				return Comparator.comparingDouble((FlipItem f) -> f.realizedGpPerHour).reversed().thenComparing(tie);
 			case POTENTIAL_PROFIT:
 			default:
-				return Comparator.comparingLong((FlipItem f) -> f.potentialProfit).reversed();
+				return Comparator.comparingLong((FlipItem f) -> f.potentialProfit).reversed().thenComparing(tie);
 		}
+	}
+
+	/**
+	 * Fill-confidence from quote age: 1.0 when fresh (≤90s) or age unknown (-1), then a
+	 * LINEAR decay to a 0.25 floor reached at ~3h. A time-decay PROXY for "will this
+	 * actually fill?", not a volume measurement — a 3h-old Bonds quote may still fill
+	 * instantly. Pure + deterministic. Mirrors OSRS_BACKLOG #1.
+	 */
+	static final double FRESH_SECONDS = 90.0;
+	static final double FLOOR_AGE_SECONDS = 3 * 3600.0; // 10800s = 3h
+	static final double CONFIDENCE_FLOOR = 0.25;
+
+	static double fillConfidence(long ageSeconds)
+	{
+		if (ageSeconds < 0 || ageSeconds <= FRESH_SECONDS)
+		{
+			return 1.0;
+		}
+		if (ageSeconds >= FLOOR_AGE_SECONDS)
+		{
+			return CONFIDENCE_FLOOR;
+		}
+		double t = (ageSeconds - FRESH_SECONDS) / (FLOOR_AGE_SECONDS - FRESH_SECONDS);
+		return 1.0 + t * (CONFIDENCE_FLOOR - 1.0); // 1.0 → 0.25
 	}
 
 	/**
