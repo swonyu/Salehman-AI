@@ -45,6 +45,7 @@ class SalehmanGePanel extends PluginPanel
 {
 	private static final NumberFormat GP = NumberFormat.getIntegerInstance(Locale.US);
 	private static final Color ALCH_COLOR = new Color(0x4F, 0xC3, 0xF7); // cyan — distinct from profit-green
+	private static final Color CHART_COLOR = new Color(0x7F, 0xB3, 0xFF); // sparkline line
 	private static final int VOLUME_GATE_FACTOR = 3; // daily volume below limit×this → "thin volume"
 
 	private final SalehmanGePlugin plugin;
@@ -63,6 +64,10 @@ class SalehmanGePanel extends PluginPanel
 	private long budget = 0;
 	private String nameFilter = "";
 	private java.util.List<FlipItem> lastFlips = java.util.Collections.emptyList();
+	// price-history sparkline: which rows are expanded, the fetched mids (empty = no data), in-flight
+	private final java.util.Set<Integer> expanded = new java.util.HashSet<>();
+	private final java.util.Map<Integer, int[]> sparkCache = new java.util.HashMap<>();
+	private final java.util.Set<Integer> sparkLoading = new java.util.HashSet<>();
 
 	SalehmanGePanel(SalehmanGePlugin plugin, ItemManager itemManager)
 	{
@@ -493,7 +498,31 @@ class SalehmanGePanel extends PluginPanel
 				+ QuantityFormatter.quantityToStackSize((long) f.alchGpPerHour) + "/h", ALCH_COLOR));
 		}
 
-		// whole-row hover + left-click → wiki price page; right-click → menu
+		if (expanded.contains(f.id))
+		{
+			body.add(Box.createVerticalStrut(3));
+			if (sparkLoading.contains(f.id))
+			{
+				body.add(dim("loading chart…"));
+			}
+			else
+			{
+				int[] mids = sparkCache.get(f.id);
+				if (mids != null && mids.length >= 2)
+				{
+					Sparkline sp = new Sparkline(mids, CHART_COLOR, 160, 40);
+					sp.setAlignmentX(LEFT_ALIGNMENT);
+					body.add(sp);
+					body.add(dim("recent price (5m steps)"));
+				}
+				else
+				{
+					body.add(dim("no recent price data"));
+				}
+			}
+		}
+
+		// whole-row hover + left-click → expand chart; right-click → menu
 		MouseListener ma = new MouseAdapter()
 		{
 			@Override
@@ -505,7 +534,7 @@ class SalehmanGePanel extends PluginPanel
 				}
 				if (javax.swing.SwingUtilities.isLeftMouseButton(e))
 				{
-					openPricePage(f);
+					toggleExpand(f);   // expand the price chart; wiki is on the right-click menu
 				}
 			}
 
@@ -575,6 +604,25 @@ class SalehmanGePanel extends PluginPanel
 		LinkBrowser.browse("https://prices.runescape.wiki/osrs/item/" + f.id);
 	}
 
+	/** Toggle the inline price chart for a row, lazily fetching the series the first time. */
+	private void toggleExpand(FlipItem f)
+	{
+		if (!expanded.remove(f.id))
+		{
+			expanded.add(f.id);
+			if (!sparkCache.containsKey(f.id) && sparkLoading.add(f.id))
+			{
+				plugin.requestSparkline(f.id, mids ->
+				{
+					sparkLoading.remove(f.id);
+					sparkCache.put(f.id, mids == null ? new int[0] : mids);
+					renderList();
+				});
+			}
+		}
+		renderList();
+	}
+
 	/** A full-width, transparent, left-aligned BorderLayout cell for BoxLayout rows. */
 	private JPanel fullWidth(BorderLayout layout)
 	{
@@ -604,6 +652,15 @@ class SalehmanGePanel extends PluginPanel
 		p.add(l, BorderLayout.WEST);
 		p.add(v, BorderLayout.EAST);
 		return p;
+	}
+
+	private JComponent dim(String text)
+	{
+		JLabel l = new JLabel(text);
+		l.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+		l.setFont(FontManager.getRunescapeSmallFont());
+		l.setAlignmentX(LEFT_ALIGNMENT);
+		return l;
 	}
 
 	private static String sortLabel(SalehmanGeConfig.SortBy s)

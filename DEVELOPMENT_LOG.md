@@ -7517,6 +7517,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-25 · RuneLite plugin — price-history sparkline (click a row to expand)
+**Files:** `runelite-plugin/src/main/java/com/salehman/ge/` — `GrandExchangeApi.java` (timeseries + Point), `Sparkline.java` (new), `SalehmanGePlugin.java`, `SalehmanGePanel.java`; `+ SparklineTest.java`.
+**What & why:** Autonomous session iter 7. Left-click a row now toggles an inline price-history sparkline (the wiki link moved to the right-click menu). `GrandExchangeApi.timeseries(id, step)` fetches `/timeseries?timestep=5m`; `Sparkline.mids()` (pure, tested: averages high/low, skips empty/null samples) feeds a small antialiased polyline component. Fetch is on-demand per expand, cached per id, run off-EDT via `plugin.requestSparkline(...)` with the result delivered on the EDT; expand/cache/loading state lives entirely on the EDT (no concurrency).
+**Result:** ✅ build green, mids unit-tested. (Visual/expand path needs a click so it wasn't runtime-exercised here; logic is build- + test-gated and will be in the final review.)
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

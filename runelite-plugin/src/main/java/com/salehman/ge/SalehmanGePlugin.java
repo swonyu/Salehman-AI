@@ -43,6 +43,9 @@ public class SalehmanGePlugin extends Plugin
 	private FlipFinder flipFinder;
 
 	@Inject
+	private GrandExchangeApi api;
+
+	@Inject
 	private SalehmanGeConfig config;
 
 	@Inject
@@ -165,6 +168,26 @@ public class SalehmanGePlugin extends Plugin
 				fired++;
 			}
 		}
+	}
+
+	/** Fetch a recent price sparkline for one item off the EDT; deliver mids (or null) on the EDT. */
+	public void requestSparkline(int itemId, java.util.function.Consumer<int[]> onResult)
+	{
+		new Thread(() ->
+		{
+			int[] mids;
+			try
+			{
+				mids = Sparkline.mids(api.timeseries(itemId, "5m"));
+			}
+			catch (Exception ex)
+			{
+				log.debug("sparkline fetch failed for {}", itemId, ex);
+				mids = null;
+			}
+			final int[] result = mids;
+			SwingUtilities.invokeLater(() -> onResult.accept(result));
+		}, "salehman-ge-spark").start();
 	}
 
 	private void loadFavorites()

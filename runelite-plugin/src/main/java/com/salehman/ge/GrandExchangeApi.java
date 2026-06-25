@@ -60,6 +60,45 @@ public class GrandExchangeApi
 		return fetchDataMap("/24h", Volume.class);
 	}
 
+	/**
+	 * Recent price history for one item (for a sparkline). {@code step} is a wiki timestep
+	 * such as "5m", "1h", "6h", "24h"; the API returns up to ~365 points.
+	 */
+	public java.util.List<Point> timeseries(int id, String step) throws IOException
+	{
+		Request req = request("/timeseries?timestep=" + step + "&id=" + id);
+		try (Response resp = http.newCall(req).execute())
+		{
+			if (!resp.isSuccessful() || resp.body() == null)
+			{
+				throw new IOException("timeseries HTTP " + resp.code());
+			}
+			JsonObject root;
+			try
+			{
+				root = gson.fromJson(resp.body().charStream(), JsonObject.class);
+			}
+			catch (com.google.gson.JsonSyntaxException e)
+			{
+				throw new IOException("malformed timeseries response", e);
+			}
+			java.util.List<Point> out = new java.util.ArrayList<>();
+			if (root == null || !root.has("data") || !root.get("data").isJsonArray())
+			{
+				return out;
+			}
+			for (JsonElement el : root.getAsJsonArray("data"))
+			{
+				Point p = gson.fromJson(el, Point.class);
+				if (p != null)
+				{
+					out.add(p);
+				}
+			}
+			return out;
+		}
+	}
+
 	/** Item metadata (name / members / buy limit), keyed by item id. */
 	public Map<Integer, Mapping> mapping() throws IOException
 	{
@@ -162,5 +201,13 @@ public class GrandExchangeApi
 	{
 		public Long highPriceVolume;
 		public Long lowPriceVolume;
+	}
+
+	/** One price-history sample from /timeseries (prices may be null when no trades). */
+	public static class Point
+	{
+		public Long timestamp;
+		public Integer avgHighPrice;
+		public Integer avgLowPrice;
 	}
 }
