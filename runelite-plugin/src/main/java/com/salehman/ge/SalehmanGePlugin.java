@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.client.Notifier;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
@@ -50,6 +51,9 @@ public class SalehmanGePlugin extends Plugin
 	@Inject
 	private ConfigManager configManager;
 
+	@Inject
+	private Notifier notifier;
+
 	// Shared RuneLite scheduler — used ONLY to FIRE refreshes on the interval; the actual
 	// (blocking) network fetch runs on its own short-lived thread so it never stalls the
 	// shared executor that other plugins depend on.
@@ -70,6 +74,8 @@ public class SalehmanGePlugin extends Plugin
 	private final AtomicBoolean pendingRefresh = new AtomicBoolean(false);
 	// Starred item ids, persisted as a CSV config value so they survive restarts.
 	private final java.util.Set<Integer> favorites = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	// Item ids already notified this session (so a sustained great flip doesn't spam).
+	private final java.util.Set<Integer> notified = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
 	@Provides
 	SalehmanGeConfig provideConfig(ConfigManager configManager)
@@ -134,6 +140,31 @@ public class SalehmanGePlugin extends Plugin
 		}
 		String csv = favorites.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","));
 		configManager.setConfiguration("salehmange", "favorites", csv);
+	}
+
+	/** Notify on flips that newly cross the gp/hour threshold — deduped per session, ≤3/refresh. */
+	private void maybeNotify(List<FlipItem> flips)
+	{
+		if (!config.notifyEnabled() || config.notifyMinGpPerHour() <= 0)
+		{
+			return;
+		}
+		double threshold = config.notifyMinGpPerHour();
+		int fired = 0;
+		for (FlipItem f : flips)
+		{
+			if (f.realizedGpPerHour < threshold)
+			{
+				notified.remove(f.id);   // dropped below → allow a fresh alert if it climbs again
+				continue;
+			}
+			if (fired < 3 && notified.add(f.id))   // cap the burst; once per crossing
+			{
+				notifier.notify("Salehman GE: " + f.name + " ~"
+					+ Math.round(f.realizedGpPerHour) + " gp/h (post-tax)");
+				fired++;
+			}
+		}
 	}
 
 	private void loadFavorites()
@@ -225,6 +256,7 @@ public class SalehmanGePlugin extends Plugin
 			try
 			{
 				List<FlipItem> flips = flipFinder.findFlips(config);
+				maybeNotify(flips);
 				// `p == panel` guards a late result landing after shutDown() (panel→null)
 				// or a panel swap — don't mutate a detached panel. (panel is volatile.)
 				SwingUtilities.invokeLater(() -> { if (p == panel) p.setFlips(flips); });

@@ -32,6 +32,9 @@ public interface SalehmanGeConfig extends Config
 	@ConfigSection(name = "GE tax", description = "Sell-tax model used for net margins", position = 3)
 	String taxSection = "tax";
 
+	@ConfigSection(name = "Notifications", description = "Alert when a great flip appears", position = 4)
+	String notificationsSection = "notifications";
+
 	@ConfigItem(
 		keyName = "minMargin",
 		name = "Min post-tax margin",
@@ -182,5 +185,29 @@ public interface SalehmanGeConfig extends Config
 	default int taxCap()
 	{
 		return 5_000_000;
+	}
+
+	@ConfigItem(
+		keyName = "notifyEnabled",
+		name = "Notify on great flips",
+		description = "Send a notification when a refresh finds a flip above the gp/hour threshold (best with auto-refresh).",
+		position = 1,
+		section = notificationsSection
+	)
+	default boolean notifyEnabled()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "notifyMinGpPerHour",
+		name = "Notify threshold (gp/hour)",
+		description = "Only notify for flips whose realized gp/hour is at least this.",
+		position = 2,
+		section = notificationsSection
+	)
+	default int notifyMinGpPerHour()
+	{
+		return 1_000_000;
 	}
 }
