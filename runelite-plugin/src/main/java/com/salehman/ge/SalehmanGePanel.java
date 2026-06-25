@@ -592,18 +592,28 @@ class SalehmanGePanel extends PluginPanel
 		JMenuItem wiki = new JMenuItem("Open wiki article");
 		wiki.addActionListener(a -> LinkBrowser.browse(
 			"https://oldschool.runescape.wiki/w/Special:Lookup?type=item&id=" + f.id));
-		JMenuItem copy = new JMenuItem("Copy name");
-		copy.addActionListener(a -> Toolkit.getDefaultToolkit().getSystemClipboard()
-			.setContents(new StringSelection(f.name), null));
+		JMenuItem copyName = new JMenuItem("Copy name");
+		copyName.addActionListener(a -> copyToClipboard(f.name));
+		JMenuItem copyBuy = new JMenuItem("Copy buy price (" + GP.format(f.buyPrice) + ")");
+		copyBuy.addActionListener(a -> copyToClipboard(String.valueOf(f.buyPrice)));
+		JMenuItem copySell = new JMenuItem("Copy sell price (" + GP.format(f.sellPrice) + ")");
+		copySell.addActionListener(a -> copyToClipboard(String.valueOf(f.sellPrice)));
 		menu.add(price);
 		menu.add(wiki);
-		menu.add(copy);
+		menu.add(copyName);
+		menu.add(copyBuy);
+		menu.add(copySell);
 		return menu;
 	}
 
 	private static void openPricePage(FlipItem f)
 	{
 		LinkBrowser.browse("https://prices.runescape.wiki/osrs/item/" + f.id);
+	}
+
+	private static void copyToClipboard(String text)
+	{
+		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text), null);
 	}
 
 	/** Toggle the inline price chart for a row, lazily fetching the series the first time. */
