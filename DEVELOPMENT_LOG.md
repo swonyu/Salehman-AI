@@ -7496,6 +7496,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-25 · RuneLite plugin — fix 7 review findings (iters 1-4)
+**Files:** `runelite-plugin/src/main/java/com/salehman/ge/` — `FlipFinder.java`, `BudgetPlanner.java`, `SalehmanGePanel.java`, `SalehmanGePlugin.java`; `+ FlipFinderTest.java`.
+**What & why:** Autonomous session — adversarial review (3 finders → skeptic-verify, 7 confirmed) of iters 1-4, all fixed: (1/3, HIGH) **alch ignored the item's purchase cost** — `perCast` now `highalch − naturePrice − buyPrice` (the test pinned the wrong 37900; corrected to 2900 + added a net-loss→0 test). (2) **budget plan only saw the top-N** — `rank()` no longer truncates; the panel caps DISPLAYED rows via `plugin.maxResults()` (new), so the allocator considers ALL flips; status shows "top X of N". (5) **alch cue over-fired for unknown-limit flips** (realized velocity 0) — now compares per-item profit when the flip has no velocity. (7) **plan gp/h ~0 for unknown-limit dumps** — BudgetPlanner now skips `buyLimit<=0` items. (4) **dead hover zone over the star** — deep mouse listener re-attached to all incl. the star; click handler ignores button-originated clicks. (6) plan summary now notes "some rows hidden by filter" when a filter is active.
+**Result:** ✅ build green, all tests pass (incl. corrected + new alch tests). The alch advisory is now cost-correct (no more money-losing "alch instead" suggestions).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -172,7 +172,9 @@ public class FlipFinder
 			double alchGpPerHour = 0;
 			if (m.highalch != null && naturePrice > 0)
 			{
-				int perCast = m.highalch - naturePrice;
+				// Alch DESTROYS the item: profit = highalch − nature cost − the item you buy
+				// (buyPrice = your buy-offer fill, consistent with the flip's own margin).
+				int perCast = m.highalch - naturePrice - buyPrice;
 				if (perCast > 0)
 				{
 					alchProfit = perCast;
@@ -186,8 +188,9 @@ public class FlipFinder
 		}
 
 		flips.sort(comparator(config.sortBy()));
-		int max = Math.max(1, config.maxResults());
-		return flips.size() > max ? new ArrayList<>(flips.subList(0, max)) : flips;
+		// Return the FULL ranked list — the panel caps how many ROWS it shows (config
+		// maxResults), but the budget allocator considers every flip, not just the top N.
+		return flips;
 	}
 
 	private static Comparator<FlipItem> comparator(SalehmanGeConfig.SortBy sortBy)

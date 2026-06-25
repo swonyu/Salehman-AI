@@ -114,6 +114,12 @@ public class SalehmanGePlugin extends Plugin
 		return config.sortBy();
 	}
 
+	/** How many ranked rows to display (the budget plan still spans ALL flips). */
+	public int maxResults()
+	{
+		return Math.max(1, config.maxResults());
+	}
+
 	public boolean isFavorite(int itemId)
 	{
 		return favorites.contains(itemId);

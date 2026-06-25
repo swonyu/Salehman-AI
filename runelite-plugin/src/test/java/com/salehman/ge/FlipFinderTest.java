@@ -235,9 +235,28 @@ public class FlipFinderTest
 
 		List<FlipItem> flips = FlipFinder.rank(latest, volumes, mapping, config(0, 100), 1_000_000L);
 		FlipItem f = flips.stream().filter(x -> x.id == 1).findFirst().orElseThrow(AssertionError::new);
-		assertEquals(37900, f.alchProfit);                                   // 38000 − 100
-		assertEquals(37900.0 * FlipFinder.ALCH_CASTS_PER_HOUR, f.alchGpPerHour, 1e-6);
-		assertTrue("alch should dwarf this thin flip", f.alchGpPerHour > f.realizedGpPerHour);
+		assertEquals(2900, f.alchProfit);                                    // 38000 − 100 nature − 35000 item
+		assertEquals(2900.0 * FlipFinder.ALCH_CASTS_PER_HOUR, f.alchGpPerHour, 1e-6);
+		assertTrue("alch should still beat this thin flip", f.alchGpPerHour > f.realizedGpPerHour);
+	}
+
+	@Test
+	public void alchZeroWhenItemCostExceedsHighalch()
+	{
+		Map<Integer, GrandExchangeApi.Latest> latest = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Mapping> mapping = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Volume> volumes = new HashMap<>();
+		latest.put(FlipFinder.NATURE_RUNE_ID, latest(100, 90));
+		// buy 1000 but highalch only 900 → 900 − 100 − 1000 < 0 → alch is a net loss → 0.
+		latest.put(1, latest(1100, 1000));
+		GrandExchangeApi.Mapping m = mapping(1, "A", 1000, false);
+		m.highalch = 900;
+		mapping.put(1, m);
+		volumes.put(1, volume(5000, 5000));
+
+		List<FlipItem> flips = FlipFinder.rank(latest, volumes, mapping, config(0, 100), 1_000_000L);
+		assertEquals(0, flips.get(0).alchProfit);
+		assertEquals(0.0, flips.get(0).alchGpPerHour, 1e-9);
 	}
 
 	@Test

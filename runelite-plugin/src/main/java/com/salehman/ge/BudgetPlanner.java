@@ -73,13 +73,15 @@ public final class BudgetPlanner
 			{
 				break;
 			}
-			if (f.buyPrice <= 0 || f.postTaxMargin <= 0)
+			// Skip no-margin/no-price AND unknown-limit items: without a buy limit we can
+			// neither bound the buy nor estimate a per-hour velocity, so dumping the whole
+			// budget into one would be misleading. (Unknown-limit items are rare.)
+			if (f.buyPrice <= 0 || f.postTaxMargin <= 0 || f.buyLimit <= 0)
 			{
 				continue;
 			}
-			long limit = f.buyLimit > 0 ? f.buyLimit : Long.MAX_VALUE; // unknown limit → capital-bound
 			long affordable = remaining / f.buyPrice;
-			long qtyL = Math.min(limit, affordable);
+			long qtyL = Math.min((long) f.buyLimit, affordable);
 			if (qtyL <= 0)
 			{
 				continue;
@@ -93,8 +95,7 @@ public final class BudgetPlanner
 			totalProfit += profit;
 			// realizedGpPerHour already assumes a FULL buy-limit fill, so scale by the
 			// fraction of the limit this allocation actually covers.
-			double fillFrac = f.buyLimit > 0 ? (double) qty / f.buyLimit : 1.0;
-			gph += f.realizedGpPerHour * fillFrac;
+			gph += f.realizedGpPerHour * ((double) qty / f.buyLimit);
 		}
 		return new BudgetPlan(out, budget, capitalUsed, totalProfit, gph);
 	}

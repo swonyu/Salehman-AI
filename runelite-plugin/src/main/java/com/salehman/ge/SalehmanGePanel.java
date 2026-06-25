@@ -230,7 +230,10 @@ class SalehmanGePanel extends PluginPanel
 		}
 		else
 		{
-			status.setText(flips.size() + " flips · ranked");
+			int cap = plugin.maxResults();
+			status.setText(flips.size() <= cap
+				? flips.size() + " flips · ranked"
+				: "top " + cap + " of " + flips.size() + " · ranked");
 			lastUpdatedMs = System.currentTimeMillis();
 		}
 		renderList();
@@ -282,18 +285,25 @@ class SalehmanGePanel extends PluginPanel
 				}
 			}
 			boolean favoritesOnly = favOnly.isSelected();
+			int cap = plugin.maxResults();   // display cap; the budget plan above spans ALL flips
+			int shown = 0;
 			for (FlipItem f : display)
 			{
+				if (shown >= cap)
+				{
+					break;
+				}
 				if (favoritesOnly && !plugin.isFavorite(f.id))
 				{
 					continue;
 				}
 				if (!nameFilter.isEmpty() && !f.name.toLowerCase(Locale.US).contains(nameFilter))
 				{
-					continue;   // budget plan still spans ALL flips; filters only hide rows
+					continue;   // filters/cap only hide rows; the budget plan still spans all flips
 				}
 				list.add(row(f, alloc.getOrDefault(f.id, 0)));
 				list.add(Box.createVerticalStrut(6));
+				shown++;
 			}
 		}
 		list.revalidate();
@@ -329,6 +339,14 @@ class SalehmanGePanel extends PluginPanel
 			+ " · " + plan.allocations.size() + " items", Color.WHITE);
 		spend.setAlignmentX(LEFT_ALIGNMENT);
 		p.add(spend);
+		if (favOnly.isSelected() || !nameFilter.isEmpty())
+		{
+			JLabel note = new JLabel("plan spans all flips; some rows hidden by filter");
+			note.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+			note.setFont(FontManager.getRunescapeSmallFont());
+			note.setAlignmentX(LEFT_ALIGNMENT);
+			p.add(note);
+		}
 		return p;
 	}
 
@@ -452,9 +470,14 @@ class SalehmanGePanel extends PluginPanel
 			body.add(kv("Allocate", "buy " + GP.format(allocQty)
 				+ " · " + QuantityFormatter.quantityToStackSize((long) allocQty * f.buyPrice), ColorScheme.BRAND_ORANGE));
 		}
-		if (f.alchProfit > 0 && f.alchGpPerHour > f.realizedGpPerHour)
+		// Unknown buy limit zeroes the flip's velocity, so don't treat 0 as "alch always wins":
+		// compare gp/hour when the flip has a velocity, else fall back to per-item profit.
+		boolean alchBeats = f.realizedGpPerHour > 0
+			? f.alchGpPerHour > f.realizedGpPerHour
+			: f.alchProfit > f.postTaxMargin;
+		if (f.alchProfit > 0 && alchBeats)
 		{
-			// High Alchemy beats this flip's realized velocity — surface it (attention-gated).
+			// High Alchemy beats this flip — surface it (attention-gated estimate).
 			body.add(kv("Alch instead", "+" + GP.format(f.alchProfit) + "/item · "
 				+ QuantityFormatter.quantityToStackSize((long) f.alchGpPerHour) + "/h", ALCH_COLOR));
 		}
@@ -465,6 +488,10 @@ class SalehmanGePanel extends PluginPanel
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
+				if (e.getComponent() instanceof JButton)
+				{
+					return;   // the star handles its own click; don't also open the wiki
+				}
 				if (javax.swing.SwingUtilities.isLeftMouseButton(e))
 				{
 					openPricePage(f);
@@ -599,13 +626,12 @@ class SalehmanGePanel extends PluginPanel
 
 	private static void addMouseDeep(Container c, MouseListener l)
 	{
+		// Attach to every descendant (incl. the star button) so hover covers the whole row;
+		// the click handler ignores button-originated clicks (see mouseClicked) so the star
+		// toggles via its own ActionListener without also opening the wiki.
 		c.addMouseListener(l);
 		for (Component ch : c.getComponents())
 		{
-			if (ch instanceof JButton)
-			{
-				continue;   // buttons (e.g. the favourite star) handle their own clicks
-			}
 			ch.addMouseListener(l);
 			if (ch instanceof Container)
 			{
