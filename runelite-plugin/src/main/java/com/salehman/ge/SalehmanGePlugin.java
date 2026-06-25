@@ -77,8 +77,10 @@ public class SalehmanGePlugin extends Plugin
 	private final AtomicBoolean pendingRefresh = new AtomicBoolean(false);
 	// Starred item ids, persisted as a CSV config value so they survive restarts.
 	private final java.util.Set<Integer> favorites = java.util.concurrent.ConcurrentHashMap.newKeySet();
-	// Item ids already notified this session (so a sustained great flip doesn't spam).
+	// Item ids already notified (so a sustained great flip doesn't spam); re-armed each pass
+	// against the current snapshot. notifyPrimed makes the first pass a silent baseline.
 	private final java.util.Set<Integer> notified = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private boolean notifyPrimed = false;
 
 	@Provides
 	SalehmanGeConfig provideConfig(ConfigManager configManager)
@@ -145,29 +147,45 @@ public class SalehmanGePlugin extends Plugin
 		configManager.setConfiguration("salehmange", "favorites", csv);
 	}
 
-	/** Notify on flips that newly cross the gp/hour threshold — deduped per session, ≤3/refresh. */
+	/** Notify on flips that newly cross the gp/hour threshold — deduped, ≤3/refresh, primed. */
 	private void maybeNotify(List<FlipItem> flips)
 	{
 		if (!config.notifyEnabled() || config.notifyMinGpPerHour() <= 0)
 		{
+			notifyPrimed = false;   // re-prime (silent baseline) next time it's enabled
 			return;
 		}
 		double threshold = config.notifyMinGpPerHour();
+		java.util.Set<Integer> hot = new java.util.HashSet<>();
+		for (FlipItem f : flips)
+		{
+			if (f.realizedGpPerHour >= threshold)
+			{
+				hot.add(f.id);
+			}
+		}
+		// First pass after enable: establish a baseline so we don't alert on flips that were
+		// already great when the panel opened — only on genuine NEW crossings afterwards.
+		if (!notifyPrimed)
+		{
+			notified.clear();
+			notified.addAll(hot);
+			notifyPrimed = true;
+			return;
+		}
 		int fired = 0;
 		for (FlipItem f : flips)
 		{
-			if (f.realizedGpPerHour < threshold)
-			{
-				notified.remove(f.id);   // dropped below → allow a fresh alert if it climbs again
-				continue;
-			}
-			if (fired < 3 && notified.add(f.id))   // cap the burst; once per crossing
+			if (f.realizedGpPerHour >= threshold && fired < 3 && notified.add(f.id))
 			{
 				notifier.notify("Salehman GE: " + f.name + " ~"
 					+ Math.round(f.realizedGpPerHour) + " gp/h (post-tax)");
 				fired++;
 			}
 		}
+		// Re-arm by snapshot: anything no longer hot — whether it dropped below the threshold
+		// OR fell out of the ranked list entirely — clears so it can alert again on a true re-cross.
+		notified.retainAll(hot);
 	}
 
 	/** Fetch a recent price sparkline for one item off the EDT; deliver mids (or null) on the EDT. */

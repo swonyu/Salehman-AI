@@ -7524,6 +7524,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-25 · RuneLite plugin — fix 5 review findings (iters 5-7)
+**Files:** `runelite-plugin/src/main/java/com/salehman/ge/SalehmanGePlugin.java`, `SalehmanGePanel.java`.
+**What & why:** Autonomous session — review round 3 (3 finders → skeptic-verify, 5 confirmed, all low/medium), fixed: (1/3/5) **notifications** rewritten — a `notifyPrimed` first-pass baseline (no burst of pre-existing flips on open), and re-arm by SNAPSHOT (`notified.retainAll(hot)`) so an item that drops below threshold OR falls out of the ranked list both clear and can re-alert on a true re-cross; re-primes when disabled. (2) **sparkline callback** now no-ops if the panel was torn down (a `disposed` flag set in stopClock, mirroring refresh's `p==panel` guard) so a late fetch can't touch a detached panel. (4) **sparkline cache** no longer caches a fetch FAILURE as data — null result removes the id so re-expanding refetches (genuine empty data still caches).
+**Result:** ✅ build green, all tests pass. Three adversarial-review rounds now complete (10 + 7 + 5 findings, all fixed).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

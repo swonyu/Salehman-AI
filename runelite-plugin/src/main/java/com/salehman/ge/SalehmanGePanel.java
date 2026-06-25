@@ -68,6 +68,7 @@ class SalehmanGePanel extends PluginPanel
 	private final java.util.Set<Integer> expanded = new java.util.HashSet<>();
 	private final java.util.Map<Integer, int[]> sparkCache = new java.util.HashMap<>();
 	private final java.util.Set<Integer> sparkLoading = new java.util.HashSet<>();
+	private boolean disposed = false;   // set on teardown; late async callbacks then no-op
 
 	SalehmanGePanel(SalehmanGePlugin plugin, ItemManager itemManager)
 	{
@@ -94,9 +95,10 @@ class SalehmanGePanel extends PluginPanel
 		clock.start();
 	}
 
-	/** Stop the live-updated clock so a disabled panel doesn't leak a running Timer. */
+	/** Teardown: stop the clock (no Timer leak) and mark disposed so late async callbacks no-op. */
 	void stopClock()
 	{
+		disposed = true;
 		clock.stop();
 	}
 
@@ -614,8 +616,19 @@ class SalehmanGePanel extends PluginPanel
 			{
 				plugin.requestSparkline(f.id, mids ->
 				{
+					if (disposed)
+					{
+						return;   // panel torn down before the fetch returned — don't touch it
+					}
 					sparkLoading.remove(f.id);
-					sparkCache.put(f.id, mids == null ? new int[0] : mids);
+					if (mids == null)
+					{
+						sparkCache.remove(f.id);   // a failure must not stick — allow a retry on re-expand
+					}
+					else
+					{
+						sparkCache.put(f.id, mids);
+					}
 					renderList();
 				});
 			}
