@@ -7538,6 +7538,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-25 · RuneLite plugin — opt-in in-game top-flips overlay
+**Files:** `runelite-plugin/src/main/java/com/salehman/ge/SalehmanGeOverlay.java` (new), `SalehmanGePlugin.java`, `SalehmanGeConfig.java`.
+**What & why:** Autonomous session iter 9. A draggable on-screen HUD (`OverlayPanel`, OverlayManager add/remove in startUp/shutDown) listing the top flips with realized gp/hour. Deliberately decoupled from the Grand Exchange game widget (those component ids vary between versions and can't be verified here) — it just renders the latest ranked flips, OFF by default (config: enable + row count, In-game overlay section). The plugin publishes `latestFlips` (volatile) from the refresh worker for the render thread. All RuneLite overlay APIs (OverlayPanel/PanelComponent/LineComponent/TitleComponent/OverlayPosition) verified via javap.
+**Result:** ✅ build green; clean startup verified (overlay registers, no exceptions). NOTE: the in-game *visual* can't be exercised headlessly (needs the game viewport); it's build-verified, null-guarded, and opt-in, so it cannot disrupt normal play.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

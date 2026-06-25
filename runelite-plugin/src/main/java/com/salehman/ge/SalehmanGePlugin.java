@@ -21,6 +21,7 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.ui.overlay.OverlayManager;
 
 /**
  * Salehman GE Flips — a side panel that ranks live Grand Exchange flip
@@ -57,6 +58,9 @@ public class SalehmanGePlugin extends Plugin
 	@Inject
 	private Notifier notifier;
 
+	@Inject
+	private OverlayManager overlayManager;
+
 	// Shared RuneLite scheduler — used ONLY to FIRE refreshes on the interval; the actual
 	// (blocking) network fetch runs on its own short-lived thread so it never stalls the
 	// shared executor that other plugins depend on.
@@ -71,6 +75,9 @@ public class SalehmanGePlugin extends Plugin
 	// volatile + all mutation funnelled through synchronized (re)scheduleAuto/cancelAuto.
 	private volatile ScheduledFuture<?> autoTask;
 	private volatile boolean started;
+	// latest ranked flips, published for the in-game overlay (read on the render thread).
+	private volatile List<FlipItem> latestFlips = java.util.Collections.emptyList();
+	private SalehmanGeOverlay overlay;
 	// single-flight: drop a refresh if one is already in flight (manual + auto can overlap)…
 	private final AtomicBoolean refreshing = new AtomicBoolean(false);
 	// …but remember a request that arrived mid-flight (e.g. a sort change) and run it after.
@@ -100,8 +107,16 @@ public class SalehmanGePlugin extends Plugin
 			.panel(panel)
 			.build();
 		clientToolbar.addNavigation(navButton);
+		overlay = new SalehmanGeOverlay(this, config);
+		overlayManager.add(overlay);
 		started = true;
 		rescheduleAuto();
+	}
+
+	/** Latest ranked flips (for the overlay); never null. */
+	public List<FlipItem> latestFlips()
+	{
+		return latestFlips;
 	}
 
 	@Override
@@ -109,6 +124,11 @@ public class SalehmanGePlugin extends Plugin
 	{
 		started = false;     // block any in-flight reschedule from re-arming after teardown
 		cancelAuto();
+		if (overlay != null)
+		{
+			overlayManager.remove(overlay);
+			overlay = null;
+		}
 		final SalehmanGePanel p = panel;
 		if (p != null)
 		{
@@ -303,6 +323,7 @@ public class SalehmanGePlugin extends Plugin
 			try
 			{
 				List<FlipItem> flips = flipFinder.findFlips(config);
+				latestFlips = flips;   // publish for the in-game overlay
 				maybeNotify(flips);
 				// `p == panel` guards a late result landing after shutDown() (panel→null)
 				// or a panel swap — don't mutate a detached panel. (panel is volatile.)

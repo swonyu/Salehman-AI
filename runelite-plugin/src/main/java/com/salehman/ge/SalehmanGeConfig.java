@@ -38,6 +38,9 @@ public interface SalehmanGeConfig extends Config
 	@ConfigSection(name = "Budget plan", description = "The 'I have N gp' allocator", position = 5)
 	String budgetSection = "budget";
 
+	@ConfigSection(name = "In-game overlay", description = "On-screen top-flips HUD", position = 6)
+	String overlaySection = "overlay";
+
 	@ConfigItem(
 		keyName = "minMargin",
 		name = "Min post-tax margin",
@@ -227,5 +230,30 @@ public interface SalehmanGeConfig extends Config
 	default int maxAllocationPct()
 	{
 		return 0;
+	}
+
+	@ConfigItem(
+		keyName = "overlayEnabled",
+		name = "Show in-game overlay",
+		description = "Draw a small on-screen HUD listing your top flips (draggable). Off by default.",
+		position = 1,
+		section = overlaySection
+	)
+	default boolean overlayEnabled()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "overlayCount",
+		name = "Overlay rows",
+		description = "How many top flips to list in the in-game overlay.",
+		position = 2,
+		section = overlaySection
+	)
+	@Range(min = 1, max = 15)
+	default int overlayCount()
+	{
+		return 5;
 	}
 }
