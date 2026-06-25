@@ -55,6 +55,8 @@ class SalehmanGePanel extends PluginPanel
 	private final javax.swing.JTextField searchField = new javax.swing.JTextField();
 	private final Timer clock = new Timer(1000, e -> tickUpdated());
 
+	private final javax.swing.JCheckBox favOnly = new javax.swing.JCheckBox("★ favourites only");
+
 	private long lastUpdatedMs = -1;
 	private long budget = 0;
 	private String nameFilter = "";
@@ -174,6 +176,13 @@ class SalehmanGePanel extends PluginPanel
 		budgetRow.add(budgetField, BorderLayout.CENTER);
 		controls.add(budgetRow);
 
+		favOnly.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		favOnly.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		favOnly.setFont(FontManager.getRunescapeSmallFont());
+		favOnly.setFocusable(false);
+		favOnly.addActionListener(e -> renderList());
+		controls.add(favOnly);
+
 		refresh.setFocusable(false);
 		refresh.addActionListener(e -> plugin.refresh());
 		controls.add(refresh);
@@ -255,11 +264,32 @@ class SalehmanGePanel extends PluginPanel
 					alloc.put(a.flip.id, a.quantity);
 				}
 			}
+			// favourites pinned to the top, keeping their relative ranked order
+			java.util.List<FlipItem> display = new java.util.ArrayList<>();
 			for (FlipItem f : lastFlips)
 			{
+				if (plugin.isFavorite(f.id))
+				{
+					display.add(f);
+				}
+			}
+			for (FlipItem f : lastFlips)
+			{
+				if (!plugin.isFavorite(f.id))
+				{
+					display.add(f);
+				}
+			}
+			boolean favoritesOnly = favOnly.isSelected();
+			for (FlipItem f : display)
+			{
+				if (favoritesOnly && !plugin.isFavorite(f.id))
+				{
+					continue;
+				}
 				if (!nameFilter.isEmpty() && !f.name.toLowerCase(Locale.US).contains(nameFilter))
 				{
-					continue;   // budget plan still spans ALL flips; search only hides rows
+					continue;   // budget plan still spans ALL flips; filters only hide rows
 				}
 				list.add(row(f, alloc.getOrDefault(f.id, 0)));
 				list.add(Box.createVerticalStrut(6));
@@ -389,6 +419,7 @@ class SalehmanGePanel extends PluginPanel
 		fresh.setForeground(ageColor(f.ageSeconds));
 		fresh.setFont(FontManager.getRunescapeSmallFont());
 		fresh.setHorizontalAlignment(SwingConstants.RIGHT);
+		nameLine.add(starButton(f), BorderLayout.WEST);
 		nameLine.add(name, BorderLayout.CENTER);
 		nameLine.add(fresh, BorderLayout.EAST);
 		body.add(nameLine);
@@ -454,6 +485,27 @@ class SalehmanGePanel extends PluginPanel
 		inheritPopup(row);
 
 		return row;
+	}
+
+	private JButton starButton(FlipItem f)
+	{
+		boolean fav = plugin.isFavorite(f.id);
+		JButton star = new JButton(fav ? "★" : "☆");
+		star.setMargin(new java.awt.Insets(0, 0, 0, 0));
+		star.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 4));
+		star.setContentAreaFilled(false);
+		star.setFocusable(false);
+		star.setOpaque(false);
+		star.setForeground(fav ? ColorScheme.BRAND_ORANGE : ColorScheme.MEDIUM_GRAY_COLOR);
+		star.setFont(FontManager.getRunescapeFont());
+		star.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		star.setToolTipText(fav ? "Unfavourite" : "Favourite");
+		star.addActionListener(e ->
+		{
+			plugin.toggleFavorite(f.id);
+			renderList();
+		});
+		return star;
 	}
 
 	private JPopupMenu rowMenu(FlipItem f)
@@ -543,6 +595,10 @@ class SalehmanGePanel extends PluginPanel
 		c.addMouseListener(l);
 		for (Component ch : c.getComponents())
 		{
+			if (ch instanceof JButton)
+			{
+				continue;   // buttons (e.g. the favourite star) handle their own clicks
+			}
 			ch.addMouseListener(l);
 			if (ch instanceof Container)
 			{

@@ -68,6 +68,8 @@ public class SalehmanGePlugin extends Plugin
 	private final AtomicBoolean refreshing = new AtomicBoolean(false);
 	// …but remember a request that arrived mid-flight (e.g. a sort change) and run it after.
 	private final AtomicBoolean pendingRefresh = new AtomicBoolean(false);
+	// Starred item ids, persisted as a CSV config value so they survive restarts.
+	private final java.util.Set<Integer> favorites = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
 	@Provides
 	SalehmanGeConfig provideConfig(ConfigManager configManager)
@@ -78,6 +80,7 @@ public class SalehmanGePlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		loadFavorites();
 		panel = new SalehmanGePanel(this, itemManager);
 		navButton = NavigationButton.builder()
 			.tooltip("Salehman GE Flips")
@@ -109,6 +112,42 @@ public class SalehmanGePlugin extends Plugin
 	public SalehmanGeConfig.SortBy currentSort()
 	{
 		return config.sortBy();
+	}
+
+	public boolean isFavorite(int itemId)
+	{
+		return favorites.contains(itemId);
+	}
+
+	/** Star/unstar an item and persist the set (CSV under the "salehmange" config group). */
+	public void toggleFavorite(int itemId)
+	{
+		if (!favorites.remove(itemId))
+		{
+			favorites.add(itemId);
+		}
+		String csv = favorites.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","));
+		configManager.setConfiguration("salehmange", "favorites", csv);
+	}
+
+	private void loadFavorites()
+	{
+		favorites.clear();
+		String csv = configManager.getConfiguration("salehmange", "favorites");
+		if (csv != null && !csv.isEmpty())
+		{
+			for (String part : csv.split(","))
+			{
+				try
+				{
+					favorites.add(Integer.parseInt(part.trim()));
+				}
+				catch (NumberFormatException ignored)
+				{
+					// skip a corrupt entry rather than fail to load the rest
+				}
+			}
+		}
 	}
 
 	/** Panel sort dropdown → persist the choice (config UI stays in sync) and re-rank. */
