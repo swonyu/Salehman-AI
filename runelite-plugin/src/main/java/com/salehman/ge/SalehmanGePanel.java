@@ -268,7 +268,9 @@ class SalehmanGePanel extends PluginPanel
 			if (budget > 0)
 			{
 				int pct = plugin.maxAllocationPct();
-				long capPerItem = pct > 0 ? (long) (budget * (pct / 100.0)) : 0;
+				// integer math; keep a positive cap a real constraint (never round down to the
+				// "no cap" sentinel) — a too-small cap then yields an empty plan we explain below.
+				long capPerItem = pct > 0 ? Math.max(1, (long) budget * pct / 100) : 0;
 				BudgetPlanner.BudgetPlan plan = BudgetPlanner.plan(lastFlips, budget, capPerItem);
 				list.add(planSummary(plan));
 				list.add(Box.createVerticalStrut(6));
@@ -339,6 +341,14 @@ class SalehmanGePanel extends PluginPanel
 		head.setFont(FontManager.getRunescapeBoldFont());
 		head.setAlignmentX(LEFT_ALIGNMENT);
 		p.add(head);
+		if (plan.allocations.isEmpty())
+		{
+			// Nothing fit — budget below the cheapest flip, or the per-item cap is too tight.
+			p.add(dim(plugin.maxAllocationPct() > 0
+				? "nothing fits — raise the budget or the per-item cap"
+				: "nothing fits — budget below the cheapest flip"));
+			return p;
+		}
 		JLabel profit = new JLabel("+" + QuantityFormatter.quantityToStackSize(plan.totalProfit)
 			+ " profit  ·  " + QuantityFormatter.quantityToStackSize((long) plan.realizedGpPerHour) + "/h");
 		profit.setForeground(ColorScheme.PROGRESS_COMPLETE_COLOR);

@@ -37,11 +37,15 @@ class SalehmanGeOverlay extends OverlayPanel
 		{
 			return null;
 		}
-		List<FlipItem> flips = plugin.latestFlips();
-		if (flips.isEmpty())
+		List<FlipItem> all = plugin.latestFlips();
+		if (all.isEmpty())
 		{
 			return null;
 		}
+		// The panel may be sorted by any metric; the overlay always shows gp/hour, so order
+		// its own copy by realized gp/hour to match the figure displayed.
+		List<FlipItem> flips = new java.util.ArrayList<>(all);
+		flips.sort(java.util.Comparator.comparingDouble((FlipItem f) -> f.realizedGpPerHour).reversed());
 		panelComponent.getChildren().clear();
 		panelComponent.getChildren().add(TitleComponent.builder().text("GE Flips").color(Color.WHITE).build());
 		int n = Math.min(flips.size(), Math.max(1, config.overlayCount()));

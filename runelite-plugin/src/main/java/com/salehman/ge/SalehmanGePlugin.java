@@ -129,6 +129,7 @@ public class SalehmanGePlugin extends Plugin
 			overlayManager.remove(overlay);
 			overlay = null;
 		}
+		latestFlips = java.util.Collections.emptyList();   // a re-enabled overlay won't show stale data
 		final SalehmanGePanel p = panel;
 		if (p != null)
 		{

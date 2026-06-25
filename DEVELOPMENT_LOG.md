@@ -7545,6 +7545,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-25 · RuneLite plugin — fix 4 review findings (iters 8-9)
+**Files:** `runelite-plugin/src/main/java/com/salehman/ge/SalehmanGePanel.java`, `SalehmanGeOverlay.java`, `SalehmanGePlugin.java`.
+**What & why:** Autonomous session — review round 4 (3 finders → skeptic-verify, 4 confirmed, all low), fixed: (1) diversification cap used double math that could floor to 0 and silently disable the cap on tiny budgets — now integer `Math.max(1, budget*pct/100)` so a positive cap stays a real constraint. (4) when the cap/budget is too small for ANY flip, the plan summary now says "nothing fits — raise the budget or the per-item cap" instead of a misleading +0 plan. (2) the overlay always shows gp/hour, so it now sorts its OWN copy by realized gp/hour (the panel may be sorted by another metric) so order matches the displayed figure. (3) `latestFlips` is reset on shutDown so a re-enabled overlay shows nothing until a fresh refresh.
+**Result:** ✅ build green, all tests pass. FOUR adversarial-review rounds now complete (10 + 7 + 5 + 4 = 26 findings, all fixed).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
