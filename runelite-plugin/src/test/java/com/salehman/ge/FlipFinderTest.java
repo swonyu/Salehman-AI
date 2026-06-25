@@ -300,6 +300,72 @@ public class FlipFinderTest
 		assertEquals(0.0, flips.get(0).alchGpPerHour, 1e-9);
 	}
 
+	@Test
+	public void stalenessFilterDropsFlipsWithOldQuotes()
+	{
+		Map<Integer, GrandExchangeApi.Latest> latest = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Mapping> mapping = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Volume> volumes = new HashMap<>();
+		long now = 100_000L;
+		latest.put(1, latest(1100, 1000, now - 30, now - 30));      // 30s old → fresh
+		mapping.put(1, mapping(1, "fresh", 100, false));
+		volumes.put(1, volume(5000, 5000));
+		latest.put(2, latest(1100, 1000, now - 5000, now - 5000));  // 83min old → stale (>60)
+		mapping.put(2, mapping(2, "stale", 100, false));
+		volumes.put(2, volume(5000, 5000));
+
+		List<FlipItem> flips = FlipFinder.rank(latest, volumes, mapping, config(0, 100), now);
+		assertEquals(1, flips.size());                              // default maxStaleMinutes 60
+		assertEquals("fresh", flips.get(0).name);
+	}
+
+	@Test
+	public void priceBandAndMembersFilter()
+	{
+		Map<Integer, GrandExchangeApi.Latest> latest = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Mapping> mapping = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Volume> volumes = new HashMap<>();
+		latest.put(1, latest(120, 100));      // buy 100 < minPrice 500 → out
+		mapping.put(1, mapping(1, "cheap", 100, true));
+		volumes.put(1, volume(5000, 5000));
+		latest.put(2, latest(5000, 4000));    // sell 5000 > maxPrice 2000 → out
+		mapping.put(2, mapping(2, "dear", 100, true));
+		volumes.put(2, volume(5000, 5000));
+		latest.put(3, latest(1100, 1000));    // members=false → out (membersOnly)
+		mapping.put(3, mapping(3, "f2p", 100, false));
+		volumes.put(3, volume(5000, 5000));
+		latest.put(4, latest(1100, 1000));    // in band + members → kept
+		mapping.put(4, mapping(4, "good", 100, true));
+		volumes.put(4, volume(5000, 5000));
+
+		SalehmanGeConfig c = new SalehmanGeConfig()
+		{
+			@Override public int minMargin() { return 0; }
+			@Override public int minVolume() { return 100; }
+			@Override public int minPrice() { return 500; }
+			@Override public int maxPrice() { return 2000; }
+			@Override public boolean membersOnly() { return true; }
+		};
+		List<FlipItem> flips = FlipFinder.rank(latest, volumes, mapping, c, 1_000_000L);
+		assertEquals(1, flips.size());
+		assertEquals("good", flips.get(0).name);
+	}
+
+	@Test
+	public void oldSchoolBondIsTaxExempt()
+	{
+		Map<Integer, GrandExchangeApi.Latest> latest = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Mapping> mapping = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Volume> volumes = new HashMap<>();
+		latest.put(13190, latest(1_100_000, 1_000_000));   // Old School Bond
+		mapping.put(13190, mapping(13190, "Old school bond", 100, true));
+		volumes.put(13190, volume(5000, 5000));
+
+		FlipItem f = FlipFinder.rank(latest, volumes, mapping, config(0, 100), 1_000_000L).get(0);
+		assertEquals(0, f.tax);                            // exempt despite a 1.1M sell price
+		assertEquals(100_000, f.postTaxMargin);            // full gross margin, untaxed
+	}
+
 	// --- additional helpers ---
 
 	private SalehmanGeConfig config(int minMargin, int minVolume, SalehmanGeConfig.SortBy sort)
