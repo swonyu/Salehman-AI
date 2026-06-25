@@ -52,10 +52,12 @@ class SalehmanGePanel extends PluginPanel
 	private final JLabel updated = new JLabel(" ");
 	private final JButton refresh = new JButton("Refresh");
 	private final javax.swing.JTextField budgetField = new javax.swing.JTextField();
+	private final javax.swing.JTextField searchField = new javax.swing.JTextField();
 	private final Timer clock = new Timer(1000, e -> tickUpdated());
 
 	private long lastUpdatedMs = -1;
 	private long budget = 0;
+	private String nameFilter = "";
 	private java.util.List<FlipItem> lastFlips = java.util.Collections.emptyList();
 
 	SalehmanGePanel(SalehmanGePlugin plugin, ItemManager itemManager)
@@ -127,6 +129,30 @@ class SalehmanGePanel extends PluginPanel
 			}
 		});
 		controls.add(sortBox);
+
+		// Live name filter over the displayed rows (does not refetch or re-rank).
+		searchField.setToolTipText("Filter by item name");
+		searchField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener()
+		{
+			@Override
+			public void insertUpdate(javax.swing.event.DocumentEvent e)
+			{
+				onSearch();
+			}
+
+			@Override
+			public void removeUpdate(javax.swing.event.DocumentEvent e)
+			{
+				onSearch();
+			}
+
+			@Override
+			public void changedUpdate(javax.swing.event.DocumentEvent e)
+			{
+				onSearch();
+			}
+		});
+		controls.add(searchField);
 
 		// Budget: "I have N gp" → an allocation plan (accepts 100m / 1.5b / 250000).
 		JPanel budgetRow = new JPanel(new BorderLayout(6, 0));
@@ -231,12 +257,22 @@ class SalehmanGePanel extends PluginPanel
 			}
 			for (FlipItem f : lastFlips)
 			{
+				if (!nameFilter.isEmpty() && !f.name.toLowerCase(Locale.US).contains(nameFilter))
+				{
+					continue;   // budget plan still spans ALL flips; search only hides rows
+				}
 				list.add(row(f, alloc.getOrDefault(f.id, 0)));
 				list.add(Box.createVerticalStrut(6));
 			}
 		}
 		list.revalidate();
 		list.repaint();
+	}
+
+	private void onSearch()
+	{
+		nameFilter = searchField.getText().trim().toLowerCase(Locale.US);
+		renderList();
 	}
 
 	private JPanel planSummary(BudgetPlanner.BudgetPlan plan)
