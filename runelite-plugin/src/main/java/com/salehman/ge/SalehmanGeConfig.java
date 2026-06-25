@@ -35,6 +35,9 @@ public interface SalehmanGeConfig extends Config
 	@ConfigSection(name = "Notifications", description = "Alert when a great flip appears", position = 4)
 	String notificationsSection = "notifications";
 
+	@ConfigSection(name = "Budget plan", description = "The 'I have N gp' allocator", position = 5)
+	String budgetSection = "budget";
+
 	@ConfigItem(
 		keyName = "minMargin",
 		name = "Min post-tax margin",
@@ -209,5 +212,20 @@ public interface SalehmanGeConfig extends Config
 	default int notifyMinGpPerHour()
 	{
 		return 1_000_000;
+	}
+
+	@ConfigItem(
+		keyName = "maxAllocationPct",
+		name = "Max % of budget per item",
+		description = "Diversification cap: limit how much of your budget the plan puts into any single flip "
+			+ "(spills to the next). 0 = no cap. Lower = safer against a single item not filling.",
+		position = 1,
+		section = budgetSection
+	)
+	@Range(min = 0, max = 100)
+	@Units(Units.PERCENT)
+	default int maxAllocationPct()
+	{
+		return 0;
 	}
 }

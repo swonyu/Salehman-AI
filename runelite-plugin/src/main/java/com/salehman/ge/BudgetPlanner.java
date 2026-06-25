@@ -43,24 +43,34 @@ public final class BudgetPlanner
 		public final long capitalUsed;
 		public final long totalProfit;
 		public final double realizedGpPerHour;   // sum of per-allocation realized velocity (limit-fill scaled)
+		// Herfindahl concentration of capital across items: 1.0 = all in one flip, →0 = spread.
+		public final double concentrationRisk;
 
 		BudgetPlan(List<Allocation> allocations, long budget, long capitalUsed,
-			long totalProfit, double realizedGpPerHour)
+			long totalProfit, double realizedGpPerHour, double concentrationRisk)
 		{
 			this.allocations = allocations;
 			this.budget = budget;
 			this.capitalUsed = capitalUsed;
 			this.totalProfit = totalProfit;
 			this.realizedGpPerHour = realizedGpPerHour;
+			this.concentrationRisk = concentrationRisk;
 		}
+	}
+
+	/** Convenience: allocate with no per-item diversification cap. */
+	public static BudgetPlan plan(List<FlipItem> rankedFlips, long budget)
+	{
+		return plan(rankedFlips, budget, 0);
 	}
 
 	/**
 	 * Allocate {@code budget} gp across {@code rankedFlips} in their given order, buying up
-	 * to each item's buy limit. Items with no margin or no price are skipped; an unknown
-	 * buy limit (0) is treated as capital-bound only.
+	 * to each item's buy limit. Items with no margin/price or an unknown buy limit are
+	 * skipped. {@code maxCapitalPerItem} (gp; ≤0 = no cap) caps how much capital any single
+	 * flip may absorb, spilling the rest to the next flip — diversification / fill-risk control.
 	 */
-	public static BudgetPlan plan(List<FlipItem> rankedFlips, long budget)
+	public static BudgetPlan plan(List<FlipItem> rankedFlips, long budget, long maxCapitalPerItem)
 	{
 		List<Allocation> out = new ArrayList<>();
 		long remaining = Math.max(0, budget);
@@ -73,14 +83,16 @@ public final class BudgetPlanner
 			{
 				break;
 			}
-			// Skip no-margin/no-price AND unknown-limit items: without a buy limit we can
-			// neither bound the buy nor estimate a per-hour velocity, so dumping the whole
-			// budget into one would be misleading. (Unknown-limit items are rare.)
 			if (f.buyPrice <= 0 || f.postTaxMargin <= 0 || f.buyLimit <= 0)
 			{
 				continue;
 			}
-			long affordable = remaining / f.buyPrice;
+			long spendCap = remaining;
+			if (maxCapitalPerItem > 0)
+			{
+				spendCap = Math.min(spendCap, maxCapitalPerItem);   // diversification cap
+			}
+			long affordable = spendCap / f.buyPrice;
 			long qtyL = Math.min((long) f.buyLimit, affordable);
 			if (qtyL <= 0)
 			{
@@ -97,6 +109,15 @@ public final class BudgetPlanner
 			// fraction of the limit this allocation actually covers.
 			gph += f.realizedGpPerHour * ((double) qty / f.buyLimit);
 		}
-		return new BudgetPlan(out, budget, capitalUsed, totalProfit, gph);
+		double concentration = 0;
+		if (capitalUsed > 0)
+		{
+			for (Allocation a : out)
+			{
+				double share = (double) a.capital / capitalUsed;
+				concentration += share * share;
+			}
+		}
+		return new BudgetPlan(out, budget, capitalUsed, totalProfit, gph, concentration);
 	}
 }

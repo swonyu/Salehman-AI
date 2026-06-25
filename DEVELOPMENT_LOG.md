@@ -7531,6 +7531,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-25 · RuneLite plugin — diversification cap + plan extrapolation + copy prices
+**Files:** `runelite-plugin/src/main/java/com/salehman/ge/` — `BudgetPlanner.java`, `SalehmanGeConfig.java`, `SalehmanGePlugin.java`, `SalehmanGePanel.java`; `+ BudgetPlannerTest.java`.
+**What & why:** Autonomous session iter 8 (backlog #5) + small adds. (a) BudgetPlanner gains a per-item capital cap (`maxCapitalPerItem`, spills to the next flip) and a Herfindahl `concentrationRisk` (1.0 = all-in-one → 0 spread); a new "Max % of budget per item" config (Budget plan section, 0 = off) drives it. Plan summary now shows concentration ("(heavy)" ≥0.5) and a "≈ +X/day if refilled each reset" extrapolation (6 four-hour cycles/day). 2-arg plan() preserved. (b) Right-click row → copy buy/sell price (and name) for quick GE-offer entry. Tests: cap+spill, concentration single vs spread.
+**Result:** ✅ build green, all tests pass. Final clean-launch verified earlier (0 exceptions, all features render with live data).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

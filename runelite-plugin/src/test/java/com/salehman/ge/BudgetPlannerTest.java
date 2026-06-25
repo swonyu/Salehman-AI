@@ -62,6 +62,30 @@ public class BudgetPlannerTest
 	}
 
 	@Test
+	public void diversificationCapLimitsPerItemAndSpills()
+	{
+		List<FlipItem> flips = flips();   // B (buy 1000, limit 5), then A (buy 100, limit 10)
+		// Budget 10000, cap 3000/item: B wants 5000 but is capped to 3 (3000); A is under the cap.
+		BudgetPlanner.BudgetPlan plan = BudgetPlanner.plan(flips, 10000, 3000);
+		assertEquals("B", plan.allocations.get(0).flip.name);
+		assertEquals(3, plan.allocations.get(0).quantity);    // 3000 / 1000, capped below its limit of 5
+		assertEquals(10, plan.allocations.get(1).quantity);   // A under cap → full limit
+	}
+
+	@Test
+	public void concentrationIsOneForSingleItemAndLowerWhenSpread()
+	{
+		List<FlipItem> flips = flips();
+		BudgetPlanner.BudgetPlan one = BudgetPlanner.plan(flips, 5000);   // only B fits → all-in-one
+		assertEquals(1, one.allocations.size());
+		assertEquals(1.0, one.concentrationRisk, 1e-9);
+
+		BudgetPlanner.BudgetPlan two = BudgetPlanner.plan(flips, 6000);   // B 5000 + A 1000
+		assertEquals(2, two.allocations.size());
+		assertEquals(0.7222, two.concentrationRisk, 1e-3);
+	}
+
+	@Test
 	public void emptyWhenBudgetCannotAffordAnything()
 	{
 		BudgetPlanner.BudgetPlan plan = BudgetPlanner.plan(flips(), 50); // cheapest buy is 100

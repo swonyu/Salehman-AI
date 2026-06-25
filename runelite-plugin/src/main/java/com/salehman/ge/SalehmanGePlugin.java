@@ -131,6 +131,12 @@ public class SalehmanGePlugin extends Plugin
 		return Math.max(1, config.maxResults());
 	}
 
+	/** Diversification cap for the budget plan: max % of budget per item (0 = off). */
+	public int maxAllocationPct()
+	{
+		return config.maxAllocationPct();
+	}
+
 	public boolean isFavorite(int itemId)
 	{
 		return favorites.contains(itemId);

@@ -267,7 +267,9 @@ class SalehmanGePanel extends PluginPanel
 			java.util.Map<Integer, Integer> alloc = java.util.Collections.emptyMap();
 			if (budget > 0)
 			{
-				BudgetPlanner.BudgetPlan plan = BudgetPlanner.plan(lastFlips, budget);
+				int pct = plugin.maxAllocationPct();
+				long capPerItem = pct > 0 ? (long) (budget * (pct / 100.0)) : 0;
+				BudgetPlanner.BudgetPlan plan = BudgetPlanner.plan(lastFlips, budget, capPerItem);
 				list.add(planSummary(plan));
 				list.add(Box.createVerticalStrut(6));
 				alloc = new java.util.HashMap<>();
@@ -343,10 +345,18 @@ class SalehmanGePanel extends PluginPanel
 		profit.setFont(FontManager.getRunescapeBoldFont());
 		profit.setAlignmentX(LEFT_ALIGNMENT);
 		p.add(profit);
+		// Extrapolation: one buy-limit fill is a 4h cycle; ~6 cycles/day if you re-fill each reset.
+		p.add(dim("≈ +" + QuantityFormatter.quantityToStackSize(plan.totalProfit * 6) + "/day if refilled each reset"));
 		JComponent spend = kv("Spend", QuantityFormatter.quantityToStackSize(plan.capitalUsed)
 			+ " · " + plan.allocations.size() + " items", Color.WHITE);
 		spend.setAlignmentX(LEFT_ALIGNMENT);
 		p.add(spend);
+		// Concentration: 1.0 = all-in-one (risky), lower = spread. Flag when capital is concentrated.
+		if (plan.allocations.size() > 1)
+		{
+			p.add(dim(String.format(Locale.US, "concentration %.2f%s", plan.concentrationRisk,
+				plan.concentrationRisk >= 0.5 ? " (heavy)" : "")));
+		}
 		if (favOnly.isSelected() || !nameFilter.isEmpty())
 		{
 			JLabel note = new JLabel("plan spans all flips; some rows hidden by filter");
