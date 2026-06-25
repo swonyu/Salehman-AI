@@ -68,7 +68,7 @@ class SalehmanGePanel extends PluginPanel
 	private final java.util.Set<Integer> expanded = new java.util.HashSet<>();
 	private final java.util.Map<Integer, int[]> sparkCache = new java.util.HashMap<>();
 	private final java.util.Set<Integer> sparkLoading = new java.util.HashSet<>();
-	private boolean disposed = false;   // set on teardown; late async callbacks then no-op
+	private volatile boolean disposed = false;   // set on teardown (client thread), read on EDT
 
 	SalehmanGePanel(SalehmanGePlugin plugin, ItemManager itemManager)
 	{
@@ -230,21 +230,12 @@ class SalehmanGePanel extends PluginPanel
 	void setFlips(List<FlipItem> flips)
 	{
 		setLoading(false);
-		status.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		lastFlips = flips;
-		if (flips.isEmpty())
+		if (!flips.isEmpty())
 		{
-			status.setText("No flips match your filters.");
-		}
-		else
-		{
-			int cap = plugin.maxResults();
-			status.setText(flips.size() <= cap
-				? flips.size() + " flips · ranked"
-				: "top " + cap + " of " + flips.size() + " · ranked");
 			lastUpdatedMs = System.currentTimeMillis();
 		}
-		renderList();
+		renderList();   // renderList owns the status so it reflects filters + the display cap
 		tickUpdated();
 	}
 
@@ -262,6 +253,8 @@ class SalehmanGePanel extends PluginPanel
 	private void renderList()
 	{
 		list.removeAll();
+		int shown = 0;
+		int matched = 0;
 		if (!lastFlips.isEmpty())
 		{
 			java.util.Map<Integer, Integer> alloc = java.util.Collections.emptyMap();
@@ -298,28 +291,54 @@ class SalehmanGePanel extends PluginPanel
 			}
 			boolean favoritesOnly = favOnly.isSelected();
 			int cap = plugin.maxResults();   // display cap; the budget plan above spans ALL flips
-			int shown = 0;
 			for (FlipItem f : display)
 			{
-				if (shown >= cap)
-				{
-					break;
-				}
 				if (favoritesOnly && !plugin.isFavorite(f.id))
 				{
 					continue;
 				}
 				if (!nameFilter.isEmpty() && !f.name.toLowerCase(Locale.US).contains(nameFilter))
 				{
-					continue;   // filters/cap only hide rows; the budget plan still spans all flips
+					continue;   // filters only hide rows; the budget plan still spans all flips
+				}
+				matched++;
+				boolean allocated = alloc.getOrDefault(f.id, 0) > 0;
+				// Past the display cap, still render any row the budget plan allocated to, so
+				// the plan's totals always reconcile with the visible "buy N" rows.
+				if (shown >= cap && !allocated)
+				{
+					continue;
 				}
 				list.add(row(f, alloc.getOrDefault(f.id, 0)));
 				list.add(Box.createVerticalStrut(6));
 				shown++;
 			}
 		}
+		updateStatus(shown, matched);
 		list.revalidate();
 		list.repaint();
+	}
+
+	private void updateStatus(int shown, int matched)
+	{
+		status.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		boolean filtered = favOnly.isSelected() || !nameFilter.isEmpty();
+		if (lastFlips.isEmpty())
+		{
+			status.setText("No flips match your filters.");
+		}
+		else if (matched == 0)
+		{
+			status.setText("no rows match the filter");
+		}
+		else if (shown < matched)
+		{
+			status.setText("showing " + shown + " of " + matched + (filtered ? " (filtered)" : ""));
+		}
+		else
+		{
+			status.setText(matched + " flips" + (filtered ? " (filtered)" : "") + " · ranked");
+		}
 	}
 
 	private void onSearch()
@@ -350,13 +369,13 @@ class SalehmanGePanel extends PluginPanel
 			return p;
 		}
 		JLabel profit = new JLabel("+" + QuantityFormatter.quantityToStackSize(plan.totalProfit)
-			+ " profit  ·  " + QuantityFormatter.quantityToStackSize((long) plan.realizedGpPerHour) + "/h");
+			+ " profit  ·  " + QuantityFormatter.quantityToStackSize((long) plan.realizedGpPerHour) + "/h realized");
 		profit.setForeground(ColorScheme.PROGRESS_COMPLETE_COLOR);
 		profit.setFont(FontManager.getRunescapeBoldFont());
 		profit.setAlignmentX(LEFT_ALIGNMENT);
 		p.add(profit);
-		// Extrapolation: one buy-limit fill is a 4h cycle; ~6 cycles/day if you re-fill each reset.
-		p.add(dim("≈ +" + QuantityFormatter.quantityToStackSize(plan.totalProfit * 6) + "/day if refilled each reset"));
+		// One buy-limit fill is a 4h cycle; ~6/day if you re-fill each reset. Best-case (undiscounted).
+		p.add(dim("≈ +" + QuantityFormatter.quantityToStackSize(plan.totalProfit * 6) + "/day best-case (refilled each reset)"));
 		JComponent spend = kv("Spend", QuantityFormatter.quantityToStackSize(plan.capitalUsed)
 			+ " · " + plan.allocations.size() + " items", Color.WHITE);
 		spend.setAlignmentX(LEFT_ALIGNMENT);

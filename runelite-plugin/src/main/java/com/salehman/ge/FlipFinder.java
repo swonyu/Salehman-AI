@@ -119,7 +119,7 @@ public class FlipFinder
 					+ (v.lowPriceVolume == null ? 0 : v.lowPriceVolume);
 			}
 
-			int tax = geTax(sellPrice, config);
+			int tax = TAX_EXEMPT_IDS.contains(id) ? 0 : geTax(sellPrice, config);
 			int margin = sellPrice - buyPrice;
 			int postTax = margin - tax;
 			int limit = m.limit == null ? 0 : m.limit;
@@ -178,7 +178,13 @@ public class FlipFinder
 				if (perCast > 0)
 				{
 					alchProfit = perCast;
-					alchGpPerHour = (double) perCast * ALCH_CASTS_PER_HOUR;
+					// GE-sourced alch is acquisition-gated by the SAME 4h buy limit as the flip,
+					// so cap the cast rate at limit/4h (full rate only if the limit is unknown).
+					// Keeps the alch-vs-flip gp/hour comparison apples-to-apples.
+					double castsPerHour = limit > 0
+						? Math.min(ALCH_CASTS_PER_HOUR, limit / GE_WINDOW_HOURS)
+						: ALCH_CASTS_PER_HOUR;
+					alchGpPerHour = perCast * castsPerHour;
 				}
 			}
 
@@ -229,6 +235,9 @@ public class FlipFinder
 	static final int NATURE_RUNE_ID = 561;
 	static final int ALCH_CASTS_PER_HOUR = 1200;
 
+	// GE-tax-exempt items (e.g. Old School Bond) — never taxed regardless of price.
+	static final java.util.Set<Integer> TAX_EXEMPT_IDS = java.util.Collections.singleton(13190);
+
 	static double fillConfidence(long ageSeconds)
 	{
 		if (ageSeconds < 0 || ageSeconds <= FRESH_SECONDS)
@@ -243,11 +252,6 @@ public class FlipFinder
 		return 1.0 + t * (CONFIDENCE_FLOOR - 1.0); // 1.0 → 0.25
 	}
 
-	/**
-	 * OSRS Grand Exchange sell tax: a percentage of the sell price (default 2%, the
-	 * live rate since 2025-05-29), capped per item (default 5,000,000 gp), with no
-	 * tax on items under 50 gp. Rate + cap are configurable since Jagex tunes them.
-	 */
 	/** Epoch-seconds of the OLDER of the two quote legs — the limiting factor for a
 	 *  two-sided flip. -1 if either leg's time is unknown (can't judge freshness). */
 	private static long oldestTradedTimestamp(GrandExchangeApi.Latest l)
@@ -259,13 +263,19 @@ public class FlipFinder
 		return Math.min(l.highTime, l.lowTime);
 	}
 
+	/**
+	 * OSRS Grand Exchange sell tax: a percentage of the sell price (default 2%, the
+	 * live rate since 2025-05-29), capped per item (default 5,000,000 gp), with no
+	 * tax on items under 50 gp. Rate + cap are configurable since Jagex tunes them.
+	 * Integer math matches Jagex/RuneLite's exact floor (no floating-point drift).
+	 */
 	static int geTax(int sellPrice, SalehmanGeConfig config)
 	{
 		if (sellPrice < 50)
 		{
 			return 0;
 		}
-		long tax = (long) Math.floor(sellPrice * (config.taxPercent() / 100.0));
+		long tax = (long) sellPrice * config.taxPercent() / 100;
 		return (int) Math.min(tax, Math.max(0, config.taxCap()));
 	}
 }

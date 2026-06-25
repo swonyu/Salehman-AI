@@ -258,7 +258,8 @@ public class FlipFinderTest
 		List<FlipItem> flips = FlipFinder.rank(latest, volumes, mapping, config(0, 100), 1_000_000L);
 		FlipItem f = flips.stream().filter(x -> x.id == 1).findFirst().orElseThrow(AssertionError::new);
 		assertEquals(2900, f.alchProfit);                                    // 38000 − 100 nature − 35000 item
-		assertEquals(2900.0 * FlipFinder.ALCH_CASTS_PER_HOUR, f.alchGpPerHour, 1e-6);
+		// acquisition-gated: limit 70 / 4h = 17.5 casts/h (< 1200), so 2900 × 17.5.
+		assertEquals(2900.0 * (70 / FlipFinder.GE_WINDOW_HOURS), f.alchGpPerHour, 1e-6);
 		assertTrue("alch should still beat this thin flip", f.alchGpPerHour > f.realizedGpPerHour);
 	}
 

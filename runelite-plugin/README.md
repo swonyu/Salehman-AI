@@ -88,8 +88,10 @@ injected `OkHttpClient` and identify itself via the User-Agent (it does — see
 - `GrandExchangeApi` — fetches `/latest`, `/mapping`, `/24h` from the wiki (Gson + OkHttp; per-call timeouts).
 - `FlipFinder` — joins them, applies GE tax + freshness confidence + alch compare, ranks into `FlipItem`s (cached mapping w/ TTL).
 - `FlipItem` — immutable ranked-flip value object.
-- `BudgetPlanner` — greedy buy-limit-aware capital allocator (the budget plan).
-- `SalehmanGePanel` — the Swing side panel (icons, budget, search, favourites, sort, click→wiki).
+- `BudgetPlanner` — greedy buy-limit-aware capital allocator (the budget plan + diversification cap).
+- `Sparkline` — tiny price-history polyline component for the expandable row chart.
+- `SalehmanGePanel` — the Swing side panel (icons, budget, search, favourites, sort, click→chart).
+- `SalehmanGeOverlay` — opt-in draggable in-game top-flips HUD (`OverlayPanel`).
 
 > Note: `play.sh` / `install-plugin.sh` / `capture-jagex.sh` / `run-local.sh` and the
 > `runClient` Gradle task are **local-dev** conveniences (run the plugin in a dev-mode

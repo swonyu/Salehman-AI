@@ -182,7 +182,24 @@ public class SalehmanGePlugin extends Plugin
 			notifyPrimed = false;   // re-prime (silent baseline) next time it's enabled
 			return;
 		}
-		double threshold = config.notifyMinGpPerHour();
+		boolean firstPass = !notifyPrimed;
+		notifyPrimed = true;
+		for (FlipItem f : selectNotifications(flips, config.notifyMinGpPerHour(), notified, firstPass, 3))
+		{
+			notifier.notify("Salehman GE: " + f.name + " ~"
+				+ Math.round(f.realizedGpPerHour) + " gp/h (post-tax)");
+		}
+	}
+
+	/**
+	 * Pure notification gating (no RuneLite deps, so it's unit-tested): mutates {@code notified}
+	 * and returns the flips to alert on. {@code firstPass} seeds a silent baseline (alert only on
+	 * genuine NEW crossings afterwards); re-arms by snapshot so an item that drops below threshold
+	 * OR leaves the list can alert again on a true re-cross; caps the burst at {@code cap}.
+	 */
+	static List<FlipItem> selectNotifications(List<FlipItem> flips, double threshold,
+		java.util.Set<Integer> notified, boolean firstPass, int cap)
+	{
 		java.util.Set<Integer> hot = new java.util.HashSet<>();
 		for (FlipItem f : flips)
 		{
@@ -191,28 +208,22 @@ public class SalehmanGePlugin extends Plugin
 				hot.add(f.id);
 			}
 		}
-		// First pass after enable: establish a baseline so we don't alert on flips that were
-		// already great when the panel opened — only on genuine NEW crossings afterwards.
-		if (!notifyPrimed)
+		if (firstPass)
 		{
 			notified.clear();
 			notified.addAll(hot);
-			notifyPrimed = true;
-			return;
+			return java.util.Collections.emptyList();
 		}
-		int fired = 0;
+		List<FlipItem> fire = new java.util.ArrayList<>();
 		for (FlipItem f : flips)
 		{
-			if (f.realizedGpPerHour >= threshold && fired < 3 && notified.add(f.id))
+			if (f.realizedGpPerHour >= threshold && fire.size() < cap && notified.add(f.id))
 			{
-				notifier.notify("Salehman GE: " + f.name + " ~"
-					+ Math.round(f.realizedGpPerHour) + " gp/h (post-tax)");
-				fired++;
+				fire.add(f);
 			}
 		}
-		// Re-arm by snapshot: anything no longer hot — whether it dropped below the threshold
-		// OR fell out of the ranked list entirely — clears so it can alert again on a true re-cross.
 		notified.retainAll(hot);
+		return fire;
 	}
 
 	/** Fetch a recent price sparkline for one item off the EDT; deliver mids (or null) on the EDT. */
@@ -255,11 +266,11 @@ public class SalehmanGePlugin extends Plugin
 		}
 	}
 
-	/** Panel sort dropdown → persist the choice (config UI stays in sync) and re-rank. */
+	/** Panel sort dropdown → persist the choice; the resulting ConfigChanged re-ranks. */
 	public void setSortAndRefresh(SalehmanGeConfig.SortBy sort)
 	{
 		configManager.setConfiguration("salehmange", "sortBy", sort);
-		refresh();
+		// onConfigChanged fires from setConfiguration and calls refresh() — no double-refresh here.
 	}
 
 	/** Re-arm (or cancel) the auto-refresh timer to match the current config. */
@@ -290,11 +301,20 @@ public class SalehmanGePlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged e)
 	{
-		// Only the auto-refresh knobs affect the timer — don't churn it on every sort/filter edit.
-		if ("salehmange".equals(e.getGroup())
-			&& ("autoRefresh".equals(e.getKey()) || "refreshSeconds".equals(e.getKey())))
+		if (!"salehmange".equals(e.getGroup()))
+		{
+			return;
+		}
+		String key = e.getKey();
+		if ("autoRefresh".equals(key) || "refreshSeconds".equals(key))
 		{
 			rescheduleAuto();
+		}
+		// Any setting except favourites (panel-managed, re-rendered in place) changes the
+		// ranked set or its display — re-rank so config-panel edits take effect immediately.
+		if (!"favorites".equals(key))
+		{
+			refresh();
 		}
 	}
 
@@ -324,6 +344,10 @@ public class SalehmanGePlugin extends Plugin
 			try
 			{
 				List<FlipItem> flips = flipFinder.findFlips(config);
+				if (!started)
+				{
+					return;   // disabled mid-fetch — don't resurrect state or fire notifications
+				}
 				latestFlips = flips;   // publish for the in-game overlay
 				maybeNotify(flips);
 				// `p == panel` guards a late result landing after shutDown() (panel→null)

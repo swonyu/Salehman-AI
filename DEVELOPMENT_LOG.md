@@ -7552,6 +7552,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-25 · RuneLite plugin — fix 12 holistic-review findings
+**Files:** `runelite-plugin/src/main/java/com/salehman/ge/` — `FlipFinder.java`, `SalehmanGePlugin.java`, `SalehmanGePanel.java`, `README.md`; `+ FlipFinderTest.java`, `+ NotifyTest.java` (new).
+**What & why:** Autonomous session — holistic whole-plugin review (3 finders → skeptic-verify, 12 confirmed), all addressed. **MED:** (1) alch gp/hour is now acquisition-gated by the same 4h buy limit as the flip (`min(1200, limit/4h)`) so the alch-vs-flip compare is apples-to-apples; (3) budget-allocated rows now always render even past the display cap so plan totals reconcile with visible rows; (5) refresh worker bails if `!started` (no state-resurrection/notify after shutDown); (8) config-panel filter/sort/tax edits now re-rank via onConfigChanged (and the sort dropdown no longer double-refreshes); (9) GE-tax-exempt items (Old School Bond 13190) are no longer taxed. **LOW:** (2) tax uses exact integer floor (no FP off-by-one at non-2% rates); (4) plan summary labels "/h realized" vs "/day best-case"; (6) `disposed` is volatile; (7) status shows true "showing N of M (filtered)"; (10) tax Javadoc moved onto geTax; (11) README Files lists Overlay+Sparkline; (12) notification gating extracted to a pure, unit-tested `selectNotifications` (prime/dedup/cap/re-arm).
+**Result:** ✅ build green, all tests pass (incl. new NotifyTest + gated alch test). FIVE adversarial-review rounds complete (10+7+5+4+12 = 38 findings, all fixed).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
