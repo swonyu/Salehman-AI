@@ -27,6 +27,11 @@ public class FlipItem
 	public final double realizedGpPerHour;
 	// 1.0 when both quote legs are fresh (or age unknown), decaying to a 0.25 floor by ~3h.
 	public final double fillConfidence;
+	// ALCHEMY ALTERNATIVE: per-item High Alchemy profit (highalch − nature rune price; 0 if
+	// not worth it / unknown) and its gp/hour at a sustained cast rate. Surfaced as an "alch
+	// instead" cue when it beats the flip. Attention-gated estimate, not a promise.
+	public final int alchProfit;
+	public final double alchGpPerHour;
 	public final boolean members;
 	/// Age of the OLDEST (stalest) of the two quote legs, in seconds (-1 if unknown) —
 	/// the limiting factor for a two-sided flip, so a half-stale spread is judged correctly.
@@ -34,8 +39,8 @@ public class FlipItem
 
 	public FlipItem(int id, String name, int buyPrice, int sellPrice, int margin, int tax,
 		int postTaxMargin, double roi, int buyLimit, long dailyVolume, long potentialProfit,
-		double gpPerHour, double realizedGpPerHour, double fillConfidence, boolean members,
-		long ageSeconds)
+		double gpPerHour, double realizedGpPerHour, double fillConfidence,
+		int alchProfit, double alchGpPerHour, boolean members, long ageSeconds)
 	{
 		this.id = id;
 		this.name = name;
@@ -51,6 +56,8 @@ public class FlipItem
 		this.gpPerHour = gpPerHour;
 		this.realizedGpPerHour = realizedGpPerHour;
 		this.fillConfidence = fillConfidence;
+		this.alchProfit = alchProfit;
+		this.alchGpPerHour = alchGpPerHour;
 		this.members = members;
 		this.ageSeconds = ageSeconds;
 	}

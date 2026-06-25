@@ -92,6 +92,9 @@ public class FlipFinder
 		long nowSeconds)
 	{
 		List<FlipItem> flips = new ArrayList<>();
+		// Nature rune instant-buy price (what an alch cast costs) — for the alch-vs-flip compare.
+		GrandExchangeApi.Latest nature = latest.get(NATURE_RUNE_ID);
+		int naturePrice = (nature != null && nature.high != null) ? nature.high : 0;
 		for (Map.Entry<Integer, GrandExchangeApi.Latest> e : latest.entrySet())
 		{
 			int id = e.getKey();
@@ -163,9 +166,23 @@ public class FlipFinder
 			double confidence = fillConfidence(ageSeconds);
 			double realizedGpPerHour = gpPerHour * confidence;
 
+			// Alchemy alternative: profit per cast = highalch − nature price (≥0), gp/hour at a
+			// sustained cast rate. 0 when the item can't be alched at a profit or data is missing.
+			int alchProfit = 0;
+			double alchGpPerHour = 0;
+			if (m.highalch != null && naturePrice > 0)
+			{
+				int perCast = m.highalch - naturePrice;
+				if (perCast > 0)
+				{
+					alchProfit = perCast;
+					alchGpPerHour = (double) perCast * ALCH_CASTS_PER_HOUR;
+				}
+			}
+
 			flips.add(new FlipItem(id, m.name, buyPrice, sellPrice, margin, tax, postTax,
 				roi, limit, volume, potential, gpPerHour, realizedGpPerHour, confidence,
-				m.members, ageSeconds));
+				alchProfit, alchGpPerHour, m.members, ageSeconds));
 		}
 
 		flips.sort(comparator(config.sortBy()));
@@ -203,6 +220,11 @@ public class FlipFinder
 	static final double FRESH_SECONDS = 90.0;
 	static final double FLOOR_AGE_SECONDS = 3 * 3600.0; // 10800s = 3h
 	static final double CONFIDENCE_FLOOR = 0.25;
+
+	// Alchemy compare: nature rune item id + a sustained High Alchemy cast rate (estimate;
+	// real throughput is attention-gated and varies with method).
+	static final int NATURE_RUNE_ID = 561;
+	static final int ALCH_CASTS_PER_HOUR = 1200;
 
 	static double fillConfidence(long ageSeconds)
 	{

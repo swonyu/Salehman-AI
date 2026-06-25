@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 /**
@@ -215,6 +216,46 @@ public class FlipFinderTest
 		// TTL expired → refetch returns EMPTY → must NOT poison the cache; keep the stale-good one.
 		assertEquals(1, ff.getMapping(FlipFinder.MAPPING_TTL_MS + 1L).size());
 		assertEquals(2, calls[0]);
+	}
+
+	@Test
+	public void alchProfitAndGpPerHourFromHighalchAndNaturePrice()
+	{
+		Map<Integer, GrandExchangeApi.Latest> latest = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Mapping> mapping = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Volume> volumes = new HashMap<>();
+		// Nature rune (id 561): instant-buy 100 → cost per alch cast.
+		latest.put(FlipFinder.NATURE_RUNE_ID, latest(100, 90));
+		// A flip that is ALSO alchable: buy 35000 / sell 36000 → postTax 280/item, but highalch 38000.
+		latest.put(1, latest(36000, 35000));
+		GrandExchangeApi.Mapping m = mapping(1, "Rune platebody", 70, true);
+		m.highalch = 38000;
+		mapping.put(1, m);
+		volumes.put(1, volume(5000, 5000));
+
+		List<FlipItem> flips = FlipFinder.rank(latest, volumes, mapping, config(0, 100), 1_000_000L);
+		FlipItem f = flips.stream().filter(x -> x.id == 1).findFirst().orElseThrow(AssertionError::new);
+		assertEquals(37900, f.alchProfit);                                   // 38000 − 100
+		assertEquals(37900.0 * FlipFinder.ALCH_CASTS_PER_HOUR, f.alchGpPerHour, 1e-6);
+		assertTrue("alch should dwarf this thin flip", f.alchGpPerHour > f.realizedGpPerHour);
+	}
+
+	@Test
+	public void alchZeroWhenNotAlchableOrNoNaturePrice()
+	{
+		Map<Integer, GrandExchangeApi.Latest> latest = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Mapping> mapping = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Volume> volumes = new HashMap<>();
+		// No nature rune entry → naturePrice 0 → alch disabled even though highalch is set.
+		latest.put(1, latest(1100, 1000));
+		GrandExchangeApi.Mapping m = mapping(1, "A", 1000, false);
+		m.highalch = 5000;
+		mapping.put(1, m);
+		volumes.put(1, volume(5000, 5000));
+
+		List<FlipItem> flips = FlipFinder.rank(latest, volumes, mapping, config(0, 100), 1_000_000L);
+		assertEquals(0, flips.get(0).alchProfit);
+		assertEquals(0.0, flips.get(0).alchGpPerHour, 1e-9);
 	}
 
 	// --- additional helpers ---

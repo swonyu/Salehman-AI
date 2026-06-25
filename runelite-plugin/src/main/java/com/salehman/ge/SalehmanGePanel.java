@@ -44,6 +44,7 @@ import net.runelite.client.util.QuantityFormatter;
 class SalehmanGePanel extends PluginPanel
 {
 	private static final NumberFormat GP = NumberFormat.getIntegerInstance(Locale.US);
+	private static final Color ALCH_COLOR = new Color(0x4F, 0xC3, 0xF7); // cyan — distinct from profit-green
 
 	private final SalehmanGePlugin plugin;
 	private final ItemManager itemManager;
@@ -450,6 +451,12 @@ class SalehmanGePanel extends PluginPanel
 			// Budget plan picked this flip — show how many to buy and the capital it ties up.
 			body.add(kv("Allocate", "buy " + GP.format(allocQty)
 				+ " · " + QuantityFormatter.quantityToStackSize((long) allocQty * f.buyPrice), ColorScheme.BRAND_ORANGE));
+		}
+		if (f.alchProfit > 0 && f.alchGpPerHour > f.realizedGpPerHour)
+		{
+			// High Alchemy beats this flip's realized velocity — surface it (attention-gated).
+			body.add(kv("Alch instead", "+" + GP.format(f.alchProfit) + "/item · "
+				+ QuantityFormatter.quantityToStackSize((long) f.alchGpPerHour) + "/h", ALCH_COLOR));
 		}
 
 		// whole-row hover + left-click → wiki price page; right-click → menu

@@ -155,6 +155,7 @@ public class GrandExchangeApi
 		public boolean members;
 		public Integer limit;    // 4-hour GE buy limit (may be absent)
 		public Integer value;
+		public Integer highalch; // High Alchemy value (may be absent) — for the alch-vs-flip compare
 	}
 
 	public static class Volume
