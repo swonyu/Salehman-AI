@@ -25,12 +25,18 @@ spreads that won't fill get down-ranked.
 
 **Tools.**
 - **Budget allocator** — type your gp (e.g. `100m`) and it plans what to buy, up to
-  each item's buy limit, with the total profit and gp/hour, and tags each chosen row.
+  each item's buy limit, with total profit, gp/hour and a "+X/day if refilled"
+  extrapolation, tagging each chosen row. Optional **diversification cap** ("max %
+  of budget per item") with a concentration readout.
 - **Favourites** — ★ items to pin them to the top (persisted); "★ favourites only"
   filter; live name search.
-- **Alch instead** — flags when High Alchemy (highalch − nature price, at ~1200
-  casts/h) beats a flip's realized gp/hour.
-- **Auto-refresh** — optional interval re-fetch (in config), plus the manual button.
+- **Alch instead** — flags when High Alchemy (highalch − nature − item cost, at
+  ~1200 casts/h) beats a flip's realized gp/hour.
+- **Price sparkline** — click a row to expand a recent price-history chart.
+- **Thin-volume** badge when daily volume is low relative to the buy limit.
+- **Auto-refresh** + **notifications** when a flip crosses a gp/hour threshold.
+- **In-game overlay** (opt-in) — a draggable on-screen top-flips HUD.
+- **Right-click** a row to open the wiki, or copy its name / buy / sell price.
 
 Filter by min margin / min volume / price band / members-only; tax rate + cap and
 max quote age are configurable.
