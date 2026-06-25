@@ -45,6 +45,7 @@ class SalehmanGePanel extends PluginPanel
 {
 	private static final NumberFormat GP = NumberFormat.getIntegerInstance(Locale.US);
 	private static final Color ALCH_COLOR = new Color(0x4F, 0xC3, 0xF7); // cyan — distinct from profit-green
+	private static final int VOLUME_GATE_FACTOR = 3; // daily volume below limit×this → "thin volume"
 
 	private final SalehmanGePlugin plugin;
 	private final ItemManager itemManager;
@@ -464,6 +465,16 @@ class SalehmanGePanel extends PluginPanel
 		body.add(kv("Limit · Vol",
 			(f.buyLimit > 0 ? GP.format(f.buyLimit) : "—") + " · " + QuantityFormatter.quantityToStackSize(f.dailyVolume),
 			Color.WHITE));
+		// Thin-volume warning: daily traded volume small relative to the buy limit means your
+		// offer may not actually fill the limit — the gp/hour is then more thesis than reality.
+		if (f.buyLimit > 0 && f.dailyVolume < (long) f.buyLimit * VOLUME_GATE_FACTOR)
+		{
+			JLabel thin = new JLabel("⚠ thin volume");
+			thin.setForeground(ColorScheme.PROGRESS_INPROGRESS_COLOR);
+			thin.setFont(FontManager.getRunescapeSmallFont());
+			thin.setAlignmentX(LEFT_ALIGNMENT);
+			body.add(thin);
+		}
 		if (allocQty > 0)
 		{
 			// Budget plan picked this flip — show how many to buy and the capital it ties up.

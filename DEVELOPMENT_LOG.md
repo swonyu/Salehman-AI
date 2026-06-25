@@ -7503,6 +7503,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-25 · RuneLite plugin — config sections/units, thin-volume badge, net-tax test
+**Files:** `runelite-plugin/src/main/java/com/salehman/ge/SalehmanGeConfig.java`, `SalehmanGePanel.java`; `+ FlipFinderTest.java`.
+**What & why:** Autonomous session iter 5 (polish). (a) Config grouped into @ConfigSection blocks (Filters / Ranking & display / Auto-refresh / GE tax) with @Units on tax % (PERCENT), quote age (MINUTES) and refresh interval (SECONDS) — verified all three Units constants exist via javap. (b) Panel "⚠ thin volume" badge when dailyVolume < buyLimit×3 (backlog #9 — surfaces fill-risk the gp/hour can't). (c) New net-of-tax audit test pinning that margin is gross but tax/postTaxMargin/roi/potentialProfit/gpPerHour are all derived from the NET margin (the honesty guarantee).
+**Result:** ✅ build green, all tests pass.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

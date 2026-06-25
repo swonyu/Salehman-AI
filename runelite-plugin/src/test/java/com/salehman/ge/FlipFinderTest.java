@@ -139,6 +139,28 @@ public class FlipFinderTest
 	}
 
 	@Test
+	public void surfacedNumbersAreNetOfTax()
+	{
+		Map<Integer, GrandExchangeApi.Latest> latest = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Mapping> mapping = new HashMap<>();
+		Map<Integer, GrandExchangeApi.Volume> volumes = new HashMap<>();
+		latest.put(1, latest(1100, 1000));                 // gross spread 100
+		mapping.put(1, mapping(1, "A", 100, false));
+		volumes.put(1, volume(5000, 5000));
+
+		FlipItem f = FlipFinder.rank(latest, volumes, mapping, config(0, 100), 1_000_000L).get(0);
+		assertEquals(100, f.margin);                       // gross
+		assertEquals(22, f.tax);                           // 2% of 1100
+		assertEquals(78, f.postTaxMargin);                 // NET per item
+		assertEquals(7.8, f.roi, 1e-9);                    // net / buy, %
+		assertEquals(7800, f.potentialProfit);             // net × limit
+		assertEquals(1950.0, f.gpPerHour, 1e-9);           // potential / 4h
+		// the honesty guarantee: every aggregate is derived from the NET margin, never gross
+		assertEquals((long) f.postTaxMargin * f.buyLimit, f.potentialProfit);
+		assertEquals((double) f.postTaxMargin / f.buyPrice * 100.0, f.roi, 1e-9);
+	}
+
+	@Test
 	public void fillConfidenceDecaysFromFreshToFloor()
 	{
 		assertEquals(1.0, FlipFinder.fillConfidence(-1), 1e-9);       // unknown age → full confidence
