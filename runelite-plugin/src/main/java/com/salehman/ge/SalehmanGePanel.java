@@ -100,10 +100,21 @@ class SalehmanGePanel extends PluginPanel
 
 	private JPanel row(FlipItem f)
 	{
-		JPanel row = new JPanel(new BorderLayout(6, 2));
+		// BoxLayout stretches/squashes children to their max size, so cap only the
+		// WIDTH and let the height follow the content's preferred height. A fixed
+		// height cap (the old 76px) crushed the 3×2 metric grid and made each cell's
+		// label and value overprint each other.
+		JPanel row = new JPanel(new BorderLayout(6, 2))
+		{
+			@Override
+			public Dimension getMaximumSize()
+			{
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+			}
+		};
 		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		row.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
-		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 76));
+		row.setAlignmentX(LEFT_ALIGNMENT);
 
 		String age = f.ageSeconds >= 0 ? "  · " + (f.ageSeconds / 60) + "m old" : "";
 		JLabel name = new JLabel(f.name + (f.members ? "  (P2P)" : "") + age);

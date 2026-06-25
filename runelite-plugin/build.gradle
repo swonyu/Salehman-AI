@@ -44,3 +44,16 @@ tasks.withType(JavaCompile).configureEach {
 test {
     useJUnit()
 }
+
+// Local, private dev run — launches a real RuneLite client with this plugin
+// side-loaded (no Plugin Hub needed). The RuneLite client is a test-scope dep,
+// so the run task uses the test runtime classpath. Usage: ./gradlew runClient
+tasks.register('runClient', JavaExec) {
+    group = 'application'
+    description = 'Launch a local RuneLite client with Salehman GE Flips side-loaded'
+    dependsOn 'testClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.salehman.ge.SalehmanGePluginTest'
+    // RuneLite refuses to start in dev mode unless JVM assertions are enabled.
+    jvmArgs = ['-ea']
+}
