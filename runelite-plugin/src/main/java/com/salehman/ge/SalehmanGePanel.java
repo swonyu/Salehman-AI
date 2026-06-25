@@ -51,9 +51,12 @@ class SalehmanGePanel extends PluginPanel
 	private final JLabel status = new JLabel("Tap Refresh to find flips.");
 	private final JLabel updated = new JLabel(" ");
 	private final JButton refresh = new JButton("Refresh");
+	private final javax.swing.JTextField budgetField = new javax.swing.JTextField();
 	private final Timer clock = new Timer(1000, e -> tickUpdated());
 
 	private long lastUpdatedMs = -1;
+	private long budget = 0;
+	private java.util.List<FlipItem> lastFlips = java.util.Collections.emptyList();
 
 	SalehmanGePanel(SalehmanGePlugin plugin, ItemManager itemManager)
 	{
@@ -125,6 +128,26 @@ class SalehmanGePanel extends PluginPanel
 		});
 		controls.add(sortBox);
 
+		// Budget: "I have N gp" → an allocation plan (accepts 100m / 1.5b / 250000).
+		JPanel budgetRow = new JPanel(new BorderLayout(6, 0));
+		budgetRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		JLabel budgetLabel = new JLabel("Budget");
+		budgetLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		budgetLabel.setFont(FontManager.getRunescapeSmallFont());
+		budgetField.setToolTipText("Your gp to spend (e.g. 100m). Blank = no plan.");
+		budgetField.addActionListener(e -> applyBudget());     // Enter
+		budgetField.addFocusListener(new java.awt.event.FocusAdapter()
+		{
+			@Override
+			public void focusLost(java.awt.event.FocusEvent e)
+			{
+				applyBudget();
+			}
+		});
+		budgetRow.add(budgetLabel, BorderLayout.WEST);
+		budgetRow.add(budgetField, BorderLayout.CENTER);
+		controls.add(budgetRow);
+
 		refresh.setFocusable(false);
 		refresh.addActionListener(e -> plugin.refresh());
 		controls.add(refresh);
@@ -164,7 +187,7 @@ class SalehmanGePanel extends PluginPanel
 	{
 		setLoading(false);
 		status.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		list.removeAll();
+		lastFlips = flips;
 		if (flips.isEmpty())
 		{
 			status.setText("No flips match your filters.");
@@ -173,15 +196,111 @@ class SalehmanGePanel extends PluginPanel
 		{
 			status.setText(flips.size() + " flips · ranked");
 			lastUpdatedMs = System.currentTimeMillis();
-			for (FlipItem f : flips)
+		}
+		renderList();
+		tickUpdated();
+	}
+
+	private void applyBudget()
+	{
+		long b = parseGp(budgetField.getText());
+		if (b != budget)
+		{
+			budget = b;
+			renderList();   // re-render with/without the allocation plan (no network needed)
+		}
+	}
+
+	/** Rebuild the rows from {@link #lastFlips}, prepending a budget plan when one is set. */
+	private void renderList()
+	{
+		list.removeAll();
+		if (!lastFlips.isEmpty())
+		{
+			java.util.Map<Integer, Integer> alloc = java.util.Collections.emptyMap();
+			if (budget > 0)
 			{
-				list.add(row(f));
+				BudgetPlanner.BudgetPlan plan = BudgetPlanner.plan(lastFlips, budget);
+				list.add(planSummary(plan));
+				list.add(Box.createVerticalStrut(6));
+				alloc = new java.util.HashMap<>();
+				for (BudgetPlanner.Allocation a : plan.allocations)
+				{
+					alloc.put(a.flip.id, a.quantity);
+				}
+			}
+			for (FlipItem f : lastFlips)
+			{
+				list.add(row(f, alloc.getOrDefault(f.id, 0)));
 				list.add(Box.createVerticalStrut(6));
 			}
 		}
-		tickUpdated();
 		list.revalidate();
 		list.repaint();
+	}
+
+	private JPanel planSummary(BudgetPlanner.BudgetPlan plan)
+	{
+		JPanel p = new JPanel();
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		p.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(0, 3, 0, 0, ColorScheme.BRAND_ORANGE),
+			BorderFactory.createEmptyBorder(6, 8, 6, 8)));
+		JLabel head = new JLabel("Plan for " + QuantityFormatter.quantityToStackSize(plan.budget) + " gp");
+		head.setForeground(Color.WHITE);
+		head.setFont(FontManager.getRunescapeBoldFont());
+		head.setAlignmentX(LEFT_ALIGNMENT);
+		p.add(head);
+		JLabel profit = new JLabel("+" + QuantityFormatter.quantityToStackSize(plan.totalProfit)
+			+ " profit  ·  " + QuantityFormatter.quantityToStackSize((long) plan.realizedGpPerHour) + "/h");
+		profit.setForeground(ColorScheme.PROGRESS_COMPLETE_COLOR);
+		profit.setFont(FontManager.getRunescapeBoldFont());
+		profit.setAlignmentX(LEFT_ALIGNMENT);
+		p.add(profit);
+		JComponent spend = kv("Spend", QuantityFormatter.quantityToStackSize(plan.capitalUsed)
+			+ " · " + plan.allocations.size() + " items", Color.WHITE);
+		spend.setAlignmentX(LEFT_ALIGNMENT);
+		p.add(spend);
+		return p;
+	}
+
+	private static long parseGp(String s)
+	{
+		if (s == null)
+		{
+			return 0;
+		}
+		s = s.trim().toLowerCase(Locale.US).replace(",", "").replace("gp", "").trim();
+		if (s.isEmpty())
+		{
+			return 0;
+		}
+		double mult = 1;
+		char last = s.charAt(s.length() - 1);
+		if (last == 'k')
+		{
+			mult = 1e3;
+			s = s.substring(0, s.length() - 1);
+		}
+		else if (last == 'm')
+		{
+			mult = 1e6;
+			s = s.substring(0, s.length() - 1);
+		}
+		else if (last == 'b')
+		{
+			mult = 1e9;
+			s = s.substring(0, s.length() - 1);
+		}
+		try
+		{
+			return (long) (Double.parseDouble(s.trim()) * mult);
+		}
+		catch (NumberFormatException e)
+		{
+			return 0;
+		}
 	}
 
 	private void tickUpdated()
@@ -195,7 +314,7 @@ class SalehmanGePanel extends PluginPanel
 		updated.setText("Updated " + (s < 60 ? s + "s" : (s / 60) + "m") + " ago");
 	}
 
-	private JPanel row(FlipItem f)
+	private JPanel row(FlipItem f, int allocQty)
 	{
 		// BoxLayout stretches/squashes children to their max size, so cap only the WIDTH and
 		// let height follow the content (a fixed height cap crushed the rows and overprinted).
@@ -259,6 +378,12 @@ class SalehmanGePanel extends PluginPanel
 		body.add(kv("Limit · Vol",
 			(f.buyLimit > 0 ? GP.format(f.buyLimit) : "—") + " · " + QuantityFormatter.quantityToStackSize(f.dailyVolume),
 			Color.WHITE));
+		if (allocQty > 0)
+		{
+			// Budget plan picked this flip — show how many to buy and the capital it ties up.
+			body.add(kv("Allocate", "buy " + GP.format(allocQty)
+				+ " · " + QuantityFormatter.quantityToStackSize((long) allocQty * f.buyPrice), ColorScheme.BRAND_ORANGE));
+		}
 
 		// whole-row hover + left-click → wiki price page; right-click → menu
 		MouseListener ma = new MouseAdapter()
