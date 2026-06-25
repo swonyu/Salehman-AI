@@ -12,14 +12,33 @@ feature (the macOS app keeps its own RuneScape tab). Logic mirrors the Swift
 
 ## What it shows
 
-Per opportunity: item · **buy at** (instasell) · **sell at** (instabuy) · margin ·
-**GE tax** · **post-tax margin** · **ROI %** · 4h buy limit · daily volume ·
-**potential profit** (post-tax margin × buy limit). Sort by potential profit, ROI,
-or margin; filter by min margin / min volume / price band / members-only.
+Per opportunity: **item icon** · name · a colored **profit/item + ROI** hero line ·
+**buy → sell** · **gp/hour (realized)** · **profit/limit** · 4h buy limit · daily
+volume · a **freshness dot** (how old the quotes are). Click a row to open its live
+**wiki price page**; right-click for wiki/copy. A live **"Updated Ns ago"** clock
+shows snapshot age.
+
+**Ranking & velocity.** Sort by potential profit, ROI, per-item margin, gp/hour, or
+**realized gp/hour** (the default) — gp/hour discounted by a *freshness confidence*
+multiplier (1.0 when quotes are fresh, decaying to a 0.25 floor by ~3h) so stale
+spreads that won't fill get down-ranked.
+
+**Tools.**
+- **Budget allocator** — type your gp (e.g. `100m`) and it plans what to buy, up to
+  each item's buy limit, with the total profit and gp/hour, and tags each chosen row.
+- **Favourites** — ★ items to pin them to the top (persisted); "★ favourites only"
+  filter; live name search.
+- **Alch instead** — flags when High Alchemy (highalch − nature price, at ~1200
+  casts/h) beats a flip's realized gp/hour.
+- **Auto-refresh** — optional interval re-fetch (in config), plus the manual button.
+
+Filter by min margin / min volume / price band / members-only; tax rate + cap and
+max quote age are configurable.
 
 > ⚠️ Prices are community-sourced and ~real-time, not official. Flipping is not
 > risk-free: prices move, offers don't always fill, and the GE tax + buy limits
-> cap returns. Informational only.
+> cap returns. "Realized gp/hour", the budget plan, and the alch compare are
+> volume-/attention-gated **estimates**, not guarantees. Informational only.
 
 ## Build
 
@@ -58,8 +77,14 @@ injected `OkHttpClient` and identify itself via the User-Agent (it does — see
 `GrandExchangeApi.UA`).
 
 ## Files
-- `SalehmanGePlugin` — `@PluginDescriptor`, registers the side panel + nav button.
-- `SalehmanGeConfig` — user filters (margins, volume, price band, sort, tax rate/cap).
-- `GrandExchangeApi` — fetches `/latest`, `/mapping`, `/24h` from the wiki (Gson + OkHttp).
-- `FlipFinder` — joins them, applies the GE tax, filters + ranks into `FlipItem`s.
-- `SalehmanGePanel` — the Swing side panel (refresh + ranked rows + disclaimer).
+- `SalehmanGePlugin` — `@PluginDescriptor`, side panel + nav button, auto-refresh, favourites persistence.
+- `SalehmanGeConfig` — user filters (margins, volume, price band, sort, tax rate/cap, auto-refresh).
+- `GrandExchangeApi` — fetches `/latest`, `/mapping`, `/24h` from the wiki (Gson + OkHttp; per-call timeouts).
+- `FlipFinder` — joins them, applies GE tax + freshness confidence + alch compare, ranks into `FlipItem`s (cached mapping w/ TTL).
+- `FlipItem` — immutable ranked-flip value object.
+- `BudgetPlanner` — greedy buy-limit-aware capital allocator (the budget plan).
+- `SalehmanGePanel` — the Swing side panel (icons, budget, search, favourites, sort, click→wiki).
+
+> Note: `play.sh` / `install-plugin.sh` / `capture-jagex.sh` / `run-local.sh` and the
+> `runClient` Gradle task are **local-dev** conveniences (run the plugin in a dev-mode
+> client, incl. with a Jagex account). They're not needed for a Plugin Hub submission.
