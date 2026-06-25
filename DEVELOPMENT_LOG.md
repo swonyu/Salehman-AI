@@ -7559,6 +7559,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-25 · RuneLite plugin — debounce config-driven refresh (review round 6)
+**Files:** `runelite-plugin/src/main/java/com/salehman/ge/SalehmanGePlugin.java`.
+**What & why:** Targeted review of the holistic-fix commit found 1 issue (a regression I introduced): onConfigChanged called refresh() on every salehmange key, so dragging a config-panel spinner fired a stream of full wiki re-fetches. Fixed: skip keys that need no re-fetch (favourites, overlayEnabled/overlayCount — the overlay reads latest flips live), keep autoRefresh/refreshSeconds → rescheduleAuto, and DEBOUNCE everything else into a single trailing refresh ~400ms after the last edit (cancel/reschedule a ScheduledFuture; cancelled in shutDown).
+**Result:** ✅ build green, all tests pass. SIX review rounds complete (10+7+5+4+12+1 = 39 findings, all fixed).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

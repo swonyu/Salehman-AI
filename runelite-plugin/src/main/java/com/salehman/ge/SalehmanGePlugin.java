@@ -74,6 +74,8 @@ public class SalehmanGePlugin extends Plugin
 	// autoTask is armed/cancelled from several threads (startUp, shutDown, ConfigChanged) —
 	// volatile + all mutation funnelled through synchronized (re)scheduleAuto/cancelAuto.
 	private volatile ScheduledFuture<?> autoTask;
+	// debounce config-panel edits (a spinner drag fires many ConfigChanged) into one refresh.
+	private volatile ScheduledFuture<?> configRefreshTask;
 	private volatile boolean started;
 	// latest ranked flips, published for the in-game overlay (read on the render thread).
 	private volatile List<FlipItem> latestFlips = java.util.Collections.emptyList();
@@ -124,6 +126,11 @@ public class SalehmanGePlugin extends Plugin
 	{
 		started = false;     // block any in-flight reschedule from re-arming after teardown
 		cancelAuto();
+		if (configRefreshTask != null)
+		{
+			configRefreshTask.cancel(false);
+			configRefreshTask = null;
+		}
 		if (overlay != null)
 		{
 			overlayManager.remove(overlay);
@@ -309,12 +316,29 @@ public class SalehmanGePlugin extends Plugin
 		if ("autoRefresh".equals(key) || "refreshSeconds".equals(key))
 		{
 			rescheduleAuto();
+			return;
 		}
-		// Any setting except favourites (panel-managed, re-rendered in place) changes the
-		// ranked set or its display — re-rank so config-panel edits take effect immediately.
-		if (!"favorites".equals(key))
+		// favourites is panel-managed; the overlay reads latest flips live each frame — neither
+		// needs a re-fetch. Everything else changes the ranked set/display, so re-rank — but
+		// DEBOUNCED, since a config-panel spinner drag fires a rapid stream of ConfigChanged.
+		if ("favorites".equals(key) || "overlayEnabled".equals(key) || "overlayCount".equals(key))
 		{
-			refresh();
+			return;
+		}
+		scheduleConfigRefresh();
+	}
+
+	/** Coalesce a burst of config edits into a single trailing refresh (~400ms after the last). */
+	private synchronized void scheduleConfigRefresh()
+	{
+		if (configRefreshTask != null)
+		{
+			configRefreshTask.cancel(false);
+			configRefreshTask = null;
+		}
+		if (started)
+		{
+			configRefreshTask = executor.schedule(this::refresh, 400, TimeUnit.MILLISECONDS);
 		}
 	}
 
