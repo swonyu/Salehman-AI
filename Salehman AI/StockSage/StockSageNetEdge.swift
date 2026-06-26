@@ -56,7 +56,14 @@ enum StockSageNetEdge {
         let spreadBps: Double
         let slippageBps: Double
         let assetClass: String
-        nonisolated var roundTripBps: Double { spreadBps + slippageBps }
+        /// Round-trip taker/exchange fee (both fills), bps of entry. Dominant on crypto; ~0 on
+        /// commission-free equity brokers. Defaulted so existing constructions stay valid.
+        let takerFeeBps: Double
+        nonisolated var roundTripBps: Double { spreadBps + slippageBps + takerFeeBps }
+        nonisolated init(spreadBps: Double, slippageBps: Double, assetClass: String, takerFeeBps: Double = 0) {
+            self.spreadBps = spreadBps; self.slippageBps = slippageBps
+            self.assetClass = assetClass; self.takerFeeBps = takerFeeBps
+        }
     }
 
     /// Itemize the round-trip friction per share. ADDITIVE — `evaluate()` is untouched. Financing
@@ -79,7 +86,7 @@ enum StockSageNetEdge {
     /// Crypto widest, FX majors tightest; foreign single-listings wider than US large-caps.
     nonisolated static func defaultCosts(forSymbol symbol: String) -> CostAssumption {
         let s = symbol.uppercased()
-        if s.hasSuffix("-USD") { return CostAssumption(spreadBps: 30, slippageBps: 20, assetClass: "crypto") }      // 50bps
+        if s.hasSuffix("-USD") { return CostAssumption(spreadBps: 30, slippageBps: 20, assetClass: "crypto", takerFeeBps: 20) } // 70bps incl. ~0.1%/fill taker
         if s.hasSuffix("=X")   { return CostAssumption(spreadBps: 4,  slippageBps: 3,  assetClass: "FX") }          // 7bps
         if s.hasPrefix("^")    { return CostAssumption(spreadBps: 5,  slippageBps: 3,  assetClass: "index") }       // 8bps
         if s.contains(".")     { return CostAssumption(spreadBps: 20, slippageBps: 10, assetClass: "intl") }        // 30bps
@@ -94,7 +101,8 @@ enum StockSageNetEdge {
                                   winProb: Double? = nil) -> Double? {
         let c = defaultCosts(forSymbol: symbol)
         return evaluate(entry: entry, stop: stop, target: target,
-                        spreadBps: c.spreadBps, slippageBps: c.slippageBps, winProb: winProb)?.netRR
+                        spreadBps: c.spreadBps, slippageBps: c.slippageBps,
+                        takerFeeBps: c.takerFeeBps, winProb: winProb)?.netRR
     }
 
     /// Net reward:risk after round-trip frictions. Works for longs and shorts (uses absolute
@@ -102,13 +110,13 @@ enum StockSageNetEdge {
     /// `commissionPerShare` is absolute. nil if the gross setup is degenerate.
     nonisolated static func evaluate(entry: Double, stop: Double, target: Double,
                                      spreadBps: Double = 0, slippageBps: Double = 0,
-                                     commissionPerShare: Double = 0,
+                                     commissionPerShare: Double = 0, takerFeeBps: Double = 0,
                                      winProb: Double? = nil) -> NetEdge? {
         let grossReward = abs(target - entry)
         let grossRisk = abs(entry - stop)
         guard grossReward > 0, grossRisk > 0, entry > 0 else { return nil }
 
-        let cost = Swift.max(0, spreadBps + slippageBps) / 10_000 * entry + Swift.max(0, commissionPerShare)
+        let cost = Swift.max(0, spreadBps + slippageBps + takerFeeBps) / 10_000 * entry + Swift.max(0, commissionPerShare)
         let netReward = grossReward - cost
         let netRisk = grossRisk + cost
         let grossRR = grossReward / grossRisk

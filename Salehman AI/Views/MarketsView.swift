@@ -3512,7 +3512,7 @@ struct MarketsView: View {
                     let costs = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
                     if let ne = StockSageNetEdge.evaluate(
                         entry: idea.price, stop: stop, target: target,
-                        spreadBps: costs.spreadBps, slippageBps: costs.slippageBps,
+                        spreadBps: costs.spreadBps, slippageBps: costs.slippageBps, takerFeeBps: costs.takerFeeBps,
                         winProb: StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target, calibration: store.convictionCalibration)?.winProbEstimate) {
                         let c = ne.costErodesEdge ? DS.Palette.warningSoft : DS.Palette.textSecondary
                         let pre = "After ~\(Int(costs.roundTripBps))bps est. \(costs.assetClass) costs: "

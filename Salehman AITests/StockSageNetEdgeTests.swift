@@ -68,7 +68,9 @@ struct StockSageNetEdgeTests {
 
     @Test func defaultCostsScaleByAssetClass() {
         #expect(NE.defaultCosts(forSymbol: "BTC-USD").assetClass == "crypto")
-        #expect(NE.defaultCosts(forSymbol: "BTC-USD").roundTripBps == 50)
+        // 30 spread + 20 slippage + 20 round-trip taker fee (~0.1%/fill) = 70bps.
+        #expect(NE.defaultCosts(forSymbol: "BTC-USD").roundTripBps == 70)
+        #expect(NE.defaultCosts(forSymbol: "BTC-USD").takerFeeBps == 20)
         #expect(NE.defaultCosts(forSymbol: "EURUSD=X").assetClass == "FX")
         #expect(NE.defaultCosts(forSymbol: "EURUSD=X").roundTripBps == 7)
         #expect(NE.defaultCosts(forSymbol: "^GSPC").assetClass == "index")

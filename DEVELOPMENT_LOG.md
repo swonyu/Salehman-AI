@@ -7838,6 +7838,20 @@ correct). Two LOW issues confirmed and fixed:
 
 ---
 
+## 2026-06-26 · Cost realism: round-trip taker fees (esp. crypto) (Chat A, autonomous)
+**Files:** `StockSage/StockSageNetEdge.swift`, `Views/MarketsView.swift`, `StockSageNetEdgeTests.swift`.
+**Why:** the net-edge model charged only spread+slippage; it OMITTED exchange/taker fees — the
+dominant cost on fast crypto flips — so a thin crypto setup read less-costly than reality and could
+slip past the net-R:R gate / break-even.
+**What:** `CostAssumption.takerFeeBps` (round-trip, both fills; default 0 so equities unchanged),
+folded into `roundTripBps`; crypto default now 70bps (30+20+**20** taker ≈ 0.1%/fill). `evaluate`
+takes `takerFeeBps`; `netRR` and the detail-sheet break-even pass it. Because the backtester sizes
+costs off `roundTripBps`, crypto backtests now also charge taker fees (more honest equity curve).
+**Result:** `tools/typecheck.sh` ✅; full suite **1089 pass / 0 fail** (updated the one default-cost
+assertion to 70bps).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
