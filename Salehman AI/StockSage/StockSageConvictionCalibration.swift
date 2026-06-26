@@ -165,4 +165,48 @@ extension StockSageConvictionCalibration {
         let trainEnd = n - testN - gap   // [0, trainEnd) train · [trainEnd, n-testN) embargoed · [n-testN, n) test
         return (train: Array(closed[0..<trainEnd]), test: Array(closed[(n - testN)..<n]))
     }
+
+    /// Out-of-sample quality of the conviction→win-prob map: fit on the chronological TRAIN slice, then
+    /// score the held-out TEST slice it never saw. `oosBrier`/`oosLogLoss` are proper scores (lower =
+    /// better); `baselineBrier` is the no-skill predictor (TRAIN base win-rate for every test trade). The
+    /// map only EARNS its place if it beats that baseline OOS (`addsSkill`). nil when too thin to fit/score.
+    /// Honest + small-sample-noisy by nature — a few-dozen-trade journal gives a wide, jumpy estimate.
+    struct OOSCalibrationCheck: Sendable, Equatable {
+        let oosBrier: Double
+        let baselineBrier: Double
+        let oosLogLoss: Double
+        let n: Int
+        /// The calibration generalizes only if it beats the no-skill base-rate predictor out-of-sample.
+        nonisolated var addsSkill: Bool { oosBrier < baselineBrier }
+    }
+
+    nonisolated static func validateOutOfSample(_ trades: [TradeRecord],
+                                                testFraction: Double = 0.3, embargo: Int = 1,
+                                                minTrainSamples: Int = 30) -> OOSCalibrationCheck? {
+        let (train, test) = chronologicalSplit(trades, testFraction: testFraction, embargo: embargo)
+        guard let cal = fit(fromJournal: train, minSamples: minTrainSamples) else { return nil }
+        // No-skill baseline = the TRAIN base win-rate (what you'd predict knowing nothing about conviction).
+        let trainWon = train.compactMap { t -> Bool? in
+            guard t.conviction != nil, let r = t.realizedR else { return nil }
+            return r > 0
+        }
+        guard !trainWon.isEmpty else { return nil }
+        let baseRate = Double(trainWon.filter { $0 }.count) / Double(trainWon.count)
+
+        let eps = 1e-9
+        var brier = 0.0, baseBrier = 0.0, logloss = 0.0, count = 0
+        for t in test {
+            guard let c = t.conviction, let r = t.realizedR else { continue }
+            let a = r > 0 ? 1.0 : 0.0
+            let p = Swift.max(eps, Swift.min(1 - eps, cal.winProb(c)))
+            brier += (p - a) * (p - a)
+            baseBrier += (baseRate - a) * (baseRate - a)
+            logloss += -(a * Foundation.log(p) + (1 - a) * Foundation.log(1 - p))
+            count += 1
+        }
+        guard count >= 1 else { return nil }
+        let nD = Double(count)
+        return OOSCalibrationCheck(oosBrier: brier / nD, baselineBrier: baseBrier / nD,
+                                   oosLogLoss: logloss / nD, n: count)
+    }
 }

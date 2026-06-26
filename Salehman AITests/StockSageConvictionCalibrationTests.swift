@@ -116,6 +116,31 @@ struct StockSageConvictionCalibrationTests {
         #expect(StockSageConvictionCalibration.chronologicalSplit(Array(trades.prefix(2))).test.isEmpty)
     }
 
+    @Test func validateOutOfSampleBeatsBaselineOnSeparableJournal() {
+        func rec(_ day: Int, conv: Double, win: Bool) -> TradeRecord {
+            TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: 130, shares: 1,
+                        openedAt: Date(timeIntervalSince1970: Double(day) * 86_400),
+                        exitPrice: win ? 110 : 95,
+                        closedAt: Date(timeIntervalSince1970: Double(day) * 86_400 + 3600),
+                        conviction: conv)
+        }
+        // 50 trades, relationship holds in BOTH train and test: high conviction wins, low loses.
+        let trades = (0..<50).map { i -> TradeRecord in
+            let high = i.isMultiple(of: 2)
+            return rec(i, conv: high ? 0.9 : 0.1, win: high)
+        }
+        let chk = StockSageConvictionCalibration.validateOutOfSample(trades, testFraction: 0.3,
+                                                                     embargo: 1, minTrainSamples: 20)
+        #expect(chk != nil)
+        guard let chk else { return }
+        #expect(chk.n >= 1)
+        #expect(chk.oosBrier >= 0)
+        #expect(chk.oosBrier < chk.baselineBrier)   // beats the no-skill base-rate predictor OOS
+        #expect(chk.addsSkill)
+        // Too few trades to fit/split → nil (no false precision).
+        #expect(StockSageConvictionCalibration.validateOutOfSample(Array(trades.prefix(5))) == nil)
+    }
+
     @Test func expectedValueUsesCalibrationWhenProvided() {
         // Without calibration → the linear prior (0.35 + 0.23·c).
         #expect(abs(StockSageExpectedValue.winProbEstimate(conviction: 0.5) - (0.35 + 0.23 * 0.5)) < 1e-9)
