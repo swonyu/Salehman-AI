@@ -8226,6 +8226,24 @@ validation harness (the biggest un-built item; split across cycles).
 
 ---
 
+## 2026-06-26 · CRITICAL one-liner: fetchOne dropped marketTime → resurrect staleness honesty (scout #1) (Chat A, autonomous)
+**Files:** `StockSage/StockSageQuoteService.swift`.
+**Why (broader scout, HIGH, verified):** `fetchOne` rebuilt its `LiveQuote` WITHOUT `marketTime`
+(even though `parseChart` had extracted `regularMarketTime`), and `fetchQuotes` is built entirely on
+`fetchOne` — so EVERY live quote had `marketTime == nil`. That silently disabled ALL the freshness
+honesty I shipped earlier tonight: `store.quoteAsOf` was always nil → the Markets banner always
+claimed green "Live … delayed ~15 min" even on a days-old weekend close, and per-row `isStale`
+(dimmed/clock badge) NEVER fired. The UI was asserting "live" on stale prices — the exact honesty-
+floor violation that machinery exists to prevent.
+**What:** one line — `fetchOne` now passes `marketTime: parsed.marketTime` through. The banner
+downgrade, `quoteAsOf`, and per-row staleness are now actually live.
+**Result:** `tools/typecheck.sh` ✅; suite **1100 pass / 0 fail** (parseChart's marketTime extraction
+already has a unit test; the fetchOne reconstruction is network-only, verified by inspection).
+**Next (broader scout):** #3 (HIGH) deterministic ruin line hardcoded 1%/trade vs the user's real %;
+then #4 (large) journal conviction → live calibration.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

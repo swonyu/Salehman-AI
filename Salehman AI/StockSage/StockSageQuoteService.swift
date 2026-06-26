@@ -84,8 +84,10 @@ enum StockSageQuoteService {
         req.timeoutInterval = 12
         guard let data = await get(req), let parsed = parseChart(data) else { return nil }
         // Preserve the symbol we *asked* for so it maps back to the curated market
-        // label (Yahoo echoes its own canonical symbol, which can differ in case).
-        return LiveQuote(symbol: symbol, price: parsed.price, previousClose: parsed.previousClose)
+        // label (Yahoo echoes its own canonical symbol, which can differ in case). Carry
+        // marketTime through — dropping it silently disabled ALL downstream staleness/banner
+        // honesty (quoteAsOf, per-row isStale) since fetchQuotes is built on fetchOne.
+        return LiveQuote(symbol: symbol, price: parsed.price, previousClose: parsed.previousClose, marketTime: parsed.marketTime)
     }
 
     /// GET a request, returning the 200 body. On a 429/503 (Yahoo's keyless endpoint
