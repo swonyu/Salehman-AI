@@ -7805,6 +7805,22 @@ velocity ranking proxy.
 
 ---
 
+## 2026-06-26 · Lever #3c log-growth velocity ranking (Chat A) — ALL 4 MONEY LEVERS DONE
+**File:** `StockSage/StockSageExpectedValue.swift`.
+**Why (owner goal — fastest money = growth RATE):** the velocity board ranked by arithmetic EV/day,
+which is variance-blind and over-ranks high-R, low-probability lottery setups (a −1 outcome at a
+real bet fraction craters compounding). Growth-rate optimality ranks by expected LOG-growth.
+**What:** `expectedLogGrowth(winProb:rewardR:)` = E[ln(1 + f·outcome)] at f = half-Kelly. The Fast
+Lane / velocity RANK KEY now uses per-day log-growth instead of quality-adjusted EV/day (same cost +
+conviction-floor demotions retained). The DISPLAYED velocity (EV/day) is unchanged — only the order.
+**Result:** `tools/typecheck.sh` ✅; full suite **1089 pass / 0 fail**.
+**ALL FOUR MONEY LEVERS COMPLETE on a green base:** #4 trustworthy engine, #1 calibration
+(conviction→measured win-prob), #2 velocity-first (EV/day default + setup-derived holds), #3 Kelly
+size + cost gating + log-growth ranking. Honesty floor held throughout (estimates labeled;
+calibration falls back to a conservative prior; no claims of guaranteed profit).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

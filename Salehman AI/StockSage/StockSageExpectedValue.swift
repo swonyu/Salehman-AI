@@ -144,6 +144,22 @@ enum StockSageExpectedValue {
     nonisolated static func qualityAdjustedEVR(for idea: StockSageIdea) -> Double? {
         ev(for: idea).map { $0.evR * qualityWeight(idea.advice.conviction) }
     }
+
+    /// Expected per-CYCLE log-growth at half-Kelly — the growth-rate-optimal objective. Arithmetic
+    /// EV (p·R − (1−p)) is variance-blind: it over-ranks high-R, low-probability lottery setups,
+    /// whose −1 outcome at a meaningful bet fraction craters compound growth. Log-growth
+    /// (E[ln(1 + f·outcome)] at f = half-Kelly) penalizes that, so ranking by it favors steady
+    /// compounders — exactly "make money fastest" = maximize growth RATE, not arithmetic expectancy.
+    /// 0 when there's no positive-edge bet.
+    nonisolated static func expectedLogGrowth(winProb: Double, rewardR: Double) -> Double {
+        let w = Swift.max(0, Swift.min(1, winProb))
+        let r = Swift.max(0.0001, rewardR)
+        let f = Swift.max(0, Swift.min(0.5, (w - (1 - w) / r) / 2))   // half-Kelly risk fraction, capped
+        guard f > 0 else { return 0 }
+        let up = 1 + f * r, down = 1 - f
+        guard up > 0, down > 0 else { return 0 }
+        return w * Foundation.log(up) + (1 - w) * Foundation.log(down)
+    }
     /// Does the idea's conviction-mapped win prob clear its AFTER-COST break-even? A thin,
     /// high-cost flip can be positive-EV on paper yet net-negative once frictions are paid.
     /// No defined R (no stop/target) ⇒ treated as clearing (don't demote — unchanged).
@@ -239,9 +255,12 @@ enum StockSageExpectedValue {
         // a short does not compound the same way, so only buy-family ideas qualify. (Fixes a short
         // topping the Fast Lane while it is correctly barred from the best-opportunity card.)
         guard case .buyFamily = side(idea) else { return nil }
-        guard let q = qualityAdjustedEVR(for: idea),
+        // Rank by per-DAY LOG-GROWTH (growth-rate-optimal), not arithmetic EV/day — so a steady
+        // compounder beats a high-variance lottery setup of equal raw EV. Displayed velocity is
+        // still EV/day; this is only the ordering key.
+        guard let e = ev(for: idea),
               let hold = expectedHoldDays(for: idea, holds: holds), hold > 0 else { return nil }
-        let v = q / hold
+        let v = expectedLogGrowth(winProb: e.winProbEstimate, rewardR: e.rewardR) / hold
         // After-cost screen (mirrors evRankKey): a setup net-negative after frictions can't lead the
         // velocity board either — otherwise a thin, high-cost crypto flip tops it on gross EV.
         if !clearsCostAfterFrictions(idea) { return v - 500_000 }
