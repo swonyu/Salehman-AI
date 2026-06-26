@@ -7622,6 +7622,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-26 · Markets — fix 12 Ideas-board review findings (Chat A)
+**Files:** `Views/MarketsView.swift`, `StockSage/StockSageStore.swift`.
+**What & why:** Adversarial review of the Ideas-board additions (3 finders → skeptic-verify, 12 confirmed; several dupes). Fixed: **(1/8)** `rewardRisk(_:)` was long-only so it silently dropped R:R for the whole sell/reduce (short) family — card metric, R:R sort, avg-R:R chip, and copy-plan — contradicting the detail sheet; now symmetric `abs(reward)/abs(risk)` capped at 50, matching the canonical EV helper. **(6)** removed the "Alert ≥ current price" option (already-met → fires immediately) and gated the bell menu to ideas that have a stop/target; VoiceOver "Set price alert" now uses target (≥) else stop (≤), never current. **(7/12)** `addPriceAlert` dedupes an identical armed alert (double-tap safe). **(2/5/10)** the "buys" summary chip now counts the buy FAMILY (strong+buy) to match the .buys filter it triggers. **(3/4)** the "shown" reset chip now also clears the search. **(11)** empty-state message names the active constraint (search term / conviction floor / action filter) instead of "No all ideas". (Skipped #9, a LOW re-rank-per-render — the ~250-idea sort is cheap; not worth the ViewBuilder restructure.)
+**Result:** ✅ `tools/typecheck.sh` clean.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

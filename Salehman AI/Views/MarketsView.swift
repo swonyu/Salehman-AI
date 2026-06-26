@@ -2349,9 +2349,7 @@ struct MarketsView: View {
                     Spacer()
                 }
                 if displayedIdeas.isEmpty {
-                    Text(ideaSearch.trimmingCharacters(in: .whitespaces).isEmpty
-                         ? "No \(ideaFilter.rawValue.lowercased()) ideas in this scan."
-                         : "No ideas match “\(ideaSearch)”.")
+                    Text(ideasEmptyMessage)
                         .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 12)
                 } else {
                     ideasSummaryStrip(displayedIdeas)
@@ -2369,13 +2367,14 @@ struct MarketsView: View {
     /// avg conviction and avg reward:risk. Counts reflect the current sort/filter/search.
     @ViewBuilder private func ideasSummaryStrip(_ ideas: [StockSageIdea]) -> some View {
         let strong = ideas.filter { $0.advice.action == .strongBuy }.count
-        let buys = ideas.filter { $0.advice.action == .buy }.count
+        // buy FAMILY (matches the .buys filter this chip triggers: strong buy + buy)
+        let buys = ideas.filter { $0.advice.action == .strongBuy || $0.advice.action == .buy }.count
         let sells = ideas.filter { $0.advice.action == .sell || $0.advice.action == .reduce }.count
         let avgConv = ideas.isEmpty ? 0 : ideas.map(\.advice.conviction).reduce(0, +) / Double(ideas.count)
         let rrs = ideas.map(rewardRisk).filter { $0 > 0 }
         let avgRR = rrs.isEmpty ? 0 : rrs.reduce(0, +) / Double(rrs.count)
         HStack(spacing: 8) {
-            summaryChip("\(ideas.count)", "shown", .white) { ideaFilter = .all; ideaMinConv = 0 }
+            summaryChip("\(ideas.count)", "shown", .white) { ideaFilter = .all; ideaMinConv = 0; ideaSearch = "" }
             if strong > 0 { summaryChip("\(strong)", "strong buy", DS.Palette.successSoft) { ideaFilter = .strongBuy } }
             if buys > 0 { summaryChip("\(buys)", "buys", .white) { ideaFilter = .buys } }
             if sells > 0 { summaryChip("\(sells)", "sells", DS.Palette.warningSoft) { ideaFilter = .sells } }
@@ -2425,11 +2424,20 @@ struct MarketsView: View {
         return result
     }
 
-    /// Reward:risk for a long-biased idea (0 when stop/target absent or not long-shaped).
+    /// Why the filtered ideas list is empty — names the active constraint so the user knows what to relax.
+    private var ideasEmptyMessage: String {
+        if !ideaSearch.trimmingCharacters(in: .whitespaces).isEmpty { return "No ideas match “\(ideaSearch)”." }
+        if ideaMinConv > 0 { return "No ideas at ≥ \(Int(ideaMinConv * 100))% conviction — lower the conviction filter." }
+        if ideaFilter != .all { return "No \(ideaFilter.rawValue.lowercased()) ideas in this scan." }
+        return "No ideas in this scan."
+    }
+
+    /// Reward:risk for an idea — symmetric so it works for SHORT (sell/reduce) setups too,
+    /// matching the detail sheet's `ev.rewardR`. 0 only when a leg is missing or stop == price.
     private func rewardRisk(_ idea: StockSageIdea) -> Double {
         guard let stop = idea.advice.stopPrice, let target = idea.advice.targetPrice,
-              idea.price - stop > 0, target - idea.price > 0 else { return 0 }
-        return (target - idea.price) / (idea.price - stop)
+              abs(idea.price - stop) > 0 else { return 0 }
+        return min(abs(target - idea.price) / abs(idea.price - stop), 50)
     }
 
     private var ideasHeader: some View {
@@ -2551,6 +2559,7 @@ struct MarketsView: View {
                         .background((earnFlag.isDemoted ? DS.Palette.warningSoft : DS.Palette.surfaceStroke).opacity(0.14), in: Capsule())
                         .help(store.earnings[idea.symbol.uppercased()]?.note ?? "Upcoming earnings — binary event risk; a protective stop may gap through it.")
                 }
+                if a.targetPrice != nil || a.stopPrice != nil {
                 Menu {
                     if let t = a.targetPrice {
                         Button { store.addPriceAlert(symbol: idea.symbol, target: t, direction: .above) } label: {
@@ -2562,9 +2571,7 @@ struct MarketsView: View {
                             Label("Alert ≤ \(adaptivePrice(s)) (stop)", systemImage: "shield.lefthalf.filled")
                         }
                     }
-                    Button { store.addPriceAlert(symbol: idea.symbol, target: idea.price, direction: .above) } label: {
-                        Label("Alert ≥ current \(adaptivePrice(idea.price))", systemImage: "bell")
-                    }
+                    // (no "alert at current price" — it would be already-met and fire immediately)
                 } label: {
                     Image(systemName: "bell.badge")
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
@@ -2572,6 +2579,7 @@ struct MarketsView: View {
                 .menuStyle(.borderlessButton).fixedSize()
                 .help("Set a price alert for \(idea.symbol)")
                 .accessibilityLabel("Set a price alert for \(idea.symbol)")
+                }
                 Button { Task { await store.runBacktest(symbol: idea.symbol) } } label: {
                     Image(systemName: "clock.arrow.circlepath")
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
@@ -2648,8 +2656,8 @@ struct MarketsView: View {
         .accessibilityAction { selectedIdea = idea }
         .accessibilityAction(named: "Backtest") { Task { await store.runBacktest(symbol: idea.symbol) } }
         .accessibilityAction(named: "Set price alert") {
-            store.addPriceAlert(symbol: idea.symbol,
-                                target: a.targetPrice ?? idea.price, direction: .above)
+            if let t = a.targetPrice { store.addPriceAlert(symbol: idea.symbol, target: t, direction: .above) }
+            else if let s = a.stopPrice { store.addPriceAlert(symbol: idea.symbol, target: s, direction: .below) }
         }
         .contentShape(Rectangle())
         .onTapGesture { selectedIdea = idea }

@@ -100,6 +100,10 @@ final class StockSageStore: ObservableObject {
     func addPriceAlert(symbol: String, target: Double, direction: PriceAlert.Direction) {
         let up = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard !up.isEmpty, target > 0 else { return }
+        // Dedupe: don't stack an identical armed alert (a card's bell can be tapped twice).
+        guard !priceAlerts.contains(where: {
+            $0.isArmed && $0.symbol == up && $0.target == target && $0.direction == direction
+        }) else { return }
         priceAlerts.append(PriceAlert(symbol: up, target: target, direction: direction))
         savePriceAlerts()
     }
