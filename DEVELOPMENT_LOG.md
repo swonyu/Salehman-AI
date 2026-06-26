@@ -8688,6 +8688,31 @@ gross→net erosion / risk-truth, no profit promise. No code changed.
 
 ---
 
+## 2026-06-27 · Deep-research: 'make money fast / conviction' reality check (Chat A, owner-invoked)
+**Files:** `RESEARCH_2026-06-27_money_fast_conviction.md` (new).
+**Why:** owner ran /deep-research 'how to make money fast conviction stocks' (refined to an honest,
+failure-mode-first question). deep-research workflow: 105 agents, ~3.9M tokens, 3-vote adversarial verify.
+**Verdict — validates the engine's honesty floor + core design, demolishes 'get rich fast':**
+- CONCENTRATION: a manager's genuine top-few 'best ideas' DO beat (~2.8–4.5%/yr GROSS, Antón-Cohen-Polk)
+  but it's gross, skews high-vol, ordinary investors don't capture it; 'all ideas' alpha ≈ 0. The stronger
+  'concentration doubles Sharpe' / 'Active Share predicts net' claims were REFUTED in verification
+  (Frazzini 'Deactivating Active Share').
+- FELT CONVICTION = mostly overconfidence + self-defeating for retail: bought stocks underperform sold
+  3.2pp/yr (8.6pp for speculative); most active traders 11.4% net vs 17.9% market; >80% of day traders
+  lose net, <1% persistently skilled. Skill is predicted by PAST REALIZED PERFORMANCE, not stated
+  conviction — exactly why the engine calibrates conviction→win-rate from outcomes + validates OOS.
+- SIZING: full Kelly maximizes growth but is wild; overbetting ≥2x → ruin (LTCM); fractional-Kelly
+  POSITION LIMITS compound without blowing up — validates the half-Kelly allocator + heat cap.
+- COST is the binding constraint (gross edge real, destroyed by frictions) — validates the NetEdge cost
+  gate. Closet-indexing also loses (fees on no differentiation).
+**Engine implication:** no new build mandated — this is a STRONG external validation of the existing
+design (measured calibration over felt conviction, fractional Kelly, cost gate, 'not a forecast'
+honesty). Best owner-facing message: the edge is small, gross, and cost-/discipline-gated — size small,
+trust measured win-rates not gut conviction. No code changed. (The 'ideas card' /deep-research was
+dismissed by the owner — not run.)
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
