@@ -7771,6 +7771,23 @@ audit's log-growth ranking proxy, which uses the Kelly fraction → folded into 
 
 ---
 
+## 2026-06-26 · Lever #3a Kelly-derived position size (Chat A)
+**File:** `StockSage/StockSageAdvisor.swift`.
+**Why (owner goal):** the card's `suggestedWeight` used `(0.4 + 0.6·conviction)` — it ignored payoff
+R, so a 4:1 setup and a 1.5:1 setup of equal conviction sized the SAME. Growth-optimal sizing must
+track the FULL edge (win prob AND reward), which is Kelly.
+**What:** size = half-Kelly `f* = W − (1−W)/R` (1 unit = the stop loss, so f* is a stop-RISK
+fraction), capped by the fixed 1%-risk budget and `maxWeight` → `weight = min(f*/2, 0.01)/stopDistPct`,
+capped. So a richer reward:risk sizes larger and a thin one sizes down, but risk never exceeds the
+1% budget (Kelly only ever shrinks below it — conservative). Uses the prior W (advise() is pure); the
+EV display + allocator apply the calibrated W.
+**Result:** `tools/typecheck.sh` ✅; full suite **1089 pass / 0 fail** (only the hard-cap test pins an
+exact weight; tight stop still caps at maxWeight).
+**Remaining of #3:** cost gating (feed NET R:R to the trade gate + TodayPlan) and the log-growth
+velocity ranking proxy.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

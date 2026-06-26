@@ -251,14 +251,23 @@ enum StockSageAdvisor {
         let stopMult = Self.stopMultiple(forVol: realizedVol)
         let stopReason = realizedVol.map { String(format: "%.1f×ATR stop — sized for %.0f%% annualized volatility", stopMult, $0 * 100) }
 
-        // Position size: risk budget ÷ stop distance %, scaled by conviction, capped.
-        // Distance is absolute so a short (stop > price) sizes the same as a long.
+        // Position size — KELLY-shaped: size by the FULL edge (win prob AND payoff R), not
+        // conviction alone. f* = W − (1−W)/R (1 unit = the stop loss, so f* is a stop-RISK
+        // fraction), half-Kelly, then capped by the fixed 1%-risk budget and the per-idea max.
+        // Replaces the old (0.4+0.6·conviction) scaler, which ignored payoff R — so a 4:1 setup now
+        // sizes larger than a 1.5:1 of equal conviction, and a thin-reward setup sizes DOWN. The 1%
+        // cap keeps it conservative (Kelly only ever shrinks below the budget). Distance is absolute
+        // so a short (stop > price) sizes like a long. (Uses the prior W here; the EV display +
+        // allocator apply the calibrated W.)
         var weight = 0.0
-        if (isBuy || isSell), let stop {
+        if (isBuy || isSell), let stop, let target {
             let stopDistPct = abs(price - stop) / price
             if stopDistPct > 0 {
-                weight = (riskPerTrade / stopDistPct) * (0.4 + 0.6 * conviction)
-                weight = Swift.min(weight, maxWeight)
+                let rr = Swift.min(abs(target - price) / abs(price - stop), 50)
+                let w = StockSageExpectedValue.winProbEstimate(conviction: conviction)
+                let fStar = Swift.max(0, w - (1 - w) / rr)        // Kelly risk fraction
+                let riskFraction = Swift.min(fStar / 2, riskPerTrade)   // half-Kelly, ≤ the 1% budget
+                weight = Swift.min(riskFraction / stopDistPct, maxWeight)
             }
         }
 
