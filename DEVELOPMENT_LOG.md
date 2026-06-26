@@ -8581,6 +8581,22 @@ live-data (#11/#13/#14); #3 takerFeeBps dead-code unit trap (low).
 
 ---
 
+## 2026-06-26 · Overfit RED-FLAG needs a significant OOS slice — scout #9 (Chat A, autonomous)
+**Files:** `StockSage/StockSageBacktester.swift`, `StockSageBacktesterTests.swift`.
+**Why (verified scout w7b6t392u):** WalkForwardDecay.isRedFlag was `isAvgR>0 && decayRatio<0.5` with NO
+min-OOS-trade gate, so 'RED FLAG: likely overfit' fired on a 2–6-trade OOS slice that is itself noise.
+The struct already carries `oosSignificant` (≥20 OOS trades) and the UI already has a 'thin OOS, low
+confidence' fallback — but isRedFlag was checked first, masking it.
+**What:** `isRedFlag = oosSignificant && isAvgR>0 && decayRatio<0.5`. A thin-OOS collapse now falls
+through to the existing 'OOS sample thin (<20), low confidence' message instead of a false overfit alarm.
+**Result:** `tools/typecheck.sh` ✅; suite **1109 pass / 0 fail** (updated the decay test: a 6-OOS-trade
+collapse is NOT flagged; added a 21-OOS-trade collapse that IS).
+**Backlog: 9 of 14 done.** Remaining: LIVE-DATA (#11 banner staleness defeated by 24/7 crypto/FX
+MarketsView:212-221; #13 signal list actionable on stale equities :2147-2235; #14 briefing sample/stale
+authoritative :2286); #3 takerFeeBps dead-code unit trap (low).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

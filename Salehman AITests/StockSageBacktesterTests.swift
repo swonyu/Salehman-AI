@@ -64,10 +64,16 @@ struct StockSageBacktesterTests {
         // Stable +1R edge → keeps its edge out-of-sample, ratio ~1, no flag.
         let stable = StockSageBacktester.walkForwardDecay(Array(repeating: trade(1), count: 20))
         #expect(abs(stable.decayRatio - 1) < 1e-9 && !stable.isRedFlag)
-        // Front-loaded: first 14 win, last 6 lose → edge collapses OOS → red flag.
+        // Front-loaded but SMALL: first 14 win, last 6 lose → edge collapses OOS, BUT only 6 OOS trades
+        // (< 20) → the OOS slice is itself noise, so NOT a red flag (the UI shows a "thin OOS" caveat).
         let front = StockSageBacktester.walkForwardDecay((0..<20).map { trade($0 < 14 ? 1 : -1) })
-        #expect(front.isAvgR > 0 && front.oosAvgR < 0 && front.decayRatio < 0.5 && front.isRedFlag)
+        #expect(front.isAvgR > 0 && front.oosAvgR < 0 && front.decayRatio < 0.5)
         #expect(!front.oosSignificant)                       // 6 OOS trades < 20 → OOS itself is noise
+        #expect(!front.isRedFlag)                            // …so a thin-OOS collapse is NOT flagged as overfit
+        // Same collapse but with a SIGNIFICANT OOS slice (21 ≥ 20 trades) → a real red flag.
+        let bigOverfit = StockSageBacktester.walkForwardDecay((0..<70).map { trade($0 < 49 ? 1 : -1) })
+        #expect(bigOverfit.oosSignificant && bigOverfit.isAvgR > 0 && bigOverfit.decayRatio < 0.5)
+        #expect(bigOverfit.isRedFlag)
         // Mild decay (kept 70% of the edge) is honest but NOT flagged.
         let mild = StockSageBacktester.walkForwardDecay((0..<20).map { trade($0 < 14 ? 1 : 0.7) })
         #expect(abs(mild.decayRatio - 0.7) < 1e-9 && !mild.isRedFlag)

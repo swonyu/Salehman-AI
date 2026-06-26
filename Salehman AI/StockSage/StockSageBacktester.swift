@@ -110,8 +110,10 @@ struct WalkForwardDecay: Sendable, Equatable {
     let decayRatio: Double      // oosAvgR / isAvgR; 0 when isAvgR ≤ 0 (no in-sample edge to decay from)
     let oosTrades: Int
     let oosSignificant: Bool    // ≥ 20 OOS trades — below this the OOS slice is itself noise
-    /// Had a real in-sample edge but kept less than half of it out-of-sample → likely overfit.
-    nonisolated var isRedFlag: Bool { isAvgR > 0 && decayRatio < 0.5 }
+    /// Had a real in-sample edge but kept less than half of it out-of-sample → likely overfit. Gated on
+    /// `oosSignificant`: with fewer than ~20 OOS trades the slice is itself noise, so a low decay ratio
+    /// there is not evidence of overfitting — the UI shows a "thin OOS" caveat instead of a false RED FLAG.
+    nonisolated var isRedFlag: Bool { oosSignificant && isAvgR > 0 && decayRatio < 0.5 }
 }
 
 extension StockSageBacktester {
