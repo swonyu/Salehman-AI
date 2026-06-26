@@ -7750,6 +7750,27 @@ calibration from backtests and threads it into the board EV + allocator — is t
 
 ---
 
+## 2026-06-26 · Lever #2 velocity-first: EV/day default + setup-derived holds (Chat A)
+**Files:** `StockSage/StockSageExpectedValue.swift`, `Views/MarketsView.swift`.
+**Why (owner goal — fastest money):** "Fastest" = EV per unit TIME. Two gaps (money-path audit):
+the board DEFAULTED to absolute EV (a 12-day 1R swing outranked a 3-day 0.6R setup that compounds
+~2.4× faster), and the holding-period denominator was a single per-asset-class CONSTANT — blind to
+the real cadence driver, how far the target sits from entry.
+**What:**
+- Default sort → **money-velocity (EV/day)** (`ideaSort` @AppStorage default `.ev` → `.velocity`;
+  existing users keep their pick).
+- **Setup-derived holding period** `expectedHoldDays(for: idea)` = |target − price| ÷ the name's
+  typical daily move (avg |Δ| of its sparkline), clamped to [0.4×, 3×] the class default so a noisy
+  spark can't yield a 0.1-/500-day fantasy. Falls back to the class constant when no target/spark;
+  index/FX still nil (unranked for velocity). `velocity(for:)` and `velocityRankKey` now use it →
+  a nearer target genuinely ranks/compounds faster. `velocity(for:)` also gained an optional
+  calibration param (consistency with the EV path).
+**Result:** `tools/typecheck.sh` ✅; full suite **1089 pass / 0 fail**.
+**Money levers:** #4 ✅, #1 ✅, #2 ✅. Remaining: #3 Kelly-derived card size + cost gating (+ the
+audit's log-growth ranking proxy, which uses the Kelly fraction → folded into #3).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -96,11 +96,37 @@ enum StockSageExpectedValue {
         }
     }
 
+    /// SETUP-derived expected hold: distance-to-target ÷ the name's typical daily move (from its
+    /// recent sparkline). A NEARER target turns over faster than a far one of equal EV — the real
+    /// driver of compounding cadence, which a single per-class constant is blind to. Falls back to
+    /// the asset-class default when the target or a daily-move estimate is missing, and is clamped
+    /// to a sane band around that default so a noisy spark can't yield a 0.1-day or 500-day fantasy.
+    /// nil for classes not ranked for velocity (index/FX) — unchanged.
+    nonisolated static func expectedHoldDays(for idea: StockSageIdea, holds: VelocityHoldDays = .defaults) -> Double? {
+        guard let base = expectedHoldDays(forSymbol: idea.symbol, holds: holds) else { return nil }
+        guard let target = idea.advice.targetPrice, idea.price > 0,
+              let daily = typicalDailyMove(idea.spark), daily > 0 else { return base }
+        let dist = abs(target - idea.price)
+        guard dist > 0 else { return base }
+        return Swift.max(base * 0.4, Swift.min(base * 3, dist / daily))
+    }
+
+    /// Typical one-day move = average absolute close-to-close change of a sparkline. nil if too short.
+    nonisolated static func typicalDailyMove(_ spark: [Double]) -> Double? {
+        guard spark.count >= 3 else { return nil }
+        var sum = 0.0
+        for i in 1..<spark.count { sum += abs(spark[i] - spark[i - 1]) }
+        let avg = sum / Double(spark.count - 1)
+        return avg > 0 ? avg : nil
+    }
+
     /// Velocity = EV ÷ expected hold = expected R PER DAY, so a fast-turnover setup
     /// beats a slow swing of equal EV (more compounding cycles). nil if no EV or no
     /// hold estimate. An estimate on an estimate — the UI says so.
-    nonisolated static func velocity(for idea: StockSageIdea, holds: VelocityHoldDays = .defaults) -> Double? {
-        guard let e = ev(for: idea), let hold = expectedHoldDays(forSymbol: idea.symbol, holds: holds), hold > 0 else { return nil }
+    nonisolated static func velocity(for idea: StockSageIdea, holds: VelocityHoldDays = .defaults,
+                                     calibration: StockSageConvictionCalibration? = nil) -> Double? {
+        guard let e = ev(for: idea, calibration: calibration),
+              let hold = expectedHoldDays(for: idea, holds: holds), hold > 0 else { return nil }
         return e.evR / hold
     }
 
@@ -214,7 +240,7 @@ enum StockSageExpectedValue {
         // topping the Fast Lane while it is correctly barred from the best-opportunity card.)
         guard case .buyFamily = side(idea) else { return nil }
         guard let q = qualityAdjustedEVR(for: idea),
-              let hold = expectedHoldDays(forSymbol: idea.symbol, holds: holds), hold > 0 else { return nil }
+              let hold = expectedHoldDays(for: idea, holds: holds), hold > 0 else { return nil }
         let v = q / hold
         // After-cost screen (mirrors evRankKey): a setup net-negative after frictions can't lead the
         // velocity board either — otherwise a thin, high-cost crypto flip tops it on gross EV.

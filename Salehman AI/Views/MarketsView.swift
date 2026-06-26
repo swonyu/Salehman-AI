@@ -16,7 +16,9 @@ struct MarketsView: View {
         case ev = "Expected value", velocity = "EV / day", conviction = "Conviction",
              rr = "Reward:risk", signal = "Signal rank"
     }
-    @AppStorage("marketsIdeaSort") private var ideaSort: IdeaSort = .ev
+    // Default to money-velocity (EV per day) — the "fastest money" objective: a quick small edge
+    // compounds faster than a slow large one. (Existing users keep whatever they last picked.)
+    @AppStorage("marketsIdeaSort") private var ideaSort: IdeaSort = .velocity
     /// Hide ideas below this conviction (0 = show all).
     @AppStorage("marketsIdeaMinConv") private var ideaMinConv = 0.0
 
