@@ -669,6 +669,10 @@ final class StockSageStore: ObservableObject {
 
     // Backtest — the honesty check for one symbol.
     @Published private(set) var backtest: BacktestResult?
+    /// Same strategy/symbol re-simulated with a WIDE ATR Chandelier trailing exit (vs `backtest`'s
+    /// fixed 2:1) — a head-to-head so the owner can judge whether trailing helps (usually drawdown
+    /// control, not more return). nil until a single-symbol backtest runs.
+    @Published private(set) var backtestTrail: BacktestResult?
     @Published private(set) var backtestSymbol: String?
     @Published private(set) var isBacktesting = false
     @Published private(set) var backtestError: String?
@@ -686,6 +690,7 @@ final class StockSageStore: ObservableObject {
         defer { isBacktesting = false }             // stays true across the fetch AND the O(bars²) compute
         backtestError = nil
         backtest = nil                              // clear the prior result while this runs
+        backtestTrail = nil
         underwater = nil
         // 5 years of daily bars → room to trade after the 200-day warmup.
         let history = await StockSageQuoteService.fetchHistory(symbol, range: "5y")
@@ -696,7 +701,15 @@ final class StockSageStore: ObservableObject {
         // The walk-forward is O(bars²) (advisor re-run each bar) — keep it off-main.
         // Charge the symbol's asset-class round-trip cost so the equity curve is honest.
         let btCosts = StockSageNetEdge.defaultCosts(forSymbol: symbol)
-        backtest = await Task.detached(priority: .userInitiated) { StockSageBacktester.run(history, costs: btCosts) }.value
+        // Same entry rules, two EXITS — the fixed 2:1 AND a wide ATR Chandelier trail (3×ATR/22) —
+        // so the owner sees the research's claim head-to-head (trailing = drawdown control, usually
+        // not more return). Both off-main in one hop; entries are identical, only simulateExit differs.
+        let (fixed, trail) = await Task.detached(priority: .userInitiated) {
+            (StockSageBacktester.run(history, costs: btCosts),
+             StockSageBacktester.run(history, costs: btCosts, exitMode: .chandelierTrail(atrMult: 3, period: 22)))
+        }.value
+        backtest = fixed
+        backtestTrail = trail
         // Buy-and-hold underwater curve over the same 5y window (cheap, O(n)).
         underwater = StockSageDrawdown.underwater(history.closes)
     }

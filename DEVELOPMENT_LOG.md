@@ -8047,6 +8047,23 @@ not the shrink (the old linear ramp had high early-return vol).
 
 ---
 
+## 2026-06-26 · Surface wide-ATR-trail vs fixed-2:1 exit comparison (research feature 3) (Chat A, autonomous)
+**Files:** `StockSage/StockSageStore.swift`, `Views/MarketsView.swift`.
+**Why (deep-research feature 3):** the backtester ALREADY implements a Chandelier `chandelierTrail`
+exit mode (+ `scaleOutLadder`) with full simulateExit/trailLevels logic and tests — but NO caller
+ever passed a non-default exitMode, so the wide-trailing-stop the research points to was invisible.
+**What:** `runBacktest` now re-simulates the SAME entries with a wide ATR Chandelier trail
+(3×ATR/22) alongside the fixed 2:1 (`store.backtestTrail`), both off-main in one hop (entries
+identical, only the exit differs). The backtest panel shows a head-to-head: "Wide ATR trail: avg R,
+maxDD vs fixed 2:1: … — <verdict>", with an honest help (wide trails mainly cut drawdown/tail risk,
+rarely add return; tight trails lose to costs; one-symbol estimate, not a recommendation).
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1097 pass / 0 fail**.
+**Money-engine status:** all 3 evidence-backed research features now in (correlation heat,
+vol-targeting, ATR-trail comparison), atop the validation gauges. Next: refill backlog via a
+discovery scout / adversarial review.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

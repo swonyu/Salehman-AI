@@ -3282,6 +3282,23 @@ struct MarketsView: View {
                         .accessibilityLabel(String(format: "Out of sample, kept %.0f percent of the edge. In sample %+.2f R falling to out of sample %+.2f R.%@",
                                                     d.decayRatio * 100, d.isAvgR, d.oosAvgR, tail))
                     }
+                    // Wide ATR trail vs the fixed 2:1 exit (research: a wide trail is drawdown
+                    // control, usually not more return; tight trails lose to costs). Same entries.
+                    if let trail = store.backtestTrail, bt.trades > 0, trail.trades > 0 {
+                        let ddBetter = trail.maxDrawdownR < bt.maxDrawdownR - 0.05
+                        let retBetter = trail.avgR > bt.avgR + 0.005
+                        let verdict = ddBetter
+                            ? (retBetter ? "trail wins on both" : "trail cuts drawdown, gives up some return")
+                            : (retBetter ? "trail adds return at a deeper drawdown" : "fixed 2:1 holds up better here")
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Image(systemName: "arrow.triangle.branch").font(.system(size: 10))
+                            Text(String(format: "Wide ATR trail (3×ATR/22): avg %+.2fR, maxDD −%.1fR  vs  fixed 2:1: %+.2fR, −%.1fR — %@.",
+                                        trail.avgR, trail.maxDrawdownR, bt.avgR, bt.maxDrawdownR, verdict))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .help("Same entry rules, two exits. The evidence: wide trailing stops mainly cut drawdown/tail risk rather than raise return, and tight trails lose to costs. An estimate over one symbol's 5y — not a recommendation.")
+                    }
                     if let u = store.underwater, !u.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
