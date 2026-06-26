@@ -8327,6 +8327,22 @@ calibration so the chip can say "YOUR trades" vs "backtest" explicitly.
 
 ---
 
+## 2026-06-26 · Earnings demotion fires on the boards, not just detail-expand (scout #7) (Chat A, autonomous)
+**Files:** `StockSage/StockSageStore.swift`.
+**Why (broader scout, HIGH honesty):** `store.earnings` was populated by ONLY one call site —
+refreshEarnings(symbol:) inside the idea-detail `.task` — so the imminent-earnings DEMOTION that
+evRankKey / velocityRankKey / bestOpportunity already apply was starved on the primary surfaces. An
+imminent-earnings name could rank #1 / be deployed with no earnings warning until you expanded it.
+**What:** added `refreshEarningsForTopIdeas(limit: 15)` (bounded — only the top-ranked ideas, each
+cached-once) and fire it NON-BLOCKING (`Task {}`) right after `ideas = ranked` in refreshIdeas. The
+board shows immediately; earnings populate shortly after → the demotion + warnings re-apply on the
+boards/best-bet/allocation. Bounded so it never fetches all ~250 names.
+**Result:** `tools/typecheck.sh` ✅; suite **1102 pass / 0 fail**.
+**Next:** #8 — surface the earnings warning on the best-opportunity + money-velocity cards (the ideas
+list already shows an earnings badge; those headline cards don't). Then LOWs (#6/#9/#5).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

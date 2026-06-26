@@ -275,6 +275,9 @@ final class StockSageStore: ObservableObject {
             if !fired.isEmpty { alerts = Array((fired + alerts).prefix(Self.maxAlerts)) }
         }
         ideas = ranked
+        // Populate earnings for the top names (non-blocking) so the imminent-earnings demotion +
+        // warnings fire on the boards, not only on detail-expand. Cached-once → cheap after first load.
+        Task { await refreshEarningsForTopIdeas() }
         // Partial success is honest success: keep the names that priced, and NAME the
         // ones that didn't so the EV ranking isn't silently computed on a subset.
         let analyzed = Set(built.map { $0.symbol.uppercased() })
@@ -639,6 +642,13 @@ final class StockSageStore: ObservableObject {
         guard let date = await StockSageEarnings.fetchNextEarnings(for: symbol),
               date.timeIntervalSinceNow > -86_400 else { return }   // ignore a stale past date
         earnings[up] = StockSageEarnings.proximity(now: Date(), earnings: date)
+    }
+
+    /// Feed earnings for the TOP-ranked ideas (bounded) so the imminent-earnings DEMOTION + warnings
+    /// fire on the BOARDS / best-bet / allocation — not only after a detail expand. Each symbol is
+    /// cached once (refreshEarnings no-ops when present), so this only fetches the new top names.
+    func refreshEarningsForTopIdeas(limit: Int = 15) async {
+        for idea in ideas.prefix(limit) { await refreshEarnings(symbol: idea.symbol) }
     }
 
     // Monthly seasonality — calendar-month return tendency over a long history.
