@@ -8064,6 +8064,24 @@ discovery scout / adversarial review.
 
 ---
 
+## 2026-06-26 · Triage overnight review — fix 3 low correlation-heat findings (Chat A, autonomous)
+**Files:** `StockSage/StockSageCorrelationCluster.swift`, `StockSage/StockSageCapitalAllocator.swift`.
+**Why:** an adversarial review of tonight's new money code confirmed 4 findings (3 low correlation-heat
++ 1 medium staleness). Fixed the 3 low ones (all in the just-shipped heat code), each verified vs source:
+- **Inconsistent correlation windows:** `correlation()` pairs on each pair's OWN tail, so different
+  spark lengths mixed windows → a clique/K could be measured over non-overlapping data. Now align all
+  return series to the shared recent window (suffix to the min length) before building the matrix.
+- **Duplicate-ticker mis-discount:** de-weighting matches by symbol NAME, so a duplicate ticker could
+  be divided by K even off-clique. Added a dedupe guard (skip the haircut if symbols aren't unique;
+  production ideas are deduped — this guards the pure API).
+- **Stale field doc:** `CapitalAllocation.requestedHeat` is the post-haircut, pre-heat-scale sum — doc
+  corrected (was "raw half-Kelly pre-scale").
+**Result:** `tools/typecheck.sh` ✅; suite **1097 pass / 0 fail**.
+**Next:** the MEDIUM finding — give StockSageQuote an explicit `marketTime` so `isStale` only judges
+when a real market timestamp exists (currently fetch-time fallback conflates with market time).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

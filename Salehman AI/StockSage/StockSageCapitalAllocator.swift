@@ -24,7 +24,7 @@ struct AllocatedPosition: Sendable, Equatable, Identifiable {
 struct CapitalAllocation: Sendable, Equatable {
     let positions: [AllocatedPosition]   // desc by riskFraction, tie-break asc symbol
     let totalHeat: Double                // Σ dollarsAtRisk ÷ account — ≤ maxHeat
-    let requestedHeat: Double            // Σ raw half-Kelly of fundable ideas (pre-scale)
+    let requestedHeat: Double            // Σ of the fundable weights AFTER the correlation haircut, BEFORE heat-scaling
     let scaleApplied: Double             // ≤1 when the cap bound; 1 otherwise
     let account: Double
     let maxHeat: Double

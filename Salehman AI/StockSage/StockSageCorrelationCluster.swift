@@ -65,7 +65,16 @@ enum StockSageCorrelationCluster {
                                                        returns: [[Double]],
                                                        threshold: Double = threshold) -> [Double] {
         guard symbols.count == weights.count, symbols.count == returns.count, symbols.count >= 3 else { return weights }
-        let m = CorrelationMatrix(symbols: symbols, matrix: StockSagePortfolioAnalytics.correlationMatrix(returns))
+        // De-weighting matches by symbol NAME, ambiguous with duplicate tickers → skip then
+        // (production ideas are deduped; this guards the pure API from mis-discounting a dupe).
+        guard Set(symbols).count == symbols.count else { return weights }
+        // Align every series to the shared recent window so EVERY pairwise correlation — and thus
+        // the detected clique and its size K — is measured over the same number of bars (correlation()
+        // otherwise pairs on each pair's OWN tail, mixing windows when spark lengths differ).
+        let minLen = returns.map(\.count).min() ?? 0
+        guard minLen >= 2 else { return weights }
+        let aligned = returns.map { Array($0.suffix(minLen)) }
+        let m = CorrelationMatrix(symbols: symbols, matrix: StockSagePortfolioAnalytics.correlationMatrix(aligned))
         guard let cluster = largest(m, threshold: threshold), cluster.symbols.count > 1 else { return weights }
         let inCluster = Set(cluster.symbols)
         let k = Double(cluster.symbols.count)
