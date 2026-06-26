@@ -8664,6 +8664,30 @@ window-position caveat, the resize/scroll step, and the honesty surfaces a corre
 
 ---
 
+## 2026-06-27 · Deep-research II: calibration decision / exits / crypto / execution (Chat A, owner-invoked)
+**Files:** `RESEARCH_2026-06-27_quant_engine_II.md` (new).
+**Why:** owner ran /deep-research (all 4). Multi-agent run (money-engine-research-2: 129 agents, ~6.6M
+tokens, ~58 min, 3-vote adversarial verify), anchored to the engine's CURRENT state.
+**Headline — the parked BETA-vs-ISOTONIC decision → CONDITIONAL ADOPT (not a hard swap):** register
+{isotonic, beta-3param, identity} as CANDIDATE conviction→win-prob maps and let the EXISTING purged/
+embargoed OOS Brier+log-loss selector pick per refit (beta = bivariate LR on ln(s), -ln(1-s), a,b≥0,
+near-unregularized; Wilson stays a separate floor on top). Beta wins on LOG-LOSS (the EV/Kelly-aligned
+metric), ~on-par on Brier; the 200–1000 crossover is Platt-vs-isotonic so it's a prior, not proof →
+let the selector decide. Still NO autonomous change — owner sign-off.
+**Other verdicts:** EXITS — keep the ATR trailing stop but reframe as regime-gated drawdown INSURANCE,
+not free alpha (stops only add expected return under momentum/positive autocorrelation; gate on the
+ρ≥Sharpe hurdle; widen to Chandelier ATR(22)·3, 4–5× crypto). CRYPTO — favor short-lookback (1–4wk)
+absolute-trend/ATR time-series momentum in liquid large-caps; add a live liquidity gate; model crypto
+taker ~25–30bps round-trip; conditional US-scoped publication-decay haircut (~50–58%). EXECUTION —
+spread+half-spread+slippage dominates at retail; add a linear→√ market-impact term (δ=0.5, recalibrate
+only prefactor Y per liquidity tier) that's ~0 at retail size but bites for thin/Saudi/small-cap;
+flag orders >10% ADV out-of-model + partial fills.
+**17-item prioritized build checklist** in the artifact (top: register beta candidate; reframe stop
+reporting; re-weight crypto momentum; reactivate the dormant full DSR for momentum). Honesty floor: all
+gross→net erosion / risk-truth, no profit promise. No code changed.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
