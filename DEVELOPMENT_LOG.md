@@ -7821,6 +7821,23 @@ calibration falls back to a conservative prior; no claims of guaranteed profit).
 
 ---
 
+## 2026-06-26 · Adversarial money-engine review + fixes (Chat A)
+**Files:** `StockSage/StockSageConvictionCalibration.swift`, `StockSage/StockSageTradeGate.swift`.
+**Why:** A 5-area adversarial review (find → skeptic-verify) of this session's money-critical math
+(calibration, Kelly sizing, log-growth, net-R:R, trend cap). The hard math verified CLEAN — no
+high/medium defects (Kelly units, Wilson bound, isotonic PAV, log-growth signs, the trend cap all
+correct). Two LOW issues confirmed and fixed:
+- **Calibration bin-edge mismatch:** `fit()` bucketed half-open `[lo,hi)` but `winProb()` looked up
+  closed-upper, so a conviction on an exact internal edge was trained in one band and read from the
+  band below (bounded/conservative, never over-stated — but inconsistent). `winProb()` now uses the
+  SAME half-open index math as `fit()`.
+- **Gate message:** a NET-negative reward:risk (costs exceed reward) printed "target below 1R",
+  blaming the target when costs are the cause. Split the failing branch: `0 ≤ rr < 1` → "sub-1R;
+  reward below the risk"; `rr < 0` → "costs exceed the reward (net-negative)". Decision unchanged.
+**Result:** `tools/typecheck.sh` ✅; full suite **1089 pass / 0 fail**.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -63,7 +63,10 @@ enum StockSageTradeGate {
         if let rr = rewardToRisk {
             if rr >= 2 { checks.append(TradeGateCheck(level: .pass, label: String(format: "Reward:risk %.1f:1 — positive skew", rr))) }
             else if rr >= 1 { checks.append(TradeGateCheck(level: .warn, label: String(format: "Reward:risk %.1f:1 — thin; below 2:1", rr))) }
-            else { checks.append(TradeGateCheck(level: .fail, label: String(format: "Reward:risk %.1f:1 — NEGATIVE skew; target below 1R", rr))) }
+            // rr can arrive NET of costs, so a negative value means costs exceed the reward — say
+            // that, rather than blaming the target (which may sit well above 1R on the gross plan).
+            else if rr >= 0 { checks.append(TradeGateCheck(level: .fail, label: String(format: "Reward:risk %.1f:1 — sub-1R; reward below the risk", rr))) }
+            else { checks.append(TradeGateCheck(level: .fail, label: String(format: "Reward:risk %.1f:1 — costs exceed the reward (net-negative)", rr))) }
         } else {
             checks.append(TradeGateCheck(level: .warn, label: "No target set — define one to judge skew"))
         }

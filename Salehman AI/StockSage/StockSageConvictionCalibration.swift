@@ -21,18 +21,21 @@ import Foundation
 struct StockSageConvictionCalibration: Sendable, Equatable {
     /// One ascending conviction band and its calibrated win probability.
     struct Bin: Sendable, Equatable {
-        let upper: Double     // inclusive upper edge of the conviction band
+        let upper: Double     // upper edge of the half-open band [lower, upper) — matches fit()'s bucketing
         let winProb: Double   // calibrated P(win) for this band (monotonic non-decreasing in `upper`)
         let n: Int            // realized trades in the band (transparency)
     }
-    let bins: [Bin]           // ascending by `upper`
+    let bins: [Bin]           // ascending by `upper`, equal-width over [0,1]
     let sampleSize: Int       // total trades the fit was built from
 
-    /// Calibrated win probability for a conviction in [0,1]: the band it falls into.
+    /// Calibrated win probability for a conviction in [0,1]: the band it falls into. Uses the SAME
+    /// half-open index math as `fit()`'s bucketing, so a conviction on an exact internal edge is
+    /// looked up in the band it was trained into (not the one below).
     nonisolated func winProb(_ conviction: Double) -> Double {
+        guard !bins.isEmpty else { return 0.5 }
         let c = Swift.max(0, Swift.min(1, conviction))
-        for b in bins where c <= b.upper + 1e-9 { return b.winProb }
-        return bins.last?.winProb ?? 0.5
+        let idx = Swift.min(bins.count - 1, Int(c * Double(bins.count)))
+        return bins[idx].winProb
     }
 
     /// Fit from realized outcomes. Returns nil when too few samples to calibrate honestly.
