@@ -7898,6 +7898,26 @@ honesty (#15/#16); RuneLite-plugin items logged separately.
 
 ---
 
+## 2026-06-26 · Surface calibration status + name the growth-ranking (Chat A, autonomous)
+**Files:** `Views/MarketsView.swift`.
+**Why (scout #11/#14, honesty):** the only calibration disclosure was buried at the bottom of the
+backtest card, so the EV/win numbers at the TOP gave no signal whether they were measured or assumed;
+and the Fast Lane is ordered by log-growth but showed only raw EV/day, so a lower-EV/day name could
+sit above a higher one with no visible reason.
+**What:**
+- Ideas header now shows a calibration chip RIGHT BY the numbers: green "EV win-rates measured from N
+  backtested trades" when active, amber "EV win-rates are an assumed estimate — run the Strategy
+  backtest to calibrate" when not (with help text). Non-silent in both states.
+- Fast Lane gained a one-line "Ranked by growth rate (log-growth at ½-Kelly) — a steady compounder
+  can out-rank a higher-EV/day but higher-variance setup", so the order is legible.
+- Threaded `store.convictionCalibration` into the remaining displayed velocity calls (fast-lane rows
+  + detail sheet) so every shown velocity matches the calibrated EV.
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1089 pass / 0 fail**.
+**Resolved from scout:** #9, #10, #11, #12, #14 (and #1/#2 earlier). Deferred: #13 (ranking
+break-even on prior — marginal, monotonic), #15/#16 (live/delayed + per-row staleness honesty — next).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

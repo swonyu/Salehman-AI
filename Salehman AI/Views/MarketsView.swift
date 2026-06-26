@@ -2451,6 +2451,17 @@ struct MarketsView: View {
                     Text("Trade ideas").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
                     Text("Rules-based what / when / how-much across the \(StockSageUniverse.worldwide.count)-name analyzed core, on 1-year history.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    // Honesty: say plainly whether the EV/win numbers below are MEASURED from
+                    // backtested outcomes or an assumed linear prior — right where they're read.
+                    if let cal = store.convictionCalibration {
+                        Label("EV win-rates measured from \(cal.sampleSize) backtested trades", systemImage: "checkmark.seal.fill")
+                            .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
+                            .help("Conviction→win-probability is calibrated from realized backtest outcomes (conservative, monotonic).")
+                    } else {
+                        Label("EV win-rates are an assumed estimate — run the Strategy backtest to calibrate", systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
+                            .help("Until a backtest runs, EV uses a cautious hand-set win-prob band (35–58%), not measured rates.")
+                    }
                 }
                 Spacer()
                 if !displayedIdeas.isEmpty {   // matches what would actually be copied (post sort+filter)
@@ -3026,8 +3037,11 @@ struct MarketsView: View {
                     Text("Fast lane — fastest compounding").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
                     Spacer()
                 }
+                // Why the order can differ from raw EV/day: it's ranked by growth RATE.
+                Text("Ranked by growth rate (log-growth at ½-Kelly) — a steady compounder can out-rank a higher-EV/day but higher-variance lottery setup.")
+                    .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 ForEach(lane.prefix(3), id: \.id) { idea in
-                    if let v = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds) {
+                    if let v = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
                         Button { selectedIdea = idea } label: {
                             HStack(spacing: 8) {
                                 Text(idea.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
@@ -3548,7 +3562,7 @@ struct MarketsView: View {
                             .font(.caption2).foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                if let vel = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds) {
+                if let vel = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "gauge.with.dots.needle.67percent").font(.system(size: 11)).foregroundStyle(.secondary)
                         Text(String(format: "≈ %+.3fR/day velocity (EV ÷ typical hold) — faster turnover compounds faster. An estimate.", vel))
