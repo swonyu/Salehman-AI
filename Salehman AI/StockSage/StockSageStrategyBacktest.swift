@@ -31,14 +31,28 @@ struct StrategyBacktest: Sendable, Equatable {
     /// Clears the t > 3 multiple-testing bar (Harvey-Liu-Zhu 2016) — NOT the textbook 2.0. Necessary,
     /// not sufficient: it can't see how many rule variants were tried, which only raises the hurdle.
     var clearsMultipleTestingBar: Bool { tStat > 3.0 }
+    /// The HONEST green-light: enough trades to be meaningful AND the raw t clears the bar AND — when the
+    /// fat-tail-corrected t is known — IT clears the bar too. A "PASS" glyph must satisfy all three, so it
+    /// can never sit next to a "not meaningful yet" verdict (#8) or survive on a normal-assumption t the
+    /// fat tails would sink (#10).
+    var passesHonestSignificance: Bool {
+        isSignificant && clearsMultipleTestingBar && (momentCorrectedTStat <= 0 || momentCorrectedTStat > 3.0)
+    }
     var significanceVerdict: String {
         if !isSignificant { return "Only \(totalTrades) trades — the aggregate isn't statistically meaningful yet." }
+        let adjKnown = momentCorrectedTStat > 0
         // Surface the skew/fat-tail-adjusted t when it materially differs from the normal-assumption raw t.
-        let adj = (momentCorrectedTStat > 0 && abs(momentCorrectedTStat - tStat) >= 0.3)
+        let adjNote = (adjKnown && abs(momentCorrectedTStat - tStat) >= 0.3)
             ? String(format: " Skew/fat-tail-adjusted t ≈ %.1f.", momentCorrectedTStat) : ""
-        if tStat > 3.0 { return String(format: "t = %.1f — clears the t>3 multiple-testing bar (necessary, not sufficient).", tStat) + adj }
-        if tStat > 2.0 { return String(format: "t = %.1f — significant at 2σ but BELOW the t>3 bar; treat as unproven.", tStat) + adj }
-        return String(format: "t = %.1f — not significant; likely noise.", tStat) + adj
+        if tStat > 3.0 {
+            // Raw t clears, but the fat-tail-corrected t does NOT → don't claim a pass.
+            if adjKnown && momentCorrectedTStat <= 3.0 {
+                return String(format: "t = %.1f clears t>3, but the skew/fat-tail-adjusted t ≈ %.1f does NOT — treat as unproven.", tStat, momentCorrectedTStat)
+            }
+            return String(format: "t = %.1f — clears the t>3 multiple-testing bar (necessary, not sufficient).", tStat) + adjNote
+        }
+        if tStat > 2.0 { return String(format: "t = %.1f — significant at 2σ but BELOW the t>3 bar; treat as unproven.", tStat) + adjNote }
+        return String(format: "t = %.1f — not significant; likely noise.", tStat) + adjNote
     }
     let caveat: String
 

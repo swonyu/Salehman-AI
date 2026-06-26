@@ -8565,6 +8565,22 @@ t>3 PASS on raw t when fat-tail-corrected fails StockSageStrategyBacktest:37-41)
 
 ---
 
+## 2026-06-26 · Honest aggregate significance: gate PASS on sample + fat-tail t — scout #8+#10 (Chat A, autonomous)
+**Files:** `StockSage/StockSageStrategyBacktest.swift`, `Views/MarketsView.swift`, `StockSageStrategyBacktestTests.swift`.
+**Why (verified scout w7b6t392u):** #8 — the aggregate backtest panel showed a GREEN PASS checkmark keyed
+only on clearsMultipleTestingBar (raw tStat>3), so a backtest with <100 trades got a green check next to
+its own 'not statistically meaningful yet' verdict. #10 — significanceVerdict declared 'clears the t>3
+bar' on the RAW (normal-assumption) t even when the already-computed fat-tail-corrected t was below 3.
+**What:** added `StrategyBacktest.passesHonestSignificance` = isSignificant && raw t>3 && (adjusted t
+unknown OR >3); the panel glyph/color now uses it (#8). significanceVerdict now returns 't = X clears
+t>3, but the skew/fat-tail-adjusted t ≈ Y does NOT — treat as unproven.' when the corrected t fails (#10).
+**Result:** `tools/typecheck.sh` ✅; suite **1109 pass / 0 fail** (+test: thin sample → no pass + 'not
+meaningful'; fat-tail-failing → no pass + 'does NOT'; both clear → pass; adjusted unknown → pass).
+**Backlog: 8 of 14 done.** Remaining: #9 RED-FLAG overfit on 2-trade OOS (no min-gate) StockSageBacktester:114;
+live-data (#11/#13/#14); #3 takerFeeBps dead-code unit trap (low).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

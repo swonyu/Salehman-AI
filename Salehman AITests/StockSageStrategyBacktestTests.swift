@@ -33,6 +33,28 @@ struct StockSageStrategyBacktestTests {
         #expect(agg([0.5, -0.5, 0.5]).momentCorrectedTStat == 0)
     }
 
+    @Test func honestSignificanceGatesOnSampleAndFatTails() {
+        func bt(trades: Int, t: Double, adj: Double) -> StrategyBacktest {
+            StrategyBacktest(symbolsTested: 1, symbolsWithTrades: 1, symbolsProfitable: 1,
+                             totalTrades: trades, wins: trades / 2, blendedWinRate: 0.5, avgR: 0.1,
+                             totalR: 1, worstDrawdownR: 1, tStat: t, momentCorrectedTStat: adj, caveat: "x")
+        }
+        // <100 trades but raw t>3 → NOT an honest pass; verdict says not meaningful (no green check, #8).
+        let thin = bt(trades: 40, t: 4.0, adj: 4.0)
+        #expect(!thin.passesHonestSignificance)
+        #expect(thin.significanceVerdict.contains("isn't statistically meaningful"))
+        // Enough trades, raw t>3, but the fat-tail-corrected t FAILS → not a pass; verdict flags it (#10).
+        let fat = bt(trades: 200, t: 4.0, adj: 2.5)
+        #expect(!fat.passesHonestSignificance)
+        #expect(fat.significanceVerdict.contains("does NOT"))
+        // Enough trades, both raw and adjusted clear → honest pass.
+        let solid = bt(trades: 200, t: 4.0, adj: 3.5)
+        #expect(solid.passesHonestSignificance)
+        #expect(solid.significanceVerdict.contains("clears the t>3"))
+        // Adjusted unknown (0) doesn't block a pass (can't penalize what we couldn't compute).
+        #expect(bt(trades: 200, t: 4.0, adj: 0).passesHonestSignificance)
+    }
+
     @Test func pooledTStatFromTrades() {
         // No trades supplied → tStat 0 (default, behaviour unchanged).
         #expect(StockSageStrategyBacktest.aggregate([result(trades: 10, wins: 6, totalR: 5, maxDD: 3)]).tStat == 0)

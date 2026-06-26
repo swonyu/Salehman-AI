@@ -3209,8 +3209,10 @@ struct MarketsView: View {
                         .font(.caption2).foregroundStyle(DS.Palette.warningSoft)
                 }
                 // Honest significance vs the t>3 multiple-testing bar (matches the per-symbol panel).
+                // PASS requires enough trades AND the fat-tail-corrected t too — never a green check
+                // next to a "not meaningful yet" verdict or on a normal-assumption t the tails sink.
                 if s.totalTrades > 0 {
-                    let pass = s.clearsMultipleTestingBar
+                    let pass = s.passesHonestSignificance
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Image(systemName: pass ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                             .font(.system(size: 10))
