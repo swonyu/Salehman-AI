@@ -8713,6 +8713,34 @@ dismissed by the owner — not run.)
 
 ---
 
+## 2026-06-27 · Idea-generation code AUDIT (StockSageAdvisor.advise) (#3, Chat A, owner-invoked)
+**Files audited (no change):** `StockSage/StockSageAdvisor.swift`, `StockSageIndicators.swift`,
+`StockSageStore.swift` (buildIdeas).
+**How an idea is generated:** advise(closes,highs,lows,volumes,benchmark) builds a directional additive
+score (~−1..+1) → action/conviction/stop/target. Signal weights: TREND (SMA50/200 alignment) ±0.40
+(heaviest; ±0.15 above-200 only; ±0.20 50-only <200 bars); 6-mo momentum ±0.15; MACD hist ±0.10
+(deliberately lighter — redundant w/ trend); regime-conditional RSI (range: <30 +0.25 ONLY if 12-1
+uptrend intact = falling-knife guard, >70 −0.25; trend: >80 −0.10, <20 +0.10); volume-confirm ±0.05
+nudge; vol-adjusted-momentum ±0.05; relative-strength vs ^GSPC ±0.08 (equities only). TREND-FAMILY CAP
+de-double-counts the correlated trend terms. TSMOM 12-1 own-downtrend VETO −0.20 (crash protection).
+Regime = efficiencyRatio≥0.30. Action thresholds ±0.2/±0.5; chop downgrades trend-buys to Avoid.
+conviction=min(|score|,1). Stops vol-scaled ATR (1.5/2.0/2.5×), 2:1 target; sizing half-Kelly (prior W,
+R from stop/target) capped at 1% risk + vol-targeted.
+**Strengths (already evidence-aligned):** trend-heaviest; MACD de-weighted as redundant; the trend-family
+cap (uncommon, correct anti-overfit); regime-conditional MR + falling-knife guard; RS = OUTperformance;
+TSMOM crash veto; vol-scaled risk; honest gating (Hold/Avoid get no trade plan).
+**Gaps / candidates (validate vs the running idea-generation research wm08djlag before building):**
+(1) **BREAKOUT/DONCHIAN/52-wk-high is BUILT-BUT-DORMANT** — `isBreakout`/`donchian`/`timeSeriesMomentum`
+exist + are unit-tested but are NEVER wired into advise(); a documented momentum edge with a ready
+implementation hook (highest-value candidate). (2) 12-1 momentum is used only as a NEGATIVE veto, not a
+positive signal. (3) weights are hand-tuned constants (by fixed-rule design; downstream calibration
+partly corrects). (4) mean-reversion is RSI-only. (5) cross-sectional ranking is downstream (rankByEV),
+not a signal input beyond the ±0.08 RS term.
+**Decision:** flagged, NOT changed — a new signal's WEIGHT should come from the pending research and
+idea-generation changes are owner-facing (no autonomous swap). Pairs with wm08djlag when it lands.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
