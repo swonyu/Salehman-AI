@@ -31,6 +31,17 @@ struct BacktestTrade: Sendable, Equatable {
     /// Result in R-multiples: (exit − entry) ÷ (entry − stop). +2 = hit a 2:1 target.
     let r: Double
     let outcome: Outcome
+    /// The advisor's conviction AT ENTRY — recorded so conviction can be CALIBRATED against the
+    /// realized outcome (see StockSageConvictionCalibration). Defaulted so older constructions
+    /// (tests) stay valid. `won` for calibration is `r > 0`.
+    let conviction: Double
+
+    nonisolated init(entryIndex: Int, exitIndex: Int, entry: Double, exit: Double,
+                     r: Double, outcome: Outcome, conviction: Double = 0) {
+        self.entryIndex = entryIndex; self.exitIndex = exitIndex
+        self.entry = entry; self.exit = exit; self.r = r; self.outcome = outcome
+        self.conviction = conviction
+    }
 }
 
 /// Aggregate, honestly-framed backtest metrics.
@@ -166,7 +177,8 @@ enum StockSageBacktester {
             let costPerShare = costs.map { Swift.max(0, $0.roundTripBps) / 10_000 * entry } ?? 0
             let r = (exitPrice - entry - costPerShare) / risk
             trades.append(BacktestTrade(entryIndex: entryIdx, exitIndex: exitIdx,
-                                        entry: entry, exit: exitPrice, r: r, outcome: outcome))
+                                        entry: entry, exit: exitPrice, r: r, outcome: outcome,
+                                        conviction: advice.conviction))
             i = exitIdx + 1   // one position at a time — resume after the close
         }
         return summarize(trades)

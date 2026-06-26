@@ -58,15 +58,22 @@ struct MoneyVelocitySummary: Sendable, Equatable {
 }
 
 enum StockSageExpectedValue {
-    /// Conviction (0–1) → an estimated win probability in a conservative band:
-    /// 0 → 35%, 1 → 58%. Never claims high certainty; conviction ≠ probability.
-    nonisolated static func winProbEstimate(conviction: Double) -> Double {
-        0.35 + Swift.max(0, Swift.min(1, conviction)) * 0.23
+    /// Conviction (0–1) → an estimated win probability. With a fitted `calibration` (learned from
+    /// realized outcomes) it returns the MEASURED, conservative win rate for that conviction band;
+    /// without one it falls back to the conservative linear prior (0 → 35%, 1 → 58%). conviction is
+    /// a signal-strength ordinal, NOT inherently a probability — the calibration is what earns the
+    /// right to treat it as one.
+    nonisolated static func winProbEstimate(conviction: Double,
+                                            calibration: StockSageConvictionCalibration? = nil) -> Double {
+        if let calibration { return calibration.winProb(conviction) }
+        return 0.35 + Swift.max(0, Swift.min(1, conviction)) * 0.23
     }
 
     /// Expected value in R: pWin·rewardR − (1−pWin)·1. nil if there's no defined
-    /// risk or reward (entry==stop or no target).
-    nonisolated static func ev(conviction: Double, entry: Double, stop: Double, target: Double) -> ExpectedValue? {
+    /// risk or reward (entry==stop or no target). Pass `calibration` to size on a measured
+    /// win rate instead of the linear prior.
+    nonisolated static func ev(conviction: Double, entry: Double, stop: Double, target: Double,
+                               calibration: StockSageConvictionCalibration? = nil) -> ExpectedValue? {
         let risk = abs(entry - stop), reward = abs(target - entry)
         guard risk > 0, reward > 0 else { return nil }
         // Cap reward:risk at a sane ceiling. A hair-thin stop (risk → 0) otherwise makes rewardR
@@ -74,7 +81,7 @@ enum StockSageExpectedValue {
         // key (−1_000_000 / −500_000 / −1000) and lets a BANNED side rank #1. No real setup exceeds
         // 50:1 reward:risk; beyond it the stop is degenerate, not a genuine edge.
         let rewardR = Swift.min(reward / risk, 50)
-        let p = winProbEstimate(conviction: conviction)
+        let p = winProbEstimate(conviction: conviction, calibration: calibration)
         return ExpectedValue(winProbEstimate: p, rewardR: rewardR, evR: p * rewardR - (1 - p))
     }
 
