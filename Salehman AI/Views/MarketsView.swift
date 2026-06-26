@@ -2832,6 +2832,17 @@ struct MarketsView: View {
                         }
                         Spacer(minLength: 0)
                     }
+                    // Imminent-earnings warning (now that earnings are fed to the boards): a #1 pick
+                    // reporting in days can gap through a protective stop — say so on the headline card.
+                    if let ep = store.earnings[idea.symbol.uppercased()], ep.isWarning {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "calendar.badge.exclamationmark").font(.system(size: 11))
+                                .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
+                            Text(ep.note).font(.caption2)
+                                .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                     // The actual order levels, so the card is a placeable order, not just a verdict.
                     HStack(spacing: 16) {
                         ideaMetric("Entry", adaptivePrice(idea.price))

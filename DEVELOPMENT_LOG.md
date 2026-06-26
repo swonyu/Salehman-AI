@@ -8343,6 +8343,21 @@ list already shows an earnings badge; those headline cards don't). Then LOWs (#6
 
 ---
 
+## 2026-06-26 · Earnings warning on the best-opportunity card (scout #8) (Chat A, autonomous)
+**Files:** `Views/MarketsView.swift`.
+**Why (broader scout, MED honesty):** the ideas-list card shows an imminent-earnings badge, and the
+detail sheet shows the full warning, but the headline 'Best opportunity now' card didn't — so a #1
+pick reporting in days could be presented as the top bet with no event-risk caveat. (Now feasible
+because #7 feeds earnings to the boards.)
+**What:** reused the exact detail-sheet earnings-warning pattern — when `store.earnings[symbol]`
+isWarning, render the calendar-badge + `EarningsProximity.note` (red for imminent / amber for soon)
+on the best-opp card, right under the EV metrics.
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1102 pass / 0 fail**.
+**Next (LOWs):** #6 show MonteCarlo medianMaxDD (computed+stored, never displayed); #9 seasonality
+UTC-vs-local current-month mismatch; #5 ruin-model note.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
