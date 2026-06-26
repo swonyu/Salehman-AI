@@ -67,6 +67,22 @@ struct StockSageCapitalAllocatorTests {
         #expect(abs(a.positions[0].riskFraction - a.positions[0].halfKelly) < 1e-12)
     }
 
+    @Test func allocatorVolTargetsHighVolNames() {
+        func ideaVol(_ vol: Double?) -> StockSageIdea {
+            StockSageIdea(symbol: "X", market: "M", price: 100,
+                          advice: TradeAdvice(action: .buy, conviction: 0.6, regime: .bullTrend, rationale: [],
+                                              stopPrice: 90, targetPrice: 130, suggestedWeight: 0, caveat: "x"),
+                          spark: [], dailyMove: nil, realizedVol: vol)
+        }
+        func rf(_ vol: Double?) -> Double {
+            Alloc.allocate(ideas: [ideaVol(vol)], account: 100_000, maxHeat: 0.5).positions.first?.riskFraction ?? 0
+        }
+        let calm = rf(0.15)       // ≤ 0.20 baseline → scaler 1 → no shrink
+        #expect(calm > 0)
+        #expect(rf(nil) == calm)  // no vol known → no shrink
+        #expect(rf(0.80) < calm * 0.5)   // 0.80/0.20 = 4× → ~quarter the deployed risk
+    }
+
     @Test func regimeSizingBiasScalesTheBook() {
         let i = idea("LOW", price: 100, stop: 95, target: 110, conviction: 0.3)
         func regime(_ bias: Double, _ state: MarketRegime.State) -> MarketRegime {

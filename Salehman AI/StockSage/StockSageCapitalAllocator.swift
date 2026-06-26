@@ -76,7 +76,10 @@ enum StockSageCapitalAllocator {
             // Regime sizing bias: size the WHOLE book up in a strong bull (≤1.25×) / down in a
             // risk-off tape (≥0.25×), matching the per-card "Regime size" the owner sees — which the
             // DEPLOYED plan previously ignored. Re-capped at the Kelly per-position limit. nil → unchanged.
-            let weight = regime.map { StockSageRegime.adjustedWeight(base: k.suggestedFraction, bias: $0.sizingBias, cap: StockSageKelly.maxFraction) } ?? k.suggestedFraction
+            var weight = regime.map { StockSageRegime.adjustedWeight(base: k.suggestedFraction, bias: $0.sizingBias, cap: StockSageKelly.maxFraction) } ?? k.suggestedFraction
+            // Vol-targeting (match the advisor card): shrink the DEPLOYED risk for high realized vol so
+            // a ~70%-vol crypto/growth name isn't sized like a calm equity. nil vol ⇒ no shrink.
+            if let v = idea.realizedVol { weight /= StockSageExpectedValue.cryptoRiskScaler(annualizedVol: v) }
             guard weight > 0 else { continue }
             fundable.append(Fundable(symbol: idea.symbol, entry: idea.price, stop: stop,
                                      weight: weight, halfKelly: k.halfKelly, evR: ev.evR))

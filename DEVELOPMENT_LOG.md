@@ -8133,6 +8133,24 @@ bull sizes up, crisis down vs the nil baseline; caveat present).
 
 ---
 
+## 2026-06-26 · Allocator vol-targeting (scout #2) (Chat A, autonomous)
+**Files:** `StockSage/StockSageStore.swift` (StockSageIdea.realizedVol), `StockSage/StockSageCapitalAllocator.swift`,
+`StockSageCapitalAllocatorTests.swift`.
+**Why (scout, verified):** the advisor shrinks per-trade risk for high realized vol, but the allocator
+(emits real shares) recomputed Kelly from scratch and didn't — so a high-vol name got a bigger
+DEPLOYED riskFraction than its advice card showed. Computing vol from the down-sampled `spark` would
+overstate it (~√2, the same trap as the velocity bug), so I carry the TRUE vol on the idea instead.
+**What:** `StockSageIdea.realizedVol` = `annualizedVolatility(history.closes)` from the RAW closes
+(set in refreshIdeas, matching the advisor). The allocator now divides each weight by
+`cryptoRiskScaler(annualizedVol: idea.realizedVol)` (after the regime bias, before haircut/heat-scale).
+nil vol ⇒ no shrink (empty-spark test fixtures unaffected).
+**Result:** `tools/typecheck.sh` ✅; suite **1100 pass / 0 fail** (+test: a 0.80-vol idea sized ~¼ of an
+equal-EV 0.15-vol one; nil = no shrink).
+**Allocator-consistency cluster:** cost gate ✅, regime bias ✅, vol-targeting ✅. Remaining: #1b
+net-payoff Kelly sizing (needs the python-verified test literals recomputed — do carefully).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

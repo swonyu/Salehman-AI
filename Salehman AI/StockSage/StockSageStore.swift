@@ -14,12 +14,15 @@ struct StockSageIdea: Sendable, Equatable, Identifiable {
     /// down-sampled (~2 calendar days/point), so deriving a daily move from it doubles velocity;
     /// this carries the un-downsampled value for the velocity/hold estimate. nil ⇒ fall back to spark.
     let dailyMove: Double?
+    /// Annualized realized volatility from the RAW daily closes (not the down-sampled spark, which
+    /// would overstate it). Lets the allocator vol-target like the advisor does. nil ⇒ no shrink.
+    let realizedVol: Double?
     var id: String { symbol }
 
     nonisolated init(symbol: String, market: String, price: Double, advice: TradeAdvice,
-                     spark: [Double], dailyMove: Double? = nil) {
+                     spark: [Double], dailyMove: Double? = nil, realizedVol: Double? = nil) {
         self.symbol = symbol; self.market = market; self.price = price
-        self.advice = advice; self.spark = spark; self.dailyMove = dailyMove
+        self.advice = advice; self.spark = spark; self.dailyMove = dailyMove; self.realizedVol = realizedVol
     }
 }
 
@@ -337,8 +340,11 @@ final class StockSageStore: ObservableObject {
                 let spark = SparkSeries.downsample(recent)
                 // True daily move from the UN-downsampled closes (spark points are ~2 days apart).
                 let dailyMove = StockSageExpectedValue.typicalDailyMove(recent)
+                // Realized vol from the FULL raw closes (matches the advisor) for allocator vol-targeting.
+                let realizedVol = StockSageIndicators.annualizedVolatility(history.closes)
                 out.append(StockSageIdea(symbol: sym.symbol, market: sym.market,
-                                         price: price, advice: advice, spark: spark, dailyMove: dailyMove))
+                                         price: price, advice: advice, spark: spark,
+                                         dailyMove: dailyMove, realizedVol: realizedVol))
             }
             return out
         }.value
