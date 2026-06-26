@@ -67,6 +67,22 @@ struct StockSageCapitalAllocatorTests {
         #expect(abs(a.positions[0].riskFraction - a.positions[0].halfKelly) < 1e-12)
     }
 
+    @Test func regimeSizingBiasScalesTheBook() {
+        let i = idea("LOW", price: 100, stop: 95, target: 110, conviction: 0.3)
+        func regime(_ bias: Double, _ state: MarketRegime.State) -> MarketRegime {
+            MarketRegime(state: state, riskScore: 0, signals: [], sizingBias: bias, caveat: "x")
+        }
+        func rf(_ r: MarketRegime?) -> Double {
+            Alloc.allocate(ideas: [i], account: 100_000, maxHeat: 0.5, regime: r).positions.first?.riskFraction ?? 0
+        }
+        let baseline = rf(nil)
+        #expect(baseline > 0)
+        #expect(rf(regime(1.25, .trendingBull)) > baseline)   // strong bull sizes the book up
+        #expect(rf(regime(0.25, .crisis)) < baseline)         // risk-off sizes it down
+        let crisis = Alloc.allocate(ideas: [i], account: 100_000, maxHeat: 0.5, regime: regime(0.25, .crisis))
+        #expect(crisis.caveat.contains("Sized ×0.25"))
+    }
+
     @Test func excludesNetNegativeAfterCostSetups() {
         // Same thin geometry, two cost regimes. A crypto flip (~70bps round-trip) that's +EV on GROSS
         // but net-negative after costs must NOT be deployed (mirrors the boards' cost gate)…

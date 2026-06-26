@@ -39,7 +39,8 @@ enum StockSageCapitalAllocator {
     /// summed risk fits `maxHeat`, then floor to whole shares. Empty plan on invalid inputs or
     /// when nothing is fundable.
     nonisolated static func allocate(ideas: [StockSageIdea], account: Double, maxHeat: Double = 0.08,
-                                     calibration: StockSageConvictionCalibration? = nil) -> CapitalAllocation {
+                                     calibration: StockSageConvictionCalibration? = nil,
+                                     regime: MarketRegime? = nil) -> CapitalAllocation {
         let cap = Swift.min(Swift.max(0, maxHeat), 1)
         func empty() -> CapitalAllocation {
             CapitalAllocation(positions: [], totalHeat: 0, requestedHeat: 0, scaleApplied: 1,
@@ -72,8 +73,13 @@ enum StockSageCapitalAllocator {
             // Weight off suggestedFraction (= half-Kelly HARD-CAPPED at Kelly's 20% per-position
             // limit), NOT raw half-Kelly — so a lone idea under maxHeat can't sit at up to 50% risk.
             guard k.suggestedFraction > 0 else { continue }
+            // Regime sizing bias: size the WHOLE book up in a strong bull (≤1.25×) / down in a
+            // risk-off tape (≥0.25×), matching the per-card "Regime size" the owner sees — which the
+            // DEPLOYED plan previously ignored. Re-capped at the Kelly per-position limit. nil → unchanged.
+            let weight = regime.map { StockSageRegime.adjustedWeight(base: k.suggestedFraction, bias: $0.sizingBias, cap: StockSageKelly.maxFraction) } ?? k.suggestedFraction
+            guard weight > 0 else { continue }
             fundable.append(Fundable(symbol: idea.symbol, entry: idea.price, stop: stop,
-                                     weight: k.suggestedFraction, halfKelly: k.halfKelly, evR: ev.evR))
+                                     weight: weight, halfKelly: k.halfKelly, evR: ev.evR))
         }
         guard !fundable.isEmpty else { return empty() }
 
@@ -113,9 +119,11 @@ enum StockSageCapitalAllocator {
         // Step 5: realized heat + deterministic order (desc risk, tie-break asc symbol).
         let totalHeat = positions.reduce(0) { $0 + $1.dollarsAtRisk } / account
         let sorted = positions.sorted { $0.riskFraction != $1.riskFraction ? $0.riskFraction > $1.riskFraction : $0.symbol < $1.symbol }
-        let finalCaveat = deweightedForCorrelation
-            ? caveat + " A correlated cluster was de-weighted to count as ~one bet, not several."
-            : caveat
+        var finalCaveat = caveat
+        if deweightedForCorrelation { finalCaveat += " A correlated cluster was de-weighted to count as ~one bet, not several." }
+        if let regime, abs(regime.sizingBias - 1) > 0.01 {
+            finalCaveat += String(format: " Sized ×%.2f for the %@ regime.", regime.sizingBias, regime.state.rawValue)
+        }
         return CapitalAllocation(positions: sorted, totalHeat: totalHeat, requestedHeat: requestedHeat,
                                  scaleApplied: scaleApplied, account: account, maxHeat: cap, caveat: finalCaveat)
     }

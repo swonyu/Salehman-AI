@@ -8116,6 +8116,23 @@ vol-targeting in the allocator (#2) — all "the allocator is missing what the a
 
 ---
 
+## 2026-06-26 · Allocator regime sizing bias (scout #4, HIGH) (Chat A, autonomous)
+**Files:** `StockSage/StockSageCapitalAllocator.swift`, `Views/MarketsView.swift`, `StockSageCapitalAllocatorTests.swift`.
+**Why (discovery scout, verified):** `StockSageRegime.sizingBias` (0.25 crisis … 1.25 strong bull) is
+computed and shown as a per-card "Regime size" metric, but the LIVE capital-deployment plan never
+received the regime — so deployed dollars were FLAT across calm bull, range, and pre-crisis tapes
+(a growth-rate leak both ways: under-deploying risk-on, over-deploying risk-off-but-not-banned).
+**What:** `allocate(...)` gains an optional `regime: MarketRegime? = nil`; each fundable weight is
+multiplied by `regime.sizingBias` (via `StockSageRegime.adjustedWeight`, re-capped at the Kelly
+per-position limit) BEFORE the correlation haircut + heat-scaling. The Markets call site passes
+`store.regime`; the plan caveat appends "Sized ×N.NN for the <regime>" when the bias ≠ 1. nil regime
+→ byte-identical (existing tests pass no regime → unchanged).
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1099 pass / 0 fail** (+test:
+bull sizes up, crisis down vs the nil baseline; caveat present).
+**Next (allocator-consistency):** #2 vol-targeting in the allocator; then #1b net-payoff Kelly sizing.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
