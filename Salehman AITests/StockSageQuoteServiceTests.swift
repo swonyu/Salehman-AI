@@ -8,6 +8,17 @@ import Foundation
 
 struct StockSageQuoteServiceParsingTests {
 
+    @Test func parseChartCapturesMarketTimeWhenPresent() {
+        let withTime = #"{"chart":{"result":[{"meta":{"symbol":"AAPL","regularMarketPrice":150,"previousClose":148,"regularMarketTime":1700000000}}]}}"#
+        let q = StockSageQuoteService.parseChart(Data(withTime.utf8))
+        #expect(q?.price == 150)
+        #expect(q?.marketTime == Date(timeIntervalSince1970: 1_700_000_000))
+        // No regularMarketTime → nil (still parses the quote, just no freshness stamp).
+        let noTime = #"{"chart":{"result":[{"meta":{"symbol":"AAPL","regularMarketPrice":150,"previousClose":148}}]}}"#
+        let q2 = StockSageQuoteService.parseChart(Data(noTime.utf8))
+        #expect(q2?.price == 150 && q2?.marketTime == nil)
+    }
+
     @Test func parseHistoryRejectsNonPositiveBars() {
         // 4 bars: bar 2 has a 0 close, bar 4 has a negative low — both must be dropped so a
         // garbage price can never become latestClose → price×shares / EV / sizing.

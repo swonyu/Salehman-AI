@@ -7918,6 +7918,25 @@ break-even on prior — marginal, monotonic), #15/#16 (live/delayed + per-row st
 
 ---
 
+## 2026-06-26 · Honesty: banner tells live from a stale close (#15) (Chat A, autonomous)
+**Files:** `StockSage/StockSageQuoteService.swift`, `StockSage/StockSageStore.swift`,
+`Views/MarketsView.swift`, `StockSageQuoteServiceTests.swift`.
+**Why (scout #15, hard honesty directive):** the green "Live … delayed ~15 min" banner showed
+UNCONDITIONALLY whenever any real quote had landed, keyed off our FETCH time — so a weekend/holiday
+last close rendered under a pulsing "Live" badge.
+**What:** captured the quote's own market timestamp end-to-end — `LiveQuote.marketTime` parsed from
+Yahoo `regularMarketTime`; `StockSageStore.quoteAsOf` = newest market time across the refresh (and
+advanced by `mergeLiveQuotes`). The banner now uses it: when the newest quote is >1h old it turns
+amber, drops the pulse + the "~15 min"/"Live" claim, and says "Prices are the last close as of
+<time> — markets may be closed; NOT live."
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1090 pass / 0 fail** (new
+parse test for marketTime capture).
+**Remaining:** #16 per-row staleness chip (needs per-symbol market time on the row — StockSageSymbol);
+#13 ranking break-even on prior (marginal). Deep-research gap-fill (validation methodology + ladders/
+heat/ranking) running.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

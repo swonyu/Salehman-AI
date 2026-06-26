@@ -26,6 +26,13 @@ enum StockSageQuoteService {
         let symbol: String
         let price: Double
         let previousClose: Double
+        /// The quote's own MARKET timestamp (Yahoo `regularMarketTime`), not our fetch time — so the
+        /// UI can tell "live" from a days-old weekend/holiday close. nil when the feed omits it.
+        let marketTime: Date?
+        init(symbol: String, price: Double, previousClose: Double, marketTime: Date? = nil) {
+            self.symbol = symbol; self.price = price
+            self.previousClose = previousClose; self.marketTime = marketTime
+        }
     }
 
     /// Browser-like UA — Yahoo's public endpoints answer plain clients far more
@@ -115,7 +122,9 @@ enum StockSageQuoteService {
         let previousClose = number(meta["previousClose"])
             ?? number(meta["chartPreviousClose"])
             ?? price   // brand-new listing with no prior close → flat (0% move → hold)
-        return LiveQuote(symbol: symbol, price: price, previousClose: previousClose)
+        // The quote's market time (Unix seconds) — lets the UI distinguish live from a stale close.
+        let marketTime = number(meta["regularMarketTime"]).map { Date(timeIntervalSince1970: $0) }
+        return LiveQuote(symbol: symbol, price: price, previousClose: previousClose, marketTime: marketTime)
     }
 
     // MARK: Candle history (for indicators / the advisor)

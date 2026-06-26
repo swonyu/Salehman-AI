@@ -207,20 +207,28 @@ struct MarketsView: View {
     }
 
     private var liveBanner: some View {
-        HStack(spacing: 8) {
-            Circle().fill(DS.Palette.successSoft).frame(width: 7, height: 7)
-                .shadow(color: DS.Palette.successSoft.opacity(0.7), radius: 4)
-            Text("Live worldwide quotes across \(StockSageUniverse.marketCount) market groups (\(StockSageUniverse.worldwide.count) names). Prices may be delayed ~15 min — educational, not financial advice.")
+        // Honest freshness from the quote's MARKET time (not our fetch time): if the newest quote is
+        // materially old (markets closed / feed stale), drop the green "Live" + "~15 min" claim and
+        // say plainly it's a last close as of that time. >1h tolerates the normal ~15-min delay.
+        let asOf = store.quoteAsOf
+        let stale = asOf.map { Date().timeIntervalSince($0) > 3600 } ?? false
+        let tint = stale ? DS.Palette.warningSoft : DS.Palette.successSoft
+        let text = (stale && asOf != nil)
+            ? "Prices are the last close as of \(asOf!.formatted(date: .abbreviated, time: .shortened)) — markets may be closed; NOT live. Educational, not financial advice."
+            : "Live worldwide quotes across \(StockSageUniverse.marketCount) market groups (\(StockSageUniverse.worldwide.count) names). Prices may be delayed ~15 min — educational, not financial advice."
+        return HStack(spacing: 8) {
+            Circle().fill(tint).frame(width: 7, height: 7)
+                .shadow(color: stale ? .clear : tint.opacity(0.7), radius: 4)
+            Text(text)
                 .font(.caption).foregroundStyle(.white.opacity(0.85))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, DS.Space.sm)
-        .background(DS.Palette.successSoft.opacity(0.10),
+        .background(tint.opacity(0.10),
                     in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
-            .stroke(LinearGradient(colors: [DS.Palette.successSoft.opacity(0.45),
-                                            DS.Palette.successSoft.opacity(0.10)],
+            .stroke(LinearGradient(colors: [tint.opacity(0.45), tint.opacity(0.10)],
                                    startPoint: .top, endPoint: .bottom), lineWidth: 1))
     }
 

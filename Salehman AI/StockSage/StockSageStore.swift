@@ -52,6 +52,9 @@ final class StockSageStore: ObservableObject {
     /// When the last successful live refresh completed (nil = still on the sample
     /// seed). Drives the "updated HH:mm" status in the Markets header.
     @Published private(set) var lastUpdated: Date?
+    /// The newest quote MARKET timestamp from the last refresh (not our fetch time) — so the banner
+    /// can tell genuinely-live prices from a days-old weekend/holiday close. nil when unknown.
+    @Published private(set) var quoteAsOf: Date?
     /// True while a live fetch is in flight — spins the refresh control.
     @Published private(set) var isRefreshing = false
     /// Human-readable reason the last refresh produced no live data (offline,
@@ -154,6 +157,10 @@ final class StockSageStore: ObservableObject {
                                time: Date(timeIntervalSinceNow: -86_400)),
                 StockSageQuote(price: q.price, previousPrice: q.previousClose),
             ])
+        }
+        // Advance freshness if these merged quotes are newer (watchlist-only path also keeps it honest).
+        if let newest = quotes.values.compactMap(\.marketTime).max() {
+            quoteAsOf = [quoteAsOf, newest].compactMap { $0 }.max()
         }
     }
 
@@ -769,6 +776,9 @@ final class StockSageStore: ObservableObject {
         let committed = liveFiltered + preservedUserRows
         replaceAll(committed, isSample: false)
         lastUpdated = Date()
+        // Newest MARKET time across the priced quotes — the banner uses this (not fetch time) to
+        // tell live from a stale close. nil when the feed omitted timestamps for all of them.
+        quoteAsOf = quotes.values.compactMap(\.marketTime).max()
         // Persist EXACTLY what is on screen (incl. preserved user-added tickers the feed missed this
         // cycle) — caching only `live` dropped them, so a tracked ticker vanished from the offline /
         // last-good board on next launch.
