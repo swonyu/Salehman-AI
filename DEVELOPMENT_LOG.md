@@ -8629,6 +8629,23 @@ with the already-tested heatmap path).
 
 ---
 
+## 2026-06-27 · Refine + live-verify the run-salehman-ai skill (/run-skill-generator) (Chat A)
+**Files:** `.claude/skills/run-salehman-ai/SKILL.md`.
+**Why:** owner ran /run-skill-generator. An existing run skill already drives the app (its driver.sh =
+typecheck/build/path/run/stop/test) — refined, not rewritten.
+**Verified LIVE this session (every documented path actually run):** `xcodebuild -version` → Xcode 26.6
+(SKILL says 26.x ✓); driver `build` → built .app ✓; driver `run` → launched fresh (PID, no stale
+instance) ✓; computer-use screenshot → app opens on the TODAY tab (SKILL claim ✓); the documented
+Markets nav coordinate (753, 292) → clicking it switches to Markets ✓; driver `stop` ✓. The Markets
+tab confirms the honesty surfaces render in the real UI: the amber 'Last-good (cached) … NOT live'
+banner, the 'EV win-rates are an assumed estimate — run the Strategy backtest to calibrate' caveat,
+and the educational disclaimer.
+**Changed:** test-count line made drift-resistant (~1,100+; 1,110 as of today) — was a stale ~1085.
+Verdict line `** TEST SUCCEEDED/FAILED **` confirmed from logs. No driver.sh change needed (accurate).
+**Result:** skill verified end-to-end on the actual macOS host; build/typecheck/test exercised all night.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

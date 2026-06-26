@@ -62,7 +62,8 @@ type-checks the app target alone, which catches the large majority of Swift mist
 ```bash
 .claude/skills/run-salehman-ai/driver.sh test     # xcodebuild test, only-testing the app suite
 ```
-~1085 Swift Testing cases. The verdict line is `** TEST SUCCEEDED **` / `** TEST FAILED **`;
+~1,100+ Swift Testing cases (1,110 as of 2026-06-27, and growing). The verdict line is
+`** TEST SUCCEEDED **` / `** TEST FAILED **`;
 list failures with:
 ```bash
 grep -E "Test case '.*' failed" /tmp/salehman_build.log | sed -E "s/.*'([^']+)'.*/\1/" | sort -u
