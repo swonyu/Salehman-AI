@@ -8370,6 +8370,30 @@ beside the 95th-pct (the rough one), both already simulated.
 
 ---
 
+## 2026-06-26 · Deep-research report: quant-engine validation/sizing/regime/calibration (Chat A, owner-invoked)
+**Files:** `RESEARCH_2026-06-26_quant_engine.md` (new).
+**Why:** owner ran /deep-research and chose all 4 topics. Multi-agent run (money-engine-research
+workflow: 129 agents, ~6.0M tokens, 1843 tool uses, ~47 min) — per-topic angle decomposition →
+parallel web search → 3-vote adversarial verification (2/3-refute to kill; 'mixed' carries a
+correction) → cited synthesis → cross-topic build checklist. Sources: López de Prado, Bailey &
+López de Prado (DSR/PSR), Harvey-Liu-Zhu, Thorp/MacLean/Ziemba (Kelly), Hamilton/Ang-Timmermann
+(regimes), Kull-Silva-Flach / Niculescu-Mizil & Caruana (calibration).
+**Headline (verified) implications for StockSage:** (1) VALIDATION — single walk-forward + fixed
+t>3 are both fragile; move to CPCV (Sharpe distribution) with explicit purge+embargo (h≈1% of bars)
+and a trial-count-aware Deflated Sharpe gate (DSR>0.95); log EVERY variant (unblocks DSR); compute
+SE(SR) directly (non-annualized, non-excess kurtosis). (2) SIZING — half-Kelly is exactly right
+(75% growth @ 50% vol; drawdown∝x^(2/c−1)); cap at ≤1x ESTIMATED Kelly; edge/calibration error is
+~20× covariance error → calibration is where growth is won; keep MC ruin as the finite-horizon check
+(no 'never blows up'). (3) REGIME — payoff is risk reduction, not alpha (~18.5bp S&P); drive from
+FILTERED probs + t+1 delay, key off the VOL state, regime-condition the correlation haircut. (4)
+CALIBRATION — for a sub-1000-trade journal, BETA calibration > isotonic/PAV (data-efficient, contains
+the identity map, continuous → preserves bet-sizing); add online beta-scaling+calibeating for drift.
+**Result:** report committed as a knowledge artifact; no code changed. Honesty floor preserved (all
+results labelled estimators with stated assumptions, not guarantees). Tier-1 checklist now seeds the
+backlog — notably the long-standing un-built WALK-FORWARD/CPCV + DSR validation harness.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
