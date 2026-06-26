@@ -2365,29 +2365,40 @@ struct MarketsView: View {
         .animation(DS.Motion.smooth, value: store.ideas.count)
     }
 
-    /// At-a-glance overview of the shown ideas: count, action breakdown, avg conviction.
+    /// At-a-glance overview of the shown ideas: count, action breakdown (tap to filter),
+    /// avg conviction and avg reward:risk. Counts reflect the current sort/filter/search.
     @ViewBuilder private func ideasSummaryStrip(_ ideas: [StockSageIdea]) -> some View {
         let strong = ideas.filter { $0.advice.action == .strongBuy }.count
         let buys = ideas.filter { $0.advice.action == .buy }.count
         let sells = ideas.filter { $0.advice.action == .sell || $0.advice.action == .reduce }.count
         let avgConv = ideas.isEmpty ? 0 : ideas.map(\.advice.conviction).reduce(0, +) / Double(ideas.count)
+        let rrs = ideas.map(rewardRisk).filter { $0 > 0 }
+        let avgRR = rrs.isEmpty ? 0 : rrs.reduce(0, +) / Double(rrs.count)
         HStack(spacing: 8) {
-            summaryChip("\(ideas.count)", "shown")
-            if strong > 0 { summaryChip("\(strong)", "strong buy", DS.Palette.successSoft) }
-            if buys > 0 { summaryChip("\(buys)", "buys") }
-            if sells > 0 { summaryChip("\(sells)", "sells", DS.Palette.warningSoft) }
-            summaryChip("\(Int((avgConv * 100).rounded()))%", "avg conviction")
+            summaryChip("\(ideas.count)", "shown", .white) { ideaFilter = .all; ideaMinConv = 0 }
+            if strong > 0 { summaryChip("\(strong)", "strong buy", DS.Palette.successSoft) { ideaFilter = .strongBuy } }
+            if buys > 0 { summaryChip("\(buys)", "buys", .white) { ideaFilter = .buys } }
+            if sells > 0 { summaryChip("\(sells)", "sells", DS.Palette.warningSoft) { ideaFilter = .sells } }
+            summaryChip("\(Int((avgConv * 100).rounded()))%", "avg conv")
+            if avgRR > 0 { summaryChip(String(format: "%.1f", avgRR), "avg R:R") }
             Spacer(minLength: 0)
         }
     }
 
-    private func summaryChip(_ value: String, _ label: String, _ valueColor: Color = .white) -> some View {
-        HStack(spacing: 4) {
+    @ViewBuilder
+    private func summaryChip(_ value: String, _ label: String, _ valueColor: Color = .white,
+                             action: (() -> Void)? = nil) -> some View {
+        let chip = HStack(spacing: 4) {
             Text(value).font(.system(size: 11, weight: .bold)).foregroundStyle(valueColor)
             Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background(.white.opacity(0.05), in: Capsule())
+        if let action {
+            Button(action: action) { chip }.buttonStyle(.plain).help("Filter to \(label)")
+        } else {
+            chip
+        }
     }
 
     /// The ideas in display order — by expected value (best bet first) or the

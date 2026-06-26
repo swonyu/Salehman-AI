@@ -7615,6 +7615,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-26 · Markets — Ideas board batch 2 (interactive summary + avg R:R)
+**Files:** `Views/MarketsView.swift`.
+**What & why:** Summary strip is now interactive — tapping the strong-buy / buys / sells chips sets the action filter, and the count ("shown") chip clears filters + min-conviction. Added an **avg R:R** chip alongside avg conviction. `summaryChip` gained an optional action (renders as a plain Button when tappable).
+**Result:** ✅ `tools/typecheck.sh` clean.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
