@@ -47,6 +47,7 @@ struct MarketsView: View {
     @State private var newWatchSymbol = ""
     /// Tapped idea → per-symbol detail sheet (full advice + larger sparkline + backtest).
     @State private var selectedIdea: StockSageIdea?
+    @State private var ideasCopied = false
     /// Kelly position-sizer inputs (interactive, no fetch).
     @State private var kellyWinRate = "55"
     @State private var kellyPayoff = "2.0"
@@ -2241,6 +2242,27 @@ struct MarketsView: View {
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
+                if !store.ideas.isEmpty {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(StockSageIdeasCSV.csv(displayedIdeas), forType: .string)
+                        ideasCopied = true
+                        Task { try? await Task.sleep(for: .seconds(2)); ideasCopied = false }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: ideasCopied ? "checkmark" : "doc.on.clipboard")
+                                .font(.system(size: 10, weight: .semibold)).contentTransition(.symbolEffect(.replace))
+                            Text(ideasCopied ? "Copied" : "Copy CSV")
+                                .font(.system(size: 11, weight: .semibold)).contentTransition(.opacity)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(.white.opacity(0.08), in: Capsule())
+                    }
+                    .buttonStyle(LuxPressStyle())
+                    .help("Copy the ranked ideas as CSV (rank, action, conviction, stop/target, weight, rationale)")
+                    .accessibilityLabel("Copy ideas board as CSV")
+                }
                 Button { Task { await store.refreshIdeas() } } label: {
                     HStack(spacing: 6) {
                         Group {

@@ -7566,6 +7566,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-26 · Markets — Ideas board CSV export (Chat A)
+**Files:** `StockSage/StockSageIdeasCSV.swift` (new), `Views/MarketsView.swift`; `+ Salehman AITests/StockSageIdeasCSVTests.swift`.
+**What & why:** Owner asked for new Markets features. The journal already exports CSV but the ranked Ideas board didn't. Added `StockSageIdeasCSV` (pure, RFC-4180) — rank, symbol, market, price, action, conviction, stop, target, weight%, regime, rationale — with prices kept exact and conviction/weight formatted to avoid float noise. A "Copy CSV" button in the ideas header copies the board IN DISPLAY ORDER (respects the current sort + filter via `displayedIdeas`) to the clipboard, with a transient "Copied" check. Shown only when ideas exist.
+**Result:** ✅ `tools/typecheck.sh` clean. Tests added (Swift Testing) — run via xcodebuild when available (sandbox blocks it). First of three requested Markets features.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
