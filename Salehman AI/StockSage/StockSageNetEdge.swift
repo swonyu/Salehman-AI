@@ -86,6 +86,17 @@ enum StockSageNetEdge {
         return CostAssumption(spreadBps: 8, slippageBps: 5, assetClass: "US large-cap")                             // 13bps
     }
 
+    /// Net reward:risk for a symbol using its asset-class default round-trip costs — ONE source of
+    /// truth so the on-screen trade gate and the copied broker plan can't disagree on go/no-go. nil
+    /// when the gross setup is degenerate (then callers fall back to gross). netRR is independent of
+    /// winProb, so callers needing only the ratio can omit it.
+    nonisolated static func netRR(symbol: String, entry: Double, stop: Double, target: Double,
+                                  winProb: Double? = nil) -> Double? {
+        let c = defaultCosts(forSymbol: symbol)
+        return evaluate(entry: entry, stop: stop, target: target,
+                        spreadBps: c.spreadBps, slippageBps: c.slippageBps, winProb: winProb)?.netRR
+    }
+
     /// Net reward:risk after round-trip frictions. Works for longs and shorts (uses absolute
     /// distances). `spreadBps`/`slippageBps` are round-trip, in bps of entry price;
     /// `commissionPerShare` is absolute. nil if the gross setup is degenerate.

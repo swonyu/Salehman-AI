@@ -7788,6 +7788,23 @@ velocity ranking proxy.
 
 ---
 
+## 2026-06-26 · Lever #3b cost gating: trade gate judges NET reward:risk (Chat A)
+**Files:** `StockSage/StockSageNetEdge.swift` (netRR helper), `Views/MarketsView.swift`,
+`StockSage/StockSageTodayPlan.swift`.
+**Why (owner goal):** the go/no-go gate judged GROSS reward:risk, so a high-cost churn that fails
+break-even after fees still read "Clear to trade" — the filter reshuffled costs down the board
+instead of stopping them.
+**What:** added `StockSageNetEdge.netRR(symbol:entry:stop:target:)` (asset-class round-trip costs →
+net R:R) as the ONE source of truth, and fed it to BOTH the on-screen trade gate and the copied
+broker plan (TodayPlan) in place of gross R:R — falling back to gross if the setup is degenerate. So
+the gate's thresholds (≥2 pass / 1–2 warn / <1 fail) now bite on what you'd actually net, and the
+two surfaces still agree on go/no-go.
+**Result:** `tools/typecheck.sh` ✅; full suite **1089 pass / 0 fail**.
+**Money levers:** #4 ✅, #1 ✅, #2 ✅, #3a Kelly size ✅, #3b cost gating ✅. Last: #3c log-growth
+velocity ranking proxy.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

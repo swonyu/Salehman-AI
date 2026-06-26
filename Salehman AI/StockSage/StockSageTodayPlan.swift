@@ -21,7 +21,10 @@ enum StockSageTodayPlan {
             guard let s = a.stopPrice, let t = a.targetPrice else { return nil }
             let risk = abs(entry - s)
             guard risk > 0 else { return nil }
-            return abs(t - entry) / risk
+            let gross = abs(t - entry) / risk
+            // Gate on NET reward:risk (after asset-class round-trip costs) — same source of truth as
+            // the on-screen gate, so the copied plan can't disagree. Falls back to gross.
+            return StockSageNetEdge.netRR(symbol: idea.symbol, entry: entry, stop: s, target: t) ?? gross
         }()
         let gate = StockSageTradeGate.evaluate(hasStop: a.stopPrice != nil, rewardToRisk: rr,
                                                riskFraction: rf > 0 ? rf : 0.01, daysToEarnings: daysToEarnings)

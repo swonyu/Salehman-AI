@@ -3452,7 +3452,10 @@ struct MarketsView: View {
                         guard let stop = a.stopPrice, let tgt = a.targetPrice else { return nil }
                         let risk = abs(idea.price - stop)
                         guard risk > 0 else { return nil }
-                        return abs(tgt - idea.price) / risk
+                        let gross = abs(tgt - idea.price) / risk
+                        // Gate on NET reward:risk (after asset-class round-trip costs) so high-cost
+                        // churn that fails break-even can't read "Clear to trade". Falls back to gross.
+                        return StockSageNetEdge.netRR(symbol: idea.symbol, entry: idea.price, stop: stop, target: tgt) ?? gross
                     }()
                     // Floor 0/negative risk to 1% (matches TodayPlan.build + the velocity sibling at
                     // 2491) so the on-screen gate and the COPIED broker plan can't disagree on go/no-go.
