@@ -8165,6 +8165,20 @@ the helper exists). Deferred: #1b net-payoff Kelly (low value / high test-litera
 
 ---
 
+## 2026-06-26 · Honesty: calibration chip on best-opportunity + allocation cards (scout #9) (Chat A, autonomous)
+**Files:** `Views/MarketsView.swift`.
+**Why (scout, HIGH honesty):** the best-opportunity card ('Est. EV +X.XXR' / 'Win est. ~X%' in green)
+and the capital-allocation card (per-line EV driving the deployed sizes) showed measured-LOOKING
+numbers with no measured-vs-assumed flag.
+**What:** placed the reusable `calibrationChip` (measured · n=N / assumed) on both card headers — so
+every EV-headline surface (money-velocity, best-opportunity, allocation, ideas list) now consistently
+discloses whether the win-rates are calibrated from backtest outcomes or a hand-set prior.
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1100 pass / 0 fail**.
+**Next:** #6 per-card Size% honesty note (sized off the uncalibrated prior); then #5 multi-timeframe
+confluence; #10 summaryStat green-regardless sub-line.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

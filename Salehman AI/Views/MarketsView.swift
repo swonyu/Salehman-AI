@@ -2807,6 +2807,7 @@ struct MarketsView: View {
                         Image(systemName: "bolt.fill").font(.system(size: 13)).foregroundStyle(DS.Palette.accent)
                         Text("Best opportunity now").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
                         Spacer()
+                        calibrationChip   // is the green Est. EV / Win est. below measured or assumed?
                         Text(idea.advice.action.rawValue).font(.system(size: 10, weight: .bold))
                             .foregroundStyle(actionTextColor(idea.advice.action))
                             .padding(.horizontal, 7).padding(.vertical, 2).background(actionColor(idea.advice.action), in: Capsule())
@@ -2884,6 +2885,7 @@ struct MarketsView: View {
                         Image(systemName: "chart.pie.fill").font(.system(size: 13)).foregroundStyle(DS.Palette.accent)
                         Text("Deploy capital — allocation plan").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
                         Spacer()
+                        calibrationChip   // the per-line EV that drove these sizes — measured or assumed?
                         ideaMetric("Open heat", String(format: "%.1f%%", plan.totalHeat * 100), color: heatColor)
                         if plan.scaleApplied < 1 {
                             ideaMetric("Cap scale", String(format: "%.0f%%", plan.scaleApplied * 100), color: DS.Palette.warningSoft)
