@@ -455,9 +455,18 @@ final class StockSageStore: ObservableObject {
     @Published private(set) var strategyBacktest: StrategyBacktest?
     @Published private(set) var isLoadingStrategy = false
     @Published private(set) var strategyError: String?
-    /// Conviction→win-probability calibration learned from the strategy backtest's trades. nil until
-    /// a backtest has run with enough trades; while nil, EV/sizing use the conservative linear prior.
-    @Published private(set) var convictionCalibration: StockSageConvictionCalibration?
+    /// Conviction→win-probability calibration learned from the strategy BACKTEST's trades. nil until
+    /// a backtest has run with enough trades.
+    @Published private(set) var backtestConvictionCalibration: StockSageConvictionCalibration?
+
+    /// EFFECTIVE conviction calibration the whole app sizes/ranks on: the owner's OWN realized edge
+    /// (their journal) when it has enough closed conviction-trades, ELSE the sample-backtest fit, ELSE
+    /// nil (callers fall back to the conservative linear prior). The journal beats a generic backtest —
+    /// it captures the owner's real fills, slippage, and discipline. Same Wilson-LCB conservatism in
+    /// both. Recomputed on read (the journal is small; the view observes it, so it refreshes live).
+    var convictionCalibration: StockSageConvictionCalibration? {
+        StockSageConvictionCalibration.fit(fromJournal: StockSageJournalStore.shared.trades) ?? backtestConvictionCalibration
+    }
 
     /// Fetch ~5y for a bounded equity sample, walk-forward each off-main, and
     /// aggregate honest strategy-wide stats. User-triggered (heavy).
@@ -491,8 +500,9 @@ final class StockSageStore: ObservableObject {
             return (rs, ts)
         }.value
         strategyBacktest = StockSageStrategyBacktest.aggregate(results, trades: trades)
-        // Learn conviction→win-prob from the realized trades (nil if too thin → callers keep the prior).
-        convictionCalibration = StockSageConvictionCalibration.fit(fromBacktest: trades)
+        // Learn conviction→win-prob from the realized BACKTEST trades (nil if too thin). The computed
+        // `convictionCalibration` prefers the owner's journal fit over this when their journal is rich enough.
+        backtestConvictionCalibration = StockSageConvictionCalibration.fit(fromBacktest: trades)
     }
 
     // Portfolio risk analytics — the full backward-looking risk/return suite.

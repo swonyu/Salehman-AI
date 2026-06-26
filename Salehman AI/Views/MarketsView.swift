@@ -2483,7 +2483,7 @@ struct MarketsView: View {
                     // Honesty: say plainly whether the EV/win numbers below are MEASURED from
                     // backtested outcomes or an assumed linear prior — right where they're read.
                     if let cal = store.convictionCalibration {
-                        Label("EV win-rates measured from \(cal.sampleSize) backtested trades", systemImage: "checkmark.seal.fill")
+                        Label("EV win-rates measured from \(cal.sampleSize) realized trades (your journal, else the backtest)", systemImage: "checkmark.seal.fill")
                             .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
                             .help("Conviction→win-probability is calibrated from realized backtest outcomes (conservative, monotonic).")
                     } else {
@@ -2950,7 +2950,7 @@ struct MarketsView: View {
         if let cal = store.convictionCalibration {
             Label("measured · n=\(cal.sampleSize)", systemImage: "checkmark.seal.fill")
                 .font(.system(size: 9, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
-                .help("EV win-rates calibrated from \(cal.sampleSize) backtested trades (conservative, monotonic).")
+                .help("EV win-rates calibrated from \(cal.sampleSize) realized trades — your journal when it has enough, else the backtest (conservative, monotonic).")
         } else {
             Label("assumed", systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: 9, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
@@ -3213,7 +3213,7 @@ struct MarketsView: View {
             if let cal = store.convictionCalibration {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.seal.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.successSoft)
-                    Text("EV calibrated from \(cal.sampleSize) backtested trades — win-rates are measured, not assumed.")
+                    Text("EV calibrated from \(cal.sampleSize) realized trades (your journal when rich enough, else the backtest) — measured, not assumed.")
                         .font(.caption2).foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
                 }
                 .help("Conviction→win-probability is fitted from realized backtest outcomes (conservative lower bound, monotonic). Until then EV uses a cautious linear estimate.")

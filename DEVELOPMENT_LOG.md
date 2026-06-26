@@ -8309,6 +8309,24 @@ conservative; backtest fit / prior as fallback) + an honest source label.
 
 ---
 
+## 2026-06-26 · Journal→live-calibration STEP 2b: prefer the owner's own edge (FEATURE COMPLETE) (Chat A, autonomous)
+**Files:** `StockSage/StockSageStore.swift`, `Views/MarketsView.swift`.
+**Why:** finish wiring scout #4 — make EV/Kelly calibrate on the owner's OWN realized executions
+(journal), which capture their real fills/slippage/discipline, not just a generic sample backtest.
+**What:** the stored backtest fit was renamed `backtestConvictionCalibration`; `convictionCalibration`
+is now a COMPUTED accessor = `fit(fromJournal: StockSageJournalStore.shared.trades) ?? backtestFit`
+— prefers the journal once it has enough closed conviction-trades, else the backtest, else nil
+(conservative prior). All ~14 call sites read it unchanged (verified no `$convictionCalibration`
+Combine usage). Recomputed on read (journal is small; the view observes it → live refresh; nil-fast
+when thin). Chip wordings made source-aware ("from N realized trades — your journal when it has
+enough, else the backtest").
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1102 pass / 0 fail**.
+**Feature complete (steps 1+2a+2b):** TradeRecord.conviction → captured on log-from-idea →
+fit(fromJournal:) → preferred in the live calibration. Optional next polish: a `source` field on the
+calibration so the chip can say "YOUR trades" vs "backtest" explicitly.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
