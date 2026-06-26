@@ -429,6 +429,9 @@ final class StockSageStore: ObservableObject {
     @Published private(set) var strategyBacktest: StrategyBacktest?
     @Published private(set) var isLoadingStrategy = false
     @Published private(set) var strategyError: String?
+    /// Conviction→win-probability calibration learned from the strategy backtest's trades. nil until
+    /// a backtest has run with enough trades; while nil, EV/sizing use the conservative linear prior.
+    @Published private(set) var convictionCalibration: StockSageConvictionCalibration?
 
     /// Fetch ~5y for a bounded equity sample, walk-forward each off-main, and
     /// aggregate honest strategy-wide stats. User-triggered (heavy).
@@ -448,15 +451,22 @@ final class StockSageStore: ObservableObject {
             strategyError = "Couldn't load histories to backtest the strategy — try again."
             return
         }
-        let results: [BacktestResult] = await Task.detached {
-            symbols.compactMap { sym -> BacktestResult? in
-                guard let h = histories[sym.uppercased()] else { return nil }
+        let (results, trades): ([BacktestResult], [BacktestTrade]) = await Task.detached {
+            var rs: [BacktestResult] = []
+            var ts: [BacktestTrade] = []
+            for sym in symbols {
+                guard let h = histories[sym.uppercased()] else { continue }
                 // Charge each symbol's asset-class round-trip cost so the strategy result
-                // is what you'd net, not a frictionless fantasy.
-                return StockSageBacktester.run(h, costs: StockSageNetEdge.defaultCosts(forSymbol: sym))
+                // is what you'd net, not a frictionless fantasy. One pass yields both the
+                // aggregate stats AND the per-trade (conviction, outcome) pairs for calibration.
+                let d = StockSageBacktester.runDetailed(h, costs: StockSageNetEdge.defaultCosts(forSymbol: sym))
+                rs.append(d.result); ts.append(contentsOf: d.trades)
             }
+            return (rs, ts)
         }.value
         strategyBacktest = StockSageStrategyBacktest.aggregate(results)
+        // Learn conviction→win-prob from the realized trades (nil if too thin → callers keep the prior).
+        convictionCalibration = StockSageConvictionCalibration.fit(fromBacktest: trades)
     }
 
     // Portfolio risk analytics — the full backward-looking risk/return suite.

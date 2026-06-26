@@ -2543,7 +2543,7 @@ struct MarketsView: View {
                     .font(.system(size: 11, weight: .bold)).foregroundStyle(actionTextColor(a.action))
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(actionColor(a.action), in: Capsule())
-                if let ev = StockSageExpectedValue.ev(for: idea) {
+                if let ev = StockSageExpectedValue.ev(for: idea, calibration: store.convictionCalibration) {
                     Text(String(format: "%+.2fR EV", ev.evR))
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft)
@@ -3128,6 +3128,16 @@ struct MarketsView: View {
                 }
                 Text(s.caveat).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
+            // Calibration status: when the backtest yielded enough trades, EV win-probabilities are
+            // now MEASURED from outcomes (conservative) instead of the hand-picked linear prior.
+            if let cal = store.convictionCalibration {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.seal.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.successSoft)
+                    Text("EV calibrated from \(cal.sampleSize) backtested trades — win-rates are measured, not assumed.")
+                        .font(.caption2).foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
+                }
+                .help("Conviction→win-probability is fitted from realized backtest outcomes (conservative lower bound, monotonic). Until then EV uses a cautious linear estimate.")
+            }
         }
         .padding(DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -3498,7 +3508,7 @@ struct MarketsView: View {
                     if let ne = StockSageNetEdge.evaluate(
                         entry: idea.price, stop: stop, target: target,
                         spreadBps: costs.spreadBps, slippageBps: costs.slippageBps,
-                        winProb: StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target)?.winProbEstimate) {
+                        winProb: StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target, calibration: store.convictionCalibration)?.winProbEstimate) {
                         let c = ne.costErodesEdge ? DS.Palette.warningSoft : DS.Palette.textSecondary
                         let pre = "After ~\(Int(costs.roundTripBps))bps est. \(costs.assetClass) costs: "
                         let body = ne.netRR > 0
@@ -3512,7 +3522,7 @@ struct MarketsView: View {
                     }
                 }
                 if let stop = a.stopPrice, let target = a.targetPrice,
-                   let ev = StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target) {
+                   let ev = StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target, calibration: store.convictionCalibration) {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "dollarsign.circle.fill").font(.system(size: 11))
                             .foregroundStyle(ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft)

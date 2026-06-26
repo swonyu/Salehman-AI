@@ -239,9 +239,11 @@ enum StockSageExpectedValue {
     }
 
     /// EV for a ranked idea, or nil when it lacks a stop/target (no defined R:R).
-    nonisolated static func ev(for idea: StockSageIdea) -> ExpectedValue? {
+    nonisolated static func ev(for idea: StockSageIdea,
+                               calibration: StockSageConvictionCalibration? = nil) -> ExpectedValue? {
         guard let stop = idea.advice.stopPrice, let target = idea.advice.targetPrice else { return nil }
-        return ev(conviction: idea.advice.conviction, entry: idea.price, stop: stop, target: target)
+        return ev(conviction: idea.advice.conviction, entry: idea.price, stop: stop, target: target,
+                  calibration: calibration)
     }
 
     /// Ideas sorted by EV (best bet first). Ideas without a defined EV fall to the

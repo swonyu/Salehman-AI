@@ -7731,6 +7731,25 @@ calibration from backtests and threads it into the board EV + allocator — is t
 
 ---
 
+## 2026-06-26 · Calibration wired into the live money path (Chat A)
+**Files:** `StockSageBacktester.swift` (runTrades/runDetailed), `StockSageStore.swift`
+(convictionCalibration), `StockSageExpectedValue.swift` (ev(for:calibration:)), `Views/MarketsView.swift`.
+**What:** Closed the loop so the calibration spine actually affects what the owner sees/sizes on.
+- Backtester: extracted `runTrades` (raw per-trade data) and `runDetailed` (result + trades in ONE
+  pass); `run` is now `summarize(runTrades(...))` — aggregate unchanged.
+- Store: `@Published convictionCalibration`, fitted inside `refreshStrategyBacktest` from the trades
+  of the SAME sample backtests it already runs (no extra fetch/sim). nil until ≥ the min sample.
+- EV: `ev(for:calibration:)`; the Markets card EV badge + the idea detail sheet (EV line and the
+  after-cost NetEdge win-prob) now pass `store.convictionCalibration` → measured win-rates when
+  available, the conservative linear prior otherwise.
+- UI: the Strategy-backtest card shows "EV calibrated from N backtested trades" once active, so the
+  owner knows when sizing is measured vs assumed (honesty floor).
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; full test suite 1081 pass / 0 fail.
+**Money levers status:** #4 trustworthy engine ✅, #1 calibration ✅ (end-to-end). Remaining:
+#2 velocity-first default + setup-derived hold-period, #3 Kelly-derived card size + cost gating.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

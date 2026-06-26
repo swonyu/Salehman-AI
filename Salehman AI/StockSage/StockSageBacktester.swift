@@ -140,9 +140,28 @@ enum StockSageBacktester {
     nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200,
                                 costs: StockSageNetEdge.CostAssumption? = nil,
                                 exitMode: ExitMode = .allAtTarget) -> BacktestResult {
+        summarize(runTrades(history, warmup: warmup, costs: costs, exitMode: exitMode))
+    }
+
+    /// Both the aggregate result AND the raw trades from ONE simulation pass — so a caller that
+    /// wants both (e.g. strategy stats + conviction calibration) doesn't run the sim twice.
+    nonisolated static func runDetailed(_ history: StockSagePriceHistory, warmup: Int = 200,
+                                        costs: StockSageNetEdge.CostAssumption? = nil,
+                                        exitMode: ExitMode = .allAtTarget)
+        -> (result: BacktestResult, trades: [BacktestTrade]) {
+        let trades = runTrades(history, warmup: warmup, costs: costs, exitMode: exitMode)
+        return (summarize(trades), trades)
+    }
+
+    /// The raw simulated trades (each carrying its entry `conviction`) — the training set for
+    /// conviction calibration and for any per-trade analysis. `run` is exactly
+    /// `summarize(runTrades(...))`, so the aggregate result is unchanged.
+    nonisolated static func runTrades(_ history: StockSagePriceHistory, warmup: Int = 200,
+                                      costs: StockSageNetEdge.CostAssumption? = nil,
+                                      exitMode: ExitMode = .allAtTarget) -> [BacktestTrade] {
         let closes = history.closes, opens = history.opens, highs = history.highs, lows = history.lows
         let n = closes.count
-        guard n > warmup + 5, opens.count == n, highs.count == n, lows.count == n else { return .empty }
+        guard n > warmup + 5, opens.count == n, highs.count == n, lows.count == n else { return [] }
 
         var trades: [BacktestTrade] = []
         var i = warmup
@@ -181,7 +200,7 @@ enum StockSageBacktester {
                                         conviction: advice.conviction))
             i = exitIdx + 1   // one position at a time — resume after the close
         }
-        return summarize(trades)
+        return trades
     }
 
     /// Resolve a single trade's exit per `mode`. `.allAtTarget` is the original walk — the
