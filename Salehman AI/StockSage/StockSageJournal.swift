@@ -27,14 +27,19 @@ struct TradeRecord: Codable, Sendable, Equatable, Identifiable {
     /// Optional free-text note. Optional + defaulted so older persisted records
     /// (encoded before this field existed) still decode cleanly.
     var note: String?
+    /// The advisor's conviction (0–1) at entry, when this trade came from an idea. Optional +
+    /// defaulted (old records decode as nil). Lets the OWNER's realized win-rate-by-conviction
+    /// calibrate EV/sizing — their own executions (fills, slippage, discipline), not just the
+    /// sample backtest. Manual trades without a conviction are simply excluded from the fit.
+    var conviction: Double?
 
     init(id: UUID = UUID(), symbol: String, side: Side, entry: Double, stop: Double,
          target: Double?, shares: Double, openedAt: Date,
-         exitPrice: Double? = nil, closedAt: Date? = nil, note: String? = nil) {
+         exitPrice: Double? = nil, closedAt: Date? = nil, note: String? = nil, conviction: Double? = nil) {
         self.id = id; self.symbol = symbol; self.side = side
         self.entry = entry; self.stop = stop; self.target = target
         self.shares = shares; self.openedAt = openedAt
-        self.exitPrice = exitPrice; self.closedAt = closedAt; self.note = note
+        self.exitPrice = exitPrice; self.closedAt = closedAt; self.note = note; self.conviction = conviction
     }
 
     nonisolated var isOpen: Bool { closedAt == nil }

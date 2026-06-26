@@ -130,4 +130,18 @@ extension StockSageConvictionCalibration {
         fit(trades.map { (conviction: $0.conviction, won: $0.r > 0) },
             binCount: binCount, minSamples: minSamples, z: z, prior: prior)
     }
+
+    /// Fit from the owner's JOURNAL — their OWN realized executions (fills, slippage, discipline),
+    /// which the sample-universe backtest can't capture. Only CLOSED trades that carry a conviction
+    /// contribute (a win = realized R > 0); manual trades without a conviction are excluded. nil when
+    /// too thin — the caller keeps the backtest fit / conservative prior.
+    nonisolated static func fit(fromJournal trades: [TradeRecord],
+                                binCount: Int = 5, minSamples: Int = 30,
+                                z: Double = 1.0, prior: Double = 0.5) -> StockSageConvictionCalibration? {
+        let outcomes = trades.compactMap { t -> (conviction: Double, won: Bool)? in
+            guard let c = t.conviction, let r = t.realizedR else { return nil }
+            return (conviction: c, won: r > 0)
+        }
+        return fit(outcomes, binCount: binCount, minSamples: minSamples, z: z, prior: prior)
+    }
 }

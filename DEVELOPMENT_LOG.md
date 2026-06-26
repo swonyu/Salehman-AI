@@ -8278,6 +8278,23 @@ markets are shut. Doc comment tightened.
 
 ---
 
+## 2026-06-26 · Journal→live-calibration STEP 1: conviction field + fit(fromJournal:) (scout #4) (Chat A, autonomous)
+**Files:** `StockSage/StockSageJournal.swift`, `StockSage/StockSageConvictionCalibration.swift`,
+`StockSageConvictionCalibrationTests.swift`.
+**Why (broader scout, MED→big, split):** EV/Kelly currently calibrate conviction only from the SAMPLE
+backtest. The owner's OWN closed trades capture their real edge (fills, slippage, discipline) — a
+better source once enough exist. But TradeRecord had no conviction field, so no (conviction, won) pairs.
+**What (additive/safe spine):** added `TradeRecord.conviction: Double?` (optional + defaulted in the
+init like `note`, so old persisted records still decode) and `StockSageConvictionCalibration.fit(
+fromJournal:)` — maps CLOSED trades that carry a conviction to (conviction, realizedR>0), reusing the
+generic fit (Wilson-LCB + isotonic + adaptive bins). Manual/open trades are excluded.
+**Result:** `tools/typecheck.sh` ✅; suite **1102 pass / 0 fail** (+test: 40 closed-with-conviction
+trades fit; an open trade + a no-conviction trade excluded; higher conviction → higher win-prob).
+**Step 2 (next):** capture conviction when logging a trade FROM an idea (so data accrues), then in the
+store blend/prefer the journal-fit over the backtest-fit once n ≥ minSamples (keep Wilson-LCB).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

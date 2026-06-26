@@ -80,6 +80,24 @@ struct StockSageConvictionCalibrationTests {
         #expect((cal?.winProb(0.9) ?? 0) > (cal?.winProb(0.1) ?? 1))
     }
 
+    @Test func fitFromJournalUsesClosedTradesWithConviction() {
+        func rec(_ conv: Double?, exit: Double?) -> TradeRecord {
+            TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: 130, shares: 1,
+                        openedAt: Date(timeIntervalSince1970: 0),
+                        exitPrice: exit, closedAt: exit == nil ? nil : Date(timeIntervalSince1970: 86_400),
+                        conviction: conv)
+        }
+        var trades: [TradeRecord] = []
+        for i in 0..<20 { trades.append(rec(0.9, exit: i < 16 ? 110 : 95)) }  // high conv, 80% win (R>0)
+        for i in 0..<20 { trades.append(rec(0.1, exit: i < 4 ? 110 : 95)) }   // low conv, 20% win
+        trades.append(rec(0.9, exit: nil))   // OPEN (no realized R) → excluded
+        trades.append(rec(nil, exit: 110))   // no conviction → excluded
+        let cal = StockSageConvictionCalibration.fit(fromJournal: trades, minSamples: 30)
+        #expect(cal != nil)
+        #expect(cal?.sampleSize == 40)       // only the 40 closed-with-conviction trades
+        #expect((cal?.winProb(0.9) ?? 0) > (cal?.winProb(0.1) ?? 1))
+    }
+
     @Test func expectedValueUsesCalibrationWhenProvided() {
         // Without calibration → the linear prior (0.35 + 0.23·c).
         #expect(abs(StockSageExpectedValue.winProbEstimate(conviction: 0.5) - (0.35 + 0.23 * 0.5)) < 1e-9)
