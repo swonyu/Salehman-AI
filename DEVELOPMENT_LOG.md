@@ -8503,6 +8503,28 @@ validation theme for a FIXED-RULE engine (validate the only fitted component OOS
 
 ---
 
+## 2026-06-26 · Stale-FX warning was dead (read fetch-time not market-time) — scout #12/HIGH (Chat A, autonomous)
+**Files:** `Views/MarketsView.swift` (fxRateAge).
+**Source of finding:** fresh verified defect scout (workflow w7b6t392u, 18 agents, 14 confirmed StockSage
+defects, 0 RuneLite). Re-verified vs source before fixing.
+**Why (HIGH honesty):** `fxRateAge` measured the freshest FX quote's age from `.latest?.time` — the FETCH
+time, which defaults to ~now — so age read ~0 and `staleFXCurrencies` was permanently empty: a days-old
+holiday-weekend FX rate silently converted the portfolio to USD with a green/no-warning, overstating net
+worth. Same trap as the earlier critical fetchOne marketTime fix.
+**What:** read `.latest?.marketTime` (the real market timestamp). `compactMap` drops quotes with no
+market time → can't-judge → not stale (no false alarm), matching the freshness convention.
+**Result:** `tools/typecheck.sh` ✅; suite **1106 pass / 0 fail**.
+**Backlog (13 scout defects remain, saved /tmp/scout_w7b6t392u.json):** calibration-consistency cluster
+(#5 bestOpportunity ranks UNcalibrated but reports calibrated; #6 after-cost gate always uses linear
+prior even with a calibration; #1/#2/#4/#7 weekly-$/weekly-R calibrated-next-to-uncalibrated mismatch —
+root: expectedWeeklyDollars has no calibration param); validation honesty (#8 green PASS next to 'not
+meaningful yet'; #9 RED-FLAG overfit on a 2-trade OOS slice, no min-gate; #10 t>3 PASS on raw t when
+fat-tail-corrected t fails); live-data (#11 banner staleness defeated by 24/7 crypto/FX; #13 signal list
+shows actionable calls on stale equities unflagged; #14 briefing renders sample/stale as authoritative).
+RuneLite items: none. Next: the calibration-consistency cluster (#6/#5 first).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

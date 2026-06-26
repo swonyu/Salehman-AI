@@ -713,10 +713,13 @@ struct MarketsView: View {
     /// MORE than a slightly-old rate), but the summary flags it. Only-real-data: stale is not "live".
     private static let maxFXAgeSeconds: TimeInterval = 72 * 3600
 
-    /// Age of the freshest FX quote (CCYUSD=X or USDCCY=X) backing a currency; nil if none is tracked.
+    /// Age of the freshest FX quote (CCYUSD=X or USDCCY=X) backing a currency; nil if none is tracked
+    /// OR none carries a real market timestamp (can't judge → not stale, never a false alarm). Uses the
+    /// quote's MARKET time, not its fetch time (`.time` defaults to now, which would read ~0 age and make
+    /// the stale-FX warning permanently dead — the same trap fixed in the live-quote path).
     private func fxRateAge(_ ccy: String, asOf now: Date) -> TimeInterval? {
         let times = ["\(ccy)USD=X", "USD\(ccy)=X"].compactMap { sym in
-            store.symbols.first { $0.symbol.uppercased() == sym.uppercased() }?.latest?.time
+            store.symbols.first { $0.symbol.uppercased() == sym.uppercased() }?.latest?.marketTime
         }
         guard let freshest = times.max() else { return nil }
         return Swift.max(0, now.timeIntervalSince(freshest))
