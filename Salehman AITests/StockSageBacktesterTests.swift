@@ -13,6 +13,23 @@ struct StockSageBacktesterTests {
                       r: r, outcome: r > 0 ? .target : .stop)
     }
 
+    @Test func tStatGaugesSignificanceAgainstTheT3Bar() {
+        // t = per-trade Sharpe × √trades. 0.5 × √36 = 3.0 — exactly AT the bar (not strictly over).
+        let atBar = BacktestResult(trades: 36, wins: 20, winRate: 0.56, avgR: 0.1, totalR: 3.6,
+                                   maxDrawdownR: 2, sharpe: 0.5, avgHoldBars: 5)
+        #expect(abs(atBar.tStat - 3.0) < 1e-9)
+        #expect(atBar.clearsMultipleTestingBar == false)        // strictly > 3
+        // 0.4 × √100 = 4.0 → clears.
+        let strong = BacktestResult(trades: 100, wins: 60, winRate: 0.6, avgR: 0.2, totalR: 20,
+                                    maxDrawdownR: 3, sharpe: 0.4, avgHoldBars: 5)
+        #expect(strong.tStat > 3.0 && strong.clearsMultipleTestingBar)
+        #expect(strong.significanceVerdict.contains("clears the t>3"))
+        // <20 trades → honest "not meaningful", regardless of a flattering Sharpe.
+        let thin = BacktestResult(trades: 10, wins: 8, winRate: 0.8, avgR: 0.5, totalR: 5,
+                                  maxDrawdownR: 1, sharpe: 2.0, avgHoldBars: 5)
+        #expect(thin.significanceVerdict.contains("not statistically meaningful"))
+    }
+
     @Test func summarizeAggregatesRMultiples() {
         // R = [+2, −1, +2, −1]: total 2, avg 0.5, 2 wins / 4 = 50%.
         // cum 2,1,3,2 → peak 2,2,3,3 → DD 0,1,0,1 → maxDD 1.

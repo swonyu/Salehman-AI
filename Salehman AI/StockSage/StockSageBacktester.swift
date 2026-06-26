@@ -78,6 +78,24 @@ struct BacktestResult: Sendable, Equatable {
     /// Below this, the numbers are noise — the UI must say so.
     var isSignificant: Bool { trades >= 20 }
 
+    /// t-statistic of the per-trade mean return = per-trade Sharpe × √trades. The honest
+    /// significance gauge. 0 when <2 trades.
+    var tStat: Double { trades >= 2 ? sharpe * Double(trades).squareRoot() : 0 }
+
+    /// Does the edge clear the t > 3 bar? The deep-research (Harvey-Liu-Zhu 2016) sets the hurdle at
+    /// t > 3.0 — NOT the textbook 2.0 — to survive the multiple-testing / backtest-overfitting
+    /// haircut. NECESSARY, not sufficient: it ignores how many strategy variants were actually tried,
+    /// which only raises the true hurdle further.
+    var clearsMultipleTestingBar: Bool { tStat > 3.0 }
+
+    /// One honest line on statistical strength, for the UI.
+    var significanceVerdict: String {
+        if trades < 20 { return "Only \(trades) trades — not statistically meaningful yet." }
+        if tStat > 3.0 { return String(format: "t = %.1f — clears the t>3 multiple-testing bar (necessary, not sufficient).", tStat) }
+        if tStat > 2.0 { return String(format: "t = %.1f — significant at 2σ but BELOW the t>3 bar for a mined backtest; treat as unproven.", tStat) }
+        return String(format: "t = %.1f — not significant; likely noise.", tStat)
+    }
+
     nonisolated static let empty = BacktestResult(trades: 0, wins: 0, winRate: 0, avgR: 0,
                                                   totalR: 0, maxDrawdownR: 0, sharpe: 0, avgHoldBars: 0)
 }

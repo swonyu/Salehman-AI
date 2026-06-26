@@ -3226,6 +3226,19 @@ struct MarketsView: View {
                         .accessibilityHint(StockSageDeflatedSharpe.caveat)
                         .help(StockSageDeflatedSharpe.caveat)
                     }
+                    // Significance vs the t>3 multiple-testing bar (Harvey-Liu-Zhu 2016): t>2 is NOT
+                    // enough once you've tried many rule variants. Necessary, not sufficient.
+                    if bt.isSignificant {
+                        let pass = bt.clearsMultipleTestingBar
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Image(systemName: pass ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                                .font(.system(size: 10))
+                            Text(bt.significanceVerdict).fixedSize(horizontal: false, vertical: true)
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(pass ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                        .help("Harvey-Liu-Zhu (2016): once many strategy variants are tried, the significance bar rises to t>3 (not the textbook 2.0). This is necessary, not sufficient — it can't see how many variants you actually tested.")
+                    }
                     if let d = bt.decay {
                         let tail = d.isRedFlag ? " — RED FLAG: likely overfit; the edge collapsed out-of-sample."
                                                : (d.oosSignificant ? "." : " — OOS sample thin (<20), low confidence.")

@@ -7954,6 +7954,22 @@ that walk-forward validation harness on the backtester is the highest-value next
 
 ---
 
+## 2026-06-26 · Validation: honest t>3 significance gauge on backtests (Chat A, autonomous)
+**Files:** `StockSage/StockSageBacktester.swift`, `Views/MarketsView.swift`, `StockSageBacktesterTests.swift`.
+**Why (deep-research #1 priority, Harvey-Liu-Zhu 2016):** a backtest's edge isn't real until it
+clears the MULTIPLE-TESTING bar — t > 3.0, not the textbook 2.0 — and the app showed PSR but no
+t-stat / explicit t>3 verdict.
+**What:** `BacktestResult.tStat` (per-trade Sharpe × √trades, computed — no storage/init change),
+`clearsMultipleTestingBar` (t>3), and `significanceVerdict` (honest one-liner: too-few-trades /
+below-t3-treat-as-unproven / clears-t3-necessary-not-sufficient). Surfaced in the backtest panel
+beside the PSR line. Framed as NECESSARY-not-sufficient (it can't see how many rule variants were
+tried, which only raises the true hurdle).
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1091 pass / 0 fail** (+t-stat test).
+**Next:** extend toward a fuller walk-forward validation surface (deflated-Sharpe with trial count),
+then #16 per-row staleness.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
