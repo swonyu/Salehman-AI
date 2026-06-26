@@ -2641,6 +2641,7 @@ struct MarketsView: View {
                 }
                 if a.suggestedWeight > 0 {
                     ideaMetric("Size", String(format: "%.1f%%", a.suggestedWeight * 100), color: DS.Palette.accent)
+                        .help(Self.sizeMetricHelp)
                 }
                 let rr = rewardRisk(idea)
                 if rr > 0 {
@@ -2819,6 +2820,7 @@ struct MarketsView: View {
                         ideaMetric("Win est.", String(format: "~%.0f%%", ev.winProbEstimate * 100))
                         if idea.advice.suggestedWeight > 0 {
                             ideaMetric("Size", String(format: "%.1f%%", idea.advice.suggestedWeight * 100))
+                                .help(Self.sizeMetricHelp)
                         }
                         Spacer(minLength: 0)
                     }
@@ -2931,6 +2933,10 @@ struct MarketsView: View {
 
     // Money-velocity summary — one-glance header (best bet · fastest · est. weekly R),
     // visible across every section. Tappable to the best opportunity's plan.
+    // Honesty: the per-card Size% is the advisor's BASELINE (prior win-prob + 1% budget). The deployed
+    // "Deploy capital" plan is the one to act on — it layers the calibrated win-rate, regime, and vol.
+    private static let sizeMetricHelp = "Baseline size off the PRIOR win-prob and the 1% risk budget. The ‘Deploy capital’ plan is the one to size from — it applies the CALIBRATED win-rate, the market-regime bias, and volatility-targeting on top."
+
     // Honest "are these EV numbers measured or assumed?" chip — reused on every EV-headline surface.
     @ViewBuilder private var calibrationChip: some View {
         if let cal = store.convictionCalibration {
@@ -3582,7 +3588,7 @@ struct MarketsView: View {
                     ideaMetric("Price", adaptivePrice(idea.price))
                     if let s = a.stopPrice { ideaMetric("Stop", adaptivePrice(s), color: DS.Palette.danger) }
                     if let t = a.targetPrice { ideaMetric("Target", adaptivePrice(t), color: DS.Palette.successSoft) }
-                    if a.suggestedWeight > 0 { ideaMetric("Size", String(format: "%.1f%%", a.suggestedWeight * 100), color: DS.Palette.accent) }
+                    if a.suggestedWeight > 0 { ideaMetric("Size", String(format: "%.1f%%", a.suggestedWeight * 100), color: DS.Palette.accent).help(Self.sizeMetricHelp) }
                     if a.suggestedWeight > 0, let r = store.regime {
                         let adj = StockSageRegime.adjustedWeight(base: a.suggestedWeight, bias: r.sizingBias, cap: StockSageAdvisor.maxWeight)
                         // Green ONLY when the regime CUTS size (de-risking). An up-size

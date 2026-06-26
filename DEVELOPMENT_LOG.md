@@ -8179,6 +8179,21 @@ confluence; #10 summaryStat green-regardless sub-line.
 
 ---
 
+## 2026-06-26 · Honesty: per-card Size% note (prior baseline vs deployed plan) (scout #6) (Chat A, autonomous)
+**Files:** `Views/MarketsView.swift`.
+**Why (scout, MED honesty):** the per-card 'Size %' = TradeAdvice.suggestedWeight is computed inside
+the PURE advise() off the uncalibrated PRIOR win-prob, while the Deploy-capital plan now sizes off the
+CALIBRATED win-rate + regime bias + vol-targeting — so the card size and the deployed size legitimately
+differ, with nothing telling the owner why.
+**What:** added a shared `sizeMetricHelp` and attached it to all three Size metrics (idea card,
+best-opportunity card, detail sheet): "Baseline size off the PRIOR win-prob and the 1% budget. The
+‘Deploy capital’ plan is the one to size from — calibrated win-rate + regime + vol on top." (Did NOT
+thread calibration into pure advise(), per the plan.)
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1100 pass / 0 fail**.
+**Next:** #5 multi-timeframe confluence note; #10 summaryStat green-regardless sub-line color.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
