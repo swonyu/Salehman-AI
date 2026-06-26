@@ -57,7 +57,19 @@ final class StockSageStore: ObservableObject {
     @Published private(set) var lastUpdated: Date?
     /// The newest quote MARKET timestamp from the last refresh (not our fetch time) — so the banner
     /// can tell genuinely-live prices from a days-old weekend/holiday close. nil when unknown.
+    /// NOTE: this is the max across ALL symbols, so always-on crypto keeps it ≈ now — use
+    /// `closeableQuoteAsOf` for the "is the (mostly equity) board live?" question.
     @Published private(set) var quoteAsOf: Date?
+
+    /// Freshest market time among CLOSEABLE (non-24/7) assets — equities/indices/FX. The "live" banner
+    /// keys off THIS, not the global `quoteAsOf`, so a 24/7 crypto quote can't make a days-old weekend
+    /// equity board read "live". nil when no closeable asset carries a market time (e.g. an all-crypto
+    /// board) → the caller treats that as not-stale, since crypto genuinely is live.
+    static func closeableQuoteAsOf(_ symbols: [StockSageSymbol]) -> Date? {
+        symbols.filter { StockSageAllocation.assetClass($0.symbol) != "Crypto" }
+            .compactMap { $0.latest?.marketTime }.max()
+    }
+    var closeableQuoteAsOf: Date? { Self.closeableQuoteAsOf(symbols) }
     /// True while a live fetch is in flight — spins the refresh control.
     @Published private(set) var isRefreshing = false
     /// Human-readable reason the last refresh produced no live data (offline,

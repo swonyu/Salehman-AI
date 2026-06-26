@@ -25,6 +25,16 @@ struct StockSageStalenessTests {
         #expect(sym("AAPL", at: nil).isStale(asOf: now) == false)
     }
 
+    @Test func closeableQuoteAsOfIgnoresAlwaysOnCrypto() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let freshCrypto = sym("BTC-USD", at: now.addingTimeInterval(-60))         // 24/7 → always live
+        let staleEquity = sym("AAPL", at: now.addingTimeInterval(-72 * 3600))     // days-old weekend close
+        // The "live" banner's freshness must reflect the CLOSEABLE (equity) board, not the crypto quote.
+        #expect(StockSageStore.closeableQuoteAsOf([freshCrypto, staleEquity]) == now.addingTimeInterval(-72 * 3600))
+        // All-crypto board → nil (no closeable asset; crypto genuinely is live).
+        #expect(StockSageStore.closeableQuoteAsOf([freshCrypto]) == nil)
+    }
+
     @Test func sharedFreshnessRuleMatchesPerClassTolerances() {
         // The one rule used by BOTH the display badge and the price-alert firing gate.
         let now = Date(timeIntervalSince1970: 1_000_000)

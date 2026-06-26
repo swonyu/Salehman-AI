@@ -213,7 +213,10 @@ struct MarketsView: View {
         // Honest freshness from the quote's MARKET time (not our fetch time): if the newest quote is
         // materially old (markets closed / feed stale), drop the green "Live" + "~15 min" claim and
         // say plainly it's a last close as of that time. >1h tolerates the normal ~15-min delay.
-        let asOf = store.quoteAsOf
+        // Judge "live" by the CLOSEABLE (non-24/7) board's freshness — an always-on crypto quote must
+        // not mask a days-old weekend equity close. Fall back to the global asOf only when there are no
+        // closeable assets (an all-crypto board, which genuinely is live).
+        let asOf = store.closeableQuoteAsOf ?? store.quoteAsOf
         let stale = asOf.map { Date().timeIntervalSince($0) > 3600 } ?? false
         let tint = stale ? DS.Palette.warningSoft : DS.Palette.successSoft
         let text = (stale && asOf != nil)
