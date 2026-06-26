@@ -8098,6 +8098,24 @@ resolved (3 low + 1 medium); the review found NO high-severity defects in tonigh
 
 ---
 
+## 2026-06-26 · Allocator cost gate — stop deploying into net-negative setups (scout #1) (Chat A, autonomous)
+**Files:** `StockSage/StockSageCapitalAllocator.swift`, `StockSageCapitalAllocatorTests.swift`.
+**Why (discovery scout, HIGH, verified vs source):** every money surface (evRankKey, velocityRankKey,
+bestOpportunity) excludes setups that are net-negative after round-trip frictions via
+clearsCostAfterFrictions — but the CapitalAllocator, the engine that emits actual shares/dollars, did
+NOT. So a thin high-cost crypto flip the boards hid could still be funded with real capital.
+**What:** the allocator's funding loop now gates on `StockSageNetEdge.evaluate(... takerFeeBps ...)`
++ `clearsCost(estWinProb:)` (calibrated win-prob) — a setup whose conviction-mapped win-rate doesn't
+clear its after-cost break-even is skipped. (Sizing still uses gross Kelly this cycle; net-payoff
+Kelly sizing is a separate change to preserve the python-verified test math.)
+**Result:** `tools/typecheck.sh` ✅; suite **1098 pass / 0 fail** (+test: a +gross-EV but net-negative
+crypto flip is excluded, the same geometry on a 13bps large-cap funds). All clean low-cost test ideas
+still clear, so existing allocator sizing assertions are unchanged.
+**Next (allocator-consistency cluster):** net-payoff Kelly sizing (#1b), regime sizing bias (#4),
+vol-targeting in the allocator (#2) — all "the allocator is missing what the advice/boards apply".
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

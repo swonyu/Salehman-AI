@@ -67,6 +67,16 @@ struct StockSageCapitalAllocatorTests {
         #expect(abs(a.positions[0].riskFraction - a.positions[0].halfKelly) < 1e-12)
     }
 
+    @Test func excludesNetNegativeAfterCostSetups() {
+        // Same thin geometry, two cost regimes. A crypto flip (~70bps round-trip) that's +EV on GROSS
+        // but net-negative after costs must NOT be deployed (mirrors the boards' cost gate)…
+        let crypto = idea("X-USD", price: 100, stop: 99, target: 101.5, conviction: 0.6)
+        #expect(Alloc.allocate(ideas: [crypto], account: 100_000, maxHeat: 0.5).positions.isEmpty)
+        // …while the same setup on a low-cost large-cap (13bps) clears and funds.
+        let equity = idea("AAPL", price: 100, stop: 99, target: 101.5, conviction: 0.6)
+        #expect(!Alloc.allocate(ideas: [equity], account: 100_000, maxHeat: 0.5).positions.isEmpty)
+    }
+
     @Test func excludesNonBuyAndNonPositiveEVAndInvalidInputs() {
         let sell = idea("SELL", price: 100, stop: 110, target: 80, conviction: 0.9, action: .sell)
         let noEV = idea("FLAT", price: 100, stop: 99, target: 100.5, conviction: 0.0)   // tiny reward, EV ≤ 0

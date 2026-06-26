@@ -58,6 +58,16 @@ enum StockSageCapitalAllocator {
                   let stop = a.stopPrice, let target = a.targetPrice, idea.price > 0,
                   let ev = StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target, calibration: calibration),
                   ev.evR > 0 else { continue }
+            // COST GATE: don't deploy real dollars into a setup that's net-negative after round-trip
+            // frictions (spread+slippage+taker). The rank keys + best-bet already exclude these via
+            // clearsCostAfterFrictions, but the allocator — which emits the ACTUAL shares — did not,
+            // so a thin high-cost crypto flip the boards hid could still be funded. (Sizing still uses
+            // gross Kelly here; net-payoff sizing is a separate change to keep the verified test math.)
+            let costs = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
+            guard let ne = StockSageNetEdge.evaluate(entry: idea.price, stop: stop, target: target,
+                                                     spreadBps: costs.spreadBps, slippageBps: costs.slippageBps,
+                                                     takerFeeBps: costs.takerFeeBps, winProb: ev.winProbEstimate),
+                  ne.clearsCost(estWinProb: ev.winProbEstimate) else { continue }
             let k = StockSageKelly.compute(winRate: ev.winProbEstimate, payoffRatio: ev.rewardR, accountSize: account)
             // Weight off suggestedFraction (= half-Kelly HARD-CAPPED at Kelly's 20% per-position
             // limit), NOT raw half-Kelly — so a lone idea under maxHeat can't sit at up to 50% risk.
