@@ -73,9 +73,12 @@ enum StockSageCapitalAllocator {
             // Weight off suggestedFraction (= half-Kelly HARD-CAPPED at Kelly's 20% per-position
             // limit), NOT raw half-Kelly — so a lone idea under maxHeat can't sit at up to 50% risk.
             guard k.suggestedFraction > 0 else { continue }
-            // Regime sizing bias: size the WHOLE book up in a strong bull (≤1.25×) / down in a
+            // Regime sizing bias: scale each position up in a strong bull (≤1.25×) / down in a
             // risk-off tape (≥0.25×), matching the per-card "Regime size" the owner sees — which the
-            // DEPLOYED plan previously ignored. Re-capped at the Kelly per-position limit. nil → unchanged.
+            // DEPLOYED plan previously ignored. Re-capped at the Kelly per-position limit, so an
+            // UP-bias can't lift a name ALREADY at the 0.20 cap (down-bias always applies fully): the
+            // book scales down uniformly, but up-scaling is clipped at the cap — deliberately
+            // conservative (it only ever under-deploys the top names, never over-risks). nil → unchanged.
             var weight = regime.map { StockSageRegime.adjustedWeight(base: k.suggestedFraction, bias: $0.sizingBias, cap: StockSageKelly.maxFraction) } ?? k.suggestedFraction
             // Vol-targeting (match the advisor card): shrink the DEPLOYED risk for high realized vol so
             // a ~70%-vol crypto/growth name isn't sized like a calm equity. nil vol ⇒ no shrink.

@@ -8208,6 +8208,24 @@ Refilling the backlog with a fresh adversarial review of the allocator-consisten
 
 ---
 
+## 2026-06-26 · Triage allocator review — correct regime up-bias comment (Chat A, autonomous)
+**Files:** `StockSage/StockSageCapitalAllocator.swift`.
+**Why:** an adversarial review of the allocator-consistency changes confirmed ONE low finding: the
+regime up-bias is applied per-position BEFORE the 0.20 Kelly cap, so a name already at the cap can't
+scale up — the "size the WHOLE book up" comment overstated uniformity. Verified vs source: the
+behavior is deliberately conservative (the per-position cap is a hard limit; up-bias only ever
+UNDER-deploys top names, never over-risks; down-bias applies fully), so the right fix is the comment,
+not the safe behavior. (The other review agent for the idea vol/move fields died on a connection
+error mid-run; those are simple additive fields — re-review later if wanted.)
+**What:** corrected the comment to state the up-bias is clipped at the per-position cap (book scales
+DOWN uniformly; up-scaling is capped — conservative). No behavior change.
+**Result:** `tools/typecheck.sh` ✅; suite **1100 pass / 0 fail**. No high/medium defects found in the
+allocator-consistency changes.
+**Next:** refill via a fresh scout, or start the deep-research's #1 — a real walk-forward/CPCV
+validation harness (the biggest un-built item; split across cycles).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
