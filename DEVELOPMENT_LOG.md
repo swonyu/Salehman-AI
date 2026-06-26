@@ -8485,6 +8485,24 @@ honest small-sample-noisy label. (Pure logic done; UI next.)
 
 ---
 
+## 2026-06-26 · Surface OOS calibration verdict — FEATURE COMPLETE (cycle 3) (Chat A, autonomous)
+**Files:** `StockSage/StockSageStore.swift`, `Views/MarketsView.swift`.
+**Why:** finish the OOS-calibration-validation build — let the owner SEE whether their conviction→win-prob
+map generalizes, not just trust an in-sample fit.
+**What:** added `StockSageStore.calibrationOOS` (computed from StockSageJournalStore.shared.trades via
+validateOutOfSample; nil until enough closed trades, like convictionCalibration). On the calibration card
+in MarketsView, one honest line: addsSkill → 'Conviction map holds out-of-sample: Brier X vs Y no-skill
+baseline (n test trades) — small sample, still firming up.'; else → 'Out-of-sample check: not beating the
+base-rate yet … treat as unproven.'; nil → nothing. Color/glyph by verdict; small-sample caveat in copy +
+help (honesty floor).
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1106 pass / 0 fail**.
+**Feature complete (cycles 1+2+3):** purged/embargoed chronological split → OOS Brier/log-loss vs no-skill
+baseline → honest on-card verdict. This is the correct, architecture-faithful read of the research's
+validation theme for a FIXED-RULE engine (validate the only fitted component OOS), NOT literal CPCV.
+**Owner-decision still parked:** isotonic→beta calibration swap (research rec; design change, needs sign-off).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

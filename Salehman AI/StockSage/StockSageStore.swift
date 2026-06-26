@@ -471,6 +471,14 @@ final class StockSageStore: ObservableObject {
         StockSageConvictionCalibration.fit(fromJournal: StockSageJournalStore.shared.trades) ?? backtestConvictionCalibration
     }
 
+    /// OUT-OF-SAMPLE honesty check of the conviction→win-prob map on the owner's journal: fit on their
+    /// earlier trades, score on later held-out ones (purged/embargoed split) vs a no-skill base-rate
+    /// predictor. nil until the journal has enough closed trades to split + fit — so it shows only once
+    /// there's a real OOS verdict to give (small-sample-noisy by nature).
+    var calibrationOOS: StockSageConvictionCalibration.OOSCalibrationCheck? {
+        StockSageConvictionCalibration.validateOutOfSample(StockSageJournalStore.shared.trades)
+    }
+
     /// Fetch ~5y for a bounded equity sample, walk-forward each off-main, and
     /// aggregate honest strategy-wide stats. User-triggered (heavy).
     func refreshStrategyBacktest() async {

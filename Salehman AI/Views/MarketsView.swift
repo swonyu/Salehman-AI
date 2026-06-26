@@ -3229,6 +3229,21 @@ struct MarketsView: View {
                 }
                 .help("Conviction→win-probability is fitted from realized backtest outcomes (conservative lower bound, monotonic). Until then EV uses a cautious linear estimate.")
             }
+            // Out-of-sample honesty check: does the conviction map hold on trades it was NOT fit on?
+            if let oos = store.calibrationOOS {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: oos.addsSkill ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(oos.addsSkill ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                    Text(oos.addsSkill
+                         ? String(format: "Conviction map holds out-of-sample: Brier %.2f vs %.2f no-skill baseline (%d test trades) — small sample, still firming up.", oos.oosBrier, oos.baselineBrier, oos.n)
+                         : String(format: "Out-of-sample check: not beating the base-rate yet (Brier %.2f vs %.2f, %d test trades) — small sample, treat as unproven.", oos.oosBrier, oos.baselineBrier, oos.n))
+                        .font(.caption2)
+                        .foregroundStyle(oos.addsSkill ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .help("Fits the conviction→win-probability map on your earlier trades and scores it on later, held-out ones (purged/embargoed split). It earns trust only by beating a no-skill base-rate predictor out-of-sample. Noisy on a small journal.")
+            }
         }
         .padding(DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
