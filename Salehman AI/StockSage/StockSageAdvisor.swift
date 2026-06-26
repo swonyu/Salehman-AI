@@ -58,6 +58,13 @@ enum StockSageAdvisor {
     nonisolated static let riskPerTrade = 0.01
     /// No single idea may be sized above this share of the book, whatever the math says.
     nonisolated static let maxWeight = 0.20
+    /// Cap on the SUMMED contribution of the trend-correlated signal family (trend, momentum,
+    /// MACD, volume, vol-adjusted-momentum, relative-strength). These all measure ONE underlying
+    /// trend factor (stock momentum is largely spanned by factor momentum — Ehsani & Linnainmaa
+    /// 2022), so summing them as if independent inflates conviction (raw max ≈ 0.83) and over-
+    /// sizes correlated bets — the variance drag Kelly punishes. 0.50 keeps a fully-confirmed
+    /// trend at the Strong-Buy line while removing the redundant ~0.33 of inflation.
+    nonisolated static let trendFamilyCap = 0.50
 
     nonisolated static let caveat = "Rules-based & educational — not a guarantee or financial advice. Markets are uncertain; size small and honor your stop."
 
@@ -123,6 +130,11 @@ enum StockSageAdvisor {
             if m.histogram > 0 { score += 0.10; rationale.append("MACD above signal (bullish)") }
             else if m.histogram < 0 { score -= 0.10; rationale.append("MACD below signal (bearish)") }
         }
+        // Trend-FAMILY de-duplication (see `trendFamilyCap`): trend + momentum + MACD here, plus
+        // volume / vol-adj-momentum / relative-strength below, are all the SAME trend factor.
+        // Track their summed contribution so we can cap it (the RSI mean-reversion / nudge terms
+        // and the TSMOM veto are deliberately EXCLUDED — they're independent).
+        let trendCore = score   // = trend + momentum + MACD
 
         // Regime: trending vs choppy decides how to read RSI.
         let trending = er >= 0.30
@@ -150,6 +162,7 @@ enum StockSageAdvisor {
         // Nudges the MAGNITUDE of the existing signal (±0.05), never flips its direction,
         // and does nothing when volumes are absent/zero (FX, indices) — so the
         // close-only callers (e.g. the backtester) are unchanged.
+        let scoreBeforeConfirm = score   // RSI already applied & excluded from the trend family
         if let volumes, abs(score) > 0,
            let vc = StockSageIndicators.volumeConfirmation(closes: closes, volumes: volumes) {
             let dir = score >= 0 ? 1.0 : -1.0
@@ -179,6 +192,16 @@ enum StockSageAdvisor {
            let rs = StockSageIndicators.relativeStrength(symbolCloses: closes, benchmarkCloses: benchmarkCloses) {
             if rs > 0 { score += 0.08; rationale.append(String(format: "Leading the S&P (relative strength +%.0f%%)", rs)) }
             else if rs < 0 { score -= 0.08; rationale.append(String(format: "Lagging the S&P (relative strength %.0f%%)", rs)) }
+        }
+
+        // Apply the trend-family cap: remove ONLY the inflation beyond `trendFamilyCap` so
+        // conviction tracks the edge, not the count of correlated indicators. For names whose
+        // family sum is under the cap this is a no-op (running score above is byte-identical).
+        let trendFamily = trendCore + (score - scoreBeforeConfirm)
+        if abs(trendFamily) > Self.trendFamilyCap {
+            score -= (trendFamily >= 0 ? 1.0 : -1.0) * (abs(trendFamily) - Self.trendFamilyCap)
+            rationale.append(String(format: "Correlated trend signals capped at %.2f (raw ≈ %.2f) — one trend, not many",
+                                    Self.trendFamilyCap, abs(trendFamily)))
         }
 
         // Time-series (12-1) own-trend crash filter: veto a long-side score when the name is in

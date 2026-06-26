@@ -7654,6 +7654,32 @@ NOT yet fixed — flagged to the owner.
 
 ---
 
+## 2026-06-26 · Conviction: cap trend-family double-counting (money-path work, Chat A)
+**Files:** `Salehman AI/StockSage/StockSageAdvisor.swift`.
+**Why:** Owner goal = make the most money, fastest (= maximize risk-adjusted compound growth). A
+deep-research pass + a 6-agent money-path audit found conviction is inflated by DOUBLE-COUNTING:
+trend, 6-mo momentum, MACD, volume, vol-adj-momentum, and relative-strength are all the SAME
+trend factor (stock momentum is largely spanned by factor momentum — Ehsani & Linnainmaa 2022),
+yet summed as if independent they reach ≈0.83 for one trending name. Since conviction scales
+position size (0.4+0.6·conviction) and EV/Kelly, that over-sizes correlated bets — the variance
+drag Kelly punishes → lower compound growth.
+**What:** Added `trendFamilyCap = 0.50`. Track the trend-family's summed contribution in parallel
+(delta-capture: `trendCore` after trend/mom/MACD, plus the confirm delta after volume/volAdjMom/
+relStrength; RSI mean-reversion + nudges and the −0.20 TSMOM veto are deliberately EXCLUDED), then
+remove ONLY the inflation beyond the cap. For names under the cap the running score/sign logic is
+byte-identical; a fully-confirmed trend still clears the Strong-Buy line (0.50).
+**Verification:** `tools/typecheck.sh` ✅; full xcodebuild build ✅. Change proven clean via a
+git-stash A/B of the suite: failing set is IDENTICAL with/without it. NOTE — the suite has a
+**pre-existing cross-test state-pollution** problem (≈10 StockSage tests fail in-suite but PASS in
+isolation; fails serially too, so it's shared singleton/UserDefaults bleed, not parallelism). NOT
+caused by this change; flagged for a separate cleanup.
+**Audit correction:** the audit's headline "8–20× over-bet units bug" in CapitalAllocator was a
+FALSE POSITIVE — Kelly's f* is computed from reward÷risk (1 unit = stop loss), so it IS a stop-risk
+fraction and the allocator caps summed risk at maxHeat. Applying the proposed "fix" would have
+under-sized every trade 8–20×. Left untouched (verified correct).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
