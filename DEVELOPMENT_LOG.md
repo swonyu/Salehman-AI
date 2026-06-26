@@ -7970,6 +7970,22 @@ then #16 per-row staleness.
 
 ---
 
+## 2026-06-26 · Honesty: per-row staleness flag on equity/market rows (#16) (Chat A, autonomous)
+**Files:** `StockSage/StockSageModels.swift`, `StockSage/StockSageStore.swift`,
+`Views/MarketsView.swift`, `StockSageStalenessTests.swift`.
+**Why (scout #16, honesty floor):** every market-grid row rendered identically whether its price was
+live or a days-old weekend/holiday close — unlike GE flips + the regime gauge, which already flag
+per-item staleness. A mixed board (US closed, crypto 24/7) gave no per-row freshness signal.
+**What:** the live quote's `.time` is now stamped with its real MARKET time (`LiveQuote.marketTime`,
+fetch time when absent) in both refresh + mergeLiveQuotes. `StockSageSymbol.isStale(asOf:)` flags a
+row whose latest quote exceeds its asset-class tolerance — crypto 6h (24/7 → should be fresh),
+equity/FX/index 48h (tolerate overnight, flag a long weekend/holiday). The heat-grid tile dims to
+0.55, shows a clock glyph, and its help/VoiceOver say "STALE: last quote <relative>; market likely
+closed, not a live price". No-quote → not stale (no false alarm).
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1092 pass / 0 fail** (+staleness test).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

@@ -155,7 +155,7 @@ final class StockSageStore: ObservableObject {
             return StockSageSymbol(symbol: s.symbol, market: s.market, quotes: [
                 StockSageQuote(price: q.previousClose, previousPrice: q.previousClose,
                                time: Date(timeIntervalSinceNow: -86_400)),
-                StockSageQuote(price: q.price, previousPrice: q.previousClose),
+                StockSageQuote(price: q.price, previousPrice: q.previousClose, time: q.marketTime ?? Date()),
             ])
         }
         // Advance freshness if these merged quotes are newer (watchlist-only path also keeps it honest).
@@ -743,7 +743,9 @@ final class StockSageStore: ObservableObject {
             return StockSageSymbol(symbol: sym.symbol, market: sym.market, quotes: [
                 StockSageQuote(price: q.previousClose, previousPrice: q.previousClose,
                                time: Date(timeIntervalSinceNow: -86_400)),
-                StockSageQuote(price: q.price, previousPrice: q.previousClose),
+                // Stamp the latest quote with its real MARKET time (not fetch time) so per-row
+                // staleness can flag a days-old weekend/holiday close. Fetch time when absent.
+                StockSageQuote(price: q.price, previousPrice: q.previousClose, time: q.marketTime ?? Date()),
             ])
         }
         guard !live.isEmpty else {

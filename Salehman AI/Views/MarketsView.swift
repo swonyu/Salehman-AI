@@ -1968,6 +1968,9 @@ struct MarketsView: View {
                     ForEach(store.symbols) { sym in
                         let change = sym.latest?.changePercent ?? 0
                         let heatHovered = hoveredHeatID == sym.id
+                        // Per-row freshness: a days-old weekend/holiday close (or a stale crypto
+                        // feed) is dimmed + clock-flagged so it isn't read as a live price.
+                        let stale = sym.isStale()
                         VStack(spacing: 3) {
                             Text(sym.symbol)
                                 .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -1982,8 +1985,16 @@ struct MarketsView: View {
                         .shadow(color: .black.opacity(0.35), radius: 1, y: 0.5)
                         .frame(maxWidth: .infinity).frame(height: 66)
                         .background(heatColor(change), in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+                        .overlay(alignment: .topTrailing) {
+                            if stale {
+                                Image(systemName: "clock.fill")
+                                    .font(.system(size: 8)).foregroundStyle(.white.opacity(0.95))
+                                    .padding(3)
+                            }
+                        }
                         .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
                             .stroke(Color.white.opacity(heatHovered ? 0.22 : 0.08), lineWidth: 1))
+                        .opacity(stale ? 0.55 : 1)   // visually recede a stale row
                         .scaleEffect(heatHovered ? 1.04 : 1.0)
                         .animation(DS.Motion.press, value: heatHovered)
                         .onHover { over in
@@ -1992,9 +2003,11 @@ struct MarketsView: View {
                                 else if hoveredHeatID == sym.id { hoveredHeatID = nil }
                             }
                         }
-                        .help(sym.market)
+                        .help(stale
+                              ? "\(sym.market) — STALE: last quote \((sym.latest?.time).map { $0.formatted(.relative(presentation: .named)) } ?? "unknown"); market likely closed, not a live price."
+                              : sym.market)
                         .accessibilityElement(children: .combine)
-                        .accessibilityLabel("\(sym.symbol), \(String(format: "%+.1f percent", change))")
+                        .accessibilityLabel("\(sym.symbol), \(String(format: "%+.1f percent", change))\(stale ? ", stale quote — market likely closed" : "")")
                         .transition(.scale(scale: 0.7).combined(with: .opacity))
                     }
                 }

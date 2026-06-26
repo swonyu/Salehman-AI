@@ -56,4 +56,15 @@ struct StockSageSymbol: Sendable, Equatable, Identifiable {
 
     /// Most recent quote, if any.
     var latest: StockSageQuote? { quotes.last }
+
+    /// Is the latest quote materially old for this asset class? Crypto trades 24/7 so a quote should
+    /// be fresh; equities/FX/indices close, so tolerate an overnight gap but flag a multi-day
+    /// (weekend/holiday) stale close. false when there's no quote, or the quote's time is the fetch
+    /// time (feed gave no real market timestamp) — can't judge, so don't cry wolf. Mirrors the
+    /// GE-flip / regime per-item staleness precedent.
+    func isStale(asOf now: Date = Date()) -> Bool {
+        guard let t = latest?.time else { return false }
+        let tolerance: TimeInterval = StockSageAllocation.assetClass(symbol) == "Crypto" ? 6 * 3600 : 48 * 3600
+        return now.timeIntervalSince(t) > tolerance
+    }
 }
