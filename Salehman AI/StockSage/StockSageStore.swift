@@ -10,7 +10,17 @@ struct StockSageIdea: Sendable, Equatable, Identifiable {
     let advice: TradeAdvice
     /// Downsampled recent closes for the inline sparkline (newest last).
     let spark: [Double]
+    /// Typical TRUE one-day move (avg |Δ| of the raw daily closes), if known. The `spark` is
+    /// down-sampled (~2 calendar days/point), so deriving a daily move from it doubles velocity;
+    /// this carries the un-downsampled value for the velocity/hold estimate. nil ⇒ fall back to spark.
+    let dailyMove: Double?
     var id: String { symbol }
+
+    nonisolated init(symbol: String, market: String, price: Double, advice: TradeAdvice,
+                     spark: [Double], dailyMove: Double? = nil) {
+        self.symbol = symbol; self.market = market; self.price = price
+        self.advice = advice; self.spark = spark; self.dailyMove = dailyMove
+    }
 }
 
 // MARK: - StockSageStore
@@ -316,9 +326,12 @@ final class StockSageStore: ObservableObject {
                 // index never benchmarks against itself, now moot since indices are excluded above).
                 let bench = StockSageAllocation.assetClass(sym.symbol) == "Equity" ? benchmark : nil
                 let advice = StockSageAdvisor.advise(history: history, benchmark: bench)
-                let spark = SparkSeries.downsample(Array(history.closes.suffix(63)))
+                let recent = Array(history.closes.suffix(63))
+                let spark = SparkSeries.downsample(recent)
+                // True daily move from the UN-downsampled closes (spark points are ~2 days apart).
+                let dailyMove = StockSageExpectedValue.typicalDailyMove(recent)
                 out.append(StockSageIdea(symbol: sym.symbol, market: sym.market,
-                                         price: price, advice: advice, spark: spark))
+                                         price: price, advice: advice, spark: spark, dailyMove: dailyMove))
             }
             return out
         }.value

@@ -7864,6 +7864,22 @@ calibrated). Allocator tests unchanged (default nil).
 
 ---
 
+## 2026-06-26 · Scout fixes: taker fee in rank gate + true daily-move velocity (Chat A, autonomous)
+**Files:** `StockSage/StockSageExpectedValue.swift`, `StockSage/StockSageStore.swift`.
+**Why:** a discovery scout caught two regressions in code shipped earlier today:
+- **HIGH:** `clearsCostAfterFrictions` (the cost gate feeding evRankKey/velocityRankKey demotion AND
+  bestOpportunity) dropped the new `takerFeeBps` — so it disagreed with `netRR` and could crown a
+  net-negative crypto flip "best bet". Now forwards `c.takerFeeBps`.
+- **MEDIUM:** `expectedHoldDays(for:)` derived the "daily" move from `idea.spark`, but the spark is
+  down-sampled (`downsample(suffix(63))` → ~2 calendar days/point), so velocity (EV/day) was inflated
+  ~2×. Added `StockSageIdea.dailyMove` computed from the RAW closes; the hold estimate now prefers it
+  (spark only as a test fallback).
+**Result:** `tools/typecheck.sh` ✅; full suite **1089 pass / 0 fail**.
+**Note:** the scout also surfaced RuneLite-plugin (GE flips) ideas — volume-leg imbalance, timeseries
+realized-volatility, recent-drift filters — logged for that separate subproject, not done here.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

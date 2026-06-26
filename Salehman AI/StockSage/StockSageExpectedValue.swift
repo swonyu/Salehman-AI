@@ -104,8 +104,11 @@ enum StockSageExpectedValue {
     /// nil for classes not ranked for velocity (index/FX) — unchanged.
     nonisolated static func expectedHoldDays(for idea: StockSageIdea, holds: VelocityHoldDays = .defaults) -> Double? {
         guard let base = expectedHoldDays(forSymbol: idea.symbol, holds: holds) else { return nil }
+        // Prefer the TRUE daily move (raw closes); fall back to the spark (≈2-day spacing, so only
+        // used for ideas built without dailyMove, e.g. tests) — never derive a "daily" move from the
+        // down-sampled spark when the real one is available, which would halve the hold (2× velocity).
         guard let target = idea.advice.targetPrice, idea.price > 0,
-              let daily = typicalDailyMove(idea.spark), daily > 0 else { return base }
+              let daily = idea.dailyMove ?? typicalDailyMove(idea.spark), daily > 0 else { return base }
         let dist = abs(target - idea.price)
         guard dist > 0 else { return base }
         return Swift.max(base * 0.4, Swift.min(base * 3, dist / daily))
@@ -167,7 +170,8 @@ enum StockSageExpectedValue {
         guard let stop = idea.advice.stopPrice, let target = idea.advice.targetPrice else { return true }
         let c = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
         guard let ne = StockSageNetEdge.evaluate(entry: idea.price, stop: stop, target: target,
-                                                 spreadBps: c.spreadBps, slippageBps: c.slippageBps) else { return true }
+                                                 spreadBps: c.spreadBps, slippageBps: c.slippageBps,
+                                                 takerFeeBps: c.takerFeeBps) else { return true }
         return ne.clearsCost(estWinProb: winProbEstimate(conviction: idea.advice.conviction))
     }
 
