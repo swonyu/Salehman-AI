@@ -67,6 +67,22 @@ enum StockSageCapitalAllocator {
         }
         guard !fundable.isEmpty else { return empty() }
 
+        // Step 2.5 — CORRELATION-AWARE HEAT: a cluster of names that move together is ~1 bet, not N,
+        // so down-weight cluster members (each /K) BEFORE heat-scaling. Otherwise a "diversified"
+        // plan can be one concentrated bet wearing several tickers (Choueifaty 2013; HRP). Returns
+        // come from each idea's sparkline; empty/short sparks → correlation 0 → no clique → no-op.
+        let sparkBy = Dictionary(ideas.map { ($0.symbol, $0.spark) }, uniquingKeysWith: { a, _ in a })
+        let rawWeights = fundable.map(\.weight)
+        let fundReturns = fundable.map { StockSagePortfolioAnalytics.dailyReturns(sparkBy[$0.symbol] ?? []) }
+        let adjWeights = StockSageCorrelationCluster.correlationAdjustedWeights(
+            symbols: fundable.map(\.symbol), weights: rawWeights, returns: fundReturns)
+        let deweightedForCorrelation = zip(rawWeights, adjWeights).contains { $0 - $1 > 1e-12 }
+        if deweightedForCorrelation {
+            fundable = zip(fundable, adjWeights).map { f, w in
+                Fundable(symbol: f.symbol, entry: f.entry, stop: f.stop, weight: w, halfKelly: f.halfKelly, evR: f.evR)
+            }
+        }
+
         // Step 3: uniform proportional scaling pins Σ pre-floor heat to min(requested, cap) and
         // preserves the edge ranking.
         let requestedHeat = fundable.reduce(0) { $0 + $1.weight }
@@ -87,7 +103,10 @@ enum StockSageCapitalAllocator {
         // Step 5: realized heat + deterministic order (desc risk, tie-break asc symbol).
         let totalHeat = positions.reduce(0) { $0 + $1.dollarsAtRisk } / account
         let sorted = positions.sorted { $0.riskFraction != $1.riskFraction ? $0.riskFraction > $1.riskFraction : $0.symbol < $1.symbol }
+        let finalCaveat = deweightedForCorrelation
+            ? caveat + " A correlated cluster was de-weighted to count as ~one bet, not several."
+            : caveat
         return CapitalAllocation(positions: sorted, totalHeat: totalHeat, requestedHeat: requestedHeat,
-                                 scaleApplied: scaleApplied, account: account, maxHeat: cap, caveat: caveat)
+                                 scaleApplied: scaleApplied, account: account, maxHeat: cap, caveat: finalCaveat)
     }
 }

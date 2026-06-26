@@ -8016,6 +8016,20 @@ apply the haircut before sizing).
 
 ---
 
+## 2026-06-26 · Correlation-aware heat — wired into the allocator (step 2) (Chat A, autonomous)
+**Files:** `StockSage/StockSageCapitalAllocator.swift`, `StockSageCorrelationHeatTests.swift`.
+**Why:** completes the first evidence-backed feature — the capital-deployment plan no longer treats
+correlated names as independent bets.
+**What:** `allocate()` now builds per-symbol daily returns from each fundable idea's sparkline and
+applies `correlationAdjustedWeights` BEFORE heat-scaling, so a ≥0.70 correlated cluster of K names is
+down-weighted (each /K) to count as ~one bet. When a cluster is de-weighted the plan's caveat says
+so. Empty/short sparks (e.g. test fixtures) → correlation 0 → no clique → identical to before.
+**Result:** `tools/typecheck.sh` ✅; full suite **1097 pass / 0 fail** — incl. a new integration test
+(3 identical-spark ideas sized to ~1/3 of an anti-correlated peer; caveat note present).
+**Next:** vol-targeted sizing for risk assets, then wide ATR trailing exits.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
