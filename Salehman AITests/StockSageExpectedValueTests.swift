@@ -41,6 +41,26 @@ struct StockSageExpectedValueTests {
                       spark: [])
     }
 
+    @Test func rankingAndBestOpportunityUseTheCalibrationNotJustTheDisplay() {
+        // A: bigger reward:risk (3:1) but modest conviction; B: smaller R:R (1:1) but high conviction.
+        let a = idea("AAA", conviction: 0.45, stop: 90, target: 130)
+        let b = idea("BBB", conviction: 0.90, stop: 90, target: 110)
+        // Linear prior (no calibration): A's larger R:R makes it the best bet / top rank.
+        #expect(EV.bestOpportunity([a, b])?.idea.symbol == "AAA")
+        #expect(EV.rankByEV([a, b]).first?.symbol == "AAA")
+        // A MEASURED calibration that rates the low band much worse and the high band much better must
+        // flip BOTH the ranking and the best pick — proving they now size on the same win-prob the card
+        // displays (previously the rank/gate used the linear prior while the shown EV used calibration).
+        var outcomes: [(conviction: Double, won: Bool)] = []
+        for i in 0..<20 { outcomes.append((conviction: 0.45, won: i < 8)) }    // ~40% (low band)
+        for i in 0..<20 { outcomes.append((conviction: 0.90, won: i < 17)) }   // ~85% (high band)
+        guard let cal = StockSageConvictionCalibration.fit(outcomes, minSamples: 30) else {
+            Issue.record("expected a fit"); return
+        }
+        #expect(EV.bestOpportunity([a, b], calibration: cal)?.idea.symbol == "BBB")
+        #expect(EV.rankByEV([a, b], calibration: cal).first?.symbol == "BBB")
+    }
+
     @Test func velocityRewardsFastTurnover() {
         // Same EV (1.228), but crypto hold 3 beats equity hold 12.
         let equity = idea("AAPL", conviction: 0.9, stop: 90, target: 130)

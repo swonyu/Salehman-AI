@@ -2439,8 +2439,8 @@ struct MarketsView: View {
     private var displayedIdeas: [StockSageIdea] {
         let sorted: [StockSageIdea]
         switch ideaSort {
-        case .ev:         sorted = StockSageExpectedValue.rankByEV(store.ideas, regime: store.regime, earnings: store.earnings)
-        case .velocity:   sorted = StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds, earnings: store.earnings)
+        case .ev:         sorted = StockSageExpectedValue.rankByEV(store.ideas, regime: store.regime, earnings: store.earnings, calibration: store.convictionCalibration)
+        case .velocity:   sorted = StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds, earnings: store.earnings, calibration: store.convictionCalibration)
         case .conviction: sorted = store.ideas.sorted { $0.advice.conviction > $1.advice.conviction }
         case .rr:         sorted = store.ideas.sorted { rewardRisk($0) > rewardRisk($1) }
         case .signal:     sorted = store.ideas

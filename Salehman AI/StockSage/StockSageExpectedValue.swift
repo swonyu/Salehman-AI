@@ -144,8 +144,9 @@ enum StockSageExpectedValue {
         0.4 + 0.6 * Swift.max(0, Swift.min(1, conviction))
     }
     /// Quality-adjusted EV — the ranking key (the raw `ev` is still shown to the user).
-    nonisolated static func qualityAdjustedEVR(for idea: StockSageIdea) -> Double? {
-        ev(for: idea).map { $0.evR * qualityWeight(idea.advice.conviction) }
+    nonisolated static func qualityAdjustedEVR(for idea: StockSageIdea,
+                                               calibration: StockSageConvictionCalibration? = nil) -> Double? {
+        ev(for: idea, calibration: calibration).map { $0.evR * qualityWeight(idea.advice.conviction) }
     }
 
     /// Expected per-CYCLE log-growth at half-Kelly — the growth-rate-optimal objective. Arithmetic
@@ -166,13 +167,16 @@ enum StockSageExpectedValue {
     /// Does the idea's conviction-mapped win prob clear its AFTER-COST break-even? A thin,
     /// high-cost flip can be positive-EV on paper yet net-negative once frictions are paid.
     /// No defined R (no stop/target) ⇒ treated as clearing (don't demote — unchanged).
-    private nonisolated static func clearsCostAfterFrictions(_ idea: StockSageIdea) -> Bool {
+    private nonisolated static func clearsCostAfterFrictions(_ idea: StockSageIdea,
+                                                             calibration: StockSageConvictionCalibration? = nil) -> Bool {
         guard let stop = idea.advice.stopPrice, let target = idea.advice.targetPrice else { return true }
         let c = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
         guard let ne = StockSageNetEdge.evaluate(entry: idea.price, stop: stop, target: target,
                                                  spreadBps: c.spreadBps, slippageBps: c.slippageBps,
                                                  takerFeeBps: c.takerFeeBps) else { return true }
-        return ne.clearsCost(estWinProb: winProbEstimate(conviction: idea.advice.conviction))
+        // Gate on the SAME win prob the EV/ranking uses (calibrated when fitted) — not the linear prior,
+        // which would demote-for-cost on a different probability than the one shown.
+        return ne.clearsCost(estWinProb: winProbEstimate(conviction: idea.advice.conviction, calibration: calibration))
     }
 
     /// Imminent-earnings (binary-event) demotion for the rank keys. ONLY a real fetched `.imminent`
@@ -221,11 +225,12 @@ enum StockSageExpectedValue {
         }
     }
 
-    private nonisolated static func evRankKey(for idea: StockSageIdea) -> Double? {
-        guard let base = qualityAdjustedEVR(for: idea) else { return nil }
+    private nonisolated static func evRankKey(for idea: StockSageIdea,
+                                              calibration: StockSageConvictionCalibration? = nil) -> Double? {
+        guard let base = qualityAdjustedEVR(for: idea, calibration: calibration) else { return nil }
         var key = base
         if idea.advice.conviction < minConvictionToRank { key -= 1000 }       // low-conviction band
-        if !clearsCostAfterFrictions(idea) { key -= 500_000 }                 // costs eat the edge → below clean setups
+        if !clearsCostAfterFrictions(idea, calibration: calibration) { key -= 500_000 }   // costs eat the edge → below clean setups
         return key
     }
 
@@ -249,12 +254,14 @@ enum StockSageExpectedValue {
         case .ranging:               return false               // neutral regime gates nothing
         }
     }
-    private nonisolated static func regimeAdjustedEVRankKey(for idea: StockSageIdea, regime: MarketRegime?) -> Double? {
-        guard let base = evRankKey(for: idea) else { return nil }   // nil-EV ideas still fall last, unchanged
+    private nonisolated static func regimeAdjustedEVRankKey(for idea: StockSageIdea, regime: MarketRegime?,
+                                                            calibration: StockSageConvictionCalibration? = nil) -> Double? {
+        guard let base = evRankKey(for: idea, calibration: calibration) else { return nil }   // nil-EV ideas still fall last
         guard let r = regime else { return base }                   // nil regime → IDENTICAL to today
         return bannedFromTopRank(side(idea), regime: r.state) ? base - 1_000_000 : base
     }
-    private nonisolated static func velocityRankKey(for idea: StockSageIdea, holds: VelocityHoldDays) -> Double? {
+    private nonisolated static func velocityRankKey(for idea: StockSageIdea, holds: VelocityHoldDays,
+                                                    calibration: StockSageConvictionCalibration? = nil) -> Double? {
         // Velocity is the BUY-side compounding lane (matches bestOpportunity / CapitalAllocator) —
         // a short does not compound the same way, so only buy-family ideas qualify. (Fixes a short
         // topping the Fast Lane while it is correctly barred from the best-opportunity card.)
@@ -262,20 +269,21 @@ enum StockSageExpectedValue {
         // Rank by per-DAY LOG-GROWTH (growth-rate-optimal), not arithmetic EV/day — so a steady
         // compounder beats a high-variance lottery setup of equal raw EV. Displayed velocity is
         // still EV/day; this is only the ordering key.
-        guard let e = ev(for: idea),
+        guard let e = ev(for: idea, calibration: calibration),
               let hold = expectedHoldDays(for: idea, holds: holds), hold > 0 else { return nil }
         let v = expectedLogGrowth(winProb: e.winProbEstimate, rewardR: e.rewardR) / hold
         // After-cost screen (mirrors evRankKey): a setup net-negative after frictions can't lead the
         // velocity board either — otherwise a thin, high-cost crypto flip tops it on gross EV.
-        if !clearsCostAfterFrictions(idea) { return v - 500_000 }
+        if !clearsCostAfterFrictions(idea, calibration: calibration) { return v - 500_000 }
         return idea.advice.conviction >= minConvictionToRank ? v : v - 1000
     }
 
     nonisolated static func rankByVelocity(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults,
-                                           earnings: [String: EarningsProximity] = [:]) -> [StockSageIdea] {
+                                           earnings: [String: EarningsProximity] = [:],
+                                           calibration: StockSageConvictionCalibration? = nil) -> [StockSageIdea] {
         // Demote imminent-earnings ideas inside the velocity key (empty earnings → 0 → unchanged order).
         func key(_ idea: StockSageIdea) -> Double? {
-            velocityRankKey(for: idea, holds: holds).map { $0 - earningsRankPenalty(for: idea, earnings: earnings) }
+            velocityRankKey(for: idea, holds: holds, calibration: calibration).map { $0 - earningsRankPenalty(for: idea, earnings: earnings) }
         }
         return ideas.enumerated().sorted { a, b in
             switch (key(a.element), key(b.element)) {
@@ -298,10 +306,11 @@ enum StockSageExpectedValue {
     /// Ideas sorted by EV (best bet first). Ideas without a defined EV fall to the
     /// bottom keeping their original relative order (stable).
     nonisolated static func rankByEV(_ ideas: [StockSageIdea], regime: MarketRegime? = nil,
-                                     earnings: [String: EarningsProximity] = [:]) -> [StockSageIdea] {
+                                     earnings: [String: EarningsProximity] = [:],
+                                     calibration: StockSageConvictionCalibration? = nil) -> [StockSageIdea] {
         // Demote imminent-earnings ideas inside the EV key (empty earnings → 0 → unchanged order).
         func key(_ idea: StockSageIdea) -> Double? {
-            regimeAdjustedEVRankKey(for: idea, regime: regime).map { $0 - earningsRankPenalty(for: idea, earnings: earnings) }
+            regimeAdjustedEVRankKey(for: idea, regime: regime, calibration: calibration).map { $0 - earningsRankPenalty(for: idea, earnings: earnings) }
         }
         return ideas.enumerated().sorted { a, b in
             switch (key(a.element), key(b.element)) {
@@ -326,12 +335,12 @@ enum StockSageExpectedValue {
         // (empty earnings → 0 → identical to before). Demotion, not exclusion: it can still surface
         // if it's the only positive-EV buy.
         func rankVal(_ idea: StockSageIdea) -> Double {
-            (qualityAdjustedEVR(for: idea) ?? 0) - earningsRankPenalty(for: idea, earnings: earnings)
+            (qualityAdjustedEVR(for: idea, calibration: calibration) ?? 0) - earningsRankPenalty(for: idea, earnings: earnings)
         }
         return ideas.compactMap { idea -> (StockSageIdea, ExpectedValue)? in
             guard idea.advice.action == .buy || idea.advice.action == .strongBuy,
                   idea.advice.conviction >= minConvictionToRank,   // a #1 pick can't be a low-conviction bet
-                  clearsCostAfterFrictions(idea),                  // …nor a setup that's net-negative after costs
+                  clearsCostAfterFrictions(idea, calibration: calibration),   // …nor a setup that's net-negative after costs
                   let e = ev(for: idea, calibration: calibration), e.evR > 0 else { return nil }
             return (idea, e)
         }

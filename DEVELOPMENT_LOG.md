@@ -8525,6 +8525,26 @@ RuneLite items: none. Next: the calibration-consistency cluster (#6/#5 first).
 
 ---
 
+## 2026-06-26 · Thread calibration through the rank/gate path — scout #5+#6 (Chat A, autonomous)
+**Files:** `StockSage/StockSageExpectedValue.swift`, `Views/MarketsView.swift`, `StockSageExpectedValueTests.swift`.
+**Why (verified scout w7b6t392u, MEDIUM correctness):** the EV RANK base (qualityAdjustedEVR→ev) and the
+after-cost gate (clearsCostAfterFrictions→winProbEstimate) took NO calibration, so rankByEV /
+bestOpportunity ranked + cost-gated on the LINEAR PRIOR while the DISPLAYED EV used the fitted
+calibration — the '#1 pick' could contradict the number shown beside it, and a setup could be cost-gated
+on a different win-prob than the one displayed.
+**What (one coherent change):** threaded `calibration: StockSageConvictionCalibration? = nil` through
+qualityAdjustedEVR, clearsCostAfterFrictions, evRankKey, regimeAdjustedEVRankKey, velocityRankKey,
+rankByEV, rankByVelocity, and bestOpportunity's rankVal — all defaulting to nil (call sites + tests
+unchanged behaviour). The two MarketsView board call sites now pass store.convictionCalibration.
+**Result:** `tools/typecheck.sh` ✅; suite **1107 pass / 0 fail** (+test: a measured calibration FLIPS
+both bestOpportunity and rankByEV's #1 from the high-R:R/low-conviction idea to the high-conviction one
+— proving rank+gate now use the same win-prob as the display).
+**Backlog (11 scout defects remain):** weekly-$ calibration mismatch (#1/#4 expectedWeeklyDollars has no
+calibration param; #2/#7 uncalibrated weekly-R/fastLane); validation honesty (#8/#9/#10); live-data
+honesty (#11/#13/#14); + #3 takerFeeBps dead-code unit trap (low).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
