@@ -54,4 +54,21 @@ enum StockSageCorrelationCluster {
         }
         return CorrelationCluster(symbols: best.map { m.symbols[$0] }.sorted(), minPairwise: minPair)
     }
+
+    /// Correlation-aware position weights: a cluster of K mutually-correlated names is ~ONE bet, not
+    /// K (the diversification is an illusion — Choueifaty et al. 2013 effective-number-of-bets;
+    /// López de Prado HRP). This divides each cluster member's weight by the cluster size K so their
+    /// COMBINED stop-risk ≈ a single position; non-cluster names are untouched. `returns` are
+    /// per-symbol daily returns aligned to `symbols`. Conservative by design (the clique is ≥0.70,
+    /// not perfectly correlated, so 1/K slightly over-discounts — the right bias for risk). Pure.
+    nonisolated static func correlationAdjustedWeights(symbols: [String], weights: [Double],
+                                                       returns: [[Double]],
+                                                       threshold: Double = threshold) -> [Double] {
+        guard symbols.count == weights.count, symbols.count == returns.count, symbols.count >= 3 else { return weights }
+        let m = CorrelationMatrix(symbols: symbols, matrix: StockSagePortfolioAnalytics.correlationMatrix(returns))
+        guard let cluster = largest(m, threshold: threshold), cluster.symbols.count > 1 else { return weights }
+        let inCluster = Set(cluster.symbols)
+        let k = Double(cluster.symbols.count)
+        return zip(symbols, weights).map { inCluster.contains($0.0) ? $0.1 / k : $0.1 }
+    }
 }

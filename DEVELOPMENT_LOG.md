@@ -8001,6 +8001,21 @@ card. Zero dispersion / <2 trades → tStat 0 (no divide-by-zero); `trades` omit
 
 ---
 
+## 2026-06-26 · Correlation-aware heat — pure cluster-haircut helper (step 1) (Chat A, autonomous)
+**Files:** `StockSage/StockSageCorrelationCluster.swift`, `StockSageCorrelationHeatTests.swift`.
+**Why (deep-research B; Choueifaty 2013 effective-bets / López de Prado HRP):** the capital allocator
+caps SUMMED stop-risk but treats correlated names as independent — N names that move together are
+~1 bet, so a "diversified" plan can be one concentrated bet wearing several tickers.
+**What:** `StockSageCorrelationCluster.correlationAdjustedWeights(symbols:weights:returns:)` — pure:
+builds the correlation matrix from per-symbol daily returns, finds the largest ≥0.70 clique (existing
+`largest`), and divides each cluster member's weight by the cluster size K so their COMBINED risk ≈
+ONE position; non-cluster names untouched. Conservative by design (clique is ≥0.70, not perfect).
+**Result:** `tools/typecheck.sh` ✅; full suite **1096 pass / 0 fail** (+3 tests). NOT yet wired into
+the allocator — that's the next cycle (build the returns matrix from the fundable ideas' sparks and
+apply the haircut before sizing).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
