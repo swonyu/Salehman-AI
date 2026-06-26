@@ -51,6 +51,26 @@ computer-use MCP):
 The app opens on the **Today** tab. Click the top nav to reach a tab — e.g. **Markets**
 is at roughly `(753, 292)` when the window is centered — then screenshot to verify.
 
+#### Screenshot the Markets → Ideas card (the money engine)
+
+This is the primary surface (`Views/MarketsView.swift`). Verified click sequence after
+`driver.sh run` + `open_application("Salehman AI")`, window in its default centered position
+(~516 px wide, top-left ~`(430, 245)`); coordinates are approximate and shift if you move the window:
+1. **Markets** tab → click `(753, 292)`. The **Ideas** sub-tab is selected by default.
+2. **Find ideas** → click `(847, 484)`, then `wait ~8s`. It analyses the ~185-name core; the
+   top banner flips from amber *"Last-good (cached) … NOT live"* to green *"● Live worldwide
+   quotes …"*, and three cards populate: **Money velocity**, **Best opportunity now**, **Fast lane**.
+3. The default window is short — the **Best opportunity now** / **Fast lane** cards sit below the
+   fold. Either drag the bottom-right resize corner down (`left_click_drag (944,628)→(944,845)`)
+   or `scroll` down ~10 ticks at `(688, 480)`, then `screenshot(save_to_disk: true)`.
+
+What a correct capture shows (honesty surfaces — if any are missing, something regressed):
+the **"⚠ assumed"** badge on EV cards; **Best opportunity now** with Est. EV / R:R / Win est. /
+Size + Entry/Stop/Target and *"an estimate from conviction, NOT a forecast"*; the **Fast lane**
+concentration warning (*"top 3 fastest are all Equity — closer to ONE bet than 3"*); and the
+*"N priced · M couldn't be fetched … ranking covers only what loaded"* partial-universe line.
+"Find ideas" needs web access; offline it stays on the cached board and the banner stays amber.
+
 ### Direct invocation (no full app)
 
 The engine is pure and unit-tested — to exercise advisor/EV/indicator logic without the GUI,

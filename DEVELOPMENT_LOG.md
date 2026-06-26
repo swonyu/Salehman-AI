@@ -8646,6 +8646,24 @@ Verdict line `** TEST SUCCEEDED/FAILED **` confirmed from logs. No driver.sh cha
 
 ---
 
+## 2026-06-27 · run-skill: verified Markets→Ideas card screenshot recipe (/run-skill-generator) (Chat A)
+**Files:** `.claude/skills/run-salehman-ai/SKILL.md`.
+**Why:** owner scoped the run skill to the Markets→Ideas card (the money-engine surface we've been
+working). Refined the existing skill (not a new one).
+**Verified LIVE on the macOS host:** build→run→open→Markets(753,292)→Ideas(default)→Find ideas(847,484)
+→wait ~8s. The feed flipped amber 'cached/NOT live' → green '● Live worldwide quotes (185 names)'
+(confirms the #11 banner fix). Cards populated: Money velocity, **Best opportunity now** (AMAT Strong
+Buy, '⚠ assumed', Est EV +0.50R / R:R 2.0:1 / Win est ~50% / Size 3.2% / Entry-Stop-Target, 'NOT a
+forecast'), **Fast lane** (SAN.MC/GE/ENB.TO R/day + 'top 3 all Equity — closer to ONE bet than 3'
+concentration warning), and the '184 priced · 3 couldn't be fetched … ranking covers only what loaded'
+partial-universe line. Screenshots saved to disk.
+**Added:** a 'Screenshot the Markets → Ideas card' section to SKILL.md with the exact click sequence,
+window-position caveat, the resize/scroll step, and the honesty surfaces a correct capture MUST show
+(regression canary). Coordinates are approximate (centered ~516px window).
+**Result:** skill path verified end-to-end; committed.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
