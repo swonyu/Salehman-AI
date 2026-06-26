@@ -2,8 +2,9 @@ import Foundation
 
 // MARK: - Ideas board CSV export
 //
-// Renders the ranked Trade-Ideas board as RFC-4180 CSV so the board isn't trapped
-// in the app — take it into Excel / Sheets / Python. Pure + tested. `rank` reflects
+// Renders the ranked Trade-Ideas board as CSV (RFC-4180 quoting; LF line endings,
+// which Excel / Sheets / Python all accept) so the board isn't trapped in the app.
+// Pure + tested. `rank` reflects
 // the on-screen order of the list passed in (already sorted by the chosen metric).
 // Rationale bullets are joined with "; " and the whole field is CSV-escaped, so a
 // comma or quote inside a reason can't corrupt the file.

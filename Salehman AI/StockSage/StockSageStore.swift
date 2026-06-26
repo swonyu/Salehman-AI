@@ -126,6 +126,23 @@ final class StockSageStore: ObservableObject {
         savePriceAlerts()
     }
 
+    /// Merge freshly-fetched live quotes into the matching board rows (used by the
+    /// watchlist-only monitor so those names show live prices even though the full
+    /// auto-refresh is paused). Deliberately does NOT flip isSampleData/loadedFromCache or
+    /// `lastUpdated` — it only updates the rows it has, so the board never over-claims that
+    /// the WHOLE snapshot is live.
+    func mergeLiveQuotes(_ quotes: [String: StockSageQuoteService.LiveQuote]) {
+        guard !quotes.isEmpty else { return }
+        symbols = symbols.map { s in
+            guard let q = quotes[s.symbol.uppercased()], q.price > 0 else { return s }
+            return StockSageSymbol(symbol: s.symbol, market: s.market, quotes: [
+                StockSageQuote(price: q.previousClose, previousPrice: q.previousClose,
+                               time: Date(timeIntervalSinceNow: -86_400)),
+                StockSageQuote(price: q.price, previousPrice: q.previousClose),
+            ])
+        }
+    }
+
     /// Seed the board from the disk cache (last successful quotes) so launch shows real
     /// last-good numbers instantly + works offline, instead of fabricated sample data.
     private func loadCachedQuotes() {

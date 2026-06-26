@@ -445,7 +445,7 @@ struct MarketsView: View {
                         Text("Watch only my watchlist").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.9))
                         Text(store.userSymbols.isEmpty
                              ? "Add tickers to your watchlist to use this — alerts currently scan the full core."
-                             : "Alerts scan only your \(store.userSymbols.count) watchlist name\(store.userSymbols.count == 1 ? "" : "s") (faster, less data).")
+                             : "Alerts scan only your \(store.userSymbols.count) watchlist name\(store.userSymbols.count == 1 ? "" : "s") (faster). The full board won't auto-refresh — tap Refresh for it.")
                             .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
@@ -532,7 +532,7 @@ struct MarketsView: View {
                 Image(systemName: "target").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Price alerts").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                    Text("Notify me when a symbol crosses a level I set (one-shot; needs alerts on).")
+                    Text("Notify me once when a symbol reaches a level I set — at or through it (needs alerts on).")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
@@ -2351,7 +2351,7 @@ struct MarketsView: View {
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
-                if !store.ideas.isEmpty {
+                if !displayedIdeas.isEmpty {   // matches what would actually be copied (post sort+filter)
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(StockSageIdeasCSV.csv(displayedIdeas), forType: .string)

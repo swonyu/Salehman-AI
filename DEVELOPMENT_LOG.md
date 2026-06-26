@@ -7587,6 +7587,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-26 · Markets — fix 8 review findings (price alerts / export / watchlist)
+**Files:** `StockSage/StockSageMonitor.swift`, `StockSage/StockSageStore.swift`, `StockSage/StockSagePriceAlert.swift`, `StockSage/StockSageIdeasCSV.swift`, `Views/MarketsView.swift`.
+**What & why:** Adversarial review (3 finders → skeptic-verify, 8 confirmed) of the three Markets features, all fixed. **MED (1):** price alerts could fire on STALE board prices after a failed mid-session refresh (isSampleData/loadedFromCache stay false on failure) — `checkPriceAlerts()` now ALWAYS fetches the armed-alert symbols FRESH (dropped the board fast-path), so it can never fire on stale/sample data; honesty guarantee now true. **MED (6):** watchlist-only mode discarded the live quotes it fetched and stopped the board updating — added `StockSageStore.mergeLiveQuotes` to publish the watchlist quotes into the board rows (without over-claiming the whole board is live), and the toggle caption now says the full board won't auto-refresh. **MED (3)/(8):** copy/comments said "crosses" but logic is level-met → reworded to honest "reaches, at or through" semantics. **LOW (2/4/7):** "Copy CSV" gated on `displayedIdeas` (not `store.ideas`) so it isn't shown / can't copy a header-only file when a filter empties the list. **LOW (5):** CSV doc softened (LF endings + RFC-4180 quoting).
+**Result:** ✅ `tools/typecheck.sh` clean. Markets features complete + hardened.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

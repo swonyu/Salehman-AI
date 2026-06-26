@@ -4,8 +4,9 @@ import Foundation
 //
 // Distinct from the signal-based `IdeaAlert` (which fires on advice crossings):
 // these are levels the OWNER sets — "tell me when AAPL is ≥ 150" — checked each
-// monitor cycle against live prices. One-shot: an alert fires once when its level
-// is crossed (triggeredAt set), then stays quiet until re-armed, so it can't spam.
+// monitor cycle against freshly-fetched live prices. One-shot: an alert fires once
+// when its level is reached, at or through it (triggeredAt set), then stays quiet
+// until re-armed, so it can't spam.
 struct PriceAlert: Sendable, Equatable, Identifiable, Codable {
     enum Direction: String, Sendable, Codable {
         case above   // notify when price rises to/through the target
