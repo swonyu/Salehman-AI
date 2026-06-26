@@ -150,14 +150,19 @@ final class StockSageMonitor {
     /// Check user-set price alerts against FRESHLY-FETCHED live prices (never the board's
     /// last-good values — a failed in-session refresh can leave those stale while the live/cache
     /// flags don't change), so a one-shot alert can't fire on stale/sample data. Armed alerts are
-    /// few (user-set), so re-fetching just those each cycle is cheap.
+    /// few (user-set), so re-fetching just those each cycle is cheap. A freshly-fetched quote can
+    /// STILL be a days-old close (Yahoo returns the last close over weekends/holidays), so we also
+    /// drop any quote whose market timestamp is materially old — a level reached only at a stale
+    /// close won't fire a push while the market is shut and the owner can't act.
     private func checkPriceAlerts() async {
         let store = StockSageStore.shared
         let armed = store.priceAlerts.filter { $0.isArmed }
         guard !armed.isEmpty else { return }
         let q = await StockSageQuoteService.fetchQuotes(for: Array(Set(armed.map { $0.symbol })))
         var prices: [String: Double] = [:]
-        for (k, v) in q where v.price > 0 { prices[k.uppercased()] = v.price }
+        for (k, v) in q where v.price > 0 && !StockSageQuoteFreshness.isStale(symbol: k, marketTime: v.marketTime) {
+            prices[k.uppercased()] = v.price
+        }
         let fired = StockSagePriceAlertEngine.newlyTriggered(armed, prices: prices)
         guard !fired.isEmpty else { return }
         for a in fired { await sendPriceAlert(a, price: prices[a.symbol] ?? a.target) }

@@ -68,8 +68,18 @@ struct StockSageSymbol: Sendable, Equatable, Identifiable {
     /// time (feed gave no real market timestamp) — can't judge, so don't cry wolf. Mirrors the
     /// GE-flip / regime per-item staleness precedent.
     func isStale(asOf now: Date = Date()) -> Bool {
-        // Judge the real MARKET time only; no market time ⇒ can't judge ⇒ not stale (no false alarm).
-        guard let t = latest?.marketTime else { return false }
+        StockSageQuoteFreshness.isStale(symbol: symbol, marketTime: latest?.marketTime, asOf: now)
+    }
+}
+
+/// ONE definition of "is this quote materially old?", shared by the per-row display badge AND the
+/// price-alert firing gate so they can never disagree. Crypto trades 24/7 → fresh fast (6h);
+/// equities/FX/indices close, so tolerate an overnight gap (48h). nil marketTime ⇒ can't judge ⇒
+/// NOT stale (don't false-alarm a badge, and don't suppress an alert when the feed simply omitted
+/// a timestamp — Yahoo normally supplies one).
+enum StockSageQuoteFreshness {
+    nonisolated static func isStale(symbol: String, marketTime: Date?, asOf now: Date = Date()) -> Bool {
+        guard let t = marketTime else { return false }
         let tolerance: TimeInterval = StockSageAllocation.assetClass(symbol) == "Crypto" ? 6 * 3600 : 48 * 3600
         return now.timeIntervalSince(t) > tolerance
     }

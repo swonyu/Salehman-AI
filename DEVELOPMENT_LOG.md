@@ -8261,6 +8261,23 @@ one-shot alert can't fire on a stale weekend close; then #4 journal→live calib
 
 ---
 
+## 2026-06-26 · Price alerts won't fire on a stale weekend close (scout #2) (Chat A, autonomous)
+**Files:** `StockSage/StockSageModels.swift` (shared freshness rule), `StockSage/StockSageMonitor.swift`,
+`StockSageStalenessTests.swift`.
+**Why (broader scout, MED, now unblocked by the fetchOne marketTime fix):** checkPriceAlerts re-fetches
+live quotes but Yahoo returns the last CLOSE over weekends/holidays, so a one-shot alert ('notify when
+X ≤ 100') could fire on Saturday off Friday's close — a push the owner can't act on, contradicting the
+method's own honesty promise.
+**What:** extracted ONE shared `StockSageQuoteFreshness.isStale(symbol:marketTime:asOf:)` (crypto 6h /
+other 48h; nil marketTime ⇒ not stale) used by BOTH the per-row display badge (StockSageSymbol.isStale
+now delegates to it) AND the alert gate. checkPriceAlerts now drops any quote whose marketTime is
+materially old before evaluating triggers, so a level reached only at a stale close won't fire while
+markets are shut. Doc comment tightened.
+**Result:** `tools/typecheck.sh` ✅; suite **1101 pass / 0 fail** (+shared-rule test incl. nil-not-stale).
+**Next:** #4 (LARGE, split) journal conviction → live calibration.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
