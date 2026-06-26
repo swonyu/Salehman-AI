@@ -1331,9 +1331,13 @@ struct MarketsView: View {
                     Text(String(format: "Worst losing run: %d · max drawdown −%.2fR (your realized path so far).",
                                 risk.maxConsecutiveLosses, risk.maxDrawdownR))
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    if let dd = StockSageRiskOfRuin.scenario(losses: risk.maxConsecutiveLosses, fraction: 0.01) {
-                        Text(String(format: "Stay in the game: %d 1R stops in a row at 1%%/trade ≈ −%.1f%% to the account — %@",
-                                    dd.losses, dd.drawdownPct * 100,
+                    // The user's REAL per-trade risk (same as the MonteCarlo line below) — NOT a
+                    // hardcoded 1%, so this survival number reflects how they actually size. A user at
+                    // 2–3%/trade was shown a drawdown understated ~2–3× with text falsely claiming "1%".
+                    let riskFrac = Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil } ?? 0.01
+                    if let dd = StockSageRiskOfRuin.scenario(losses: risk.maxConsecutiveLosses, fraction: riskFrac) {
+                        Text(String(format: "Stay in the game: %d 1R stops in a row at %.0f%%/trade ≈ −%.1f%% to the account — %@",
+                                    dd.losses, riskFrac * 100, dd.drawdownPct * 100,
                                     dd.isSteep ? "size down; surviving variance is how velocity compounds."
                                                : "survivable — staying in the game is what lets velocity pay off."))
                             .font(.caption2)
@@ -1344,10 +1348,9 @@ struct MarketsView: View {
                     // Forward-looking ruin DISTRIBUTION — bootstraps YOUR realized R into many
                     // simulated futures at your configured risk %, the complement to the single
                     // historical path above. nil under 20 R-defined trades (the engine self-gates).
-                    let mcRiskFraction = Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil } ?? 0.01
-                    if let mc = StockSageMonteCarloRuin.simulate(journal.trades, riskFraction: mcRiskFraction) {
+                    if let mc = StockSageMonteCarloRuin.simulate(journal.trades, riskFraction: riskFrac) {
                         Text(String(format: "Forward ruin risk (%d sims @ %.0f%%/trade): P(ruin) %.0f%% · P(>20%% drawdown) %.0f%% · 95th-pct max drawdown %.0f%% — bootstrapped from your %d closed trades.",
-                                    mc.sims, mcRiskFraction * 100, mc.pRuin * 100, mc.p20DrawdownProb * 100,
+                                    mc.sims, riskFrac * 100, mc.pRuin * 100, mc.p20DrawdownProb * 100,
                                     mc.p95MaxDD * 100, mc.sampleSize))
                             .font(.caption2)
                             .foregroundStyle(mc.pRuin > 0.05 ? DS.Palette.warningSoft : .secondary)

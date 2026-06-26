@@ -8244,6 +8244,23 @@ then #4 (large) journal conviction → live calibration.
 
 ---
 
+## 2026-06-26 · Safety: deterministic ruin line uses the user's REAL risk %, not hardcoded 1% (scout #3) (Chat A, autonomous)
+**Files:** `Views/MarketsView.swift`.
+**Why (broader scout, HIGH safety):** the 'Stay in the game' deterministic drawdown line hardcoded
+`scenario(fraction: 0.01)` and said "at 1%/trade", while the MonteCarlo line right below used the
+user's real `sizerRiskPct`. A user sizing at 2–3%/trade saw an account-survival drawdown understated
+~2–3× with text falsely claiming 1% — and it contradicted the sim immediately below. Understating
+survival is the most dangerous direction to be wrong.
+**What:** hoisted the real per-trade fraction (`riskFrac` from `sizerRiskPct`, default 1%) above both
+readouts; the deterministic `scenario()` now uses it and the text interpolates the actual %. The
+MonteCarlo line reuses the same `riskFrac` (removed the duplicate). No engine change (scenario already
+takes an arbitrary fraction).
+**Result:** `tools/typecheck.sh` ✅; suite **1100 pass / 0 fail**.
+**Next:** #2 (now unblocked by the marketTime fix) — gate checkPriceAlerts on quote freshness so a
+one-shot alert can't fire on a stale weekend close; then #4 journal→live calibration (large, split).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
