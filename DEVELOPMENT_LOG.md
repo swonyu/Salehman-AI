@@ -8358,6 +8358,18 @@ UTC-vs-local current-month mismatch; #5 ruin-model note.
 
 ---
 
+## 2026-06-26 · Show the computed-but-hidden median max drawdown (scout #6) (Chat A, autonomous)
+**Files:** `Views/MarketsView.swift`.
+**Why (broader scout, LOW ux):** MonteCarloRuin.medianMaxDD is computed + carried on the struct
+(StockSageMonteCarloRuin.swift:25) but the forward-ruin line only displayed p95MaxDD — the owner saw
+the bad-but-plausible drawdown without the TYPICAL one to anchor it.
+**What:** the line now reads "… max drawdown ~M%% typical, P95%% 95th-pct …" — median (the usual path)
+beside the 95th-pct (the rough one), both already simulated.
+**Result:** `tools/typecheck.sh` ✅; suite **1102 pass / 0 fail**.
+**Next:** #9 seasonality UTC-vs-local current-month mismatch; #5 ruin-model 1R-stop note.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

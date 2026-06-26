@@ -1352,9 +1352,9 @@ struct MarketsView: View {
                     // simulated futures at your configured risk %, the complement to the single
                     // historical path above. nil under 20 R-defined trades (the engine self-gates).
                     if let mc = StockSageMonteCarloRuin.simulate(journal.trades, riskFraction: riskFrac) {
-                        Text(String(format: "Forward ruin risk (%d sims @ %.0f%%/trade): P(ruin) %.0f%% · P(>20%% drawdown) %.0f%% · 95th-pct max drawdown %.0f%% — bootstrapped from your %d closed trades.",
+                        Text(String(format: "Forward ruin risk (%d sims @ %.0f%%/trade): P(ruin) %.0f%% · P(>20%% drawdown) %.0f%% · max drawdown ~%.0f%% typical, %.0f%% 95th-pct — bootstrapped from your %d closed trades.",
                                     mc.sims, riskFrac * 100, mc.pRuin * 100, mc.p20DrawdownProb * 100,
-                                    mc.p95MaxDD * 100, mc.sampleSize))
+                                    mc.medianMaxDD * 100, mc.p95MaxDD * 100, mc.sampleSize))
                             .font(.caption2)
                             .foregroundStyle(mc.pRuin > 0.05 ? DS.Palette.warningSoft : .secondary)
                             .fixedSize(horizontal: false, vertical: true)
