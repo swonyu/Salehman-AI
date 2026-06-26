@@ -37,6 +37,13 @@ enum StockSageSeasonality {
         return c
     }
 
+    /// The current month (1–12) in the SAME UTC frame `compute()` buckets by, so the "this month"
+    /// stat the UI highlights matches the bucket the data was filed under. A local calendar can
+    /// disagree near a month boundary (e.g. it's already next month locally but still month-end UTC).
+    nonisolated static func currentMonth(asOf now: Date = Date()) -> Int {
+        utcCalendar.component(.month, from: now)
+    }
+
     /// Group month-over-month returns by calendar month. Accepts daily OR monthly
     /// bars — within each calendar month the LAST close is taken as the month-end,
     /// then returns are computed between consecutive month-ends.

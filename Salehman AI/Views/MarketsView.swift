@@ -3710,7 +3710,9 @@ struct MarketsView: View {
                     }
                 }
                 if let s = store.seasonality[idea.symbol.uppercased()] {
-                    let m = Calendar.current.component(.month, from: Date())
+                    // UTC, matching compute()'s bucketing — a LOCAL month can disagree near a
+                    // boundary and highlight the wrong bucket's stat.
+                    let m = StockSageSeasonality.currentMonth()
                     if let stat = StockSageSeasonality.stat(s, month: m), stat.samples > 0 {
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "calendar").font(.system(size: 11)).foregroundStyle(.secondary)

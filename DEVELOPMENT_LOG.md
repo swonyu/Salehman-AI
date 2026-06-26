@@ -8394,6 +8394,19 @@ backlog — notably the long-standing un-built WALK-FORWARD/CPCV + DSR validatio
 
 ---
 
+## 2026-06-26 · Seasonality 'current month' aligned to UTC bucketing (scout #9) (Chat A, autonomous)
+**Files:** `StockSage/StockSageSeasonality.swift`, `Views/MarketsView.swift`, `StockSageSeasonalityTests.swift`.
+**Why (broader scout, LOW correctness):** compute() buckets month-over-month returns with a forced-UTC
+calendar, but the UI read the current month via `Calendar.current` (local) — near a month boundary the
+highlighted "this month" stat could point at the wrong bucket (e.g. already next month locally while
+still month-end in UTC).
+**What:** added `StockSageSeasonality.currentMonth(asOf:)` (UTC, same frame as compute()) and switched
+the MarketsView highlight to use it. +test asserting it reads UTC (epoch 0 → month 1, not local Dec).
+**Result:** `tools/typecheck.sh` ✅; suite **1103 pass / 0 fail**.
+**Next:** #5 (last LOW) ruin/drawdown copy — note the survival numbers assume clean 1R stop-outs.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

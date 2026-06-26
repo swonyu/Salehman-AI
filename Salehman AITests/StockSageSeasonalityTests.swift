@@ -6,6 +6,14 @@ import Foundation
 
 struct StockSageSeasonalityTests {
 
+    @Test func currentMonthUsesUTCNotLocal() {
+        // 1970-01-01 00:00:00 UTC → month 1 in UTC. A negative-offset LOCAL calendar would read
+        // Dec 31 1969 → month 12; forcing UTC keeps the "this month" lookup aligned with compute().
+        #expect(StockSageSeasonality.currentMonth(asOf: Date(timeIntervalSince1970: 0)) == 1)
+        // 1970-02-01 00:00:00 UTC = 31 days later → month 2.
+        #expect(StockSageSeasonality.currentMonth(asOf: Date(timeIntervalSince1970: 31 * 86_400)) == 2)
+    }
+
     private func utcDate(_ y: Int, _ m: Int, _ d: Int = 28) -> Date {
         var c = Calendar(identifier: .gregorian)
         c.timeZone = TimeZone(identifier: "UTC")!
