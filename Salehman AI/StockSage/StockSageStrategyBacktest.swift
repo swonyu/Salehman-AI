@@ -21,6 +21,11 @@ struct StrategyBacktest: Sendable, Equatable {
     /// Pooled per-trade t-statistic across ALL symbols' trades = (mean R ÷ stdev R) × √trades.
     /// 0 when unknown (<2 pooled trades or no dispersion). Honest significance gauge.
     let tStat: Double
+    /// Skew/fat-tail-adjusted pooled t = SR·√(n−1) ÷ √(1 − g3·SR + ((g4−1)/4)·SR²) — the IID NON-normal
+    /// Sharpe standard error (Mertens 2002 / Lo 2002; same moment math as the per-symbol PSR, NON-excess
+    /// kurtosis). The raw `tStat` assumes normal returns; this widens the SE for negative skew + fat tails,
+    /// so it's the honest companion. 0 when unknown. Does NOT correct for serial correlation.
+    let momentCorrectedTStat: Double
     /// Below this the aggregate is still noise.
     var isSignificant: Bool { totalTrades >= 100 }
     /// Clears the t > 3 multiple-testing bar (Harvey-Liu-Zhu 2016) — NOT the textbook 2.0. Necessary,
@@ -28,19 +33,23 @@ struct StrategyBacktest: Sendable, Equatable {
     var clearsMultipleTestingBar: Bool { tStat > 3.0 }
     var significanceVerdict: String {
         if !isSignificant { return "Only \(totalTrades) trades — the aggregate isn't statistically meaningful yet." }
-        if tStat > 3.0 { return String(format: "t = %.1f — clears the t>3 multiple-testing bar (necessary, not sufficient).", tStat) }
-        if tStat > 2.0 { return String(format: "t = %.1f — significant at 2σ but BELOW the t>3 bar; treat as unproven.", tStat) }
-        return String(format: "t = %.1f — not significant; likely noise.", tStat)
+        // Surface the skew/fat-tail-adjusted t when it materially differs from the normal-assumption raw t.
+        let adj = (momentCorrectedTStat > 0 && abs(momentCorrectedTStat - tStat) >= 0.3)
+            ? String(format: " Skew/fat-tail-adjusted t ≈ %.1f.", momentCorrectedTStat) : ""
+        if tStat > 3.0 { return String(format: "t = %.1f — clears the t>3 multiple-testing bar (necessary, not sufficient).", tStat) + adj }
+        if tStat > 2.0 { return String(format: "t = %.1f — significant at 2σ but BELOW the t>3 bar; treat as unproven.", tStat) + adj }
+        return String(format: "t = %.1f — not significant; likely noise.", tStat) + adj
     }
     let caveat: String
 
     nonisolated init(symbolsTested: Int, symbolsWithTrades: Int, symbolsProfitable: Int, totalTrades: Int,
                      wins: Int, blendedWinRate: Double, avgR: Double, totalR: Double, worstDrawdownR: Double,
-                     tStat: Double = 0, caveat: String) {
+                     tStat: Double = 0, momentCorrectedTStat: Double = 0, caveat: String) {
         self.symbolsTested = symbolsTested; self.symbolsWithTrades = symbolsWithTrades
         self.symbolsProfitable = symbolsProfitable; self.totalTrades = totalTrades; self.wins = wins
         self.blendedWinRate = blendedWinRate; self.avgR = avgR; self.totalR = totalR
-        self.worstDrawdownR = worstDrawdownR; self.tStat = tStat; self.caveat = caveat
+        self.worstDrawdownR = worstDrawdownR; self.tStat = tStat
+        self.momentCorrectedTStat = momentCorrectedTStat; self.caveat = caveat
     }
 }
 
@@ -74,6 +83,18 @@ enum StockSageStrategyBacktest {
             let sd = variance.squareRoot()
             return sd > 0 ? (mean / sd) * Double(rs.count).squareRoot() : 0
         }()
+        // Skew/fat-tail-adjusted pooled t = SR·√(n−1)/√(1 − g3·SR + ((g4−1)/4)·SR²) — the IID non-normal
+        // Sharpe SE (Bailey & López de Prado / Mertens / Lo), reusing the python-verified moment math.
+        let momentCorrectedTStat: Double = {
+            guard rs.count >= 4, let m = StockSageDeflatedSharpe.moments(rs) else { return 0 }
+            let mean = rs.reduce(0, +) / Double(rs.count)
+            let variance = rs.reduce(0.0) { $0 + ($1 - mean) * ($1 - mean) } / Double(rs.count - 1)
+            let sd = variance.squareRoot()
+            guard sd > 0 else { return 0 }
+            let sr = mean / sd
+            let denom = Swift.max(1e-12, 1 - m.skew*sr + ((m.kurtosis - 1)/4)*sr*sr).squareRoot()
+            return sr * Double(rs.count - 1).squareRoot() / denom
+        }()
         return StrategyBacktest(
             symbolsTested: results.count,
             symbolsWithTrades: withTrades.count,
@@ -85,6 +106,7 @@ enum StockSageStrategyBacktest {
             totalR: totalR,
             worstDrawdownR: worstDD,
             tStat: tStat,
+            momentCorrectedTStat: momentCorrectedTStat,
             caveat: caveat)
     }
 }

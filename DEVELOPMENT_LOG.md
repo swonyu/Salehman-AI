@@ -8422,6 +8422,29 @@ CPCV/DSR harness). Beta-calibration swap flagged for OWNER sign-off (design chan
 
 ---
 
+## 2026-06-26 · Pooled moment-corrected t-stat on the aggregate (research Tier-1a) (Chat A, autonomous)
+**Files:** `StockSage/StockSageStrategyBacktest.swift`, `StockSageStrategyBacktestTests.swift`.
+**VERIFY-FIRST FINDING (the rule paying off):** the research report recommended *building* SE(SR) /
+moment-corrected significance — but `StockSageDeflatedSharpe` ALREADY implements it correctly: PSR
+denom = √(1 − g3·SR + ((g4−1)/4)·SR²) with NON-excess kurtosis (no excess-kurtosis bug), the
+False-Strategy-Theorem SR0 (`expectedMaxSharpe`), and a DSR>0.95 bar (`deflated`). The report was
+written from a context summary that didn't list this file. So: did NOT rebuild.
+**Real gaps found:** (1) the per-symbol PSR is surfaced, but the AGGREGATE headline significance
+showed only the RAW pooled t (normal-assumption sharpe·√n) — no skew/fat-tail haircut. (2) the full
+DSR (`deflated`/`expectedMaxSharpe`) is python-verified but DORMANT — never called, because nothing
+feeds it a real trial count + Sharpe-variance.
+**What (this cycle, small):** added `StrategyBacktest.momentCorrectedTStat` = SR·√(n−1)/denom (reusing
+the verified moment math) computed in aggregate() from the pooled trade R's, and surfaced it in
+significanceVerdict when it materially differs from the raw t. +test (positive-edge → adjusted >0 and
+< raw; fat negative tail lowers it; <4 trades → 0). Labelled IID non-normal (does NOT correct serial
+correlation).
+**Result:** `tools/typecheck.sh` ✅; suite **1104 pass / 0 fail**.
+**Next:** wire the DORMANT DSR — but it needs a REAL variant-trial count (rule/param configs tried),
+NOT the symbol count (symbols are the universe, not configurations — conflating them would mislead).
+So Tier-1 #1 'log every variant tried' is the genuine prerequisite. Then surface DSR in the UI.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

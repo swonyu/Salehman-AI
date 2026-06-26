@@ -13,6 +13,26 @@ struct StockSageStrategyBacktestTests {
                        totalR: totalR, maxDrawdownR: maxDD, sharpe: 0, avgHoldBars: 5)
     }
 
+    @Test func momentCorrectedTStatIsHonestVsRaw() {
+        func agg(_ rs: [Double]) -> StrategyBacktest {
+            let t = rs.map { BacktestTrade(entryIndex: 0, exitIndex: 1, entry: 100, exit: 100, r: $0,
+                                           outcome: .target, conviction: 0.5) }
+            return StockSageStrategyBacktest.aggregate([], trades: t)
+        }
+        // Positive-edge sample: the skew/fat-tail-adjusted t is positive but BELOW the raw t
+        // (the Sharpe-estimator SE widens with SR, and uses n−1 not n).
+        let edge = Array(repeating: 1.0, count: 60) + Array(repeating: -1.0, count: 40)
+        let a = agg(edge)
+        #expect(a.tStat > 0)
+        #expect(a.momentCorrectedTStat > 0)
+        #expect(a.momentCorrectedTStat < a.tStat)
+        // Inject a rare fat negative tail → heavier left tail lowers the adjusted t below the raw further.
+        let b = agg(edge + [-8.0, -8.0])
+        #expect(b.momentCorrectedTStat < b.tStat)
+        // Too few trades → undefined moments → 0 (no false precision).
+        #expect(agg([0.5, -0.5, 0.5]).momentCorrectedTStat == 0)
+    }
+
     @Test func pooledTStatFromTrades() {
         // No trades supplied → tStat 0 (default, behaviour unchanged).
         #expect(StockSageStrategyBacktest.aggregate([result(trades: 10, wins: 6, totalR: 5, maxDD: 3)]).tStat == 0)
