@@ -12,8 +12,13 @@ struct MarketsView: View {
     @AppStorage("marketsWatchSort") private var sort: MarketSort = .feed
     @State private var showBrowseMarkets = false
     /// Ideas board ordering: by expected value, EV-per-day velocity, or signal rank.
-    private enum IdeaSort: String, CaseIterable { case ev = "Expected value", velocity = "EV / day", signal = "Signal rank" }
+    private enum IdeaSort: String, CaseIterable {
+        case ev = "Expected value", velocity = "EV / day", conviction = "Conviction",
+             rr = "Reward:risk", signal = "Signal rank"
+    }
     @AppStorage("marketsIdeaSort") private var ideaSort: IdeaSort = .ev
+    /// Hide ideas below this conviction (0 = show all).
+    @AppStorage("marketsIdeaMinConv") private var ideaMinConv = 0.0
 
     /// Ideas board action filter — jump straight to the strongest setups.
     private enum IdeaFilter: String, CaseIterable, Identifiable {
@@ -2295,10 +2300,16 @@ struct MarketsView: View {
                     .transition(.opacity)
             } else {
                 HStack(spacing: 8) {
-                    Text("Sort:").font(.system(size: 10)).foregroundStyle(.secondary)
-                    Picker("", selection: $ideaSort) {
-                        ForEach(IdeaSort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }.labelsHidden().pickerStyle(.segmented).frame(width: 300)
+                    Menu {
+                        ForEach(IdeaSort.allCases, id: \.self) { s in
+                            Button { ideaSort = s } label: { Label(s.rawValue, systemImage: ideaSort == s ? "checkmark" : "") }
+                        }
+                    } label: {
+                        Label("Sort: \(ideaSort.rawValue)", systemImage: "arrow.up.arrow.down")
+                            .font(.system(size: 10)).foregroundStyle(DS.Palette.accent)
+                    }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .accessibilityLabel("Sort ideas")
                     Menu {
                         ForEach(IdeaFilter.allCases) { f in
                             Button { ideaFilter = f } label: { Label(f.rawValue, systemImage: ideaFilter == f ? "checkmark" : "") }
@@ -2309,6 +2320,19 @@ struct MarketsView: View {
                     }
                     .menuStyle(.borderlessButton).fixedSize()
                     .accessibilityLabel("Filter ideas by action")
+                    Menu {
+                        ForEach([0.0, 0.5, 0.6, 0.7, 0.8], id: \.self) { v in
+                            Button { ideaMinConv = v } label: {
+                                Label(v == 0 ? "Any conviction" : "≥ \(Int(v * 100))%",
+                                      systemImage: ideaMinConv == v ? "checkmark" : "")
+                            }
+                        }
+                    } label: {
+                        Label(ideaMinConv == 0 ? "Conviction" : "≥ \(Int(ideaMinConv * 100))%", systemImage: "speedometer")
+                            .font(.system(size: 10)).foregroundStyle(ideaMinConv == 0 ? .secondary : DS.Palette.accent)
+                    }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .accessibilityLabel("Minimum conviction filter")
                     HStack(spacing: 4) {
                         Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(.secondary)
                         TextField("Search", text: $ideaSearch).textFieldStyle(.plain).font(.system(size: 11))
@@ -2371,20 +2395,30 @@ struct MarketsView: View {
     private var displayedIdeas: [StockSageIdea] {
         let sorted: [StockSageIdea]
         switch ideaSort {
-        case .ev:       sorted = StockSageExpectedValue.rankByEV(store.ideas, regime: store.regime, earnings: store.earnings)
-        case .velocity: sorted = StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds, earnings: store.earnings)
-        case .signal:   sorted = store.ideas
+        case .ev:         sorted = StockSageExpectedValue.rankByEV(store.ideas, regime: store.regime, earnings: store.earnings)
+        case .velocity:   sorted = StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds, earnings: store.earnings)
+        case .conviction: sorted = store.ideas.sorted { $0.advice.conviction > $1.advice.conviction }
+        case .rr:         sorted = store.ideas.sorted { rewardRisk($0) > rewardRisk($1) }
+        case .signal:     sorted = store.ideas
         }
-        let byAction: [StockSageIdea]
+        var result: [StockSageIdea]
         switch ideaFilter {
-        case .all:       byAction = sorted
-        case .strongBuy: byAction = sorted.filter { $0.advice.action == .strongBuy }
-        case .buys:      byAction = sorted.filter { $0.advice.action == .strongBuy || $0.advice.action == .buy }
-        case .sells:     byAction = sorted.filter { $0.advice.action == .sell || $0.advice.action == .reduce }
+        case .all:       result = sorted
+        case .strongBuy: result = sorted.filter { $0.advice.action == .strongBuy }
+        case .buys:      result = sorted.filter { $0.advice.action == .strongBuy || $0.advice.action == .buy }
+        case .sells:     result = sorted.filter { $0.advice.action == .sell || $0.advice.action == .reduce }
         }
+        if ideaMinConv > 0 { result = result.filter { $0.advice.conviction >= ideaMinConv } }
         let q = ideaSearch.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !q.isEmpty else { return byAction }
-        return byAction.filter { $0.symbol.lowercased().contains(q) || $0.market.lowercased().contains(q) }
+        if !q.isEmpty { result = result.filter { $0.symbol.lowercased().contains(q) || $0.market.lowercased().contains(q) } }
+        return result
+    }
+
+    /// Reward:risk for a long-biased idea (0 when stop/target absent or not long-shaped).
+    private func rewardRisk(_ idea: StockSageIdea) -> Double {
+        guard let stop = idea.advice.stopPrice, let target = idea.advice.targetPrice,
+              idea.price - stop > 0, target - idea.price > 0 else { return 0 }
+        return (target - idea.price) / (idea.price - stop)
     }
 
     private var ideasHeader: some View {
@@ -2555,9 +2589,9 @@ struct MarketsView: View {
                 if a.suggestedWeight > 0 {
                     ideaMetric("Size", String(format: "%.1f%%", a.suggestedWeight * 100), color: DS.Palette.accent)
                 }
-                if let stop = a.stopPrice, let target = a.targetPrice,
-                   idea.price - stop > 0, target - idea.price > 0 {
-                    ideaMetric("R:R", String(format: "%.1f", (target - idea.price) / (idea.price - stop)))
+                let rr = rewardRisk(idea)
+                if rr > 0 {
+                    ideaMetric("R:R", String(format: "%.1f", rr))
                 }
                 Spacer(minLength: 0)
             }
@@ -2576,6 +2610,14 @@ struct MarketsView: View {
         )
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        // Leading accent whose intensity scales with conviction — high-conviction ideas
+        // stand out at a glance (EV is ~uniform because targets are pinned ~2:1).
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(actionColor(a.action).opacity(0.25 + 0.75 * a.conviction))
+                .frame(width: 3).padding(.vertical, 8)
+                .accessibilityHidden(true)
+        }
         // One combined, activatable element (mirrors the watchlist card): the
         // custom label carries the conviction, the DEFAULT action opens the detail
         // sheet (VoiceOver double-tap), and Backtest is a named rotor action — so
@@ -2600,7 +2642,36 @@ struct MarketsView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { selectedIdea = idea }
-        .help("Tap for full advice + backtest")
+        .contextMenu {
+            Button { copyIdeaPlan(idea) } label: { Label("Copy trade plan", systemImage: "doc.on.clipboard") }
+            Button { selectedIdea = idea } label: { Label("Open details", systemImage: "info.circle") }
+            if a.targetPrice != nil || a.stopPrice != nil { Divider() }
+            if let t = a.targetPrice {
+                Button { store.addPriceAlert(symbol: idea.symbol, target: t, direction: .above) } label: {
+                    Label("Alert ≥ target", systemImage: "target")
+                }
+            }
+            if let s = a.stopPrice {
+                Button { store.addPriceAlert(symbol: idea.symbol, target: s, direction: .below) } label: {
+                    Label("Alert ≤ stop", systemImage: "shield.lefthalf.filled")
+                }
+            }
+        }
+        .help("Tap for full advice + backtest · right-click to copy the plan or set an alert")
+    }
+
+    /// Copy a one-line trade plan for an idea to the clipboard.
+    private func copyIdeaPlan(_ idea: StockSageIdea) {
+        let a = idea.advice
+        var parts = ["\(idea.symbol) — \(a.action.rawValue) @ \(adaptivePrice(idea.price))"]
+        if let s = a.stopPrice { parts.append("stop \(adaptivePrice(s))") }
+        if let t = a.targetPrice { parts.append("target \(adaptivePrice(t))") }
+        if a.suggestedWeight > 0 { parts.append(String(format: "size %.1f%%", a.suggestedWeight * 100)) }
+        let rr = rewardRisk(idea)
+        if rr > 0 { parts.append(String(format: "R:R %.1f", rr)) }
+        parts.append("conviction \(Int((a.conviction * 100).rounded()))%")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(parts.joined(separator: " · "), forType: .string)
     }
 
     // Signal alerts — opt-in event log of flips / stop / target crossings.

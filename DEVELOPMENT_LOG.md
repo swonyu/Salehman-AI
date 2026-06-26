@@ -7608,6 +7608,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-26 · Markets — Ideas board batch 1 (sorts, min-conviction, accent, copy-plan)
+**Files:** `Views/MarketsView.swift`.
+**What & why:** "Keep improving the Ideas board." (1) Two new **sorts** — Conviction and Reward:risk — and the Sort control became a compact menu (5 options no longer fit the segmented bar; also de-crowds the controls row). (2) **Min-conviction filter** menu (Any / ≥50–80%) hides weak setups. (3) **Conviction accent** — a leading bar on each card whose intensity scales with conviction, so strong ideas pop (EV is ~uniform since targets pin ~2:1). (4) **Copy trade plan** via right-click context menu ("SYM — Buy @ … · stop … · target … · size … · R:R … · conviction …"), plus alert-at-target/stop and open-details in the same menu. Shared `rewardRisk(_:)` helper now backs both the R:R sort and the per-card R:R metric.
+**Result:** ✅ `tools/typecheck.sh` clean.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
