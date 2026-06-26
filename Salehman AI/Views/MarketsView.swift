@@ -2929,6 +2929,19 @@ struct MarketsView: View {
 
     // Money-velocity summary — one-glance header (best bet · fastest · est. weekly R),
     // visible across every section. Tappable to the best opportunity's plan.
+    // Honest "are these EV numbers measured or assumed?" chip — reused on every EV-headline surface.
+    @ViewBuilder private var calibrationChip: some View {
+        if let cal = store.convictionCalibration {
+            Label("measured · n=\(cal.sampleSize)", systemImage: "checkmark.seal.fill")
+                .font(.system(size: 9, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
+                .help("EV win-rates calibrated from \(cal.sampleSize) backtested trades (conservative, monotonic).")
+        } else {
+            Label("assumed", systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 9, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
+                .help("EV win-rates use a cautious hand-set band (35–58%), not measured rates — run the Strategy backtest to calibrate.")
+        }
+    }
+
     @ViewBuilder private var moneyVelocityCard: some View {
         // Honor the user's editable Risk % so the drawdown brake's magnitude AND its label
         // track the same fraction the rest of the card uses (was a hardcoded 1%).
@@ -2944,6 +2957,7 @@ struct MarketsView: View {
                         Image(systemName: "bolt.fill").font(.system(size: 12)).foregroundStyle(DS.Palette.accent)
                         Text("Money velocity — fastest moves now").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
                         Spacer()
+                        calibrationChip   // measured (n) vs assumed — qualifies the EV/$ numbers below
                     }
                     HStack(alignment: .top, spacing: 18) {
                         if let sym = s.bestSymbol, let ev = s.bestEV {
