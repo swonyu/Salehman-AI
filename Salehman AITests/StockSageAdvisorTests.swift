@@ -28,8 +28,12 @@ struct StockSageAdvisorStopTargetTests {
     @Test func ownDowntrendVetoesALongScore() {
         // Deep 12-1 downtrend, sharp rally only in the last ~15 bars: the advisor is bullish on
         // the recent price, but the name's OWN 12-1 trend is down → the momentum veto fires.
-        let vShape: [Double] = (0..<260).map { i in
-            i <= 244 ? 300 - Double(i) * (220.0 / 244) : 80 + Double(i - 244) * (170.0 / 15)
+        // Split into typed sub-expressions — the one-line ternary tripped the
+        // Swift type-checker's "unable to type-check in reasonable time" guard.
+        let vShape: [Double] = (0..<260).map { (i: Int) -> Double in
+            let x = Double(i)
+            if i <= 244 { return 300.0 - x * (220.0 / 244.0) }
+            return 80.0 + Double(i - 244) * (170.0 / 15.0)
         }
         #expect(StockSageIndicators.trendOK(vShape) == false)
         #expect(StockSageAdvisor.advise(closes: vShape).rationale.contains { $0.contains("12-1 downtrend") })

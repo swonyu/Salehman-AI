@@ -3,8 +3,10 @@ import Foundation
 @testable import Salehman_AI
 
 // MARK: - Universe + catalog search (pure)
+// (Named distinctly from `StockSageUniverseTests` in StockSageTests.swift, which
+// covers `worldwide`; this one covers the discovery `catalog` + `search`.)
 
-struct StockSageUniverseTests {
+struct StockSageUniverseCatalogTests {
     typealias U = StockSageUniverse
 
     @Test func catalogIsASupersetOfTheAnalyzedCore() {

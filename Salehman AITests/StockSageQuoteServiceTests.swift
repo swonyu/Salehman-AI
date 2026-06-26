@@ -3,8 +3,10 @@ import Foundation
 @testable import Salehman_AI
 
 // MARK: - Quote feed parsing — only-real-data validity guards
+// (Named distinctly from `StockSageQuoteServiceTests` in StockSageTests.swift,
+// which covers signal recommendations; this one covers history JSON parsing.)
 
-struct StockSageQuoteServiceTests {
+struct StockSageQuoteServiceParsingTests {
 
     @Test func parseHistoryRejectsNonPositiveBars() {
         // 4 bars: bar 2 has a 0 close, bar 4 has a negative low — both must be dropped so a

@@ -7629,6 +7629,31 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-26 · Add run-salehman-ai skill + repair the test target (Chat A)
+**Files:** `.claude/skills/run-salehman-ai/{SKILL.md,driver.sh}` (new); test fixes in
+`Salehman AITests/StockSageUniverseTests.swift`, `StockSageQuoteServiceTests.swift`,
+`StockSageAdvisorTests.swift`.
+**What & why:** Xcode 26.6 is now present on this machine (was CommandLineTools-only earlier),
+so I authored a `/run-salehman-ai` skill via the skill-generator and verified it end-to-end:
+`xcodebuild … build` → **BUILD SUCCEEDED**, launched the built `.app`, and screenshotted it
+(computer-use MCP) on the Today + Markets tabs. The driver (`driver.sh`) wraps the fiddly
+parts I hit — build-path discovery, the `open`-reactivates-existing-instance trap, the
+Xcode-owned instance that survives `pkill`, and the Screen-Recording block on shell
+`screencapture`. While wiring the skill's `test` command I found the **test target would not
+compile**: two pairs of duplicate `struct …Tests` (`StockSageUniverseTests`,
+`StockSageQuoteServiceTests` — standalone files colliding with structs already in
+`StockSageTests.swift`) → renamed the standalones to `…CatalogTests` / `…ParsingTests`; and a
+one-line Int/Double `.map` ternary in `StockSageAdvisorTests` tripped the type-checker's
+"unable to type-check in reasonable time" → split into typed sub-expressions.
+**Result:** `tools/typecheck.sh` ✅; `xcodebuild build` ✅; test target now **compiles and
+runs** (was fully broken): **1075 pass / 10 fail**. My new suites (StockSageIdeasCSVTests,
+StockSagePriceAlertTests) pass. The 10 failures are pre-existing engine/data drift (Universe
+data, Advisor×3, Backtester, ExpectedValue×2, History, SignalEngine, RuneScapeParse),
+unrelated to this session's changes — surfaced now only because the suite finally compiles.
+NOT yet fixed — flagged to the owner.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
