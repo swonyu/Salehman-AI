@@ -7937,6 +7937,23 @@ heat/ranking) running.
 
 ---
 
+## 2026-06-26 · Calibration: adaptive bin count for small samples (research-informed) (Chat A, autonomous)
+**Files:** `StockSage/StockSageConvictionCalibration.swift`.
+**Why:** the deep-research (round 2, E) found binned/isotonic calibration OVER-FITS on small samples
+(Niculescu-Mizil & Caruana 2005 prefer Platt below ~1–2k cases). The fit used a fixed 5 bands at
+minSamples 30 → ~6 trades/band, exactly that failure mode.
+**What:** the effective band count now adapts to sample size — `nBins = clamp(2 … binCount,
+n / minPerBin)` with minPerBin 20 (a 60-trade backtest → 3 bands, 30 → 2, only a rich sample → 5).
+Keeps the conservative Wilson lower bound + monotonic pooling. winProb() already derives its lookup
+index from `bins.count`, so it adapts automatically.
+**Result:** `tools/typecheck.sh` ✅; full suite **1090 pass / 0 fail** (8/8 calibration tests).
+**Note:** delivered the combined deep-research report to the owner (features ranked by evidence;
+honest expectations; a validation checklist — DSR>0.95, t>3, walk-forward+purge/embargo, Platt-vs-
+isotonic). Key takeaway: the engine's edges are NOT yet validated to the t>3/DSR>0.95 bar — building
+that walk-forward validation harness on the backtester is the highest-value next project.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

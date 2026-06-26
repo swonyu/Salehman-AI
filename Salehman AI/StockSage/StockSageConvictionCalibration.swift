@@ -39,30 +39,38 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
     }
 
     /// Fit from realized outcomes. Returns nil when too few samples to calibrate honestly.
-    /// - binCount: equal-width conviction bands over [0,1].
+    /// - binCount: MAX equal-width conviction bands over [0,1] (the effective count adapts down to
+    ///   keep ~`minPerBin` samples/band on small samples — see below).
     /// - minSamples: total-trade floor below which we don't trust a calibration.
+    /// - minPerBin: target samples per band; the effective bin count is capped so bands aren't starved.
     /// - z: Wilson z-score for the lower bound (1.0 ≈ a ~84% one-sided LCB — conservative, not paranoid).
     /// - prior: win-prob assigned to EMPTY bands before isotonic smoothing.
     nonisolated static func fit(_ outcomes: [(conviction: Double, won: Bool)],
-                                binCount: Int = 5, minSamples: Int = 30,
+                                binCount: Int = 5, minSamples: Int = 30, minPerBin: Int = 20,
                                 z: Double = 1.0, prior: Double = 0.5) -> StockSageConvictionCalibration? {
         guard binCount > 0, outcomes.count >= minSamples else { return nil }
 
+        // Adapt the band count to sample size: too many bands with too few samples each over-fits —
+        // the documented small-sample failure mode of isotonic/binned calibration (Niculescu-Mizil &
+        // Caruana 2005, which prefers Platt below ~1–2k samples). Keep ≥ ~minPerBin samples/band on
+        // average; the Wilson lower bound + monotonic pooling below add further conservatism. A
+        // 60-trade backtest → 3 bands, not 5; a 30-trade one → 2.
+        let nBins = Swift.max(2, Swift.min(binCount, Swift.max(1, outcomes.count / Swift.max(1, minPerBin))))
+
         // 1. Bucket by conviction into equal-width bands.
-        var wins = [Int](repeating: 0, count: binCount)
-        var total = [Int](repeating: 0, count: binCount)
+        var wins = [Int](repeating: 0, count: nBins)
+        var total = [Int](repeating: 0, count: nBins)
         for o in outcomes {
             let c = Swift.max(0, Swift.min(1, o.conviction))
-            // c == 1.0 lands in the last band; index in 0..<binCount.
-            let idx = Swift.min(binCount - 1, Int(c * Double(binCount)))
+            let idx = Swift.min(nBins - 1, Int(c * Double(nBins)))   // c == 1.0 → last band
             total[idx] += 1
             if o.won { wins[idx] += 1 }
         }
 
         // 2. Per-band conservative win prob (Wilson lower bound); empty bands take the prior.
-        var values = [Double](repeating: prior, count: binCount)
-        var weights = [Double](repeating: 0.5, count: binCount)   // empty bands: tiny weight, easily pooled
-        for k in 0..<binCount where total[k] > 0 {
+        var values = [Double](repeating: prior, count: nBins)
+        var weights = [Double](repeating: 0.5, count: nBins)   // empty bands: tiny weight, easily pooled
+        for k in 0..<nBins where total[k] > 0 {
             values[k] = wilsonLowerBound(wins: wins[k], n: total[k], z: z)
             weights[k] = Double(total[k])
         }
@@ -71,8 +79,8 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
         let smoothed = poolAdjacentViolators(values, weights: weights)
 
         // 4. Emit ascending bands with their upper edges.
-        let width = 1.0 / Double(binCount)
-        let bins = (0..<binCount).map { k in
+        let width = 1.0 / Double(nBins)
+        let bins = (0..<nBins).map { k in
             Bin(upper: Double(k + 1) * width, winProb: smoothed[k], n: total[k])
         }
         return StockSageConvictionCalibration(bins: bins, sampleSize: outcomes.count)
