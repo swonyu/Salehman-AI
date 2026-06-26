@@ -316,7 +316,8 @@ enum StockSageExpectedValue {
     /// The single best BET right now: the buy-family idea with the highest POSITIVE
     /// expected value. nil if no buy idea has positive EV (don't manufacture one).
     nonisolated static func bestOpportunity(_ ideas: [StockSageIdea], regime: MarketRegime? = nil,
-                                            earnings: [String: EarningsProximity] = [:]) -> (idea: StockSageIdea, ev: ExpectedValue)? {
+                                            earnings: [String: EarningsProximity] = [:],
+                                            calibration: StockSageConvictionCalibration? = nil) -> (idea: StockSageIdea, ev: ExpectedValue)? {
         // No "best buy" in a risk-off tape — a crisis/bear is sometimes exactly when an intraday
         // stop gets gapped through. (nil regime → no gate, identical to before.)
         if let r = regime, bannedFromTopRank(.buyFamily, regime: r.state) { return nil }
@@ -331,7 +332,7 @@ enum StockSageExpectedValue {
             guard idea.advice.action == .buy || idea.advice.action == .strongBuy,
                   idea.advice.conviction >= minConvictionToRank,   // a #1 pick can't be a low-conviction bet
                   clearsCostAfterFrictions(idea),                  // …nor a setup that's net-negative after costs
-                  let e = ev(for: idea), e.evR > 0 else { return nil }
+                  let e = ev(for: idea, calibration: calibration), e.evR > 0 else { return nil }
             return (idea, e)
         }
         .max { rankVal($0.0) < rankVal($1.0) }
@@ -356,8 +357,9 @@ enum StockSageExpectedValue {
     /// days. nil if the fast lane is empty. NOT a promise — it assumes you take these,
     /// each carries variance, and it ignores fills/slippage/correlation.
     nonisolated static func expectedWeeklyR(_ ideas: [StockSageIdea], maxConcurrent: Int = 3, tradingDays: Double = 5,
-                                            holds: VelocityHoldDays = .defaults) -> Double? {
-        let vels = fastLane(ideas, holds: holds).prefix(Swift.max(0, maxConcurrent)).compactMap { velocity(for: $0, holds: holds) }
+                                            holds: VelocityHoldDays = .defaults,
+                                            calibration: StockSageConvictionCalibration? = nil) -> Double? {
+        let vels = fastLane(ideas, holds: holds).prefix(Swift.max(0, maxConcurrent)).compactMap { velocity(for: $0, holds: holds, calibration: calibration) }
         guard !vels.isEmpty else { return nil }
         return vels.reduce(0, +) * tradingDays
     }
@@ -400,11 +402,14 @@ enum StockSageExpectedValue {
     nonisolated static func summary(_ ideas: [StockSageIdea], trades: [TradeRecord] = [],
                                     fraction: Double = 0.01, holds: VelocityHoldDays = .defaults,
                                     regime: MarketRegime? = nil,
-                                    earnings: [String: EarningsProximity] = [:]) -> MoneyVelocitySummary {
+                                    earnings: [String: EarningsProximity] = [:],
+                                    calibration: StockSageConvictionCalibration? = nil) -> MoneyVelocitySummary {
         // Regime-aware so the card's displayed "best bet" matches the regime-gated nav target
         // (a risk-off tape suppresses the best-buy on BOTH). nil regime → identical to before.
         // Earnings-aware so the summary best-bet matches the demoted board (empty → unchanged).
-        let best = bestOpportunity(ideas, regime: regime, earnings: earnings)
+        // Calibration-aware so every headline number (best EV, fastest velocity, weekly R) uses the
+        // SAME measured win-prob as the idea cards — no calibrated-next-to-uncalibrated mismatch.
+        let best = bestOpportunity(ideas, regime: regime, earnings: earnings, calibration: calibration)
         let fastest = fastLane(ideas, holds: holds).first
         // The brake: the owner's worst losing streak, compounded down at the risk fraction.
         let dd = StockSageJournal.equityRisk(trades)
@@ -413,9 +418,9 @@ enum StockSageExpectedValue {
             bestSymbol: best?.idea.symbol,
             bestEV: best?.ev.evR,
             fastestSymbol: fastest?.symbol,
-            fastestVelocity: fastest.flatMap { velocity(for: $0, holds: holds) },
+            fastestVelocity: fastest.flatMap { velocity(for: $0, holds: holds, calibration: calibration) },
             // Honest cadence: an all-crypto lane re-cycles ~7 days/week, equity ~5.
-            weeklyR: expectedWeeklyR(ideas, tradingDays: tradingDaysForLane(ideas, holds: holds), holds: holds),
+            weeklyR: expectedWeeklyR(ideas, tradingDays: tradingDaysForLane(ideas, holds: holds), holds: holds, calibration: calibration),
             worstRunLosses: dd?.losses,
             worstRunDrawdownPct: dd?.drawdownPct,
             riskFraction: fraction)

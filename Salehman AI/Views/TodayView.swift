@@ -257,7 +257,7 @@ struct TodayView: View {
                 }
                 // Money-velocity glance: the single best positive-EV bet, if ideas are
                 // loaded. A concise pointer — the full caveats live on the Markets card.
-                if let best = StockSageExpectedValue.bestOpportunity(stockSage.ideas, regime: stockSage.regime, earnings: stockSage.earnings) {
+                if let best = StockSageExpectedValue.bestOpportunity(stockSage.ideas, regime: stockSage.regime, earnings: stockSage.earnings, calibration: stockSage.convictionCalibration) {
                     StatTile(icon: "bolt.fill", title: "Best bet",
                              value: best.idea.symbol,
                              detail: String(format: "%+.2fR %@", best.ev.evR, MoneyVelocityCopy.bestBetTile),

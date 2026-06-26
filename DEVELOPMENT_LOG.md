@@ -7880,6 +7880,24 @@ realized-volatility, recent-drift filters — logged for that separate subprojec
 
 ---
 
+## 2026-06-26 · Calibration consistency across the money-velocity surfaces (Chat A, autonomous)
+**Files:** `StockSage/StockSageExpectedValue.swift`, `Views/MarketsView.swift`, `Views/TodayView.swift`.
+**Why (scout #9/#10):** calibration was wired into the idea-card EV badge + detail + allocator, but
+the "Best opportunity now", money-velocity panel, fastest-velocity, and weekly-R headline still used
+the uncalibrated linear prior — so calibrated and uncalibrated numbers sat side by side (misleading,
+honesty-relevant) once a calibration was active.
+**What:** threaded an optional `calibration` through the DISPLAY hub — `bestOpportunity`, `summary`,
+`expectedWeeklyR` (velocity already had it) — and passed `store.convictionCalibration` /
+`stockSage.convictionCalibration` at every call site (Markets money-velocity strip, best-bet card,
+nav target; Today tile). Rank ORDER intentionally left on the prior (monotonic → same order); only
+the SHOWN numbers change, so every headline now matches the cards. Default nil ⇒ tests unchanged.
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1089 pass / 0 fail**.
+**Still open from the scout:** allocation EV-column neighbors (#12), net-edge gate winProb (#13),
+calibration/log-growth UX surfacing (#11/#14), unconditional "Live/delayed" + per-row staleness
+honesty (#15/#16); RuneLite-plugin items logged separately.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
