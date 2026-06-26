@@ -8194,6 +8194,20 @@ thread calibration into pure advise(), per the plan.)
 
 ---
 
+## 2026-06-26 · summaryStat sub-line color honesty (#10) + scout-2 backlog closed (Chat A, autonomous)
+**Files:** `Views/MarketsView.swift`.
+**Why (scout #10, LOW honesty):** `summaryStat` hardcoded its sub-line green. Fine for the positive-EV
+value subs (Best/Fastest), but the "Est./week … if you run top 3" sub is a CONDITION/caveat, not a
+positive signal — green overstated it.
+**What:** added a `subColor` param (default green) and passed `.secondary` for the Est./week caveat sub.
+**Result:** `tools/typecheck.sh` ✅; suite **1100 pass / 0 fail**.
+**Scout-round-2 backlog now fully addressed:** #1a cost gate, #4 regime bias, #2 vol-targeting,
+#8/#9 calibration chips, #6 Size% note, #10 color — all shipped; #5 multi-timeframe note already
+existed (conviction-nudge deliberately not done); #1b net-Kelly deferred (low value/high churn).
+Refilling the backlog with a fresh adversarial review of the allocator-consistency + honesty changes.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

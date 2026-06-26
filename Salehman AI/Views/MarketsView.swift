@@ -2975,7 +2975,7 @@ struct MarketsView: View {
                             summaryStat("Fastest", sym, String(format: "%+.2fR/day", v))
                         }
                         if let wk = s.weeklyR {
-                            summaryStat("Est./week", String(format: "%+.1fR", wk), "if you run top 3")
+                            summaryStat("Est./week", String(format: "%+.1fR", wk), "if you run top 3", subColor: .secondary)
                         }
                         Spacer(minLength: 0)
                     }
@@ -3062,11 +3062,12 @@ struct MarketsView: View {
         }
     }
 
-    private func summaryStat(_ label: String, _ value: String, _ sub: String) -> some View {
+    private func summaryStat(_ label: String, _ value: String, _ sub: String,
+                             subColor: Color = DS.Palette.successSoft) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(label.uppercased()).font(.system(size: mvFont8, weight: .semibold)).foregroundStyle(.secondary)
             Text(value).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white).lineLimit(1)
-            Text(sub).font(.system(size: mvFont8)).foregroundStyle(DS.Palette.successSoft).lineLimit(1)
+            Text(sub).font(.system(size: mvFont8)).foregroundStyle(subColor).lineLimit(1)
         }
     }
 
