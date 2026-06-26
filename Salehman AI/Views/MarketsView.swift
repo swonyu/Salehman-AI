@@ -21,6 +21,8 @@ struct MarketsView: View {
         var id: String { rawValue }
     }
     @AppStorage("marketsIdeaFilter") private var ideaFilter: IdeaFilter = .all
+    /// Live name filter over the ideas list (by symbol / market).
+    @State private var ideaSearch = ""
 
     /// Tunable hold-day assumptions feeding velocity (EV/day). Persisted; defaults match
     /// the engine's (crypto 3d, equity 12d) so nothing shifts until the owner changes it.
@@ -2307,10 +2309,25 @@ struct MarketsView: View {
                     }
                     .menuStyle(.borderlessButton).fixedSize()
                     .accessibilityLabel("Filter ideas by action")
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(.secondary)
+                        TextField("Search", text: $ideaSearch).textFieldStyle(.plain).font(.system(size: 11))
+                            .frame(width: 84)
+                        if !ideaSearch.isEmpty {
+                            Button { ideaSearch = "" } label: {
+                                Image(systemName: "xmark.circle.fill").font(.system(size: 10)).foregroundStyle(.secondary)
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(.white.opacity(0.06), in: Capsule())
+                    .accessibilityLabel("Search ideas by symbol")
                     Spacer()
                 }
                 if displayedIdeas.isEmpty {
-                    Text("No \(ideaFilter.rawValue.lowercased()) ideas in this scan.")
+                    Text(ideaSearch.trimmingCharacters(in: .whitespaces).isEmpty
+                         ? "No \(ideaFilter.rawValue.lowercased()) ideas in this scan."
+                         : "No ideas match “\(ideaSearch)”.")
                         .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 12)
                 } else {
                     VStack(spacing: DS.Space.sm) {
@@ -2332,12 +2349,16 @@ struct MarketsView: View {
         case .velocity: sorted = StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds, earnings: store.earnings)
         case .signal:   sorted = store.ideas
         }
+        let byAction: [StockSageIdea]
         switch ideaFilter {
-        case .all:       return sorted
-        case .strongBuy: return sorted.filter { $0.advice.action == .strongBuy }
-        case .buys:      return sorted.filter { $0.advice.action == .strongBuy || $0.advice.action == .buy }
-        case .sells:     return sorted.filter { $0.advice.action == .sell || $0.advice.action == .reduce }
+        case .all:       byAction = sorted
+        case .strongBuy: byAction = sorted.filter { $0.advice.action == .strongBuy }
+        case .buys:      byAction = sorted.filter { $0.advice.action == .strongBuy || $0.advice.action == .buy }
+        case .sells:     byAction = sorted.filter { $0.advice.action == .sell || $0.advice.action == .reduce }
         }
+        let q = ideaSearch.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return byAction }
+        return byAction.filter { $0.symbol.lowercased().contains(q) || $0.market.lowercased().contains(q) }
     }
 
     private var ideasHeader: some View {
@@ -2459,6 +2480,27 @@ struct MarketsView: View {
                         .background((earnFlag.isDemoted ? DS.Palette.warningSoft : DS.Palette.surfaceStroke).opacity(0.14), in: Capsule())
                         .help(store.earnings[idea.symbol.uppercased()]?.note ?? "Upcoming earnings — binary event risk; a protective stop may gap through it.")
                 }
+                Menu {
+                    if let t = a.targetPrice {
+                        Button { store.addPriceAlert(symbol: idea.symbol, target: t, direction: .above) } label: {
+                            Label("Alert ≥ \(adaptivePrice(t)) (target)", systemImage: "target")
+                        }
+                    }
+                    if let s = a.stopPrice {
+                        Button { store.addPriceAlert(symbol: idea.symbol, target: s, direction: .below) } label: {
+                            Label("Alert ≤ \(adaptivePrice(s)) (stop)", systemImage: "shield.lefthalf.filled")
+                        }
+                    }
+                    Button { store.addPriceAlert(symbol: idea.symbol, target: idea.price, direction: .above) } label: {
+                        Label("Alert ≥ current \(adaptivePrice(idea.price))", systemImage: "bell")
+                    }
+                } label: {
+                    Image(systemName: "bell.badge")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                }
+                .menuStyle(.borderlessButton).fixedSize()
+                .help("Set a price alert for \(idea.symbol)")
+                .accessibilityLabel("Set a price alert for \(idea.symbol)")
                 Button { Task { await store.runBacktest(symbol: idea.symbol) } } label: {
                     Image(systemName: "clock.arrow.circlepath")
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
@@ -2522,6 +2564,10 @@ struct MarketsView: View {
         .accessibilityHint("Opens full advice and backtest")
         .accessibilityAction { selectedIdea = idea }
         .accessibilityAction(named: "Backtest") { Task { await store.runBacktest(symbol: idea.symbol) } }
+        .accessibilityAction(named: "Set price alert") {
+            store.addPriceAlert(symbol: idea.symbol,
+                                target: a.targetPrice ?? idea.price, direction: .above)
+        }
         .contentShape(Rectangle())
         .onTapGesture { selectedIdea = idea }
         .help("Tap for full advice + backtest")

@@ -7594,6 +7594,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-26 · Markets — Ideas section improvements (search + alert-from-idea, Chat A)
+**Files:** `Views/MarketsView.swift`.
+**What & why:** Made the Ideas board more findable and actionable. (1) Live **name search** over the ideas list (filters `displayedIdeas` by symbol/market, with a clear-button); the empty-state message now distinguishes a search miss ("No ideas match …") from a filter miss, and Copy CSV already exports exactly what's shown. (2) Per-card **🔔 Alert menu** that turns an idea straight into a one-shot price alert at its **target** (≥), **stop** (≤), or **current price** — reusing the (reviewed, tested) `StockSageStore.addPriceAlert`, so an idea you like becomes a watched level in one tap. Added a VoiceOver "Set price alert" named action on the combined idea card (mirrors the existing Backtest action).
+**Result:** ✅ `tools/typecheck.sh` clean. Ties the Ideas board to the new price-alerts feature.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
