@@ -74,6 +74,8 @@ struct MarketsView: View {
     @FocusState private var focusedAddField: AddField?
     // Alerts (wired to StockSageMonitor — strong-signal Mac notifications).
     @State private var monitoring = false
+    // Shared key with StockSageMonitor.watchlistOnlyKey — scopes the alert scan to the watchlist.
+    @AppStorage("marketsWatchlistOnly") private var watchlistOnly = false
     @State private var alertSignals: [StockSageSignal] = []
     @State private var checkingAlerts = false
     @State private var monitorError = ""
@@ -432,6 +434,20 @@ struct MarketsView: View {
                         .labelsHidden().tint(DS.Palette.accent)
                         .accessibilityLabel("Strong-signal monitoring")
                 }
+                HStack(spacing: DS.Space.sm) {
+                    Image(systemName: "star.circle").font(.system(size: 12)).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Watch only my watchlist").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.9))
+                        Text(store.userSymbols.isEmpty
+                             ? "Add tickers to your watchlist to use this — alerts currently scan the full core."
+                             : "Alerts scan only your \(store.userSymbols.count) watchlist name\(store.userSymbols.count == 1 ? "" : "s") (faster, less data).")
+                            .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $watchlistOnly).labelsHidden().tint(DS.Palette.accent)
+                        .disabled(store.userSymbols.isEmpty)
+                        .accessibilityLabel("Watch only my watchlist")
+                }
                 if !monitorError.isEmpty {
                     Text(monitorError).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
                         .transition(.opacity.combined(with: .offset(y: -4)))
@@ -535,7 +551,13 @@ struct MarketsView: View {
 
     private func checkAlertsNow() async {
         checkingAlerts = true
-        alertSignals = await StockSageMonitor.shared.runCycle(notify: false)
+        // Honour the watchlist-only scope here too, so "Check now" matches what the
+        // background monitor actually evaluates.
+        if watchlistOnly && !store.userSymbols.isEmpty {
+            alertSignals = await StockSageMonitor.shared.runWatchlistCycle(store.userSymbols, notify: false)
+        } else {
+            alertSignals = await StockSageMonitor.shared.runCycle(notify: false)
+        }
         checkingAlerts = false
     }
 

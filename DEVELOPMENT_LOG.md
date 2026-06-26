@@ -7573,6 +7573,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-26 · Markets — watchlist-scoped alert monitor (backlog #25, Chat A)
+**Files:** `StockSage/StockSageMonitor.swift`, `Views/MarketsView.swift`.
+**What & why:** The background Monitor pulled the whole ~250-name core every 45s just to alert on a few watched names. Added an opt-in "Watch only my watchlist" toggle (Markets alerts card, @AppStorage `marketsWatchlistOnly` — same key the Monitor reads from UserDefaults each cycle). When on AND the watchlist is non-empty, the loop runs a NEW self-contained `runWatchlistCycle(_:)` that fetches LIVE quotes for just the watchlist, builds symbols, and fires the same NEW/flipped strong-signal alerts (deduped via `lastAlerted`) — WITHOUT touching the board `symbols` or its sample/cache flags, so it stays honest (alerts only on quotes it just fetched, guarded q.price>0 && previousClose>0) and cheap. "Check now" honours the scope too. Off / empty watchlist → unchanged full behaviour. The toggle disables itself with an explanatory caption when the watchlist is empty.
+**Result:** ✅ `tools/typecheck.sh` clean. Second of three requested Markets features.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

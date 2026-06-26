@@ -21,6 +21,10 @@ final class StockSageMonitor {
 
     private var task: Task<Void, Never>?
     private(set) var isRunning = false
+    /// When this UserDefaults flag is set AND the user has a non-empty watchlist, the loop
+    /// scans ONLY the watchlist (fetching just those quotes) instead of pulling the whole
+    /// ~250-name core every cycle. Shared with the Markets toggle's @AppStorage key.
+    static let watchlistOnlyKey = "marketsWatchlistOnly"
     /// The last strong recommendation fired per symbol, so we don't re-spam the
     /// SAME alert every cycle (only a NEW or CHANGED strong signal notifies).
     private var lastAlerted: [String: StockSageRecommendation] = [:]
@@ -44,10 +48,18 @@ final class StockSageMonitor {
 
         task = Task { [weak self] in
             while !Task.isCancelled {
-                // Evaluate on LIVE quotes: pull a fresh worldwide snapshot before
-                // each cycle (no-ops cleanly when offline / web access is off).
-                await StockSageStore.shared.refresh()
-                await self?.runCycle()
+                // Watchlist-only mode (opt-in, re-read each cycle so toggling takes effect):
+                // fetch + scan ONLY the user's watchlist instead of refreshing the whole core.
+                let watch = StockSageStore.shared.userSymbols
+                let scoped = UserDefaults.standard.bool(forKey: StockSageMonitor.watchlistOnlyKey) && !watch.isEmpty
+                if scoped {
+                    await self?.runWatchlistCycle(watch)
+                } else {
+                    // Evaluate on LIVE quotes: pull a fresh worldwide snapshot before
+                    // each cycle (no-ops cleanly when offline / web access is off).
+                    await StockSageStore.shared.refresh()
+                    await self?.runCycle()
+                }
                 // Throttle under pressure: concurrencyLimit() folds in both
                 // memory pressure and thermal state. <=1 means "the machine is
                 // stressed" → back off to 2× the interval.
@@ -99,6 +111,34 @@ final class StockSageMonitor {
         // strong→hold→strong round-trip would re-fire the identical alert the user already
         // saw. A genuine flip (Strong Buy⇄Strong Sell) still alerts — the rec differs.
         if liveNotify { for (sym, rec) in nowStrong { lastAlerted[sym] = rec } }
+        return strong
+    }
+
+    /// Watchlist-only evaluation: fetch LIVE quotes for just the watchlist tickers and alert
+    /// on strong buy/sell — self-contained (doesn't touch the board `symbols` or its
+    /// sample/cache flags), so it stays honest (it fires only on quotes it just fetched) and
+    /// cheap (no 250-name pull). Same NEW-or-flipped dedup as runCycle via `lastAlerted`.
+    @discardableResult
+    func runWatchlistCycle(_ watch: [String], notify: Bool = true) async -> [StockSageSignal] {
+        let quotes = await StockSageQuoteService.fetchQuotes(for: watch)
+        var strong: [StockSageSignal] = []
+        var nowStrong: [String: StockSageRecommendation] = [:]
+        for ticker in watch {
+            guard let q = quotes[ticker.uppercased()], q.price > 0, q.previousClose > 0 else { continue }
+            let sym = StockSageSymbol(symbol: ticker, market: "★ My watchlist", quotes: [
+                StockSageQuote(price: q.previousClose, previousPrice: q.previousClose,
+                               time: Date(timeIntervalSinceNow: -86_400)),
+                StockSageQuote(price: q.price, previousPrice: q.previousClose),
+            ])
+            guard let signal = StockSageSignalEngine.generateSignal(for: sym) else { continue }
+            guard signal.recommendation == .strongBuy || signal.recommendation == .strongSell else { continue }
+            strong.append(signal)
+            nowStrong[signal.symbol] = signal.recommendation
+            if notify, lastAlerted[signal.symbol] != signal.recommendation {
+                await sendAlert(signal: signal, market: sym.market)
+            }
+        }
+        if notify { for (s, r) in nowStrong { lastAlerted[s] = r } }
         return strong
     }
 
