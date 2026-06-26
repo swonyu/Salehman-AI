@@ -352,9 +352,11 @@ enum StockSageExpectedValue {
     /// velocity (EV/day) desc — the fastest-compounding opportunities. Index/FX (no
     /// hold) and non-positive-EV ideas are excluded. Faster turnover = more cycles
     /// AND more chances to be wrong; the UI carries that caveat.
-    nonisolated static func fastLane(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults) -> [StockSageIdea] {
+    nonisolated static func fastLane(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults,
+                                     calibration: StockSageConvictionCalibration? = nil) -> [StockSageIdea] {
         ideas.enumerated().compactMap { idx, idea -> (Int, StockSageIdea, Double)? in
-            guard let e = ev(for: idea), e.evR > 0, let v = velocityRankKey(for: idea, holds: holds) else { return nil }
+            guard let e = ev(for: idea, calibration: calibration), e.evR > 0,
+                  let v = velocityRankKey(for: idea, holds: holds, calibration: calibration) else { return nil }
             return (idx, idea, v)
         }
         .sorted { $0.2 == $1.2 ? $0.0 < $1.0 : $0.2 > $1.2 }
@@ -368,7 +370,7 @@ enum StockSageExpectedValue {
     nonisolated static func expectedWeeklyR(_ ideas: [StockSageIdea], maxConcurrent: Int = 3, tradingDays: Double = 5,
                                             holds: VelocityHoldDays = .defaults,
                                             calibration: StockSageConvictionCalibration? = nil) -> Double? {
-        let vels = fastLane(ideas, holds: holds).prefix(Swift.max(0, maxConcurrent)).compactMap { velocity(for: $0, holds: holds, calibration: calibration) }
+        let vels = fastLane(ideas, holds: holds, calibration: calibration).prefix(Swift.max(0, maxConcurrent)).compactMap { velocity(for: $0, holds: holds, calibration: calibration) }
         guard !vels.isEmpty else { return nil }
         return vels.reduce(0, +) * tradingDays
     }
@@ -378,9 +380,10 @@ enum StockSageExpectedValue {
     /// lane. An ESTIMATE that assumes you take & re-cycle the top setups — NOT income.
     nonisolated static func expectedWeeklyDollars(_ ideas: [StockSageIdea], account: Double, riskFraction: Double,
                                                   maxConcurrent: Int = 3, tradingDays: Double = 5,
-                                                  holds: VelocityHoldDays = .defaults) -> Double? {
+                                                  holds: VelocityHoldDays = .defaults,
+                                                  calibration: StockSageConvictionCalibration? = nil) -> Double? {
         guard account > 0, riskFraction > 0, account.isFinite, riskFraction.isFinite,
-              let wkR = expectedWeeklyR(ideas, maxConcurrent: maxConcurrent, tradingDays: tradingDays, holds: holds) else { return nil }
+              let wkR = expectedWeeklyR(ideas, maxConcurrent: maxConcurrent, tradingDays: tradingDays, holds: holds, calibration: calibration) else { return nil }
         return wkR * account * riskFraction   // finite inputs → never "+$inf/week"
     }
 
@@ -389,8 +392,9 @@ enum StockSageExpectedValue {
     /// equity-only → 5 (so nothing shifts for the existing equity case), 1-of-3 crypto → 6.
     /// Empty lane → 5. NOTE: more trading days ≠ more edge — crypto's extra cadence carries
     /// extra variance, which `cryptoRiskScaler` sizes DOWN for.
-    nonisolated static func tradingDaysForLane(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults) -> Double {
-        let lane = fastLane(ideas, holds: holds)
+    nonisolated static func tradingDaysForLane(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults,
+                                               calibration: StockSageConvictionCalibration? = nil) -> Double {
+        let lane = fastLane(ideas, holds: holds, calibration: calibration)
         guard !lane.isEmpty else { return 5 }
         let crypto = lane.filter { StockSageAllocation.assetClass($0.symbol) == "Crypto" }.count
         return (5 + 2 * Double(crypto) / Double(lane.count)).rounded()
@@ -419,7 +423,7 @@ enum StockSageExpectedValue {
         // Calibration-aware so every headline number (best EV, fastest velocity, weekly R) uses the
         // SAME measured win-prob as the idea cards — no calibrated-next-to-uncalibrated mismatch.
         let best = bestOpportunity(ideas, regime: regime, earnings: earnings, calibration: calibration)
-        let fastest = fastLane(ideas, holds: holds).first
+        let fastest = fastLane(ideas, holds: holds, calibration: calibration).first
         // The brake: the owner's worst losing streak, compounded down at the risk fraction.
         let dd = StockSageJournal.equityRisk(trades)
             .flatMap { StockSageRiskOfRuin.scenario(losses: $0.maxConsecutiveLosses, fraction: fraction) }
@@ -429,7 +433,7 @@ enum StockSageExpectedValue {
             fastestSymbol: fastest?.symbol,
             fastestVelocity: fastest.flatMap { velocity(for: $0, holds: holds, calibration: calibration) },
             // Honest cadence: an all-crypto lane re-cycles ~7 days/week, equity ~5.
-            weeklyR: expectedWeeklyR(ideas, tradingDays: tradingDaysForLane(ideas, holds: holds), holds: holds, calibration: calibration),
+            weeklyR: expectedWeeklyR(ideas, tradingDays: tradingDaysForLane(ideas, holds: holds, calibration: calibration), holds: holds, calibration: calibration),
             worstRunLosses: dd?.losses,
             worstRunDrawdownPct: dd?.drawdownPct,
             riskFraction: fraction)
@@ -465,8 +469,9 @@ enum StockSageExpectedValue {
     /// (shortest holds) tends to pile into crypto — so the "diversification" of the
     /// fast lane can be an illusion. `isConcentrated` = the top-N are ALL one class.
     nonisolated static func fastLaneConcentration(_ ideas: [StockSageIdea], topN: Int = 3,
-                                                  holds: VelocityHoldDays = .defaults) -> FastLaneConcentration? {
-        let top = Array(fastLane(ideas, holds: holds).prefix(Swift.max(0, topN)))
+                                                  holds: VelocityHoldDays = .defaults,
+                                                  calibration: StockSageConvictionCalibration? = nil) -> FastLaneConcentration? {
+        let top = Array(fastLane(ideas, holds: holds, calibration: calibration).prefix(Swift.max(0, topN)))
         guard top.count >= 2 else { return nil }
         let counts = Dictionary(grouping: top.map { StockSageAllocation.assetClass($0.symbol) }, by: { $0 })
             .mapValues(\.count)

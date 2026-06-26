@@ -8545,6 +8545,26 @@ honesty (#11/#13/#14); + #3 takerFeeBps dead-code unit trap (low).
 
 ---
 
+## 2026-06-26 · Calibrate the whole money-velocity card — scout #1/#4/#7/#2 (Chat A, autonomous)
+**Files:** `StockSage/StockSageExpectedValue.swift`, `Views/MarketsView.swift`, `StockSageExpectedValueTests.swift`.
+**Why (verified scout w7b6t392u, MEDIUM):** `expectedWeeklyDollars` had no calibration param (so $/week
+used the linear prior while the R/week beside it was calibrated), `fastLane`/`tradingDaysForLane`/
+`fastLaneConcentration` SELECTED setups uncalibrated, and `expectedWeeklyR` then summed CALIBRATED
+velocities of an uncalibrated selection — calibrated-next-to-uncalibrated mismatches the engine's own
+docs say it avoids.
+**What (one coherent change):** threaded `calibration: …= nil` through fastLane, tradingDaysForLane,
+fastLaneConcentration, expectedWeeklyR's lane call, and expectedWeeklyDollars; summary now passes
+calibration into its fastLane/tradingDaysForLane too (fastest pick matches its calibrated weeklyR). All
+MarketsView money-velocity call sites pass store.convictionCalibration.
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1108 pass / 0 fail** (+test: a
+measured calibration rating a band below the prior lowers BOTH weekly-R and weekly-$).
+**Backlog (scout): 5 of 14 done.** Remaining: validation honesty (#8 green PASS next to 'not meaningful
+yet' MarketsView:3209-3217; #9 RED-FLAG overfit on 2-trade OOS no min-gate StockSageBacktester:114; #10
+t>3 PASS on raw t when fat-tail-corrected fails StockSageStrategyBacktest:37-41); live-data (#11/#13/#14);
+#3 takerFeeBps dead-code unit trap (low).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

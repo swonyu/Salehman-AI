@@ -3002,7 +3002,7 @@ struct MarketsView: View {
                         Spacer(minLength: 0)
                     }
                     if let acct = Double(sizerAccount), acct > 0, let rp = Double(sizerRiskPct), rp > 0,
-                       let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds), holds: velocityHolds) {
+                       let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), holds: velocityHolds, calibration: store.convictionCalibration) {
                         Text(String(format: "≈ +$%.0f/week at $%.0f acct, %.1f%% risk — %@", usd, acct, rp, MoneyVelocityCopy.weeklyDollars))
                             .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)   // neutral: an estimate, not a realized gain
@@ -3042,7 +3042,7 @@ struct MarketsView: View {
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                             .accessibilityLabel(String(format: "Risk warning: worst losing run %d trades at %d percent risk is about %.1f percent drawdown. Size to survive variance.", losses, Int((s.riskFraction * 100).rounded()), ddPct * 100))
                     }
-                    if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds), conc.isConcentrated {
+                    if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), conc.isConcentrated {
                         Text("⚠︎ Fast lane is concentrated — your top \(conc.total) fastest are all \(conc.dominantClass); that's closer to one bet, not \(conc.total). Diversify or size them as one.")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
@@ -3064,7 +3064,7 @@ struct MarketsView: View {
                     return String(format: ". Risk warning: worst losing run %d trades at %d percent risk is about %.1f percent drawdown.", losses, Int((s.riskFraction * 100).rounded()), ddPct * 100)
                 }())
                 + ({ () -> String in
-                    guard let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds), conc.isConcentrated else { return "" }
+                    guard let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), conc.isConcentrated else { return "" }
                     return ". Velocity warning: the fastest \(conc.total) ideas are all \(conc.dominantClass), concentration risk; size them as one bet."
                 }()))
             .help(StockSageGlossary.moneyVelocityHelp)
@@ -3095,7 +3095,7 @@ struct MarketsView: View {
 
     // Fast lane — the highest-turnover positive-EV setups (fastest compounding).
     @ViewBuilder private var fastLaneStrip: some View {
-        let lane = StockSageExpectedValue.fastLane(store.ideas, holds: velocityHolds)
+        let lane = StockSageExpectedValue.fastLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration)
         if lane.count >= 2 {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
@@ -3124,18 +3124,18 @@ struct MarketsView: View {
                         .accessibilityLabel("\(idea.symbol): \(String(format: "%+.3f", v)) R per day velocity\(idea.symbol.hasSuffix("-USD") ? ", 24/7 volatile" : ""). Tap for the plan.")
                     }
                 }
-                if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds), holds: velocityHolds) {
+                if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), holds: velocityHolds, calibration: store.convictionCalibration) {
                     Text(String(format: "≈ %+.1fR/week if you run the top %d — estimate, high variance, assumes you take and re-cycle these. Not a promise.", wk, Swift.min(3, lane.count)))
                         .font(.system(size: mvFont9, weight: .medium))
                         .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
                     if let acct = Double(sizerAccount), acct > 0, let rp = Double(sizerRiskPct), rp > 0,
-                       let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds), holds: velocityHolds) {
+                       let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), holds: velocityHolds, calibration: store.convictionCalibration) {
                         Text(String(format: "≈ +$%.0f/week at $%.0f account, %.1f%% risk — estimate, high variance, NOT income.", usd, acct, rp))
                             .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)   // neutral: estimate, not a realized gain
                     }
                 }
-                if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds), conc.isConcentrated {
+                if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), conc.isConcentrated {
                     Text("⚠︎ Your top \(conc.total) fastest are all \(conc.dominantClass) — that's closer to ONE bet than \(conc.total); they tend to move together. Diversify or size them as one.")
                         .font(.system(size: mvFont9, weight: .medium))
                         .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)

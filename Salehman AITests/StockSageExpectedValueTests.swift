@@ -61,6 +61,25 @@ struct StockSageExpectedValueTests {
         #expect(EV.rankByEV([a, b], calibration: cal).first?.symbol == "BBB")
     }
 
+    @Test func weeklyDollarsAndWeeklyRUseTheCalibration() {
+        // A crypto setup (has a velocity). A measured calibration rating its band BELOW the linear
+        // prior must lower BOTH weekly-R and weekly-$ — they can't show a calibrated R beside an
+        // uncalibrated $ anymore.
+        let c = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
+        let uncalR = EV.expectedWeeklyR([c])
+        let uncalUSD = EV.expectedWeeklyDollars([c], account: 10_000, riskFraction: 0.01)
+        var outcomes: [(conviction: Double, won: Bool)] = []
+        for i in 0..<40 { outcomes.append((conviction: 0.9, won: i < 16)) }   // ~40%, well below the 0.557 prior
+        guard let cal = StockSageConvictionCalibration.fit(outcomes, minSamples: 30) else {
+            Issue.record("expected a fit"); return
+        }
+        let calR = EV.expectedWeeklyR([c], calibration: cal)
+        let calUSD = EV.expectedWeeklyDollars([c], account: 10_000, riskFraction: 0.01, calibration: cal)
+        #expect(uncalR != nil && calR != nil && uncalUSD != nil && calUSD != nil)
+        if let u = uncalR, let d = calR { #expect(d < u) }       // lower measured win-prob → lower weekly R
+        if let u = uncalUSD, let d = calUSD { #expect(d < u) }   // …and the $ follows it
+    }
+
     @Test func velocityRewardsFastTurnover() {
         // Same EV (1.228), but crypto hold 3 beats equity hold 12.
         let equity = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
