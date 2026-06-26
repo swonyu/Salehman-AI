@@ -266,7 +266,13 @@ enum StockSageAdvisor {
                 let rr = Swift.min(abs(target - price) / abs(price - stop), 50)
                 let w = StockSageExpectedValue.winProbEstimate(conviction: conviction)
                 let fStar = Swift.max(0, w - (1 - w) / rr)        // Kelly risk fraction
-                let riskFraction = Swift.min(fStar / 2, riskPerTrade)   // half-Kelly, ≤ the 1% budget
+                var riskFraction = Swift.min(fStar / 2, riskPerTrade)   // half-Kelly, ≤ the 1% budget
+                // VOL TARGETING (risk assets): shrink the RISK budget for high realized volatility —
+                // a ~40%-vol name risks ~½, a ~70%-vol crypto/growth name ~⅓; calm names (≤20% vol)
+                // are unchanged. This is leverage management (the documented Sharpe benefit is for
+                // RISK ASSETS), distinct from the vol-scaled STOP above (which sizes the stop, not
+                // the budget). Floored at 1 so it can only reduce risk. nil vol ⇒ unchanged.
+                if let v = realizedVol { riskFraction /= StockSageExpectedValue.cryptoRiskScaler(annualizedVol: v) }
                 weight = Swift.min(riskFraction / stopDistPct, maxWeight)
             }
         }

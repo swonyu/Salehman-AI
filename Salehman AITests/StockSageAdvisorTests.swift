@@ -206,8 +206,10 @@ struct StockSageAdvisorTests {
     }
 
     @Test func positionSizeIsHardCapped() {
-        // A very tight ATR stop would size huge; the cap must clamp it to maxWeight.
-        let closes = (1...250).map(Double.init)
+        // A very tight ATR stop would size huge; the cap must clamp it to maxWeight. Use a SMOOTH
+        // low-vol uptrend (±1 highs/lows on ~50→1000 prices → tiny ATR%) so the vol-target shrink is
+        // ~1 and the clamp is what's under test (the old linear ramp had high early-return vol).
+        let closes = TrendFixtures.up(250)
         let highs = closes.map { $0 + 1 }
         let lows  = closes.map { $0 - 1 }
         let a = StockSageAdvisor.advise(closes: closes, highs: highs, lows: lows)

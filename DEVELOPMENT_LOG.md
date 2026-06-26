@@ -8030,6 +8030,23 @@ so. Empty/short sparks (e.g. test fixtures) → correlation 0 → no clique → 
 
 ---
 
+## 2026-06-26 · Vol-targeted sizing — shrink the risk budget for high-vol risk assets (Chat A, autonomous)
+**Files:** `StockSage/StockSageAdvisor.swift`, `StockSageAdvisorTests.swift`.
+**Why (deep-research feature 2; vol-targeting helps RISK ASSETS via the leverage effect):** vol
+previously only set the STOP WIDTH (notional), so a high-vol name still risked the FULL 1% budget.
+The evidence-backed move is to risk LESS on high-vol assets. `StockSageExpectedValue.cryptoRiskScaler`
+(max(1, vol/0.20)) existed but was DEAD CODE (zero usages).
+**What:** the advisor now divides its half-Kelly risk fraction by the vol scaler — a ~40%-vol name
+risks ~½, a ~70%-vol crypto/growth name ~⅓; calm names (≤20% vol) unchanged. Applies to ALL classes
+by realized vol (not just crypto), floored at 1 (only reduces). Distinct from the vol-scaled stop
+(which sizes the stop, not the budget) — leverage management, not signal timing.
+**Result:** `tools/typecheck.sh` ✅; suite **1097 pass / 0 fail**. Fixed the one exact-weight test
+(positionSizeIsHardCapped) to use the smooth low-vol TrendFixtures.up so the CLAMP is what's tested,
+not the shrink (the old linear ramp had high early-return vol).
+**Next:** wide ATR trailing exits (research feature 3).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
