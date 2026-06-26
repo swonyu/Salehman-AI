@@ -2844,7 +2844,7 @@ struct MarketsView: View {
     // account AND at least one fundable position — never a manufactured plan.
     @ViewBuilder private var capitalAllocationCard: some View {
         if let acct = StockSageInput.positiveAmount(sizerAccount) {
-            let plan = StockSageCapitalAllocator.allocate(ideas: store.ideas, account: acct)
+            let plan = StockSageCapitalAllocator.allocate(ideas: store.ideas, account: acct, calibration: store.convictionCalibration)
             if !plan.positions.isEmpty {
                 let heatColor: Color = plan.totalHeat > 0.06 ? DS.Palette.warningSoft : DS.Palette.successSoft
                 VStack(alignment: .leading, spacing: 8) {

@@ -7852,6 +7852,18 @@ assertion to 70bps).
 
 ---
 
+## 2026-06-26 · Calibration into the capital-deployment plan (Chat A, autonomous)
+**Files:** `StockSage/StockSageCapitalAllocator.swift`, `Views/MarketsView.swift`.
+**Why:** the "deploy capital" plan (the one surface that turns ideas into concrete share sizes via
+half-Kelly) recomputed Kelly from the PRIOR win-prob. Now it sizes on the MEASURED win-rate when a
+calibration exists.
+**What:** `allocate(..., calibration:)` threads the calibration into its `ev()` → Kelly call; the
+Markets call site passes `store.convictionCalibration` (nil-safe → identical to before when not yet
+calibrated). Allocator tests unchanged (default nil).
+**Result:** `tools/typecheck.sh` ✅; full suite **1089 pass / 0 fail**.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

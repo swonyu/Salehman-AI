@@ -38,7 +38,8 @@ enum StockSageCapitalAllocator {
     /// already encodes the edge — bigger win·payoff ⇒ bigger fraction), scale uniformly so the
     /// summed risk fits `maxHeat`, then floor to whole shares. Empty plan on invalid inputs or
     /// when nothing is fundable.
-    nonisolated static func allocate(ideas: [StockSageIdea], account: Double, maxHeat: Double = 0.08) -> CapitalAllocation {
+    nonisolated static func allocate(ideas: [StockSageIdea], account: Double, maxHeat: Double = 0.08,
+                                     calibration: StockSageConvictionCalibration? = nil) -> CapitalAllocation {
         let cap = Swift.min(Swift.max(0, maxHeat), 1)
         func empty() -> CapitalAllocation {
             CapitalAllocation(positions: [], totalHeat: 0, requestedHeat: 0, scaleApplied: 1,
@@ -55,7 +56,7 @@ enum StockSageCapitalAllocator {
             let a = idea.advice
             guard a.action == .buy || a.action == .strongBuy,
                   let stop = a.stopPrice, let target = a.targetPrice, idea.price > 0,
-                  let ev = StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target),
+                  let ev = StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target, calibration: calibration),
                   ev.evR > 0 else { continue }
             let k = StockSageKelly.compute(winRate: ev.winProbEstimate, payoffRatio: ev.rewardR, accountSize: account)
             // Weight off suggestedFraction (= half-Kelly HARD-CAPPED at Kelly's 20% per-position
