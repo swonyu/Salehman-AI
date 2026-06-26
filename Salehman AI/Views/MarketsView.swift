@@ -2158,10 +2158,18 @@ struct MarketsView: View {
         let flat = abs(change) <= 0.05
         let up = change > 0
         let hovered = hoveredSignalID == sym.id
+        // Per-row freshness: a stale (weekend/holiday or stale-feed) quote is dimmed + clock-flagged so
+        // its Buy/Sell + strength% isn't acted on as a live signal — matching the heatmap's treatment.
+        let stale = sym.isStale()
         return HStack(spacing: DS.Space.md) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(sym.symbol).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                Text(sym.market).font(.caption2).foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text(sym.symbol).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    if stale {
+                        Image(systemName: "clock.fill").font(.system(size: 9)).foregroundStyle(DS.Palette.warningSoft)
+                    }
+                }
+                Text(stale ? "\(sym.market) · stale" : sym.market).font(.caption2).foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
@@ -2220,6 +2228,7 @@ struct MarketsView: View {
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(hovered ? DS.Palette.accent.opacity(0.35) : DS.Palette.surfaceStroke, lineWidth: 1))
         .scaleEffect(hovered ? 1.008 : 1.0)
+        .opacity(stale ? 0.55 : 1)   // visually recede a stale row — not a live, actionable signal
         .shadow(color: DS.Palette.accent.opacity(hovered ? 0.10 : 0), radius: 10, y: 3)
         .animation(DS.Motion.smooth, value: hovered)
         .contentShape(Rectangle())
@@ -2229,7 +2238,9 @@ struct MarketsView: View {
                 else if hoveredSignalID == sym.id { hoveredSignalID = nil }
             }
         }
-        .help(signal?.reason ?? "")
+        .help(stale
+              ? "STALE: last quote \((sym.latest?.time).map { $0.formatted(.relative(presentation: .named)) } ?? "unknown") — market likely closed, not a live price. \(signal?.reason ?? "")"
+              : (signal?.reason ?? ""))
         .contextMenu {
             if sym.market == "★ My watchlist" {
                 Button(role: .destructive) { store.removeSymbol(sym.symbol) } label: {

@@ -8614,6 +8614,21 @@ is MainActor, not nonisolated.]
 
 ---
 
+## 2026-06-26 · Signal list flags stale rows like the heatmap — scout #13 (Chat A, autonomous)
+**Files:** `Views/MarketsView.swift` (signalCard).
+**Why (verified scout w7b6t392u, MEDIUM honesty):** signalCard rendered an actionable Buy/Sell + strength%
+on STALE equities with no staleness indicator, while the heatmap already dims + clock-flags stale tiles —
+inconsistent, and a stale weekend close could be acted on as a live signal.
+**What:** mirror the heatmap's per-row pattern — `let stale = sym.isStale()`; a clock.fill badge next to
+the symbol, "· stale" on the market label, the whole card dimmed to 0.55, and a STALE help tooltip
+('last quote <relative>; market likely closed, not a live price'). Same StockSageQuoteFreshness rule.
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1110 pass / 0 fail** (UI parity
+with the already-tested heatmap path).
+**Backlog: 11 of 14 done.** Remaining: #14 briefing renders sample/stale as authoritative (MarketsView:2286);
+#3 takerFeeBps dead-code unit trap (low). After #3 → scout fully drained (14/14).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
