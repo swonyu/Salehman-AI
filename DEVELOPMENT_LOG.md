@@ -8407,6 +8407,21 @@ the MarketsView highlight to use it. +test asserting it reads UTC (epoch 0 → m
 
 ---
 
+## 2026-06-26 · Ruin/drawdown copy: survival figure is a clean-1R FLOOR (scout #5) (Chat A, autonomous)
+**Files:** `StockSage/StockSageGlossary.swift`.
+**Why (broader scout, LAST LOW, honesty):** the drawdown-survival line models k consecutive CLEAN 1R
+stop-outs ((1−f)^k). A gap/slippage past the stop loses MORE than 1R, so the number is best-case —
+the copy didn't say so.
+**What:** appended to the drawdownSurvival glossary explanation (the .help on the 'Stay in the game'
+line) that each loss is assumed a clean 1R stop and a gap/slippage can lose more, so it's a FLOOR not
+a guarantee. Pure copy (the MonteCarlo caveat already states its own bootstrap assumptions).
+**Result:** `tools/typecheck.sh` ✅; suite **1103 pass / 0 fail**.
+**Milestone:** broader scout w7gc2l4ts is now FULLY DRAINED (9/9 triaged; HIGH/MED all shipped, LOWs
+done). Loop pivots to the deep-research Tier-1 checklist (moment-corrected t-stat → variant logging →
+CPCV/DSR harness). Beta-calibration swap flagged for OWNER sign-off (design change, not autonomous).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

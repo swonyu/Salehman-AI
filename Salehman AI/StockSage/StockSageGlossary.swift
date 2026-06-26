@@ -62,7 +62,7 @@ enum StockSageGlossary {
         case .compounding:
             return "Your OWN closed-trade R compounded at a fixed risk % per trade, ×(1 + f·R) each. The PAST path of your trades, not a projection of future returns."
         case .drawdownSurvival:
-            return "k losing trades in a row at risk f shrink the account by (1 − f)^k. The counterweight to velocity: size so a normal losing streak stays survivable — staying in the game is how velocity pays off."
+            return "k losing trades in a row at risk f shrink the account by (1 − f)^k. The counterweight to velocity: size so a normal losing streak stays survivable — staying in the game is how velocity pays off. Assumes each loss is a CLEAN 1R stop-out; an overnight gap or slippage past the stop can lose MORE than 1R, so this is a best-case FLOOR, not a guarantee."
         case .gpPerHour:
             return "OSRS flip velocity: (sell − buy − GE tax) × the 4-hour buy limit ÷ 4h = gp per hour. A CEILING, not a rate you'll hit: it assumes you fill the ENTIRE buy limit and resell instantly. Real fills are VOLUME-GATED — a thin item can take hours to fill (or never), so a high gp/hour on low volume is mostly theoretical."
         }
