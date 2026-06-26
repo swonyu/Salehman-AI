@@ -6,9 +6,9 @@ import Foundation
 // flag a multi-day weekend/holiday close. Fixed `now` so the dates are deterministic.
 @MainActor
 struct StockSageStalenessTests {
-    private func sym(_ ticker: String, at time: Date) -> StockSageSymbol {
+    private func sym(_ ticker: String, at marketTime: Date?) -> StockSageSymbol {
         StockSageSymbol(symbol: ticker, market: "M",
-                        quotes: [StockSageQuote(price: 100, previousPrice: 100, time: time)])
+                        quotes: [StockSageQuote(price: 100, previousPrice: 100, marketTime: marketTime)])
     }
 
     @Test func equityToleratesOvernightCryptoFlagsFast() {
@@ -21,5 +21,7 @@ struct StockSageStalenessTests {
         #expect(sym("BTC-USD", at: now.addingTimeInterval(-12 * 3600)).isStale(asOf: now) == true)
         // No quote → can't judge → not stale (no false alarm).
         #expect(StockSageSymbol(symbol: "AAPL", market: "M").isStale(asOf: now) == false)
+        // A quote with NO market time (feed omitted it) → can't judge → not stale, even if very old.
+        #expect(sym("AAPL", at: nil).isStale(asOf: now) == false)
     }
 }

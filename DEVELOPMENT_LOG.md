@@ -8082,6 +8082,22 @@ when a real market timestamp exists (currently fetch-time fallback conflates wit
 
 ---
 
+## 2026-06-26 · Fix medium review finding — explicit quote marketTime for staleness (Chat A, autonomous)
+**Files:** `StockSage/StockSageModels.swift`, `StockSage/StockSageStore.swift`, `StockSageStalenessTests.swift`.
+**Why (overnight-review MEDIUM):** `isStale` judged `StockSageQuote.time`, but the store stamped
+`time = q.marketTime ?? Date()`, conflating a real market timestamp with the fetch-time fallback — so
+the docstring's "can't judge when only fetch-time is known" wasn't actually representable.
+**What:** added an explicit `StockSageQuote.marketTime: Date?` (nil when the feed omits it), distinct
+from the observation `time`; refresh + mergeLiveQuotes now set `marketTime: q.marketTime` and leave
+`time` as the observation time; `isStale` judges `marketTime` only (nil ⇒ can't judge ⇒ NOT stale).
+Defaulted init keeps every existing StockSageQuote construction compiling.
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1097 pass / 0 fail** (+ a test
+that a quote with no market time is never flagged, even if old). ALL 4 overnight-review findings now
+resolved (3 low + 1 medium); the review found NO high-severity defects in tonight's money math.
+**Next:** refill the backlog (fresh discovery scout / review) or the next valuable improvement.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

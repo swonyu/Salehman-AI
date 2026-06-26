@@ -22,13 +22,18 @@ struct StockSageQuote: Sendable, Equatable, Identifiable {
     let price: Double
     /// The immediately-prior price, used by the signal engine to compute change.
     let previousPrice: Double
+    /// When we OBSERVED/fetched this quote (defaults to now). Not a freshness signal on its own.
     let time: Date
+    /// The quote's own MARKET timestamp from the feed (nil when the feed omitted it). Distinct from
+    /// `time` so staleness only judges a REAL market time — a nil one means "can't judge", never stale.
+    let marketTime: Date?
 
-    init(id: UUID = UUID(), price: Double, previousPrice: Double, time: Date = Date()) {
+    init(id: UUID = UUID(), price: Double, previousPrice: Double, time: Date = Date(), marketTime: Date? = nil) {
         self.id = id
         self.price = price
         self.previousPrice = previousPrice
         self.time = time
+        self.marketTime = marketTime
     }
 
     /// Percent change vs the previous price. Guards divide-by-zero (a brand-new
@@ -63,7 +68,8 @@ struct StockSageSymbol: Sendable, Equatable, Identifiable {
     /// time (feed gave no real market timestamp) — can't judge, so don't cry wolf. Mirrors the
     /// GE-flip / regime per-item staleness precedent.
     func isStale(asOf now: Date = Date()) -> Bool {
-        guard let t = latest?.time else { return false }
+        // Judge the real MARKET time only; no market time ⇒ can't judge ⇒ not stale (no false alarm).
+        guard let t = latest?.marketTime else { return false }
         let tolerance: TimeInterval = StockSageAllocation.assetClass(symbol) == "Crypto" ? 6 * 3600 : 48 * 3600
         return now.timeIntervalSince(t) > tolerance
     }
