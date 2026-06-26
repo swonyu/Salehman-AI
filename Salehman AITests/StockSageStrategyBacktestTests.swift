@@ -13,6 +13,24 @@ struct StockSageStrategyBacktestTests {
                        totalR: totalR, maxDrawdownR: maxDD, sharpe: 0, avgHoldBars: 5)
     }
 
+    @Test func pooledTStatFromTrades() {
+        // No trades supplied → tStat 0 (default, behaviour unchanged).
+        #expect(StockSageStrategyBacktest.aggregate([result(trades: 10, wins: 6, totalR: 5, maxDD: 3)]).tStat == 0)
+        // Pooled trades with a positive mean and real dispersion → positive, finite t.
+        let trades = (0..<120).map { i in
+            BacktestTrade(entryIndex: 0, exitIndex: 1, entry: 100, exit: 100,
+                          r: i.isMultiple(of: 3) ? -1.0 : 2.0, outcome: .target)   // ~2/3 win, mean>0
+        }
+        let agg = result(trades: 120, wins: 80, totalR: 80, maxDD: 5)
+        let s = StockSageStrategyBacktest.aggregate([agg], trades: trades)
+        #expect(s.tStat > 0)
+        #expect(s.isSignificant)                       // 120 ≥ 100
+        #expect(s.significanceVerdict.contains("t ="))
+        // Zero dispersion (all identical R) → tStat 0, not a divide-by-zero.
+        let flat = (0..<120).map { _ in BacktestTrade(entryIndex: 0, exitIndex: 1, entry: 100, exit: 100, r: 1.0, outcome: .target) }
+        #expect(StockSageStrategyBacktest.aggregate([agg], trades: flat).tStat == 0)
+    }
+
     @Test func aggregatesSumsAndRates() {
         let a = result(trades: 10, wins: 6, totalR: 5, maxDD: 3)     // profitable
         let b = result(trades: 5, wins: 2, totalR: -1, maxDD: 4)     // losing

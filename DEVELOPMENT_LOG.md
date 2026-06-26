@@ -7986,6 +7986,21 @@ closed, not a live price". No-quote → not stale (no false alarm).
 
 ---
 
+## 2026-06-26 · Validation: pooled t>3 gauge on the StrategyBacktest aggregate (Chat A, autonomous)
+**Files:** `StockSage/StockSageStrategyBacktest.swift`, `StockSage/StockSageStore.swift`,
+`Views/MarketsView.swift`, `StockSageStrategyBacktestTests.swift`.
+**Why:** the per-symbol backtest panel now shows the t>3 multiple-testing verdict, but the aggregate
+strategy card (the headline "does the system hold up?") showed only counts + a small-sample warning.
+**What:** `StrategyBacktest.tStat` = the POOLED per-trade t-stat across every symbol's trades
+((mean R ÷ stdev R) × √n), computed in `aggregate(_:trades:)` from the same pooled trades the Store
+already collects for calibration (refreshStrategyBacktest passes them). Added `clearsMultipleTestingBar`
++ `significanceVerdict` (mirrors the single-symbol panel) and surfaced the verdict on the strategy
+card. Zero dispersion / <2 trades → tStat 0 (no divide-by-zero); `trades` omitted → 0, back-compat.
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1093 pass / 0 fail** (+pooled-tStat test).
+**Next:** first evidence-backed feature — correlation-aware portfolio heat (StockSageClusterCheck).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

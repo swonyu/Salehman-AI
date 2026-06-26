@@ -484,7 +484,7 @@ final class StockSageStore: ObservableObject {
             }
             return (rs, ts)
         }.value
-        strategyBacktest = StockSageStrategyBacktest.aggregate(results)
+        strategyBacktest = StockSageStrategyBacktest.aggregate(results, trades: trades)
         // Learn conviction→win-prob from the realized trades (nil if too thin → callers keep the prior).
         convictionCalibration = StockSageConvictionCalibration.fit(fromBacktest: trades)
     }

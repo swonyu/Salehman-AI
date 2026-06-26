@@ -3163,6 +3163,18 @@ struct MarketsView: View {
                     Text("⚠︎ \(s.totalTrades) trades — still a small sample; treat as illustrative.")
                         .font(.caption2).foregroundStyle(DS.Palette.warningSoft)
                 }
+                // Honest significance vs the t>3 multiple-testing bar (matches the per-symbol panel).
+                if s.totalTrades > 0 {
+                    let pass = s.clearsMultipleTestingBar
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Image(systemName: pass ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                            .font(.system(size: 10))
+                        Text(s.significanceVerdict).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(pass ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                    .help("Harvey-Liu-Zhu (2016): with many strategy variants tried, the significance bar rises to t>3 (not 2.0). Necessary, not sufficient.")
+                }
                 Text(s.caveat).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             // Calibration status: when the backtest yielded enough trades, EV win-probabilities are
