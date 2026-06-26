@@ -144,4 +144,25 @@ extension StockSageConvictionCalibration {
         }
         return fit(outcomes, binCount: binCount, minSamples: minSamples, z: z, prior: prior)
     }
+
+    /// Chronological train/test split of CLOSED journal trades for OUT-OF-SAMPLE calibration validation:
+    /// fit the conviction→win-prob map on `train`, then score it on `test` — trades it never saw. Trades
+    /// are ordered by CLOSE time; the most recent `testFraction` become the test set, and `embargo`
+    /// trades straddling the boundary are DROPPED (purge) so a position whose window spans the split can't
+    /// leak its outcome across. Returns empty sets when too few closed trades to split honestly.
+    /// (The backtest's headline R/Sharpe/t carry no such leakage — those rules don't use the calibration;
+    /// the calibration is the only FITTED component, so it's the one that needs OOS validation.)
+    nonisolated static func chronologicalSplit(_ trades: [TradeRecord],
+                                               testFraction: Double = 0.3,
+                                               embargo: Int = 1) -> (train: [TradeRecord], test: [TradeRecord]) {
+        let closed = trades.filter { $0.closedAt != nil }
+            .sorted { ($0.closedAt ?? .distantPast) < ($1.closedAt ?? .distantPast) }
+        let f = Swift.max(0, Swift.min(1, testFraction))
+        let n = closed.count
+        let testN = Int((Double(n) * f).rounded())
+        let gap = Swift.max(0, embargo)
+        guard testN >= 1, n - testN - gap >= 1 else { return (train: [], test: []) }
+        let trainEnd = n - testN - gap   // [0, trainEnd) train · [trainEnd, n-testN) embargoed · [n-testN, n) test
+        return (train: Array(closed[0..<trainEnd]), test: Array(closed[(n - testN)..<n]))
+    }
 }

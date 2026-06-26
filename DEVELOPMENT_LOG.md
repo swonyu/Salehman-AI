@@ -8445,6 +8445,28 @@ So Tier-1 #1 'log every variant tried' is the genuine prerequisite. Then surface
 
 ---
 
+## 2026-06-26 · Where leakage REALLY lives + OOS calibration-split seam (research Tier-1, verify-first) (Chat A, autonomous)
+**Files:** `StockSage/StockSageConvictionCalibration.swift`, `StockSageConvictionCalibrationTests.swift`.
+**Investigation (the point of the cycle):** the research pushed 'CPCV + log every variant'. Verified
+against source: the advisor is FIXED-RULE — StockSageBacktester.runDetailed generates trades from price
+action + costs and only RECORDS conviction (BacktestTrade line 216-218); the calibration is fit FROM the
+trades and does NOT feed the backtest. So (a) the backtest's headline R/Sharpe/t carry NO in-sample
+leakage, and literal CPCV-over-configs / variant-logging do NOT map (no parameter sweep). (b) The ONE
+fitted component is the conviction CALIBRATION, whose win-rates are shown as 'measured from N realized
+trades' but are NEVER validated out-of-sample — THAT is the real in-sample surface. (c) The dormant DSR's
+selection-bias deflation has no clean current home (no 'best backtested symbol' Sharpe surface; pooled
+BacktestTrades lack global dates) — left flagged, not force-fit.
+**What (cycle 1, pure seam):** added `StockSageConvictionCalibration.chronologicalSplit(_:testFraction:
+embargo:)` — orders CLOSED journal trades by closeAt, takes the most-recent fraction as TEST, drops
+`embargo` boundary trades (purge), returns (train, test). The journal is the right primitive (it has real
+timestamps; backtest trades don't). +test (time-ordered, embargoed, empty when too thin).
+**Result:** `tools/typecheck.sh` ✅; suite **1105 pass / 0 fail**.
+**Next (cycle 2):** fit(fromJournal: train) → score Brier / log-loss on `test` vs the in-sample fit, and
+surface 'calibration holds OOS (Brier X vs Y in-sample)' so the owner sees whether the conviction→win-prob
+map generalizes. Honest OOS validation of the only fitted component — the correct read of research Tier-1.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

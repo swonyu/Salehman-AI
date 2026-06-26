@@ -98,6 +98,24 @@ struct StockSageConvictionCalibrationTests {
         #expect((cal?.winProb(0.9) ?? 0) > (cal?.winProb(0.1) ?? 1))
     }
 
+    @Test func chronologicalSplitIsTimeOrderedAndEmbargoed() {
+        func rec(_ day: Int) -> TradeRecord {
+            TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: 130, shares: 1,
+                        openedAt: Date(timeIntervalSince1970: Double(day) * 86_400),
+                        exitPrice: 110, closedAt: Date(timeIntervalSince1970: Double(day) * 86_400 + 3600),
+                        conviction: Double(day) / 10)
+        }
+        let trades = (0..<10).map(rec)   // close days 0…9
+        let s = StockSageConvictionCalibration.chronologicalSplit(trades, testFraction: 0.3, embargo: 1)
+        #expect(s.test.count == 3)       // most-recent 30%
+        #expect(s.train.count == 6)      // 10 − 3 test − 1 embargoed
+        // Train strictly precedes test in time; the embargoed boundary trade is in neither set.
+        #expect(s.train.allSatisfy { tr in s.test.allSatisfy { tr.openedAt < $0.openedAt } })
+        #expect(!s.train.contains { $0.openedAt == s.test.first!.openedAt })
+        // Too few closed trades to split honestly → empty.
+        #expect(StockSageConvictionCalibration.chronologicalSplit(Array(trades.prefix(2))).test.isEmpty)
+    }
+
     @Test func expectedValueUsesCalibrationWhenProvided() {
         // Without calibration → the linear prior (0.35 + 0.23·c).
         #expect(abs(StockSageExpectedValue.winProbEstimate(conviction: 0.5) - (0.35 + 0.23 * 0.5)) < 1e-9)
