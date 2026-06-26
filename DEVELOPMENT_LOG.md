@@ -7680,6 +7680,36 @@ under-sized every trade 8–20×. Left untouched (verified correct).
 
 ---
 
+## 2026-06-26 · Engine foundation: turn the StockSage test suite GREEN (Chat A)
+**Files:** engine — `StockSageAdvisor.swift`, `StockSageQuoteService.swift`, `StockSageStore.swift`;
+tests — `StockSageAdvisorTests`, `StockSageTests`, `StockSageExpectedValueTests`,
+`StockSageBacktesterTests`, `RuneScapeTests`.
+**Why:** Per owner: investigate each of the ~10 red StockSage tests as a possible REGRESSION before
+building money features on the engine. (They were red from prior engine drift, invisible until the
+test target compiled.) Result: 1081 tests GREEN, serial AND parallel.
+**Root causes & fixes (each investigated, not rubber-stamped):**
+- **Degenerate linear fixtures** (cleanUptrend/cleanDowntrend/shortHistory/adviceFromHistory/
+  walkForward): a perfectly-linear `(1...N)` ramp has a flat MACD line → histogram SIGN-NOISE
+  (≈0, landing the wrong way), spuriously −0.10 on uptrends / +0.10 on downtrends. Engine is
+  correct on real data; replaced with realistic ACCELERATING fixtures (`TrendFixtures.up/down`,
+  parabolic → genuine MACD sign). Now a clean uptrend = **Strong Buy 0.55**, downtrend = **Sell**.
+- **trendFamilyCap 0.50 → 0.65** (engine): 0.50 collided with the Strong-Buy line — after the
+  RSI-extended −0.10 a confirmed clean uptrend fell to 0.40 (Buy), violating owner intent
+  ("clean uptrend = Strong Buy"). 0.65 = the core trend triad (trend+momentum+MACD); the
+  redundant TERTIARY confirmations (volume+relStrength+volAdjMom ≈0.18) still can't pile on.
+- **Saudi-first restored** (engine, owner directive): moved the Tadawul group to the front of
+  `groups` so `worldwide.first == "2222.SR"` (Aramco) again.
+- **Genuinely stale assertions:** `hairThin` 4:1 typo (target 130=3:1 → 140); `zeroPrev`
+  confidence 0.65→0.5 (engine correctly returns 0.5 "no valid price" for invalid input, distinct
+  from a 0.65 genuine-flat); `summaryMatches` now compares crypto-aware cadence
+  (`tradingDaysForLane`) instead of the default 5; `leadsWithSaudi` dropped `^GSPC` (benchmark
+  index, never a tradeable universe member); `priceStaleness` pinned the literal type.
+- **`sampleSeed` singleton pollution:** `StockSageStore.shared.isSampleData` flips to false once
+  any test calls refresh(); made `seedSampleData()` internal and the test re-seeds deterministically.
+**Result:** `xcodebuild test` ✅ **1081 passed / 0 failed** (serial + parallel).
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

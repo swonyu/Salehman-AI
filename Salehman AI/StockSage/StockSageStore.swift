@@ -773,7 +773,9 @@ final class StockSageStore: ObservableObject {
     // A handful of TASI + US names with one prior + current quote each, chosen to
     // exercise every signal branch (a strong mover, a moderate mover, a flat
     // one). NOT live — see the type doc above.
-    private func seedSampleData() {
+    // Internal (not private) so a test can deterministically restore the known sample state —
+    // the shared singleton's `isSampleData` flips to false once any test calls refresh().
+    func seedSampleData() {
         symbols = [
             Self.sample("2222.SR", "TASI", previous: 28.50, current: 30.40),   // +6.7% → strong buy
             Self.sample("1120.SR", "TASI", previous: 92.10, current: 89.30),   // -3.0% → sell

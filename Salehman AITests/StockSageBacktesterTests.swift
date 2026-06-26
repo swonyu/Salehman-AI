@@ -199,7 +199,9 @@ struct StockSageBacktesterTests {
         #expect(dWF.count == 3)
         #expect(dWF.allSatisfy { $0.trades == 0 })
         // A clean uptrend DOES trade across the folds, and each thin fold is flagged not-significant.
-        let up = history((0..<350).map { 100.0 + Double($0) })
+        // Accelerating (curved) uptrend → genuine MACD sign so the advisor emits buys (a flat linear
+        // ramp gives MACD sign-noise that can suppress the entry signal).
+        let up = history((0..<350).map { 100.0 + 0.0075 * pow(Double($0), 2) })
         let uWF = StockSageBacktester.walkForward(up, warmup: 50, folds: 3)
         #expect(uWF.count == 3)
         #expect(uWF.reduce(0) { $0 + $1.trades } > 0)

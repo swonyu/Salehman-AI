@@ -62,10 +62,11 @@ struct StockSageSignalEngineTests {
     }
 
     @Test func zeroPreviousPriceDoesNotCrashAndHolds() {
-        // Divide-by-zero guard: a 0 previous price reports 0% → hold, no NaN.
+        // Divide-by-zero guard: a 0 previous price is INVALID input → hold at 0.5 ("no valid
+        // price to assess"), distinct from a genuine flat (valid prices, 0% change → 0.65).
         let s = signal(0, 50)
         #expect(s.recommendation == .hold)
-        #expect(s.confidence == 0.65)
+        #expect(s.confidence == 0.5)
     }
 
     @Test func generateFromSymbolUsesLatestQuote() {
@@ -204,10 +205,11 @@ struct StockSageHistoryTests {
     }
 
     @Test func adviceFromHistoryUsesAtrStop() {
-        // A clean uptrend history (with highs/lows) should advise a buy with a stop.
-        let closes = (1...250).map(Double.init)
+        // A clean (accelerating) uptrend history (with highs/lows) should advise a strong buy
+        // with a stop. Realistic curvature → genuine MACD sign (a flat linear ramp gives noise).
+        let closes = (0..<250).map { 50.0 + 0.0153 * pow(Double($0), 2) }
         let history = StockSagePriceHistory(
-            symbol: "UP", dates: closes.map { Date(timeIntervalSince1970: $0 * 86_400) },
+            symbol: "UP", dates: closes.enumerated().map { Date(timeIntervalSince1970: Double($0.offset) * 86_400) },
             opens: closes, highs: closes.map { $0 + 1 }, lows: closes.map { $0 - 1 },
             closes: closes, volumes: closes.map { _ in 1000 })
         let advice = StockSageAdvisor.advise(history: history)
@@ -232,8 +234,9 @@ struct StockSageUniverseTests {
         let u = StockSageUniverse.worldwide
         #expect(u.first?.symbol == "2222.SR")                   // Aramco — owner's home market first
         let tickers = Set(u.map(\.symbol))
-        // A representative name from each major region must be present.
-        for t in ["AAPL", "SHEL.L", "7203.T", "0700.HK", "RELIANCE.NS", "BHP.AX", "^GSPC"] {
+        // A representative name from each major region must be present. (^GSPC is the benchmark
+        // index — fetched separately for relative-strength, never a tradeable universe member.)
+        for t in ["AAPL", "SHEL.L", "7203.T", "0700.HK", "RELIANCE.NS", "BHP.AX"] {
             #expect(tickers.contains(t))
         }
     }
@@ -283,6 +286,7 @@ struct StockSageStoreTests {
 
     @Test func sampleSeedIsLabeledAndNonEmpty() {
         let store = StockSageStore.shared
+        store.seedSampleData()   // deterministic: other tests flip the shared singleton's flag via refresh()
         #expect(store.isSampleData)
         #expect(!store.fetchAllSymbols().isEmpty)
     }

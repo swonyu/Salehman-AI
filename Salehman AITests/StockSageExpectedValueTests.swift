@@ -277,8 +277,9 @@ struct StockSageExpectedValueTests {
         #expect(EV.rankByEV([cleanBuy, knifeSell], regime: bull).first?.symbol == "WIN")
         // The cap itself: a degenerate hair-thin stop yields rewardR 50, not millions.
         #expect(EV.ev(conviction: 1.0, entry: 100, stop: 100.00001, target: 80)?.rewardR == 50)
-        // A normal setup is unaffected (4:1 stays 4:1).
-        #expect(EV.ev(conviction: 0.9, entry: 100, stop: 90, target: 130)?.rewardR == 4)
+        // A normal setup is unaffected (4:1 stays 4:1): reward 40 (140−100) ÷ risk 10 (100−90).
+        // (Was target 130 = 30/10 = 3:1, a typo contradicting the "4:1" comment.)
+        #expect(EV.ev(conviction: 0.9, entry: 100, stop: 90, target: 140)?.rewardR == 4)
     }
 
     @Test func regimeGateKeepsBannedSideFromTopRank() {
@@ -339,7 +340,9 @@ struct StockSageExpectedValueTests {
         #expect(s.bestEV == EV.bestOpportunity(ideas)?.ev.evR)
         #expect(s.fastestSymbol == EV.fastLane(ideas).first?.symbol)
         #expect(s.fastestVelocity == EV.fastLane(ideas).first.flatMap { EV.velocity(for: $0) })
-        #expect(s.weeklyR == EV.expectedWeeklyR(ideas))
+        // summary() uses crypto-aware cadence (tradingDaysForLane: ~7d for a crypto lane, 5d
+        // equity), so match that here rather than the default 5 — they must agree by construction.
+        #expect(s.weeklyR == EV.expectedWeeklyR(ideas, tradingDays: EV.tradingDaysForLane(ideas)))
     }
 
     @Test func bestOpportunityPicksHighestPositiveEVBuy() {

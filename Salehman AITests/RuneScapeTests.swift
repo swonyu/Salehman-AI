@@ -16,7 +16,7 @@ struct RuneScapeParseTests {
         // Buy leg 10 min old, sell leg 2 days old → oldest = 2 days → stale (the spread may not fill).
         let p = RuneScapePrice(high: 100, highTime: now.addingTimeInterval(-600),
                                low: 90, lowTime: now.addingTimeInterval(-2 * 86_400))
-        #expect(p.oldestLegAge(asOf: now) == 2 * 86_400)
+        #expect((p.oldestLegAge(asOf: now) ?? -1) == TimeInterval(2 * 86_400))
         #expect(p.isStale(asOf: now))                        // > 60-min default
         // Both legs fresh → not stale.
         let fresh = RuneScapePrice(high: 100, highTime: now.addingTimeInterval(-300),

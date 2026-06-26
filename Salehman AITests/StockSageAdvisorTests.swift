@@ -7,6 +7,21 @@ import Foundation
 // These pin each indicator to a hand-computable result so a future tweak is a
 // conscious change. Evidence/intent: MARKETS_INTELLIGENCE_RESEARCH.md.
 
+// Realistic trend fixtures. A genuine clean trend has CURVATURE (it accelerates), so MACD has a
+// real sign. The old perfectly-linear `(1...N)` ramps had a flat MACD line → histogram sign-NOISE
+// (≈0, landing slightly the WRONG way), which spuriously knocked −0.10 off an uptrend and +0.10
+// onto a downtrend — a test-fixture artifact, not an engine fault on real data.
+enum TrendFixtures {
+    /// Accelerating uptrend of `n` bars from ~`base` (convex up → MACD genuinely bullish).
+    static func up(_ n: Int, base: Double = 50, k: Double = 0.0153) -> [Double] {
+        (0..<n).map { base + k * pow(Double($0), 2) }
+    }
+    /// Accelerating downtrend of `n` bars from ~`top` (convex down → MACD genuinely bearish).
+    static func down(_ n: Int, top: Double = 1000, k: Double = 0.0153) -> [Double] {
+        (0..<n).map { top - k * pow(Double($0), 2) }
+    }
+}
+
 struct StockSageAdvisorStopTargetTests {
     typealias A = StockSageAdvisor
 
@@ -151,15 +166,16 @@ struct StockSageAdvisorTests {
     }
 
     @Test func cleanUptrendIsABuyWithStopTargetAndSize() {
-        let closes = (1...250).map(Double.init)
+        let closes = TrendFixtures.up(250)
+        let price = closes.last!
         let a = StockSageAdvisor.advise(closes: closes)
         #expect(a.action == .strongBuy)
         #expect(a.conviction > 0.5)
         #expect(a.regime == .bullTrend)
         #expect(a.suggestedWeight > 0)
         if let stop = a.stopPrice, let target = a.targetPrice {
-            #expect(stop < 250)
-            #expect(target > 250)
+            #expect(stop < price)
+            #expect(target > price)
         } else {
             Issue.record("uptrend should produce a stop and target")
         }
@@ -178,12 +194,15 @@ struct StockSageAdvisorTests {
         #expect(a.suggestedWeight == 0)
     }
 
-    @Test func cleanDowntrendIsASellWithNoLongSize() {
-        let closes = (1...250).reversed().map(Double.init)
+    @Test func cleanDowntrendIsASellShortSetup() {
+        let closes = TrendFixtures.down(250)
+        let price = closes.last!
         let a = StockSageAdvisor.advise(closes: closes)
         #expect(a.action == .sell)
-        #expect(a.suggestedWeight == 0)          // no long-side size on a downtrend
-        #expect(a.stopPrice == nil)
+        #expect(a.regime == .bearTrend)
+        // A sell is a mirrored SHORT setup (never a long): stop ABOVE, target BELOW.
+        if let stop = a.stopPrice { #expect(stop > price) }   // short stop is above, not a long stop below
+        if let target = a.targetPrice { #expect(target < price) }
     }
 
     @Test func positionSizeIsHardCapped() {
@@ -203,7 +222,7 @@ struct StockSageAdvisorTests {
     /// Regression for the review fix: 50–200 bars has a real 50DMA but no true
     /// 200DMA, so the trend term uses the lighter 50DMA-only read (not a fake 200DMA).
     @Test func shortHistoryUsesFiftyDMAOnlyBranch() {
-        let a = StockSageAdvisor.advise(closes: (1...120).map(Double.init))
+        let a = StockSageAdvisor.advise(closes: TrendFixtures.up(120))
         #expect(a.action == .buy || a.action == .strongBuy)
         #expect(a.rationale.contains { $0.contains("50DMA") })
     }

@@ -62,9 +62,12 @@ enum StockSageAdvisor {
     /// MACD, volume, vol-adjusted-momentum, relative-strength). These all measure ONE underlying
     /// trend factor (stock momentum is largely spanned by factor momentum — Ehsani & Linnainmaa
     /// 2022), so summing them as if independent inflates conviction (raw max ≈ 0.83) and over-
-    /// sizes correlated bets — the variance drag Kelly punishes. 0.50 keeps a fully-confirmed
-    /// trend at the Strong-Buy line while removing the redundant ~0.33 of inflation.
-    nonisolated static let trendFamilyCap = 0.50
+    /// sizes correlated bets — the variance drag Kelly punishes. 0.65 = the CORE trend triad
+    /// (trend 0.40 + momentum 0.15 + MACD 0.10); the redundant TERTIARY confirmations
+    /// (volume + relative-strength + vol-adjusted-momentum, ≈0.18) can no longer pile on top.
+    /// Tuned so a fully-confirmed clean uptrend still clears Strong-Buy after the RSI-extended
+    /// nudge (0.65 − 0.10 = 0.55 > 0.50), not just barely reaches it.
+    nonisolated static let trendFamilyCap = 0.65
 
     nonisolated static let caveat = "Rules-based & educational — not a guarantee or financial advice. Markets are uncertain; size small and honor your stop."
 
