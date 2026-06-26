@@ -8295,6 +8295,20 @@ store blend/prefer the journal-fit over the backtest-fit once n ≥ minSamples (
 
 ---
 
+## 2026-06-26 · Journal→calibration STEP 2a: capture conviction on trade-log (Chat A, autonomous)
+**Files:** `Views/MarketsView.swift`.
+**Why:** the journal-calibration spine (step 1) needs DATA — TradeRecords must actually carry the
+entry conviction, or fit(fromJournal:) always sees zero usable trades.
+**What:** added `@State draftConviction: Double?`; `prefillTradeFromIdea` sets it from
+`idea.advice.conviction`; `saveDraftTrade` passes it into `TradeRecord(conviction:)` and clears it on
+save. Manual trades (no prefill) keep nil → excluded from the fit, as intended.
+**Result:** `tools/typecheck.sh` ✅; full `xcodebuild build` ✅; suite **1102 pass / 0 fail**.
+**Step 2b (next):** in StockSageStore, compute fit(fromJournal: journal.trades) and blend/prefer it
+over the backtest-derived convictionCalibration once its sample passes minSamples (Wilson-LCB
+conservative; backtest fit / prior as fallback) + an honest source label.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

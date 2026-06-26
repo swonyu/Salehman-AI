@@ -70,6 +70,9 @@ struct MarketsView: View {
     @State private var draftTarget = ""
     @State private var draftShares = ""
     @State private var draftNote = ""
+    /// The idea's conviction when this draft was prefilled FROM an idea (nil for a manual trade) —
+    /// recorded on the TradeRecord so the journal can calibrate conviction→win-rate from real fills.
+    @State private var draftConviction: Double? = nil
     /// Inline close-a-trade: the open trade being closed + its exit-price field.
     @State private var closingTradeID: UUID?
     @State private var closeExitText = ""
@@ -1645,9 +1648,10 @@ struct MarketsView: View {
         let trade = TradeRecord(symbol: draftSymbol.trimmingCharacters(in: .whitespaces).uppercased(),
                                 side: draftSide, entry: e, stop: st, target: Double(draftTarget),
                                 shares: sh, openedAt: Date(),
-                                note: trimmedNote.isEmpty ? nil : trimmedNote)
+                                note: trimmedNote.isEmpty ? nil : trimmedNote, conviction: draftConviction)
         journal.add(trade)
         draftSymbol = ""; draftEntry = ""; draftStop = ""; draftTarget = ""; draftShares = ""; draftNote = ""
+        draftConviction = nil
         draftSide = .long
         withAnimation(.easeOut(duration: 0.15)) { showAddTrade = false }
     }
@@ -1675,6 +1679,7 @@ struct MarketsView: View {
         draftTarget = idea.advice.targetPrice.map { adaptivePrice($0) } ?? ""
         draftShares = ""
         draftNote = "From idea: \(idea.advice.action.rawValue), \(Int(idea.advice.conviction * 100))% conviction"
+        draftConviction = idea.advice.conviction   // recorded on the trade for journal calibration
         draftSide = bearish ? .short : .long   // side follows the idea's direction
         showAddTrade = true
         selectedIdea = nil          // dismiss the detail sheet
