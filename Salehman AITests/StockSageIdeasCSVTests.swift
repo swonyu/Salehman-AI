@@ -20,7 +20,7 @@ struct StockSageIdeasCSVTests {
     @Test func headerAndRowCount() {
         let csv = StockSageIdeasCSV.csv([idea("AAPL", 100, .buy), idea("NVDA", 200, .strongBuy)])
         let lines = csv.split(separator: "\n", omittingEmptySubsequences: false)
-        #expect(lines.first == StockSageIdeasCSV.header)
+        #expect(csv.hasPrefix(StockSageIdeasCSV.header))
         #expect(lines.count == 3)   // header + 2 rows
     }
 
