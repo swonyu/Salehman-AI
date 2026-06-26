@@ -76,6 +76,11 @@ struct MarketsView: View {
     @State private var monitoring = false
     // Shared key with StockSageMonitor.watchlistOnlyKey — scopes the alert scan to the watchlist.
     @AppStorage("marketsWatchlistOnly") private var watchlistOnly = false
+    // User-set price-alert form.
+    @State private var paSymbol = ""
+    @State private var paTarget = ""
+    @State private var paDirection: PriceAlert.Direction = .above
+    @State private var paError = ""
     @State private var alertSignals: [StockSageSignal] = []
     @State private var checkingAlerts = false
     @State private var monitorError = ""
@@ -513,8 +518,90 @@ struct MarketsView: View {
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                 .transition(.opacity)
             }
+
+            priceAlertsPanel
         }
         .animation(DS.Motion.smooth, value: alertSignals.isEmpty)
+    }
+
+    // MARK: Price alerts (user-set levels)
+
+    private var priceAlertsPanel: some View {
+        VStack(alignment: .leading, spacing: DS.Space.sm) {
+            HStack(spacing: DS.Space.md) {
+                Image(systemName: "target").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Price alerts").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("Notify me when a symbol crosses a level I set (one-shot; needs alerts on).")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+            HStack(spacing: 6) {
+                journalField("Ticker", text: $paSymbol, width: 78)
+                Picker("", selection: $paDirection) {
+                    Text("≥").tag(PriceAlert.Direction.above)
+                    Text("≤").tag(PriceAlert.Direction.below)
+                }.pickerStyle(.segmented).frame(width: 74).labelsHidden()
+                journalField("Price", text: $paTarget, width: 78)
+                Button { addPriceAlert() } label: {
+                    Text("Add").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 11).padding(.vertical, 6)
+                        .background(DS.Palette.accent, in: Capsule())
+                }.buttonStyle(LuxPressStyle())
+                Spacer()
+            }
+            if !paError.isEmpty {
+                Text(paError).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+                    .transition(.opacity)
+            }
+            if !store.priceAlerts.isEmpty {
+                VStack(spacing: 1) {
+                    ForEach(store.priceAlerts) { priceAlertRow($0) }
+                }
+                .animation(DS.Motion.smooth, value: store.priceAlerts.count)
+            }
+        }
+        .padding(DS.Space.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Bezel.cardFill)
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+            .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+    }
+
+    private func priceAlertRow(_ a: PriceAlert) -> some View {
+        HStack(spacing: 10) {
+            Text(a.symbol).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
+            Text("\(a.direction.symbol) \(a.target.formatted())").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            if a.triggeredAt != nil {
+                Text("triggered").font(.caption2.weight(.semibold)).foregroundStyle(DS.Palette.warningSoft)
+                Button { store.resetPriceAlert(a.id) } label: {
+                    Text("Re-arm").font(.caption2.weight(.semibold)).foregroundStyle(DS.Palette.accent)
+                }.buttonStyle(.plain).help("Re-arm this alert")
+            } else {
+                Text("armed").font(.caption2.weight(.semibold)).foregroundStyle(.green.opacity(0.85))
+            }
+            Button { store.removePriceAlert(a.id) } label: {
+                Image(systemName: "trash").font(.system(size: 11)).foregroundStyle(.secondary)
+            }.buttonStyle(.plain).help("Remove alert")
+        }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+    }
+
+    private func addPriceAlert() {
+        let sym = paSymbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !sym.isEmpty, !sym.contains(" "), sym.count <= 20 else { paError = "Enter a valid ticker."; return }
+        let (price, err) = StockSagePriceAlertEngine.validateTarget(paTarget)
+        guard let p = price else { paError = err ?? "Enter a price."; return }
+        store.addPriceAlert(symbol: sym, target: p, direction: paDirection)
+        paSymbol = ""; paTarget = ""; paError = ""
     }
 
     private func signalAlertRow(_ s: StockSageSignal) -> some View {

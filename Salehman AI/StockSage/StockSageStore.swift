@@ -72,10 +72,58 @@ final class StockSageStore: ObservableObject {
     private static let userSymbolsKey = "stocksage_user_symbols"
     private static let userMarketLabel = "★ My watchlist"
 
+    // User-set price alerts (target levels), persisted as JSON.
+    @Published private(set) var priceAlerts: [PriceAlert] = []
+    private static let priceAlertsKey = "stocksage_price_alerts"
+
     private init() {
         userSymbols = (UserDefaults.standard.array(forKey: Self.userSymbolsKey) as? [String]) ?? []
+        priceAlerts = Self.loadPriceAlerts()
         seedSampleData()
         loadCachedQuotes()   // prefer real last-good prices over the sample seed when we have them
+    }
+
+    // MARK: Price alerts (user-set target levels)
+
+    private static func loadPriceAlerts() -> [PriceAlert] {
+        guard let data = UserDefaults.standard.data(forKey: priceAlertsKey),
+              let decoded = try? JSONDecoder().decode([PriceAlert].self, from: data) else { return [] }
+        return decoded
+    }
+
+    private func savePriceAlerts() {
+        if let data = try? JSONEncoder().encode(priceAlerts) {
+            UserDefaults.standard.set(data, forKey: Self.priceAlertsKey)
+        }
+    }
+
+    func addPriceAlert(symbol: String, target: Double, direction: PriceAlert.Direction) {
+        let up = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !up.isEmpty, target > 0 else { return }
+        priceAlerts.append(PriceAlert(symbol: up, target: target, direction: direction))
+        savePriceAlerts()
+    }
+
+    func removePriceAlert(_ id: UUID) {
+        priceAlerts.removeAll { $0.id == id }
+        savePriceAlerts()
+    }
+
+    /// Re-arm a triggered alert so it can fire again.
+    func resetPriceAlert(_ id: UUID) {
+        guard let i = priceAlerts.firstIndex(where: { $0.id == id }) else { return }
+        priceAlerts[i].triggeredAt = nil
+        savePriceAlerts()
+    }
+
+    /// Mark alerts triggered (one-shot). Called by the Monitor after it fires them.
+    func markPriceAlertsTriggered(_ ids: [UUID], at when: Date = Date()) {
+        guard !ids.isEmpty else { return }
+        let set = Set(ids)
+        for i in priceAlerts.indices where set.contains(priceAlerts[i].id) {
+            priceAlerts[i].triggeredAt = when
+        }
+        savePriceAlerts()
     }
 
     /// Seed the board from the disk cache (last successful quotes) so launch shows real

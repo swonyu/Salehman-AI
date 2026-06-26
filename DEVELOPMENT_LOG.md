@@ -7580,6 +7580,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-26 · Markets — user-set price alerts (Chat A)
+**Files:** `StockSage/StockSagePriceAlert.swift` (new), `StockSage/StockSageStore.swift`, `StockSage/StockSageMonitor.swift`, `Views/MarketsView.swift`; `+ Salehman AITests/StockSagePriceAlertTests.swift`.
+**What & why:** Third requested Markets feature, and genuinely new (distinct from the signal-based IdeaAlert). `PriceAlert` (Codable: symbol, target, above/below, triggeredAt) + a pure `StockSagePriceAlertEngine` (newlyTriggered + validateTarget). Store persists them as JSON (`stocksage_price_alerts`) with add/remove/reset/markTriggered. The Monitor checks them each cycle (both full and watchlist modes) via `checkPriceAlerts` — HONEST: board prices used only when live, and any armed-alert symbol not already priced live this cycle is fetched fresh, so an alert never fires on stale/sample data; one-shot (fires once, then re-armable). UI: a "Price alerts" card in the alerts section (ticker + ≥/≤ + price + Add; armed/triggered rows with Re-arm/Remove). One-shot prevents spam. Tested the pure engine (isMet, newlyTriggered filtering, target validation, Codable/uppercasing).
+**Result:** ✅ `tools/typecheck.sh` clean (fixed one MainActor-isolation error: `isArmed` → nonisolated). All three requested Markets features shipped.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

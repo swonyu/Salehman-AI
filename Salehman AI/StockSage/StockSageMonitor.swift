@@ -111,6 +111,13 @@ final class StockSageMonitor {
         // strong→hold→strong round-trip would re-fire the identical alert the user already
         // saw. A genuine flip (Strong Buy⇄Strong Sell) still alerts — the rec differs.
         if liveNotify { for (sym, rec) in nowStrong { lastAlerted[sym] = rec } }
+        if notify {
+            let boardPrices = store.fetchAllSymbols().reduce(into: [String: Double]()) {
+                if let p = $1.latest?.price { $0[$1.symbol.uppercased()] = p }
+            }
+            await checkPriceAlerts(boardPrices: boardPrices,
+                                   boardPricesLive: !store.isSampleData && !store.loadedFromCache)
+        }
         return strong
     }
 
@@ -139,7 +146,41 @@ final class StockSageMonitor {
             }
         }
         if notify { for (s, r) in nowStrong { lastAlerted[s] = r } }
+        if notify {
+            let wlPrices = quotes.reduce(into: [String: Double]()) {
+                if $1.value.price > 0 { $0[$1.key.uppercased()] = $1.value.price }
+            }
+            await checkPriceAlerts(boardPrices: wlPrices, boardPricesLive: true)
+        }
         return strong
+    }
+
+    /// Check user-set price alerts against this cycle's prices and fire one-shot notifications.
+    /// To stay HONEST, board prices are used only when they're live; any armed-alert symbol not
+    /// already priced live this cycle is fetched fresh, so an alert never fires on stale/sample data.
+    private func checkPriceAlerts(boardPrices: [String: Double], boardPricesLive: Bool) async {
+        let store = StockSageStore.shared
+        let armed = store.priceAlerts.filter { $0.isArmed }
+        guard !armed.isEmpty else { return }
+        var prices = boardPricesLive ? boardPrices : [:]
+        let missing = Set(armed.map { $0.symbol }).subtracting(prices.keys)
+        if !missing.isEmpty {
+            let q = await StockSageQuoteService.fetchQuotes(for: Array(missing))
+            for (k, v) in q where v.price > 0 { prices[k.uppercased()] = v.price }
+        }
+        let fired = StockSagePriceAlertEngine.newlyTriggered(armed, prices: prices)
+        guard !fired.isEmpty else { return }
+        for a in fired { await sendPriceAlert(a, price: prices[a.symbol] ?? a.target) }
+        store.markPriceAlertsTriggered(fired.map(\.id))
+    }
+
+    private func sendPriceAlert(_ alert: PriceAlert, price: Double) async {
+        let content = UNMutableNotificationContent()
+        content.title = "Price alert: \(alert.symbol) \(alert.direction.symbol) \(alert.target.formatted())"
+        content.body = "Now \(price.formatted())."
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        try? await UNUserNotificationCenter.current().add(request)
     }
 
     private func sendAlert(signal: StockSageSignal, market: String) async {
