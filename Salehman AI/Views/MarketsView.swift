@@ -2330,6 +2330,7 @@ struct MarketsView: View {
                          : "No ideas match “\(ideaSearch)”.")
                         .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 12)
                 } else {
+                    ideasSummaryStrip(displayedIdeas)
                     VStack(spacing: DS.Space.sm) {
                         ForEach(displayedIdeas) { ideaCard($0) }
                     }
@@ -2338,6 +2339,31 @@ struct MarketsView: View {
             }
         }
         .animation(DS.Motion.smooth, value: store.ideas.count)
+    }
+
+    /// At-a-glance overview of the shown ideas: count, action breakdown, avg conviction.
+    @ViewBuilder private func ideasSummaryStrip(_ ideas: [StockSageIdea]) -> some View {
+        let strong = ideas.filter { $0.advice.action == .strongBuy }.count
+        let buys = ideas.filter { $0.advice.action == .buy }.count
+        let sells = ideas.filter { $0.advice.action == .sell || $0.advice.action == .reduce }.count
+        let avgConv = ideas.isEmpty ? 0 : ideas.map(\.advice.conviction).reduce(0, +) / Double(ideas.count)
+        HStack(spacing: 8) {
+            summaryChip("\(ideas.count)", "shown")
+            if strong > 0 { summaryChip("\(strong)", "strong buy", DS.Palette.successSoft) }
+            if buys > 0 { summaryChip("\(buys)", "buys") }
+            if sells > 0 { summaryChip("\(sells)", "sells", DS.Palette.warningSoft) }
+            summaryChip("\(Int((avgConv * 100).rounded()))%", "avg conviction")
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func summaryChip(_ value: String, _ label: String, _ valueColor: Color = .white) -> some View {
+        HStack(spacing: 4) {
+            Text(value).font(.system(size: 11, weight: .bold)).foregroundStyle(valueColor)
+            Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(.white.opacity(0.05), in: Capsule())
     }
 
     /// The ideas in display order — by expected value (best bet first) or the
@@ -2528,6 +2554,10 @@ struct MarketsView: View {
                 }
                 if a.suggestedWeight > 0 {
                     ideaMetric("Size", String(format: "%.1f%%", a.suggestedWeight * 100), color: DS.Palette.accent)
+                }
+                if let stop = a.stopPrice, let target = a.targetPrice,
+                   idea.price - stop > 0, target - idea.price > 0 {
+                    ideaMetric("R:R", String(format: "%.1f", (target - idea.price) / (idea.price - stop)))
                 }
                 Spacer(minLength: 0)
             }

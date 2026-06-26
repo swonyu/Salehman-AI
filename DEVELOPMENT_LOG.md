@@ -7601,6 +7601,13 @@ through the same path. Arabic requests now hit the deterministic search. On `mai
 
 ---
 
+## 2026-06-26 · Markets — Ideas board summary strip + reward:risk (Chat A)
+**Files:** `Views/MarketsView.swift`.
+**What & why:** Owner pointed at the live Ideas board (all cards, no overview). Added (1) an at-a-glance **summary strip** above the cards — count shown, action breakdown (strong buys / buys / sells, colored), and **avg conviction** — computed from `displayedIdeas` so it tracks the current sort/filter/search. (2) A **reward:risk** metric per idea card (target−price)/(price−stop), shown when long-biased stop+target are present. Rationale: every card's EV reads ~+0.62R because the advisor pins targets at ~2:1, so R:R + conviction are what actually differentiate ideas — now both are visible.
+**Result:** ✅ `tools/typecheck.sh` clean.
+
+---
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
