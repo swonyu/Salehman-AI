@@ -3122,6 +3122,7 @@ struct MarketsView: View {
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 ForEach(lane.prefix(3), id: \.id) { idea in
                     if let v = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
+                        let floorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
                         Button { selectedIdea = idea } label: {
                             HStack(spacing: 8) {
                                 Text(idea.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
@@ -3131,11 +3132,16 @@ struct MarketsView: View {
                                 if idea.symbol.hasSuffix("-USD") {
                                     Text("24/7 · volatile").font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft)
                                 }
+                                // [AUDIT iter6] Honest label: fires exactly when belowNetCostFloor is true (net EV/day < 0.005R/day
+                                // after frictions). De-ranked on the velocity board but surface badge so the ordering is transparent.
+                                if floorFlag.isDeranked {
+                                    Text("below net-cost floor").font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft)
+                                }
                                 Spacer(minLength: 0)
                                 Image(systemName: "chevron.right").font(.system(size: mvFont8)).foregroundStyle(.secondary)
                             }.contentShape(Rectangle())
                         }.buttonStyle(LuxPressStyle())
-                        .accessibilityLabel("\(idea.symbol): \(String(format: "%+.3f", v)) R per day velocity\(idea.symbol.hasSuffix("-USD") ? ", 24/7 volatile" : ""). Tap for the plan.")
+                        .accessibilityLabel("\(idea.symbol): \(String(format: "%+.3f", v)) R per day velocity\(idea.symbol.hasSuffix("-USD") ? ", 24/7 volatile" : "")\(floorFlag.isDeranked ? ", below net-cost floor" : ""). Tap for the plan.")
                     }
                 }
                 if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), holds: velocityHolds, calibration: store.convictionCalibration) {
@@ -3706,6 +3712,16 @@ struct MarketsView: View {
                         Image(systemName: "gauge.with.dots.needle.67percent").font(.system(size: 11)).foregroundStyle(.secondary)
                         Text(String(format: "≈ %+.3fR/day velocity (EV ÷ typical hold) — faster turnover compounds faster. An estimate.", vel))
                             .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    // [AUDIT iter6] Honest floor label: shown verbatim when net EV/day (after frictions) is
+                    // below the 0.005R/day floor. The idea is de-ranked on the velocity board; this badge
+                    // surfaces the reason so the re-ordering is transparent and auditable.
+                    if StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration).isDeranked {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "exclamationmark.circle").font(.system(size: 11)).foregroundStyle(DS.Palette.warningSoft)
+                            Text("below net-cost floor — net EV/day after frictions is under 0.005R/day; de-ranked on the velocity board.")
+                                .font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
                 if a.suggestedWeight > 0, store.regime != nil {

@@ -179,6 +179,83 @@ enum StockSageExpectedValue {
         return ne.clearsCost(estWinProb: winProbEstimate(conviction: idea.advice.conviction, calibration: calibration))
     }
 
+    // ── [AUDIT] Net-of-cost EV/day velocity helpers (iter6) ──────────────────────────────────────
+    //
+    // These five helpers (constant + 3 functions + enum) are the ONLY new surface from iter6.
+    // They reuse StockSageNetEdge.evaluate(...).netExpectancyR — the existing net-edge model —
+    // so cost is subtracted from EV BEFORE the /hold_days, replacing the binary pass/fail gate.
+    // All are nonisolated + Sendable; nil only on no-defined-R (same guard as ev(for:)).
+
+    /// [AUDIT] Minimum NET-of-cost EV/day to surface an idea as a buy on the velocity board.
+    /// 0.005R/day = +0.5% of 1R per day. Justification (conservative, honestly chosen):
+    ///   • A retail account risking 1%/trade earns 0.005R/day ≈ 0.005% of equity/day on that
+    ///     slot — at ~250 trading days that is ~1.25R/yr of pure edge AFTER frictions, the floor
+    ///     below which a slot is "dead money" the churn (Barber&Odean −7.1pp/yr) overwhelms.
+    ///   • Set on the NET (post-cost) per-day rate, NOT gross, so it bites exactly the
+    ///     churny-short-hold ideas the gross sort over-ranks.
+    ///   • Deliberately LOW (not a profitability hurdle) so it only skips barely-positive
+    ///     dregs — must NOT hide a genuinely high-net idea (Guardrail 2). A slow high-net
+    ///     swing clears it by orders of magnitude.
+    nonisolated static let minNetEVPerDayFloor = 0.005
+
+    /// [AUDIT] NET-of-cost expected R for an idea: round-trip frictions (spread+slippage+taker,
+    /// from StockSageNetEdge.defaultCosts) subtracted from the reward AND added to the risk via
+    /// StockSageNetEdge.evaluate(...).netExpectancyR — the EXISTING net edge model, not a new one.
+    /// Win prob is the SAME conviction-mapped (calibrated) estimate the gross EV uses, so net and
+    /// gross are computed on one probability. nil when there's no defined R (no stop/target) OR the
+    /// gross setup is degenerate — the only nil-fallback path.
+    nonisolated static func netEVR(for idea: StockSageIdea,
+                                   calibration: StockSageConvictionCalibration? = nil) -> Double? {
+        guard let stop = idea.advice.stopPrice, let target = idea.advice.targetPrice else { return nil }
+        let c = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
+        let p = winProbEstimate(conviction: idea.advice.conviction, calibration: calibration)
+        return StockSageNetEdge.evaluate(entry: idea.price, stop: stop, target: target,
+                                         spreadBps: c.spreadBps, slippageBps: c.slippageBps,
+                                         takerFeeBps: c.takerFeeBps, winProb: p)?.netExpectancyR
+    }
+
+    /// [AUDIT] NET EV/day = net-of-cost EV ÷ expected hold. The honest velocity rate after frictions.
+    /// nil when there's no net EV or no hold estimate (index/FX). When cost data nets to nothing
+    /// (cost == 0) this equals the gross velocity exactly (Guardrail 4: net==gross when cost=0).
+    nonisolated static func netVelocity(for idea: StockSageIdea, holds: VelocityHoldDays = .defaults,
+                                        calibration: StockSageConvictionCalibration? = nil) -> Double? {
+        guard let ne = netEVR(for: idea, calibration: calibration),
+              let hold = expectedHoldDays(for: idea, holds: holds), hold > 0 else { return nil }   // [AUDIT] hold→0 guarded
+        return ne / hold
+    }
+
+    /// [AUDIT] Is the idea's NET EV/day strictly below the floor? At-floor (==) counts as PASSING
+    /// (>= floor) — "below" means strictly under. Ideas with no net velocity (no R / no hold) are
+    /// treated as not-below (nil ⇒ the gross path's nil handling already sinks them last; this
+    /// floor never resurrects nor newly-buries a nil-key idea).
+    nonisolated static func belowNetCostFloor(for idea: StockSageIdea, holds: VelocityHoldDays = .defaults,
+                                              calibration: StockSageConvictionCalibration? = nil) -> Bool {
+        guard let nv = netVelocity(for: idea, holds: holds, calibration: calibration) else { return false }
+        return nv < minNetEVPerDayFloor   // [AUDIT] exactly-at-floor → false (passes)
+    }
+
+    /// [AUDIT] Legible companion to the floor de-rank, mirroring earningsRankFlag's pattern so the
+    /// on-card badge can never disagree with the actual rank shift. `.belowFloor` fires EXACTLY when
+    /// belowNetCostFloor is true.
+    enum NetCostFloorFlag: Sendable, Equatable {
+        case belowFloor(netVelocity: Double)   // de-ranked: net EV/day under the floor
+        case clears                            // at/above floor (or no defined net velocity)
+        var isDeranked: Bool { if case .belowFloor = self { return true }; return false }
+        var badge: String {
+            if case .belowFloor = self { return "below net-cost floor" }
+            return ""
+        }
+    }
+
+    nonisolated static func netCostFloorFlag(for idea: StockSageIdea, holds: VelocityHoldDays = .defaults,
+                                             calibration: StockSageConvictionCalibration? = nil) -> NetCostFloorFlag {
+        guard let nv = netVelocity(for: idea, holds: holds, calibration: calibration),
+              nv < minNetEVPerDayFloor else { return .clears }
+        return .belowFloor(netVelocity: nv)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+
     /// Imminent-earnings (binary-event) demotion for the rank keys. ONLY a real fetched `.imminent`
     /// date (≤3 days) is penalized — an UNKNOWN symbol (no map entry) and `.soon`/`.clear` return 0,
     /// so absence is never assumed dangerous (only-real-data). 2000 sits above the conviction band
@@ -271,10 +348,23 @@ enum StockSageExpectedValue {
         // still EV/day; this is only the ordering key.
         guard let e = ev(for: idea, calibration: calibration),
               let hold = expectedHoldDays(for: idea, holds: holds), hold > 0 else { return nil }
-        let v = expectedLogGrowth(winProb: e.winProbEstimate, rewardR: e.rewardR) / hold
-        // After-cost screen (mirrors evRankKey): a setup net-negative after frictions can't lead the
-        // velocity board either — otherwise a thin, high-cost crypto flip tops it on gross EV.
-        if !clearsCostAfterFrictions(idea, calibration: calibration) { return v - 500_000 }
+        // [AUDIT] NET-of-cost ordering (iter6): rank by per-day log-growth scaled by the NET/gross
+        // EV ratio, so round-trip frictions (StockSageNetEdge) shrink the rate CONTINUOUSLY —
+        // a churny flip whose gross EV survives but whose NET EV is thin now sorts BELOW a slower
+        // high-net idea, instead of keeping its full gross velocity behind a binary pass/fail.
+        // Log-growth stays the growth-rate-optimal core; the net ratio is the cost haircut.
+        let grossLG = expectedLogGrowth(winProb: e.winProbEstimate, rewardR: e.rewardR)
+        let netRatio: Double = {                                  // [AUDIT] net EV ÷ gross EV, clamped ≥ 0
+            guard let ne = netEVR(for: idea, calibration: calibration), e.evR > 0 else { return 1 }  // [AUDIT] no net data ⇒ ratio 1 (=gross)
+            return Swift.max(0, ne / e.evR)                       // [AUDIT] net≤0 ⇒ ratio 0 ⇒ key 0 (below every +rate peer)
+        }()
+        let v = grossLG * netRatio / hold                         // [AUDIT] PROXY for net per-day log-growth: gross log-growth scaled by netEV/grossEV arithmetic-cost haircut (not true net log-growth, but correct for ranking).
+        // [AUDIT] Min net-EV/day FLOOR: a barely-positive-gross churn idea whose NET EV/day is
+        // under the floor is de-ranked below clean setups (−500_000) so it cannot top the board.
+        // The old clearsCostAfterFrictions binary gate is SUBSUMED: anything net≤0 has ratio=0
+        // ⇒ key=0, and the floor (< 0.005) then adds the −500_000 de-rank. Nothing previously
+        // demoted is resurrected. Honest companion label via netCostFloorFlag(for:).
+        if belowNetCostFloor(for: idea, holds: holds, calibration: calibration) { return v - 500_000 }
         return idea.advice.conviction >= minConvictionToRank ? v : v - 1000
     }
 

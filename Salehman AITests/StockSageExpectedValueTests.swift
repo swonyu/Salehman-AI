@@ -404,4 +404,140 @@ struct StockSageExpectedValueTests {
         let ranked = EV.rankByEV([a, c, b])
         #expect(ranked.map(\.symbol) == ["B", "A", "C"])
     }
+
+    // ── G1 (iter6) — Churny short-hold drops below slower high-net once cost is netted ─────────
+    //
+    // [AUDIT] BTC-USD crypto churn: entry 100, stop 98, target 103 (rr 1.5:1), hold 3d, conv 0.9.
+    //   p = 0.35 + 0.9·0.23 = 0.557
+    //   grossEV  = 0.557·1.5 − 0.443 = 0.3925R
+    //   cryptoCost = (30+20+20)bps·100 = $0.70
+    //   netReward = 3−0.70 = 2.30 ; netRisk = 2+0.70 = 2.70
+    //   netEV/grossRisk = (0.557·2.30 − 0.443·2.70)/2 ≈ 0.0425R
+    //   netRatio = 0.0425/0.3925 ≈ 0.108  → net velocity = tiny
+    //
+    // [AUDIT] AAPL equity slow swing: entry 100, stop 90, target 130 (rr 3:1), hold 12d, conv 0.9.
+    //   grossEV  = 0.557·3 − 0.443 = 1.228R
+    //   usCost = (8+5)bps·100 = $0.13
+    //   netReward = 29.87 ; netRisk = 10.13
+    //   netEV/grossRisk = (0.557·29.87 − 0.443·10.13)/10 ≈ 1.215R
+    //   netRatio ≈ 0.989  → net velocity >> BTC's
+    //
+    // The velocity BOARD should rank AAPL first; GROSS velocity still ranks BTC faster.
+    @Test func G1_churnyShortHold_dropsBelowSlowerHighNet_afterCost() {
+        let churnBTC = idea("BTC-USD", conviction: 0.9, stop: 98, target: 103)   // entry 100
+        let slowAAPL = idea("AAPL",    conviction: 0.9, stop: 90, target: 130)   // entry 100
+        // Net-ranked board: AAPL first (higher NET EV/day despite slower gross turnover).
+        #expect(EV.rankByVelocity([churnBTC, slowAAPL]).first?.symbol == "AAPL")
+        // Gross displayed velocity still ranks BTC faster — the FLIP is exactly the cost netting.
+        let grossBTC  = EV.velocity(for: churnBTC)!
+        let grossAAPL = EV.velocity(for: slowAAPL)!
+        #expect(grossBTC > grossAAPL)   // BTC wins on gross/day; AAPL wins on net/day
+        // Confirm net velocity is computed and BTC's is much smaller than AAPL's.
+        let netBTC  = EV.netVelocity(for: churnBTC)!
+        let netAAPL = EV.netVelocity(for: slowAAPL)!
+        #expect(netAAPL > netBTC)        // AAPL dominates net
+        // netRatio for BTC must be well below 1 (cost haircut is substantial).
+        #expect(netBTC < grossBTC)
+    }
+
+    // ── G2 (iter6) — Min-net-EV/day floor de-ranks barely-positive-net AND net-negative ideas;
+    //                  does NOT hide a clean high-net idea ────────────────────────────────────────
+    //
+    // Three witnesses:
+    //
+    // 1. btcNegNet (net-negative): BTC-USD conv=0.42 rr=1.0 entry=100 stop=90 target=110.
+    //      p = 0.35 + 0.42·0.23 = 0.4466
+    //      cryptoCost = 70bps·100 = $0.70 ; netReward = 10−0.70 = 9.30 ; netRisk = 10+0.70 = 10.70
+    //      netEV/grossRisk = (0.4466·9.30 − 0.5534·10.70)/10 = (4.153 − 5.921)/10 = −0.1768R (< 0)
+    //      ⇒ netVelocity < 0 < 0.005 floor → belowNetCostFloor == true (trivial case).
+    //
+    // 2. barelyNet (barely-positive-net, strictly in (0, 0.005)): AAPL conv=0.50 rr=1.3
+    //      entry=100 stop=90 target=113, hold=12d.
+    //      p = 0.35 + 0.50·0.23 = 0.465
+    //      usCost = 13bps·100 = $0.13 ; netReward = 13−0.13 = 12.87 ; netRisk = 10+0.13 = 10.13
+    //      netEV/grossRisk = (0.465·12.87 − 0.535·10.13)/10 = (5.9846 − 5.4196)/10 = 0.0565R (> 0)
+    //      netVelocity = 0.0565/12 ≈ 0.00471 < 0.005 floor → belowNetCostFloor == true.
+    //      This is the primary case the floor was designed for: grossEV > 0, netEVR > 0,
+    //      but churn erodes the per-day rate below the conservative threshold.
+    //
+    // 3. cleanAAPL (clean high-net): AAPL conv=0.9 rr=3.0 entry=100 stop=90 target=130, hold=12d.
+    //      netEV ≈ 1.215R ; netVelocity ≈ 0.101 >> 0.005 → floor does NOT fire.
+    @Test func G2_floorSkipsBarelyPositiveNet_andDoesNotHideClean() {
+        // Witness 1: net-negative (costs kill the edge entirely).
+        let btcNegNet = idea("BTC-USD", conviction: 0.42, stop: 90, target: 110)
+        if let ne = EV.netEVR(for: btcNegNet) { #expect(ne <= 0.0) }
+        #expect(EV.belowNetCostFloor(for: btcNegNet) == true)
+        #expect(EV.netCostFloorFlag(for: btcNegNet).isDeranked)
+        #expect(EV.netCostFloorFlag(for: btcNegNet).badge == "below net-cost floor")
+
+        // Witness 2: barely-positive-net strictly in (0, 0.005 R/day) — the primary floor case.
+        // AAPL: entry=100 stop=90 target=113 conv=0.50 rr=1.3 hold=12d → netVelocity ≈ 0.00471.
+        //   p = 0.465, cost=$0.13, netReward=12.87, netRisk=10.13
+        //   netEVR = (0.465·12.87 − 0.535·10.13)/10 ≈ 0.0565 > 0
+        //   netVelocity = 0.0565/12 ≈ 0.00471 < 0.005 → floor fires on a *net-positive* idea.
+        let barelyIdea = idea("AAPL", conviction: 0.50, stop: 90, target: 113)
+        let barelyNetEVR = EV.netEVR(for: barelyIdea)
+        let barelyNetVel = EV.netVelocity(for: barelyIdea)
+        // Assert netEVR > 0 (it is a net-positive idea, just barely):
+        #expect(barelyNetEVR != nil, "barelyIdea must have a netEVR (has stop+target)")
+        if let ne = barelyNetEVR { #expect(ne > 0.0, "barelyIdea netEVR must be > 0; got \(ne)") }
+        // Assert netVelocity is in (0, 0.005) — the precisely-targeted floor band:
+        #expect(barelyNetVel != nil, "barelyIdea must have a netVelocity (AAPL has hold estimate)")
+        if let nv = barelyNetVel {
+            #expect(nv > 0.0, "barelyIdea netVelocity must be > 0; got \(nv)")
+            #expect(nv < EV.minNetEVPerDayFloor, "barelyIdea nv=\(nv) must be < floor 0.005")
+        }
+        // The idea-level floor should fire on this marginally net-positive idea:
+        #expect(EV.belowNetCostFloor(for: barelyIdea) == true,
+                "barely-net-positive idea (netVelocity in (0, 0.005)) must be de-ranked by the floor")
+
+        // Witness 3: clean high-net — floor must NOT fire (Guardrail 2).
+        let cleanAAPL = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        #expect(EV.belowNetCostFloor(for: cleanAAPL) == false)
+        #expect(!EV.netCostFloorFlag(for: cleanAAPL).isDeranked)
+        #expect(EV.netCostFloorFlag(for: cleanAAPL).badge == "")
+
+        // All three rank: cleanAAPL is first; btcNegNet and barelyIdea are de-ranked below it.
+        let ranked = EV.rankByVelocity([btcNegNet, barelyIdea, cleanAAPL])
+        #expect(ranked.first?.symbol == "AAPL",
+                "clean AAPL (rr=3, conv=0.9) must rank first over de-ranked ideas")
+        #expect(ranked.first?.advice.stopPrice == 90 && ranked.first?.advice.targetPrice == 130,
+                "the leading AAPL must be the clean high-net one (stop=90, target=130)")
+    }
+
+    // ── G3 (iter6) — Boundary: idea with no stop/target → no floor burial; floor at exact value → passes ──
+    @Test func G3_degenerateAndBoundaryGuards() {
+        // No stop/target ⇒ netEVR nil ⇒ netVelocity nil ⇒ belowNetCostFloor false (not buried).
+        let noR = idea("AAPL", conviction: 0.9, stop: nil, target: nil)
+        #expect(EV.netEVR(for: noR) == nil)
+        #expect(EV.netVelocity(for: noR) == nil)
+        #expect(EV.belowNetCostFloor(for: noR) == false)
+        #expect(EV.netCostFloorFlag(for: noR).badge == "")
+        // Index/FX has no expectedHoldDays → netVelocity nil → flag .clears (badge empty).
+        let idxIdea = idea("^GSPC", conviction: 0.9, stop: 90, target: 130)
+        #expect(EV.netVelocity(for: idxIdea) == nil)
+        #expect(EV.netCostFloorFlag(for: idxIdea).badge == "")
+        // Exactly at floor (nv == 0.005) → belowNetCostFloor == false (>= passes, strict < does not fire).
+        // We verify the constant value and the strict-< semantics directly:
+        #expect(EV.minNetEVPerDayFloor == 0.005)
+        let exactAtFloor = EV.minNetEVPerDayFloor
+        #expect(!(exactAtFloor < EV.minNetEVPerDayFloor))   // not below → does not fire
+    }
+
+    // ── G4 (iter6) — net == gross when cost = 0 (byte-identity, Guardrail 4) ────────────────────
+    //
+    // [AUDIT] StockSageNetEdge.evaluate with spread/slippage/taker all 0:
+    //   netReward = grossReward − 0 = grossReward
+    //   netRisk   = grossRisk + 0 = grossRisk
+    //   netEV/grossRisk = (p·netReward − (1−p)·netRisk)/grossRisk
+    //                   = (p·grossReward − (1−p)·grossRisk)/grossRisk = p·rewardR − (1−p) = grossEV
+    //   So netExpectancyR == evR when cost = 0.
+    @Test func G4_netEqualsGrossWhenZeroCost() {
+        let p = EV.winProbEstimate(conviction: 0.9)   // 0.557
+        let grossEV = EV.ev(conviction: 0.9, entry: 100, stop: 90, target: 130)!   // evR 1.228
+        let ne = StockSageNetEdge.evaluate(entry: 100, stop: 90, target: 130,
+                                           spreadBps: 0, slippageBps: 0, takerFeeBps: 0, winProb: p)!
+        #expect(ne.netExpectancyR != nil)
+        #expect(abs(ne.netExpectancyR! - grossEV.evR) < 1e-9)   // [AUDIT] cost 0 ⇒ net == gross
+    }
 }

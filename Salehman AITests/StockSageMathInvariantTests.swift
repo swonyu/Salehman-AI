@@ -876,4 +876,105 @@ struct StockSageMathInvariantTests {
         let hp = I.highProximity(price: h.closes.last!, highs: h.highs)
         #expect(hp?.effectiveWindow == 120, "effectiveWindow must be min(252,120)=120")
     }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // MARK: 8 — Net-of-cost EV velocity sort (iter6) — math invariant golden pins
+    // ────────────────────────────────────────────────────────────────────────
+    //
+    // These tests pin the algebra of the net-cost helpers in StockSageExpectedValue.
+    // They are MATH invariants (closed-form derivations), not behavioral tests.
+    // Cost model: StockSageNetEdge.evaluate(...).netExpectancyR = (p·netReward − (1−p)·netRisk)/grossRisk.
+    typealias EV = StockSageExpectedValue
+
+    // ── G3 (iter6) — net == gross when cost = 0 (Guardrail 4, byte-identity) ────────────────────
+    //
+    // [AUDIT] Derivation: when spread=slip=taker=0, cost=0:
+    //   netReward = grossReward ; netRisk = grossRisk
+    //   netEV/grossRisk = (p·grossReward − (1−p)·grossRisk) / grossRisk
+    //                   = p·(grossReward/grossRisk) − (1−p) = p·rewardR − (1−p) = evR
+    //   ⇒ netExpectancyR == evR  (exact, IEEE-754 byte-for-byte)
+    @Test func iter6_netEqualsGrossWhenZeroCost() {
+        // conv 0.9 → p = 0.35 + 0.9·0.23 = 0.557 (within EV.winProbEstimate's band)
+        let p = EV.winProbEstimate(conviction: 0.9)
+        #expect(abs(p - 0.557) < Self.EPS, "winProbEstimate(0.9) must = 0.557")
+        // grossEV: entry=100 stop=90 target=130 → reward=30, risk=10, rewardR=3.0 (capped << 50); evR = 0.557·3 − 0.443 = 1.228
+        let grossEV = EV.ev(conviction: 0.9, entry: 100, stop: 90, target: 130)!
+        // netEV via evaluate with all costs = 0:
+        let ne = StockSageNetEdge.evaluate(entry: 100, stop: 90, target: 130,
+                                           spreadBps: 0, slippageBps: 0, takerFeeBps: 0, winProb: p)!
+        #expect(ne.netExpectancyR != nil, "[AUDIT] zero-cost evaluate must return a non-nil netExpectancyR")
+        #expect(abs(ne.netExpectancyR! - grossEV.evR) < Self.EPS,
+                "[AUDIT] cost=0 ⇒ netExpectancyR(\(ne.netExpectancyR!)) must equal evR(\(grossEV.evR))")
+    }
+
+    // ── G4 (iter6) — floor constant is 0.005; floor boundary semantics (strict <) ──────────────
+    //
+    // [AUDIT] minNetEVPerDayFloor = 0.005 (named constant). belowNetCostFloor uses strict <,
+    // so nv == floor → false (passes); nv < floor → true (de-ranked).
+    // Degenerate: no R → netEVR nil → netVelocity nil → belowNetCostFloor false (not buried).
+    @Test func iter6_floorConstantAndBoundarySemantics() {
+        // Floor constant pinned at 0.005:
+        #expect(abs(EV.minNetEVPerDayFloor - 0.005) < Self.EPS,
+                "[AUDIT] minNetEVPerDayFloor must be exactly 0.005")
+        // Strict-< semantics: exactly-at-floor passes (not de-ranked):
+        let floorVal = EV.minNetEVPerDayFloor
+        #expect(!(floorVal < EV.minNetEVPerDayFloor),
+                "[AUDIT] value exactly at floor must NOT be < floor (boundary semantics)")
+        // No-R idea → netEVR nil → not buried (no aggressive de-rank on missing data):
+        let noRIdea = SageFix.idea("AAPL", conviction: 0.9, rr: nil)   // stop=nil, target=nil
+        #expect(EV.netEVR(for: noRIdea) == nil,
+                "[AUDIT] no stop/target ⇒ netEVR must be nil")
+        #expect(EV.netVelocity(for: noRIdea) == nil,
+                "[AUDIT] nil netEVR ⇒ netVelocity must be nil")
+        #expect(EV.belowNetCostFloor(for: noRIdea) == false,
+                "[AUDIT] nil netVelocity ⇒ belowNetCostFloor must be false (not buried)")
+        #expect(EV.netCostFloorFlag(for: noRIdea).badge == "",
+                "[AUDIT] nil velocity ⇒ flag .clears ⇒ badge empty")
+        // Index/FX (no expectedHoldDays) → netVelocity nil → clears:
+        let idxIdea = SageFix.idea("^GSPC", conviction: 0.9, rr: 2.0)
+        #expect(EV.netVelocity(for: idxIdea) == nil,
+                "[AUDIT] index has no hold estimate ⇒ netVelocity nil ⇒ no floor burial")
+        #expect(EV.netCostFloorFlag(for: idxIdea).badge == "",
+                "[AUDIT] index ⇒ flag .clears ⇒ badge empty")
+    }
+
+    // ── G5 (iter6) — netEVR closed-form pin for US large-cap and crypto ──────────────────────────
+    //
+    // [AUDIT] US large-cap (AAPL): spread 8bps + slippage 5bps = 13bps (taker=0).
+    //   cost = 13/10000 · 100 = $0.13 ; entry=100 stop=90 target=130 → grossReward=30, grossRisk=10
+    //   netReward = 30 − 0.13 = 29.87 ; netRisk = 10 + 0.13 = 10.13
+    //   p = 0.557 (conv 0.9, uncalibrated prior)
+    //   netEV/grossRisk = (0.557·29.87 − 0.443·10.13)/10
+    //                   = (16.638 − 4.488)/10 = 12.150/10 = 1.2150R  [AUDIT ε<1e-6]
+    //
+    // [AUDIT] Crypto (BTC-USD): spread 30 + slippage 20 + taker 20 = 70bps.
+    //   cost = 70/10000 · 100 = $0.70 ; entry=100 stop=98 target=103 → grossReward=3, grossRisk=2
+    //   netReward = 3 − 0.70 = 2.30 ; netRisk = 2 + 0.70 = 2.70
+    //   netEV/grossRisk = (0.557·2.30 − 0.443·2.70)/2
+    //                   = (1.2811 − 1.1961)/2 = 0.0850/2 = 0.0425R  [AUDIT ε<1e-4 per repeating decimal]
+    @Test func iter6_netEVRClosedFormPins() {
+        let p = EV.winProbEstimate(conviction: 0.9)   // 0.557
+        // US large-cap AAPL:
+        let aaplNetEV = EV.netEVR(for: SageFix.idea("AAPL", conviction: 0.9, rr: 3.0,
+                                                      price: 100, riskDistance: 10))
+        // [AUDIT] hand-derived: (0.557·29.87 − 0.443·10.13)/10
+        let aaplExpected = (p * 29.87 - (1 - p) * 10.13) / 10.0
+        #expect(aaplNetEV != nil, "[AUDIT] AAPL must have a defined netEVR (has stop+target)")
+        #expect(abs(aaplNetEV! - aaplExpected) < Self.EPS,
+                "[AUDIT] AAPL netEVR must match closed-form: \(aaplExpected), got \(aaplNetEV!)")
+        // Crypto BTC-USD (narrow rr=1.5, short hold — the churn case):
+        let btcNetEV = EV.netEVR(for: SageFix.idea("BTC-USD", conviction: 0.9, rr: 1.5,
+                                                     price: 100, riskDistance: 2))
+        // [AUDIT] hand-derived: (0.557·2.30 − 0.443·2.70)/2
+        let btcExpected = (p * 2.30 - (1 - p) * 2.70) / 2.0
+        #expect(btcNetEV != nil, "[AUDIT] BTC-USD must have a defined netEVR (has stop+target)")
+        #expect(abs(btcNetEV! - btcExpected) < 1e-4,
+                "[AUDIT] BTC-USD netEVR must match closed-form: \(btcExpected), got \(btcNetEV!)")
+        // AAPL net velocity = netEV / hold(12) and must be >> floor:
+        let aaplNetVel = EV.netVelocity(for: SageFix.idea("AAPL", conviction: 0.9, rr: 3.0,
+                                                            price: 100, riskDistance: 10))
+        #expect(aaplNetVel != nil, "[AUDIT] AAPL has hold → netVelocity defined")
+        #expect(aaplNetVel! > EV.minNetEVPerDayFloor,
+                "[AUDIT] AAPL high-net swing must clear the floor by orders of magnitude: \(aaplNetVel!)")
+    }
 }
