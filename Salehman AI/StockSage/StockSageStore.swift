@@ -432,6 +432,8 @@ final class StockSageStore: ObservableObject {
 
     // Risk-parity — inverse-vol target weights across the owner's holdings.
     @Published private(set) var riskParity: [RiskParityTarget] = []
+    /// Holdings excluded from the risk-parity calculation (vol ≤ 0 or negative value — too sparse to size).
+    @Published private(set) var riskParityDropped: [String] = []
     @Published private(set) var isComputingParity = false
     @Published private(set) var parityError: String?
 
@@ -466,6 +468,7 @@ final class StockSageStore: ObservableObject {
             parityError = "Couldn't get enough history to risk-size the portfolio."
             return
         }
+        riskParityDropped = holdings.filter { $0.volatility <= 0 || $0.currentValue < 0 }.map(\.symbol)
         riskParity = StockSageRiskParity.targets(holdings)
     }
 

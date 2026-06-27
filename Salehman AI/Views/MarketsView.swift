@@ -978,6 +978,10 @@ struct MarketsView: View {
             if let err = store.parityError {
                 Text(err).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
             }
+            if !store.riskParityDropped.isEmpty {
+                Text("⚠︎ \(store.riskParityDropped.joined(separator: ", ")) excluded — no usable vol data; risk-parity covers only what was assessable.")
+                    .font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+            }
             if !store.riskParity.isEmpty {
                 VStack(spacing: 1) { ForEach(store.riskParity) { parityRow($0) } }
                 if let vs = StockSageRiskParity.vsEqualWeight(store.riskParity) {
