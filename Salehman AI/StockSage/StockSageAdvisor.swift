@@ -163,8 +163,10 @@ enum StockSageAdvisor {
         // Volume confirmation (real volumes only): a directional move carried by
         // above-average participation is more trustworthy; one on thin volume is suspect.
         // Nudges the MAGNITUDE of the existing signal (±0.05), never flips its direction,
-        // and does nothing when volumes are absent/zero (FX, indices) — so the
-        // close-only callers (e.g. the backtester) are unchanged.
+        // and does nothing when volumes are absent/zero (FX, indices) — close-only callers
+        // get no volume term here. The variance scalar below applies to ALL callers with
+        // ≥30 bars (it is computed from closes alone), so a high-vol stock IS affected
+        // differently from the pre-ITER3 code even in close-only mode.
         let scoreBeforeConfirm = score   // RSI already applied & excluded from the trend family
         if let volumes, abs(score) > 0,
            let vc = StockSageIndicators.volumeConfirmation(closes: closes, volumes: volumes) {
@@ -197,22 +199,43 @@ enum StockSageAdvisor {
             else if rs < 0 { score -= 0.08; rationale.append(String(format: "Lagging the S&P (relative strength %.0f%%)", rs)) }
         }
 
-        // Apply the trend-family cap: remove ONLY the inflation beyond `trendFamilyCap` so
-        // conviction tracks the edge, not the count of correlated indicators. For names whose
-        // family sum is under the cap this is a no-op (running score above is byte-identical).
-        let trendFamily = trendCore + (score - scoreBeforeConfirm)
-        if abs(trendFamily) > Self.trendFamilyCap {
-            score -= (trendFamily >= 0 ? 1.0 : -1.0) * (abs(trendFamily) - Self.trendFamilyCap)
-            rationale.append(String(format: "Correlated trend signals capped at %.2f (raw ≈ %.2f) — one trend, not many",
-                                    Self.trendFamilyCap, abs(trendFamily)))
+        // Hoist realized-vol computation here so it is available for the variance scalar
+        // (below) AND the stop sizing (further below). Computed ONCE — no duplicate call.
+        let realizedVol = StockSageIndicators.annualizedVolatility(closes)
+
+        // ── ITER3: continuous inverse-variance momentum scaling (replaces the binary TSMOM veto).
+        // Barroso & Santa-Clara 2015: scale momentum exposure INVERSELY by realized variance to hold
+        // risk constant — attenuates conviction in high-vol (crash) regimes. The scalar is computed
+        // ONCE from `realizedVol` (hoisted above) and CLAMPED to ≤ 1.0 (calm must not amplify).
+        let varScalar = Self.varianceScalar(realizedVol: realizedVol)   // ∈ (0, 1]; 1.0 = no-op
+
+        // The scalar multiplies ONLY the trend-family contribution (the correlated momentum bucket
+        // the research targets), NOT the independent RSI mean-reversion / nudge terms. Decompose:
+        let rawTrendFamily = trendCore + (score - scoreBeforeConfirm)   // trend+mom+MACD+vol+relStr+volAdjMom
+        let nonFamily      = score - rawTrendFamily                     // RSI bounce / fade / extended nudges
+
+        // 1) SCALE the trend family inversely by variance (attenuation-only).
+        var scaledFamily = rawTrendFamily * varScalar
+
+        // 2) RE-ASSERT the 0.65 trend-family cap on the POST-SCALED family (Guardrails 1 & 2):
+        //    correlated-trend conviction stays bounded entering Kelly, regardless of the scalar.
+        //    (Attenuation-only ⇒ scaledFamily can only ever shrink the cap pressure, never inflate it.)
+        if abs(scaledFamily) > Self.trendFamilyCap {
+            scaledFamily = (scaledFamily >= 0 ? 1.0 : -1.0) * Self.trendFamilyCap
         }
 
-        // Time-series (12-1) own-trend crash filter: veto a long-side score when the name is in
-        // its OWN downtrend (the documented TSMOM crash-protection). −0.20 — strong enough to flip
-        // a marginal buy to a hold/avoid. nil (insufficient bars) ⇒ no veto, unchanged.
-        if score > 0, StockSageIndicators.trendOK(closes) == false {
-            score -= 0.20
-            rationale.append("Against the name's own 12-1 downtrend — momentum veto")
+        // 3) Reassemble: scaled+capped family + untouched independent terms.
+        score = scaledFamily + nonFamily
+
+        // Rationale (only when the scalar actually bit — keeps calm-regime strings/byte-output stable):
+        // realizedVol is non-nil here when varScalar < 1.0 (the scalar only attenuates when
+        // realizedVol is present, finite, and > 0 — the guard in varianceScalar() ensures this).
+        if varScalar < 1.0, let vol = realizedVol {
+            rationale.append(String(format: "High-vol regime — momentum scaled ×%.2f (target %.0f%% / realized %.0f%%)",
+                                    varScalar, Self.varianceScalarTargetVol * 100, vol * 100))
+        } else if abs(rawTrendFamily) > Self.trendFamilyCap {
+            rationale.append(String(format: "Correlated trend signals capped at %.2f (raw ≈ %.2f) — one trend, not many",
+                                    Self.trendFamilyCap, abs(rawTrendFamily)))
         }
 
         let regime: TradeAdvice.Regime = trending ? (score >= 0 ? .bullTrend : .bearTrend) : .range
@@ -246,7 +269,7 @@ enum StockSageAdvisor {
         // Stop & target — symmetric: a long stops BELOW / targets ABOVE; a short mirrors it.
         // The ATR multiple now scales with the name's realized volatility (wider for crypto,
         // tighter for calm equities) so the stop fits the asset, not a one-size guess.
-        let realizedVol = StockSageIndicators.annualizedVolatility(closes)
+        // `realizedVol` was hoisted above the cap block (ITER3) — reused here, not recomputed.
         let (stop, target) = Self.stopTarget(action: action, price: price, atr: atr, realizedVol: realizedVol)
         let stopMult = Self.stopMultiple(forVol: realizedVol)
         let stopReason = realizedVol.map { String(format: "%.1f×ATR stop — sized for %.0f%% annualized volatility", stopMult, $0 * 100) }
@@ -263,6 +286,27 @@ enum StockSageAdvisor {
                            rationale: rationale, stopPrice: stop, targetPrice: target,
                            suggestedWeight: weight, caveat: caveat,
                            stopMultiplier: stopMult, stopReason: stopReason)
+    }
+
+    /// Target annualized volatility (20%) the variance scalar normalizes momentum exposure to —
+    /// the same baseline cryptoRiskScaler sizes risk against (StockSageExpectedValue baseline 0.20).
+    /// Barroso & Santa-Clara 2015: scaling momentum exposure INVERSELY by realized variance
+    /// targets a constant risk level; we normalize to this baseline and CLAMP to attenuation-only.
+    nonisolated static let varianceScalarTargetVol = 0.20
+
+    /// Epsilon floor for the realized-vol denominator — belt-and-suspenders guard against
+    /// any sub-epsilon positive value slipping past the `v > 0` guard.
+    nonisolated static let varianceScalarEps = 1e-8
+
+    /// Inverse-variance momentum scalar (Barroso & Santa-Clara 2015): target_vol / realized_vol,
+    /// CLAMPED to ≤ 1.0 (attenuation-only — a calm regime must NOT amplify a momentum bet).
+    /// Returns 1.0 (no-op) when realized vol is missing/non-finite/≤0, preserving pure-caller
+    /// byte-identity. Pure + deterministic.
+    nonisolated static func varianceScalar(realizedVol: Double?) -> Double {
+        guard let v = realizedVol, v.isFinite, v > 0 else { return 1.0 }   // missing/NaN/Inf/≤0 → no-op
+        let raw = varianceScalarTargetVol / Swift.max(v, varianceScalarEps) // target_vol / max(rv, ε)
+        guard raw.isFinite else { return 1.0 }                              // belt-and-suspenders
+        return Swift.min(1.0, raw)                                          // attenuation-only clamp ≤ 1
     }
 
     /// Half-Kelly position size as a fraction of the book, off the win probability for this
