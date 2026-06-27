@@ -3162,6 +3162,7 @@ struct MarketsView: View {
                 ForEach(lane.prefix(3), id: \.id) { idea in
                     if let v = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
                         let floorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
+                        let earnFlag  = StockSageExpectedValue.earningsRankFlag(for: idea, earnings: store.earnings)
                         Button { selectedIdea = idea } label: {
                             HStack(spacing: DS.Space.sm) {
                                 Text(idea.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
@@ -3171,8 +3172,10 @@ struct MarketsView: View {
                                 if idea.symbol.hasSuffix("-USD") {
                                     Text("24/7 · volatile").font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft)
                                 }
-                                // [AUDIT iter6] Honest label: fires exactly when belowNetCostFloor is true (net EV/day < 0.005R/day
-                                // after frictions). De-ranked on the velocity board but surface badge so the ordering is transparent.
+                                if !earnFlag.badge.isEmpty {
+                                    Text(earnFlag.badge).font(.system(size: mvFont8))
+                                        .foregroundStyle(earnFlag.isDemoted ? DS.Palette.warningSoft : .secondary)
+                                }
                                 if floorFlag.isDeranked {
                                     Text("below net-cost floor").font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft)
                                 }
@@ -3180,7 +3183,7 @@ struct MarketsView: View {
                                 Image(systemName: "chevron.right").font(.system(size: mvFont8)).foregroundStyle(.secondary)
                             }.contentShape(Rectangle())
                         }.buttonStyle(LuxPressStyle())
-                        .accessibilityLabel("\(idea.symbol): \(String(format: "%+.3f", v)) R per day velocity\(idea.symbol.hasSuffix("-USD") ? ", 24/7 volatile" : "")\(floorFlag.isDeranked ? ", below net-cost floor" : ""). Tap for the plan.")
+                        .accessibilityLabel("\(idea.symbol): \(String(format: "%+.3f", v)) R per day velocity\(idea.symbol.hasSuffix("-USD") ? ", 24/7 volatile" : "")\(!earnFlag.badge.isEmpty ? ", \(earnFlag.badge)" : "")\(floorFlag.isDeranked ? ", below net-cost floor" : ""). Tap for the plan.")
                     }
                 }
                 if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), holds: velocityHolds, calibration: store.convictionCalibration) {
