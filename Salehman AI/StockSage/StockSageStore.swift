@@ -761,7 +761,16 @@ final class StockSageStore: ObservableObject {
     /// fire on the BOARDS / best-bet / allocation — not only after a detail expand. Each symbol is
     /// cached once (refreshEarnings no-ops when present), so this only fetches the new top names.
     func refreshEarningsForTopIdeas(limit: Int = 15) async {
-        for idea in ideas.prefix(limit) { await refreshEarnings(symbol: idea.symbol) }
+        // Run up to 4 earnings fetches in parallel (each has an 8s timeout); sequential
+        // was correct for correctness but serialised 15 fetches = up to 15×8s worst-case.
+        let top = Array(ideas.prefix(limit))
+        let chunks = stride(from: 0, to: top.count, by: 4).map { Array(top[$0 ..< min($0 + 4, top.count)]) }
+        for chunk in chunks {
+            await withTaskGroup(of: Void.self) { group in
+                for idea in chunk { group.addTask { await self.refreshEarnings(symbol: idea.symbol) } }
+                for await _ in group { }
+            }
+        }
     }
 
     // Monthly seasonality — calendar-month return tendency over a long history.

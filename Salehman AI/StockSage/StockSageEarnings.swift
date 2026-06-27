@@ -57,7 +57,7 @@ enum StockSageEarnings {
         guard let encoded = symbol.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed),
               let url = URL(string: "https://query1.finance.yahoo.com/v10/finance/quoteSummary/\(encoded)?modules=calendarEvents")
         else { return nil }
-        var req = URLRequest(url: url)
+        var req = URLRequest(url: url, timeoutInterval: 8)
         req.setValue(ua, forHTTPHeaderField: "User-Agent")
         guard let (data, resp) = try? await URLSession.shared.data(for: req),
               (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
