@@ -2,6 +2,17 @@
 
 This file is auto-loaded at the start of every Claude Code session. Follow it.
 
+## 🔬 Research memory (cumulative — owner directive 2026-06-27)
+@research/INDEX.md
+
+**Before the PLAN phase of any iteration, read [`research/INDEX.md`](research/INDEX.md) in full.**
+Open the specific `RESEARCH_*.md` detail file (linked from the index) before proposing any
+change that touches that area. **NEVER re-research something already in the index — extend its
+entry instead.** Every new research run appends a dated line to `research/INDEX.md` and
+writes/extends its detail file (the Research Spec Keeper's mandate). Transcripts auto-delete
+(~30 days), so this index is the only permanent record of "every research ever." Keep the index
+< ~200 lines (roll over when it grows); the detail files carry the depth.
+
 ## 🟥 Owner directive (2026-06-05) — LOG EVERYTHING FROM TODAY ONWARD
 **After ANY change to this repo — code, docs, config, fixes, features — append a
 dated entry to [`DEVELOPMENT_LOG.md`](DEVELOPMENT_LOG.md)** using the format

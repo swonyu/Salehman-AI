@@ -8806,6 +8806,12 @@ Fixed a correctness bug in `StockSageConvictionCalibration.fitPlatt`: when Newto
 **Result:** ✅ data-only string edit; math-invariant + EV golden-vector suite unaffected.
 **Lesson (logged per directive):** the iter-TASI gate claimed "all 22 verified live on Yahoo" but the test sandbox can't reach the network — only the post-commit fetch-check catches dead codes. (Minor doc note: `4014.SR` prices live but the prior entry's "Dallah" label is likely wrong — Dallah Healthcare is `4004`; the code is valid regardless, so it stays.)
 
+## 2026-06-27 · Research memory — cumulative INDEX wired into CLAUDE.md (owner-approved)
+**Files:** `research/INDEX.md` (new), `CLAUDE.md`
+**What & why:** The 6 repo-root `RESEARCH_*.md` files were durable but un-indexed and unreferenced — PLAN never auto-consulted them, risking re-research. Created `research/INDEX.md`: a lean (<200-line) index with one-line findings per file + a verified-decisions section, linking each detail file. Wired it into CLAUDE.md via `@research/INDEX.md` + a "before PLAN, read the index; never re-research, extend the entry" instruction (Research Spec Keeper's mandate). Transcripts auto-delete (~30d) so this is the permanent record.
+**Two findings surfaced by enriching the index:** (1) `quant_engine_II` already concluded CONDITIONAL-ADOPT **Beta-3param calibration as an OOS-selected candidate** ({isotonic, beta, identity}) — a richer answer than the planned ridge-logistic Platt; flagged to reconcile before iter7. (2) `EDGE_RESEARCH` holds 3 spec'd-but-unbuilt edges (#1 per-symbol vol-regime brake, #4 downside-skew, #5 vol-of-vol gate) — a ready backlog for post-backtest iterations.
+**Result:** ✅ docs only; no code touched. Index discoverable + auto-loaded for every future session.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
