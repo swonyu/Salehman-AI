@@ -8799,6 +8799,13 @@ Fixed a correctness bug in `StockSageConvictionCalibration.fitPlatt`: when Newto
 **Result:** ✅ ** BUILD SUCCEEDED ** and ✅ ** TEST SUCCEEDED ** (Salehman AITests, full suite green). No signal/EV/calibration test touched the change; data-only.
 **Why these codes:** Every 4-digit `.SR` cross-checked against the actual Tadawul listing (numeric-board codes); preferred fewer high-confidence names over a long list with wrong codes (a wrong code = a dead "couldn't fetch" row).
 
+## 2026-06-27 · Universe expansion — UAE fetch-fix (post-commit live verification)
+**Files:** `Salehman AI/StockSage/StockSageQuoteService.swift`
+**What & why:** Post-commit fetch-check (curl to Yahoo `v8/finance/chart`, the SAME endpoint the app uses) against every new ticker: the 22 TASI `.SR` and 3 Qatar `.QA` names all price live — but ALL UAE codes were dead. The 4 just-added (`ADNOCGAS.AD`, `ADCB.AD`, `ALDAR.AD`, `DEWA.DU`) AND the 2 pre-existing (`FAB.AD`, `EMAAR.DU`) return "not found". Yahoo's `.AD`/`.DU` suffixes don't resolve; only `.AE` works, and only for Dubai (DFM) names. Abu Dhabi (ADX) names (FAB/ADCB/ADNOC Gas/Aldar) have NO working Yahoo code.
+**Fix:** UAE group → `("🇦🇪 Dubai (DFM)", ["EMAAR.AE", "DEWA.AE"])` — the only two UAE names that price live. Removes all 6 dead rows (4 just-added + 2 pre-existing).
+**Result:** ✅ data-only string edit; math-invariant + EV golden-vector suite unaffected.
+**Lesson (logged per directive):** the iter-TASI gate claimed "all 22 verified live on Yahoo" but the test sandbox can't reach the network — only the post-commit fetch-check catches dead codes. (Minor doc note: `4014.SR` prices live but the prior entry's "Dallah" label is likely wrong — Dallah Healthcare is `4004`; the code is valid regardless, so it stays.)
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

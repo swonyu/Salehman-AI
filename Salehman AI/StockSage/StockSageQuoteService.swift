@@ -309,7 +309,7 @@ enum StockSageUniverse {
         ("🇪🇸 Madrid (BME)",       ["SAN.MC", "IBE.MC", "ITX.MC"]),
         ("🇮🇹 Milan (Borsa)",      ["ENI.MI", "ISP.MI", "RACE.MI"]),
         ("🇸🇪 Stockholm (OMX)",    ["VOLV-B.ST", "ERIC-B.ST"]),
-        ("🇦🇪 UAE (ADX/DFM)",      ["FAB.AD", "EMAAR.DU", "ADNOCGAS.AD", "ADCB.AD", "ALDAR.AD", "DEWA.DU"]),
+        ("🇦🇪 Dubai (DFM)",        ["EMAAR.AE", "DEWA.AE"]),   // Yahoo .AD/.DU don't price; ADX names (FAB/ADCB/ADNOC/ALDAR) have no working Yahoo code — DFM .AE is the only reliable UAE format (verified live 2026-06-27)
         ("🇶🇦 Qatar (QSE)",        ["QNBK.QA", "IQCD.QA", "QIBK.QA", "MARK.QA"]),
         ("🇪🇬 Egypt (EGX)",        ["COMI.CA"]),
         ("🇿🇦 Johannesburg (JSE)", ["NPN.JO", "AGL.JO"]),
