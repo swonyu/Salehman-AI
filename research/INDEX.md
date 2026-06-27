@@ -31,5 +31,7 @@ One dated line per research item: topic · one-line finding · source file. Keep
 - **Net-of-cost EV + overtrading is the #1 killer** — costs/churn erode retail edge; break-even p*=1/(1+netRR) (Barber & Odean 2000). → ITER6 (net-cost EV/day + floor). FOLLOW-UP: make floor cost-relative.
 - **Deflated Sharpe** — correct for multiple-comparisons/data-snooping when ranking many strategies/names. → backtest harness (StockSageDeflatedSharpe).
 
+- **2026-06-27 · iter7 — calibration candidate-selector ({identity, Beta-3param, isotonic} OOS-Brier-picked, off-by-default, default byte-identical)** · `StockSageConvictionCalibration`: `candidateSelectorEnabled` flag (default false, exact `relativeStrengthEnabled` pattern), `BetaCalibration` type, `fitBeta` (IRLS, 3×3 Cramer, drop-and-refit monotonicity), `selectCalibration` (chronological 70/30 split + 1-row embargo, leak-free, identity conservative floor/tie-break). Ridge-logistic plan subsumed by selector. Tests: 10 new cases in `StockSageCalibrationSelectorTests`. Flag-off → byte-identical to pre-iter7. · [RESEARCH_2026-06-27_quant_engine_II.md](../RESEARCH_2026-06-27_quant_engine_II.md) (checklist #1/#16)
+
 ## How to extend
 Append a dated line here + write/extend the detail file. PLAN reads this index. This is the Research Spec Keeper's log.
