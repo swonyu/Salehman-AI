@@ -2558,8 +2558,14 @@ struct MarketsView: View {
                             if store.isLoadingIdeas { ProgressView().controlSize(.small).tint(.white) }
                             else { Image(systemName: "wand.and.stars").font(.system(size: 11, weight: .semibold)) }
                         }
-                        Text(store.isLoadingIdeas ? "Analyzing…" : "Find ideas")
-                            .font(.system(size: 11.5, weight: .semibold)).contentTransition(.opacity)
+                        Group {
+                            if store.isLoadingIdeas, let p = store.ideasProgress, p.total > 0 {
+                                Text("Loading \(p.current)/\(p.total)…")
+                            } else {
+                                Text(store.isLoadingIdeas ? "Analyzing…" : "Find ideas")
+                            }
+                        }
+                        .font(.system(size: 11.5, weight: .semibold)).contentTransition(.opacity)
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 11).padding(.vertical, 6)

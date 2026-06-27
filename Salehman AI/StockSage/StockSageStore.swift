@@ -79,6 +79,8 @@ final class StockSageStore: ObservableObject {
     // Advice/ideas — the advisor run across the universe on real candle history.
     @Published private(set) var ideas: [StockSageIdea] = []
     @Published private(set) var isLoadingIdeas = false
+    /// Live fetch progress during refreshIdeas: (completed, total) symbol count. nil when idle.
+    @Published private(set) var ideasProgress: (current: Int, total: Int)?
     /// In-flight ideas-refresh task, retained so the UI can cancel it (backlog #12).
     private var ideasRefreshTask: Task<Void, Never>?
     @Published private(set) var ideasUpdated: Date?
@@ -283,10 +285,14 @@ final class StockSageStore: ObservableObject {
     private func performRefreshIdeas() async {
         ideasError = nil
         let universe = trackedDefs()
+        let total = universe.count
+        ideasProgress = (current: 0, total: total)
         // Fetch the benchmark (^GSPC) in parallel so each idea can be scored on relative
         // strength vs the index; nil on failure → ideas degrade gracefully to absolute signals.
         async let benchmarkTask = StockSageQuoteService.fetchHistory("^GSPC", range: "1y")
-        let histories = await StockSageQuoteService.fetchHistories(for: universe.map(\.symbol))
+        let histories = await StockSageQuoteService.fetchHistories(for: universe.map(\.symbol), onProgress: { [weak self] n in
+            self?.ideasProgress = (current: n, total: total)
+        })
         let benchmark = await benchmarkTask
         guard !Task.isCancelled else { return }
 
@@ -323,6 +329,7 @@ final class StockSageStore: ObservableObject {
             !analyzed.contains($0.uppercased()) && StockSageAllocation.assetClass($0) != "Index"
         }
         ideasUpdated = Date()
+        ideasProgress = nil
     }
 
     /// Cancel an in-flight ideas scan (backlog #12). The outer refreshIdeas defer clears the spinner.

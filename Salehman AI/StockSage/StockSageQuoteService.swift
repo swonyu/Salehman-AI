@@ -146,12 +146,14 @@ enum StockSageQuoteService {
 
     /// Fetch candle histories for many symbols concurrently (bounded fan-out),
     /// keyed by uppercased requested symbol. `[:]` when external access is off.
-    static func fetchHistories(for symbols: [String], range: String = "1y", concurrency: Int = 6) async -> [String: StockSagePriceHistory] {
+    static func fetchHistories(for symbols: [String], range: String = "1y", concurrency: Int = 6,
+                               onProgress: ((Int) async -> Void)? = nil) async -> [String: StockSagePriceHistory] {
         guard ToolPolicy.isExternalAllowed, !symbols.isEmpty else { return [:] }
         var out: [String: StockSagePriceHistory] = [:]
         let chunks = stride(from: 0, to: symbols.count, by: max(1, concurrency)).map {
             Array(symbols[$0 ..< min($0 + concurrency, symbols.count)])
         }
+        var completed = 0
         for chunk in chunks {
             let results: [StockSagePriceHistory] = await withTaskGroup(of: StockSagePriceHistory?.self) { group in
                 for symbol in chunk { group.addTask { await fetchHistory(symbol, range: range) } }
@@ -160,6 +162,8 @@ enum StockSageQuoteService {
                 return acc
             }
             for h in results { out[h.symbol.uppercased()] = h }
+            completed += chunk.count
+            await onProgress?(completed)
         }
         return out
     }
