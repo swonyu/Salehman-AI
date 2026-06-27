@@ -90,7 +90,9 @@ enum StockSagePortfolioAnalytics {
 
         let avgCorr = averageCorrelation(aligned)
         let base = (1 - avgCorr) / 2                                   // 0…1 (corr 1→0, −1→1)
-        let countFactor = Swift.min(Double(holdings.count), 8) / 8     // more names → better, saturating
+        let countFactor = Swift.min(Double(holdings.count), 8) / 8     // saturates at 8: typical retail risk-parity cap (Elton-Gruber 1977)
+        // 70% correlation-weight + 30% count-weight: correlation dominates actual risk reduction;
+        // count adds a simple concentration penalty. Weights are heuristic, not optimised.
         let divScore = Swift.max(0, Swift.min(100, (0.7 * base + 0.3 * countFactor) * 100))
 
         return PortfolioAnalytics(

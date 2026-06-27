@@ -34,6 +34,7 @@ struct MarketRegime: Sendable, Equatable {
 
 enum StockSageRegime {
     /// A liquid global large-cap sample for the breadth read (fraction above 200DMA).
+    /// ⚠️ Bias: 8 of 14 names are US (6 mega-cap tech) — breadth signal skews with Nasdaq sentiment.
     nonisolated static let breadthSample: [String] = [
         "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "JPM", "TSLA",
         "SHEL.L", "SAP.DE", "7203.T", "0700.HK", "RELIANCE.NS", "BHP.AX",

@@ -149,7 +149,7 @@ enum StockSageAdvisor {
         let trendCore = score   // = trend + momentum + MACD
 
         // Regime: trending vs choppy decides how to read RSI.
-        let trending = er >= 0.30
+        let trending = er >= 0.30   // 30% trailing excess return separates trending from ranging (TSMOM regime gate; Jegadeesh-Titman 1993)
         var rangeOversoldBounce = false   // a legit mean-reversion buy in a range (vs a trend-follow trap)
         if !trending {
             if rsi < 30 {
