@@ -29,7 +29,7 @@
 
 **caveat:** Momentum is a documented but DECAY-prone and crowded premium with painful multi-year droughts and sharp reversals at turning points (it is a trend FILTER, not an oracle). Here it is used only as a binary own-trend risk-on/off veto, never as a return forecast or a sizing multiplier — the overfit-resistant framing.
 
-### ⬜ #4 — Downside-skew / left-tail read on the per-symbol return distribution
+### ✅ DONE (engine + tests; surfaced flag-only in idea "Why") #4 — Downside-skew / left-tail read on the per-symbol return distribution
 **edge:** EV and Sharpe both assume symmetric-ish payoffs; a name can have a fine mean and vol while hiding a fat left tail (crash-prone). Realized return SKEWNESS and a historical 1-day 95% downside (the same percentile machinery PortfolioAnalytics.var95 already uses, but per-symbol) flag names whose worst days are far worse than their vol implies — a direct honesty check on 'this setup's stop may gap'. Pure transform of fetched closes, reusing dailyReturns + percentile.
 
 **signature:** // New StockSageReturnShape.swift OR extend Indicators. nonisolated static func returnShape(closes: [Double]) -> ReturnShape?  — over StockSagePortfolioAnalytics.dailyReturns(closes): skewness (3rd standardized moment), downside95 = max(0, -percentile(returns, 0.05)), worstDay = returns.min(); nil when <30 returns. struct ReturnShape: Sendable, Equatable { skewness, downside95, worstDay, isLeftTailed (skew < -0.5), note, caveat }. Composes into StockSageRiskFlags (new flag 'negative skew — left-tailed') and can widen the cryptoRiskScaler brake.
@@ -38,7 +38,9 @@
 
 **caveat:** Sample skew over a short daily history is NOISY and dominated by a handful of days — it describes the PAST distribution, not the next move, and a single fresh crash can flip it. Use it as a 'this name has historically had ugly down-days' flag that widens the risk brake, never as a probability of a future crash.
 
-### ⬜ #5 — Volatility-of-volatility stability / 'is this setup tradeable' gate
+**surfacing (2026-06-27):** Engine-only, flag-only. When `isLeftTailed == true`, a ⚠ note is appended to `advice.rationale` in `StockSageStore.buildIdeas` (after `advise()` and calibration; NOT inside `advise()` or the bar-by-bar backtester). Renders verbatim in the detail-sheet "Why" decomposition via `MarketsView`'s existing generic `ForEach(a.rationale)` — zero Views/ edit. No sizing/score change; `advise()` byte-identical.
+
+### ✅ DONE (engine + tests; surfaced flag-only in idea "Why") #5 — Volatility-of-volatility stability / 'is this setup tradeable' gate
 **edge:** Two names at the same 30% annualized vol are not equal risk if one's vol is steady and the other's vol whips around — unstable vol makes ATR stops and position sizing unreliable (the stop you set today is the wrong width tomorrow). Measuring the dispersion of the rolling realized-vol series (the vol-of-vol, built from the SAME rolling series rank 1 produces) gives a deterministic 'sizing-reliability' read that down-weights names where the sizing inputs themselves are unstable. Cheap once rank 1 exists — it reuses that rolling-vol series.
 
 **signature:** // Extend StockSageVolRegime (depends on rank 1's rolling series). nonisolated static func volStability(closes: [Double], volWindow: Int = 21, historyWindow: Int = 126) -> VolStability?  — coefficient of variation of the rolling annualizedVolatility series (stdev/mean); struct VolStability: Sendable, Equatable { coeffOfVariation, band {steady, choppy, erratic}, sizingReliability (0..1), note, caveat }. Composes as a CONFIDENCE down-weight on Kelly/position size (multiply suggestedFraction), never as a signal.
@@ -46,3 +48,5 @@
 **test:** A constant-vol synthetic series → coeffOfVariation ≈ 0, band == steady, sizingReliability ≈ 1. A series alternating calm/violent regimes → high CoV, band == erratic, sizingReliability < the steady case. Insufficient bars → nil. Assert sizingReliability is in [0,1] and monotone-decreasing in CoV.
 
 **caveat:** This measures how STABLE the risk inputs are, not whether the trade is good — an erratic-vol name can still be a great setup, it just means your stop width and size are less trustworthy, so trade it smaller. It is a confidence down-weight on SIZING, not an entry/exit signal, and it is backward-looking like every realized-vol stat here.
+
+**surfacing (2026-06-27):** Engine-only, flag-only. When `band == .erratic`, a ⚠ note is appended to `advice.rationale` in `StockSageStore.buildIdeas` (after `advise()` and calibration; NOT inside `advise()` or the bar-by-bar backtester). Renders verbatim in the detail-sheet "Why" decomposition via `MarketsView`'s existing generic `ForEach(a.rationale)` — zero Views/ edit. No sizing/score change; `advise()` byte-identical.

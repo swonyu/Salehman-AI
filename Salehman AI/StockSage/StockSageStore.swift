@@ -389,6 +389,25 @@ final class StockSageStore: ObservableObject {
                                          suggestedWeight: calibratedWeight, caveat: advice.caveat,
                                          stopMultiplier: advice.stopMultiplier, stopReason: advice.stopReason)
                 }
+                // Honesty-only risk reads (EDGE_RESEARCH #4/#5): flag-only notes appended to the
+                // rationale shown in the detail-sheet "Why" ForEach. NOT a sizing/score input —
+                // advise() is untouched. Computed once per idea here, never in the bar-by-bar backtester.
+                var extraNotes: [String] = []
+                if let shape = StockSageReturnShape.returnShape(closes: history.closes), shape.isLeftTailed {
+                    extraNotes.append("⚠ Left-tailed history — worst days exceed what its volatility implies; your stop may gap. " + shape.note)
+                }
+                if let stab = StockSageVolStability.volStability(closes: history.closes) {
+                    if case .erratic = stab.band {
+                        extraNotes.append("⚠ Whippy volatility — stop width / size are less reliable here; trade smaller. " + stab.note)
+                    }
+                }
+                if !extraNotes.isEmpty {
+                    advice = TradeAdvice(action: advice.action, conviction: advice.conviction,
+                                         regime: advice.regime, rationale: advice.rationale + extraNotes,
+                                         stopPrice: advice.stopPrice, targetPrice: advice.targetPrice,
+                                         suggestedWeight: advice.suggestedWeight, caveat: advice.caveat,
+                                         stopMultiplier: advice.stopMultiplier, stopReason: advice.stopReason)
+                }
                 let recent = Array(history.closes.suffix(63))
                 let spark = SparkSeries.downsample(recent)
                 // True daily move from the UN-downsampled closes (spark points are ~2 days apart).
