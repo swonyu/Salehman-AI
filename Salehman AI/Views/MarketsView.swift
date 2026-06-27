@@ -3976,7 +3976,7 @@ struct MarketsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(DS.Space.xl)
-            .frame(maxWidth: 640, alignment: .leading)   // cap content for readability
+            .frame(maxWidth: 680, alignment: .leading)   // cap content for readability
             .frame(maxWidth: .infinity)                  // …centered on wide windows
         }
         .frame(minWidth: 440, minHeight: 480)
