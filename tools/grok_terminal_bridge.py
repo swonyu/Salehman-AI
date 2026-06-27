@@ -1,5 +1,5 @@
-# Used by the Salehman AI team (Grok Victor - Head Orchestrator) to build the premium AI Personal Trainer app. Current focus: Phase 1 Core Intelligence. Keep it simple, no over-engineering early.
 #!/usr/bin/env python3
+# grok_terminal_bridge.py — Salehman AI / markets agent bridge
 """
 grok_terminal_bridge.py — let grok.com (the WEB app, your subscription) drive your
 Mac's terminal. NO xAI API key and NO Grok credits are used: the brain is the web
@@ -188,6 +188,10 @@ BLOCKED_SUBSTRINGS = [
     "/dev/disk", "/dev/rdisk", "/dev/sd", "> /dev/", ">/dev/",
     "> /etc/", ">/etc/", "csrutil disable", "spctl --master-disable", "nvram ",
     "chmod -r 000", "chmod 000", "chmod -r ", "chown -r", "chgrp -r",
+    # Shell-prompt-prefixed installer lines that grok.com injects as UI chrome.
+    # In zsh, "$ curl ..." strips the bare $ (empty expansion) and runs curl.
+    # Block them here as a hard backstop even if noise-stripping somehow misses them.
+    "x.ai/cli/install.sh",
 ]
 
 BLOCKED_LEADING = {
@@ -320,6 +324,31 @@ _LOOKS_LIKE_CMD = re.compile(r"^[\w./\-\"'`${}()\[\]\\|<>&;: ]+$", re.MULTILINE)
 
 
 _CMD_PREFIX = re.compile(r"^CMD:\s*(.+)$", re.MULTILINE)
+# Detects a heredoc opener at the end of a shell command: << 'MARKER', << MARKER, <<- MARKER
+_HEREDOC_OPENER = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?\s*$")
+
+
+def _expand_heredoc(cmd: str, full_text: str) -> str:
+    """If cmd ends with a heredoc opener (<< MARKER or << 'MARKER'), find the
+    heredoc body in full_text and return the complete multi-line command.
+    If no closing marker is found, returns cmd unchanged (avoids blocking stdin)."""
+    m = _HEREDOC_OPENER.search(cmd)
+    if not m:
+        return cmd
+    delimiter = m.group(1)
+    idx = full_text.find(cmd)
+    if idx < 0:
+        return cmd
+    after = full_text[idx + len(cmd):]
+    if after.startswith("\n"):
+        after = after[1:]
+    body_lines: list[str] = []
+    for line in after.splitlines():
+        if line.strip() == delimiter:
+            return cmd + "\n" + "\n".join(body_lines) + "\n" + delimiter
+        body_lines.append(line)
+    return cmd  # no closing delimiter — leave as-is
+
 
 # First non-empty token of a valid shell command starts with a path character,
 # a common built-in name, or a variable assignment. Used to reject prose-in-fences.
@@ -375,11 +404,29 @@ _UI_NOISE_INLINE = re.compile(
 _UI_NOISE = re.compile(
     r"Upgrade to SuperGrok|SuperGrok|"
     r"Thinking about your request|"
-    r"^\s*Explore\s|^\s*Investigate\s|^\s*Regenerate\s|"
+    r"^\s*Explore\b|^\s*Investigate\b|^\s*Regenerate\b|"
     r"^\s*Are you satisfied|^\s*Like\s*$|^\s*Dislike\s*$|"
     r"^\s*Pin\s*$|^\s*Move to Project\s*$|^\s*Delete Chat\s*$|"
-    r"Replace TASK_DONE with|Replace.*\[\[DONE\]\]",
+    r"Replace TASK_DONE with|Replace.*\[\[DONE\]\]|"
+    # Project-mode chrome observed in live agent logs:
+    r"^\s*Fast\s*$|^\s*Attach to message\s*$|"
+    r"^\s*Drop here to add files\b|"
+    r"^\s*Connected to computer\s*$|"
+    r"^\s*New message\s*$|^\s*Send message\s*$|"
+    # grok.com marketing / xAI CLI upsell content (seen interleaved with replies):
+    r"^\s*Grok Build\s*$|^\s*Early access for Heavy subscribers\s*$|"
+    r"^\s*\$\s+curl\b|^\s*\$\s+bash\b|^\s*\$\s+sh\b|"  # shell-prompt-style code snippets
+    r"x\.ai/cli/install\.sh",
     re.IGNORECASE | re.MULTILINE,
+)
+
+# Grok.com intermediate tool-use progress text that appears in the page text
+# BETWEEN our session marker and the actual CMD: reply.  These look like replies
+# but are just loading labels — must not count as "no command" turns.
+_GROK_PROGRESS_RE = re.compile(
+    r"^\s*(Running|Reading|Thinking|Analyzing|Searching|Checking|"
+    r"Identifying|Examining|Looking|Fetching|Scanning|Processing)\b",
+    re.MULTILINE | re.IGNORECASE,
 )
 
 
@@ -411,8 +458,15 @@ def parse_commands(grok_text: str) -> list[str]:
     grok_text = _clean_ui_noise(grok_text)
     # Priority 1: CMD: prefix
     cmd_lines = [m.strip() for m in _CMD_PREFIX.findall(grok_text) if m.strip()]
+    # Strip [[DONE]] masquerading as a CMD: command — is_done() handles it upstream;
+    # running it as a shell command would just produce exit 128 and confuse the agent.
+    cmd_lines = [c for c in cmd_lines
+                 if not re.fullmatch(r'\[\[DONE\]\]', c, re.IGNORECASE)]
     if cmd_lines:
-        return cmd_lines
+        # Expand heredoc bodies — parse_commands() extracts only the CMD: line,
+        # but heredoc content (the lines after << 'MARKER' ... MARKER) lives in the
+        # full reply text; _expand_heredoc reunites them into one complete command.
+        return [_expand_heredoc(c, grok_text) for c in cmd_lines]
 
     # Priority 2: fenced code blocks — only those whose first line looks like shell
     blocks = [m.strip() for m in _FENCE.findall(grok_text)
@@ -437,7 +491,18 @@ def is_done(grok_text: str) -> bool:
     """True only when Grok signals completion ([[DONE]] or v1.2 sentinel), not an echo."""
     sentinels = (DONE_SENTINEL, DONE_SENTINEL_V12)
     lines = grok_text.splitlines()
-    found = any(line.strip() in sentinels for line in lines)
+    # Also catch mistaken "CMD: [[DONE]]" form — treat it as a done signal rather
+    # than letting parse_commands() execute [[DONE]] as a shell command (exit 128).
+    def _line_is_done(line: str) -> bool:
+        s = line.strip()
+        if s in sentinels:
+            return True
+        # CMD: [[DONE]] or CMD: [[done]] etc.
+        if re.fullmatch(r'CMD:\s*\[\[DONE\]\]', s, re.IGNORECASE):
+            return True
+        return False
+
+    found = any(_line_is_done(l) for l in lines)
     if not found:
         return False
     # Guard: primer/UI noise contains [[DONE]] in explanatory text — don't false-trigger
@@ -453,6 +518,13 @@ PRIMER = textwrap.dedent(f"""\
     You are operating my REAL Mac terminal. I paste back real output. \
 You NEVER run anything yourself — no built-in runner, no sandbox, no DeepSearch.
 
+    REASONING MANDATE: Use your MAXIMUM reasoning depth on EVERY decision. \
+Think through the full consequence of each command before issuing it. \
+Prefer the highest-quality, most complete implementation — never cut corners, \
+never use placeholders, never approximate. If a task can be done better with \
+more careful thought, TAKE THAT TIME. You are in deep-thinking mode: reason \
+exhaustively before each CMD:.
+
     YOUR ENTIRE REPLY = one line only:
         CMD: <shell command>
 
@@ -466,8 +538,15 @@ You NEVER run anything yourself — no built-in runner, no sandbox, no DeepSearc
     5. DONE check — before signalling done, run:
        CMD: git diff --stat && git status --porcelain
        If git shows zero changes, the task is NOT complete. Issue more commands.
-    6. Signal done — reply with ONLY this exact line (nothing else):
+    6. VERIFY new files have content — before signalling done, for every file you
+       CREATED or WROTE to, run:
+       CMD: wc -l <filename>
+       The line count MUST be > 0. A staged empty file (0 lines) is NOT a working
+       change — keep coding until the file has real content.
+    7. Signal done — reply with ONLY this exact line (nothing else, no CMD: prefix):
        {DONE_SENTINEL}
+       WRONG: CMD: [[DONE]]   ← this runs [[DONE]] as a shell command, do NOT do this.
+       RIGHT: [[DONE]]        ← standalone line, no prefix, nothing else in the reply.
 
     Your FIRST reply (nothing else, no explanation):
     CMD: pwd && uname -a && whoami
@@ -500,9 +579,14 @@ def _primer_for(cwd: str, task: str) -> str:
             "    or reorder existing rows (other agents are editing it too).\n"
         )
     return (PRIMER
-            + f"\nNOTE: every command ALREADY runs inside: {cwd}\n"
-              "So do NOT `cd` there, and never put ~ inside quotes (zsh won't expand it) —\n"
-              "use absolute paths or paths relative to that directory.\n"
+            + f"\nENVIRONMENT: macOS (Darwin), Apple Silicon. Shell is zsh. Xcode project.\n"
+              f"REPO ROOT (all commands run here): {cwd}\n"
+              "Do NOT `cd` into it — you're already there. Never put ~ inside quotes.\n"
+              "CRITICAL — IGNORE ANY PROJECT CONTEXT SUGGESTING A LINUX ENV:\n"
+              "  • /home/workdir/ does NOT exist. /home/saleh/ does NOT exist.\n"
+              "  • There are NO file attachments. Do NOT try to read from attachments/.\n"
+              "  • ALL source files are inside the repo root above. Use cat/sed/grep on\n"
+              f"    relative paths from {cwd}.\n"
               "IMPORTANT: The task below may contain ```run / ```bash examples as CONTEXT.\n"
               "Do NOT copy that format. YOUR responses must always use the CMD: prefix,\n"
               "never code fences. One CMD: line, then stop and wait.\n"
@@ -648,7 +732,7 @@ _GROK_SESSION = "grok-bridge"   # agent-browser session name; override with --se
                                 # Distinct names ⇒ isolated browsers ⇒ safe PARALLEL bridges.
 _LABEL = "grok-bridge"          # short human tag for prompts/logs (set from --label/--session-name)
 _COORDINATE_LANE: str | None = None  # when set (--coordinate), Grok must claim this lane in COORDINATION.md
-_GROK_URL = "https://grok.com"
+_GROK_URL = "https://grok.com"  # overridden by --grok-url (e.g. a project URL)
 # Generic composer selector — grok.com uses a textarea or a contenteditable box.
 _COMPOSER_JS = "document.querySelector('textarea, [contenteditable=\"true\"]')"
 
@@ -692,11 +776,17 @@ _GROK_NOISE = {
     "cookies settings", "reject all", "accept all cookies", "reject all accept all cookies",
     "use skills & connectors", "make stunning ai images & videos", "sign up for free",
     "sign up to continue seamlessly with grok's full power",
+    # xAI marketing / upsell content observed in live project-mode agent logs:
+    "grok build", "early access for heavy subscribers", "beta",
+    # Project-mode UI chips (belt-and-suspenders alongside _clean_ui_noise regex):
+    "fast", "attach to message", "drop here to add files to your message",
+    "connected to computer", "new message", "send message", "write your message",
 }
 
 
 def _strip_grok_chrome(text: str) -> str:
     """Drop grok.com nav/banner lines from scraped page text."""
+    text = _clean_ui_noise(text)  # strip UI chips first (Fast, Attach to message, etc.)
     keep = [ln for ln in text.splitlines() if ln.strip() and ln.strip().lower() not in _GROK_NOISE]
     return "\n".join(keep).strip()
 
@@ -907,7 +997,14 @@ _LAST_SENT = ""
 
 
 def _safari_page_text() -> str:
-    return _safari_eval("document.body.innerText")
+    txt = _safari_eval("document.body.innerText")
+    # A failed eval returns a sentinel ("err:…" from the JS try/catch, or
+    # "(osascript error: …)"), NOT real page text. Treat those as an empty page so
+    # downstream detectors (login/error checks) fail safe instead of mistaking the
+    # error string for a logged-in, error-free page.
+    if not txt or txt.startswith(("err:", "(osascript error")):
+        return ""
+    return txt
 
 
 def _safari_scroll_bottom() -> None:
@@ -916,7 +1013,31 @@ def _safari_scroll_bottom() -> None:
 
 
 def _safari_new_chat() -> None:
-    """Click grok.com's New Chat button to start a fresh conversation."""
+    """Start a fresh conversation.
+
+    Project URL mode (--grok-url points to a /project/ page):
+      The project page itself IS the composer for new project-scoped chats.
+      Clicking the sidebar "New Chat" link navigates to grok.com ROOT and
+      loses the project context — so we navigate back to the project URL
+      instead, which reloads the composer in the right project scope.
+
+    Root grok.com mode (default):
+      Click the "New Chat" sidebar link as before.
+    """
+    if "/project/" in _GROK_URL:
+        # Navigate to the project page — its textarea IS the new-chat composer.
+        # The sidebar "New Chat" link goes to grok.com root and loses project context.
+        _safari_navigate(_GROK_URL)
+        # Poll until the composer textarea is interactive (up to 8 s).
+        for _ in range(20):
+            time.sleep(0.4)
+            ready = _safari_eval(
+                "!!(document.querySelector('textarea,[contenteditable=\"true\"]'))"
+            )
+            if str(ready).strip().lower() == "true":
+                break
+        time.sleep(0.4)  # small settle after textarea appears
+        return
     _safari_eval("""
     (function() {
       var els = Array.from(document.querySelectorAll('button, a'));
@@ -930,19 +1051,55 @@ def _safari_new_chat() -> None:
     time.sleep(1.5)
 
 
-def _safari_is_generating() -> bool:
-    """True while Grok is still streaming a response (stop button visible)."""
+def _safari_generation_state() -> str:
+    """Return 'streaming', 'thinking', or 'idle' — exact state Grok is in.
+
+    Three distinct states:
+      'streaming'  — stop-button visible; text is being written to the page.
+      'thinking'   — Think-mode pre-answer reasoning phase.  Spinner or
+                     'Thinking…' label is present; stop-button may or may not
+                     be there yet.  Text has NOT started appearing.
+      'idle'       — no active generation detected (done, or hasn't started).
+    """
     result = _safari_eval("""
     (function() {
-      var sel = 'button[aria-label*="Stop"], button[data-testid*="stop"], '
-              + 'button[aria-label*="stop"], button[aria-label*="Cancel generating"]';
-      if (document.querySelector(sel)) return 'yes';
-      var txt = document.body.innerText || '';
-      if (txt.includes('Stop generating') || txt.includes('Cancel')) return 'maybe';
-      return 'no';
+      // ── Explicit stop / cancel button → streaming ─────────────────────────
+      var stopSel = 'button[aria-label*="Stop"], button[data-testid*="stop"], '
+                  + 'button[aria-label*="stop"], button[aria-label*="Cancel generating"]';
+      if (document.querySelector(stopSel)) return 'streaming';
+
+      // ── Think-mode spinner / label → thinking ─────────────────────────────
+      var thinkSels = [
+        '[data-testid*="thinking"]',  '[aria-label*="thinking"]',
+        '[class*="thinking"]',        '[class*="Thinking"]',
+        '[class*="ThinkIndicator"]',  '[class*="think-indicator"]',
+        'svg[class*="spin"]',         '[class*="spinner"]',
+      ];
+      for (var s of thinkSels) {
+        if (document.querySelector(s)) return 'thinking';
+      }
+
+      // Text-based: match "Thinking…" ONLY at the tail of the last turn
+      // (avoids matching a past "Thought for Xs" stamp as ongoing thinking).
+      var turns = document.querySelectorAll('[role="article"],[role="listitem"],section');
+      var lastTurn = turns.length ? turns[turns.length - 1] : document.body;
+      var tailText = (lastTurn.innerText || '').trimEnd();
+      if (/Thinking[….]{1,3}$/.test(tailText)) return 'thinking';
+
+      // Animated text cursor present → likely still streaming
+      if (document.querySelector('[class*="cursor"],[class*="Cursor"],[class*="caret"]'))
+        return 'streaming';
+
+      if ((document.body.innerText || '').includes('Stop generating')) return 'streaming';
+      return 'idle';
     })()
     """)
-    return result in ("yes", "maybe")
+    return result if result in ("streaming", "thinking") else "idle"
+
+
+def _safari_is_generating() -> bool:
+    """True while Grok is actively thinking OR streaming (convenience wrapper)."""
+    return _safari_generation_state() != "idle"
 
 
 def _safari_detect_error() -> str | None:
@@ -978,43 +1135,66 @@ def _safari_rate_limit_wait_seconds(default: int = 120, cap: int = 900) -> int:
 
 
 def _safari_get_last_message() -> str | None:
-    """Extract just Grok's last reply from the DOM (multiple selector strategies)."""
+    """Extract just Grok's last reply from the DOM.
+
+    Priority order (critical — do NOT swap):
+      1. Last ASSISTANT message bubble (by testid/role selectors) → look for
+         <pre> inside it, fall back to its prose innerText.
+         Scoping to the bubble means we can't accidentally pick up <pre> blocks
+         from the primer we sent (which is the LAST global <pre> until Grok replies).
+      2. Global last <pre> — only reached on old grok.com builds with no
+         testid/role attributes on message containers.
+    """
     result = _safari_eval("""
     (function() {
-      // Strategy 1 (HIGHEST PRIORITY): Last rendered code block.
-      // Browsers strip backtick fences from HTML — reconstruct a fake fence so
-      // parse_commands() can extract the command reliably.
-      var pres = document.querySelectorAll('pre');
-      if (pres.length > 0) {
-        var lastPre = pres[pres.length - 1];
-        var codeEl = lastPre.querySelector('code') || lastPre;
-        // textContent (not innerText) avoids CSS overlay contamination — innerText
-        // includes floating UI banners ("Upgrade to SuperGrok") positioned over code.
-        var codeText = (codeEl.textContent || '').trim();
-        if (codeText && codeText.length > 1) {
-          // Check full page for [[DONE]] so we don't miss the finish signal
-          var pageText = document.body.innerText || '';
-          var doneSuffix = pageText.includes('[[DONE]]') ? '\n[[DONE]]' : '';
-          return 'PRE:```\n' + codeText + '\n```' + doneSuffix;
-        }
-      }
-      // Strategy 2: data-testid / role selectors for the last assistant message
-      var selectors = [
-        '[data-testid*="message-content"]',
+      var pageText = document.body.innerText || '';
+      var doneSuffix = pageText.includes('[[DONE]]') ? '\n[[DONE]]' : '';
+
+      // ── Strategy 1 (HIGHEST PRIORITY): last assistant-message container ──
+      // Scoped <pre> search prevents reading code blocks from the primer turn.
+      var turnSels = [
+        '[data-message-author-role="assistant"]',
         '[data-testid*="bot-message"]',
         '[data-testid*="assistant"]',
         '[data-testid*="response"]',
+        '[data-testid*="message-content"]',
         '[role="article"]',
         '[role="listitem"]',
       ];
-      for (var sel of selectors) {
+      for (var sel of turnSels) {
         var els = document.querySelectorAll(sel);
-        if (els.length > 0) {
-          var last = els[els.length - 1];
-          if (last.innerText && last.innerText.trim().length > 20)
-            return 'DOM:' + last.innerText;
+        if (!els.length) continue;
+        var last = els[els.length - 1];
+
+        // textContent (not innerText) avoids CSS overlay contamination —
+        // floating "Upgrade to SuperGrok" banners appear in innerText but not
+        // in textContent of nested <code> elements.
+        var pres = last.querySelectorAll('pre');
+        if (pres.length > 0) {
+          var lp = pres[pres.length - 1];
+          var ce = lp.querySelector('code') || lp;
+          var ct = (ce.textContent || '').trim();
+          if (ct && ct.length > 1)
+            return 'PRE:```\n' + ct + '\n```' + doneSuffix;
         }
+
+        // No <pre> in this turn — return its prose text
+        var prose = (last.innerText || last.textContent || '').trim();
+        if (prose && prose.length > 20) return 'DOM:' + prose + doneSuffix;
+        break;  // selector matched but empty turn — stop, don't fall through to next sel
       }
+
+      // ── Strategy 2 (FALLBACK): global last <pre> ─────────────────────────
+      // Only reached when no turn-container selectors matched (older grok.com builds).
+      var pres = document.querySelectorAll('pre');
+      if (pres.length > 0) {
+        var lp = pres[pres.length - 1];
+        var ce = lp.querySelector('code') || lp;
+        var ct = (ce.textContent || '').trim();
+        if (ct && ct.length > 1)
+          return 'PRE:```\n' + ct + '\n```' + doneSuffix;
+      }
+
       return 'FALLBACK';
     })()
     """, timeout=10)
@@ -1050,27 +1230,44 @@ def _safari_inject_and_send(text: str, retries: int = 3) -> bool:  # noqa: C901
             time.sleep(1.5)
 
         # ── Strategy A: pure JS, zero focus steal ────────────────────────────
+        # React-native value setter pattern:
+        #   1. Bypass React's own setter (which it tracks) by using the DOM
+        #      prototype's original 'value' setter.
+        #   2. Fire a synthetic 'input' event so React reads the new value and
+        #      updates its virtual DOM / state.  This is the only reliable way
+        #      to inject text into React-controlled textareas without triggering
+        #      browser-level deprecated execCommand warnings.
+        #   3. Clear any stale composer content FIRST so we're not appending.
         inject_js = f"""
 (function() {{
   var el = document.querySelector('textarea,[contenteditable="true"]');
   if (!el) return 'no-el';
   el.focus();
-  var r = document.createRange();
-  r.selectNodeContents(el);
-  var s = window.getSelection();
-  s.removeAllRanges();
-  s.addRange(r);
-  var ok = document.execCommand('insertText', false, {_j.dumps(text)});
-  if (ok) return 'exec-ok';
+
   if (el.tagName === 'TEXTAREA') {{
-    var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-    setter.call(el, {_j.dumps(text)});
+    var ns = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+    // Clear any stale content first
+    ns.call(el, '');
     el.dispatchEvent(new Event('input', {{bubbles:true}}));
-    return 'setter-ok';
+    // Inject the new text
+    ns.call(el, {_j.dumps(text)});
+    el.dispatchEvent(new InputEvent('input', {{
+      bubbles: true,
+      data: {_j.dumps(text[:200])},
+      inputType: 'insertText',
+    }}));
+    el.dispatchEvent(new Event('change', {{bubbles:true}}));
+    return 'react-native-ok';
   }}
+
+  // contenteditable fallback: select-all then replace
+  el.focus();
+  document.execCommand('selectAll', false, null);
+  var ok = document.execCommand('insertText', false, {_j.dumps(text)});
+  if (ok) return 'ce-exec-ok';
   el.textContent = {_j.dumps(text)};
-  el.dispatchEvent(new Event('input', {{bubbles:true}}));
-  return 'tc-ok';
+  el.dispatchEvent(new InputEvent('input', {{bubbles:true}}));
+  return 'ce-tc-ok';
 }})()
 """
         inject_result = _safari_eval(inject_js, timeout=15)
@@ -1150,41 +1347,106 @@ def _safari_inject_and_send(text: str, retries: int = 3) -> bool:  # noqa: C901
     return False
 
 
-def _safari_stream_reply(marker: str, timeout: int = 240) -> str:
+def _safari_stream_reply(marker: str, timeout: int = 600) -> str:
     """
     Stream Grok's reply live to the terminal as it generates.
     Uses the session marker to find the reply boundary.
     Falls back to DOM extraction and page-text slicing.
     Returns the final complete reply.
+
+    Timeout raised to 600 s (10 min) to accommodate deep Think-mode reasoning
+    on complex multi-file tasks — the previous 240 s was too short.
     """
     deadline = time.time() + timeout
 
-    # Phase 1: wait for generation to start (stop-button appears)
+    # Phase 1: wait for generation to start.
+    # Think-mode reasons silently for 30-120 s before text appears — we track
+    # the exact state ('thinking' vs 'streaming') so the log is informative.
     print(_cyan("  ⏳"), end=" ", flush=True)
-    start_limit = time.time() + 25
-    started = False
+    START_WAIT_SEC = 120
+    start_limit    = time.time() + START_WAIT_SEC
+    started        = False
+    _shown_state   = ""          # which phase label we last printed
+    _dot_count     = 0           # wrap dots at 40 per line
+
     while time.time() < start_limit:
-        if _safari_is_generating():
+        state = _safari_generation_state()
+
+        if state == "streaming":
+            if _shown_state == "thinking":
+                print(_cyan(" → ▸ streaming "), end="", flush=True)
+            elif not _shown_state:
+                print(_cyan(" ▸ streaming "), end="", flush=True)
             started = True
             break
-        # Also check if a reply already appeared (instant responses)
+
+        if state == "thinking":
+            if _shown_state != "thinking":
+                print(_yellow(" ⟳ thinking"), end="", flush=True)
+                _shown_state = "thinking"
+            else:
+                _dot_count += 1
+                if _dot_count >= 40:
+                    print(f"\n  ⏳ ", end="", flush=True)
+                    _dot_count = 0
+                else:
+                    print(".", end="", flush=True)
+            started = True
+            # Don't break — stay in Phase 1 until streaming starts or reply appears
+            time.sleep(1.2)
+            # Check for instant-done (think finished, full reply present)
+            quick = _safari_get_last_message()
+            if quick and len(quick) > 30:
+                print(_cyan(" ✓ "), end="", flush=True)
+                break
+            continue
+
+        # state == "idle" — two fallback checks before sleeping:
+        # (a) DOM reply extraction (fast, works when selectors match)
         quick = _safari_get_last_message()
         if quick and len(quick) > 30:
             started = True
             break
+        # (b) Page-text + session marker — the guaranteed backstop.
+        #     In project-mode chats the DOM selectors above often miss because
+        #     grok.com's project UI has a different DOM shape.  But the raw
+        #     page text always contains our injected marker followed by Grok's
+        #     reply.
+        #     IMPORTANT: grok.com shows intermediate "tool-use" progress labels
+        #     ("Running system info command", "Reading file...", "Thinking...") in
+        #     the page text BETWEEN our marker and Grok's actual reply.  We MUST
+        #     NOT break Phase 1 on that noise — only break when a real reply is
+        #     present, identified by a CMD: prefix or [[DONE]] sentinel.
+        if marker:
+            pg = _safari_page_text()
+            idx = pg.rfind(marker)
+            if idx >= 0:
+                after_raw = pg[idx + len(marker):]
+                after = _strip_grok_chrome(after_raw).strip()
+                if ("CMD:" in after or
+                        re.search(r"\[\[DONE\]\]", after, re.IGNORECASE)):
+                    started = True
+                    print(_cyan(" ✓ "), end="", flush=True)
+                    break
+        _dot_count += 1
+        if _dot_count >= 40:
+            print(f"\n  ⏳ ", end="", flush=True)
+            _dot_count = 0
+        else:
+            print(".", end="", flush=True)
         time.sleep(0.8)
-        print(".", end="", flush=True)
 
     if not started:
-        _log("no generation detected — reading page as-is", "warn")
-    else:
-        print(_cyan(" streaming ▸ "), end="", flush=True)
+        _log("no generation detected after 120 s — reading page as-is", "warn")
 
-    # Phase 2: incremental print while generating
+    # Phase 2: incremental print while generating.
+    # NO_PROGRESS_SEC raised to 120 s — Think mode pauses mid-stream while
+    # it plans the next step; 45 s was triggering false "generation complete"
+    # exits and causing the agent to read an incomplete reply.
     last_reply      = ""
     last_page       = ""
     last_progress_t = time.time()   # reset whenever reply grows — timeout if stuck
-    NO_PROGRESS_SEC = 45
+    NO_PROGRESS_SEC = 120
 
     while time.time() < deadline:
         if _SHUTDOWN:
@@ -1215,16 +1477,39 @@ def _safari_stream_reply(marker: str, timeout: int = 240) -> str:
                 last_page = page
 
         if not generating:
-            time.sleep(1.5)
-            # Final read
-            final = _safari_get_last_message()
-            if final and len(final) > len(last_reply):
-                print(final[len(last_reply):], end="", flush=True)
-                last_reply = final
-            print()
-            break
+            # In project-mode chats, _safari_is_generating() always returns False
+            # (DOM selectors miss the stop-button / think-spinner).  Exiting here
+            # immediately would return grok.com's intermediate progress text
+            # ("Running system info command", "Reading...") as the reply — no CMD:
+            # found, streak increments, session aborts.
+            #
+            # Exit only when we have a REAL complete reply — one that contains
+            # "CMD:" or "[[DONE]]" — OR when no new content has appeared for
+            # STABLE_SEC seconds (ultimate safety net for unexpected reply shapes).
+            STABLE_SEC = 5.0
+            has_real_reply = (
+                "CMD:" in last_reply or
+                bool(re.search(r"\[\[DONE\]\]", last_reply, re.IGNORECASE))
+            )
+            stale = time.time() - last_progress_t > STABLE_SEC
+            if has_real_reply or (stale and last_reply):
+                time.sleep(1.0)
+                # Final read: prefer DOM, fall back to page-text+marker
+                final = _safari_get_last_message()
+                if not final and marker:
+                    pg2 = _safari_page_text()
+                    ix2 = pg2.rfind(marker)
+                    if ix2 >= 0:
+                        final = _strip_grok_chrome(pg2[ix2 + len(marker):])
+                if final and len(final) > len(last_reply):
+                    print(final[len(last_reply):], end="", flush=True)
+                    last_reply = final
+                print()
+                break
+            # else: not generating but no real reply yet — keep polling
+            # (intermediate progress text still changing or no content yet)
 
-        # No-progress watchdog — Grok stopped streaming but stop-button vanished
+        # No-progress watchdog — ultimate safety net
         if time.time() - last_progress_t > NO_PROGRESS_SEC:
             _log(f"no new content for {NO_PROGRESS_SEC}s — assuming generation complete", "warn")
             print()
@@ -1262,6 +1547,11 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
                     new_chat: bool = True) -> None:
     global _SHUTDOWN, _THINK
     _SHUTDOWN = False
+    # Per-task reset of the rate-limit backoff counter. It lives on the function
+    # object so the in-loop handler can bump it across turns, but it must NOT carry
+    # over from a previous (already-recovered) task — otherwise the next unrelated
+    # rate-limit would skip straight to the long "still limited" wait.
+    run_auto_safari._rate_limit_hits = 0  # type: ignore[attr-defined]
 
     _log(_bold(f"session {_SESSION_ID}  task: {task!r}"))
     # Open/reuse the right Safari TAB. In parallel mode each agent drives its OWN
@@ -1319,9 +1609,9 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
         time.sleep(0.5)
 
     # Snapshot git state at session start — used by fake-DONE guard.
-    # Comparing vs current state (not just "is clean?") correctly handles
-    # sessions that begin with pre-existing uncommitted changes.
-    _, _session_git_start, _ = run_command("git status --porcelain", cwd=cwd)
+    # Use `git diff HEAD` (content hash) not `git status --porcelain` (filename list)
+    # so changes to already-modified files are detected correctly.
+    _, _session_git_start, _ = run_command("git diff HEAD", cwd=cwd)
 
     # Build primer with the session marker so we can find the first reply boundary
     marker = _SESSION_MARKER
@@ -1335,6 +1625,7 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
 
     turn         = 0
     no_cmd_streak = 0
+    _reply_ring: list[str] = []   # last-3 reply fingerprints for stuck-reply detection
 
     while not _SHUTDOWN:
         turn += 1
@@ -1376,7 +1667,7 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
                 continue
 
         _safari_scroll_bottom()
-        reply = _safari_stream_reply(marker, timeout=300)
+        reply = _safari_stream_reply(marker, timeout=600)
 
         if _LOG_PATH:
             with _LOG_PATH.open("a") as fh:
@@ -1385,9 +1676,9 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
         if is_done(reply):
             if _VERIFY:
                 git_state = _git_verify(cwd)
-                _, current_git, _ = run_command("git status --porcelain", cwd=cwd)
-                # Compare vs snapshot taken at session start, not just "is clean?".
-                # This fires correctly even when pre-existing uncommitted changes exist.
+                _, current_git, _ = run_command("git diff HEAD", cwd=cwd)
+                # Compare full diff content vs session start — not just filename list.
+                # Catches agents editing already-modified files (porcelain can't see that).
                 if current_git.strip() == _session_git_start.strip():
                     _log("⚠️  fake DONE — git unchanged vs session start; pushing back …", "warn")
                     pushback = (f"{git_state}\n\n⚠️ FAKE_COMPLETION_DETECTED: "
@@ -1396,12 +1687,68 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
                                 f"Provide concrete edit commands now.\n{marker}")
                     _safari_inject_and_send(pushback)
                     continue
+            # Guard against Grok staging an empty file and calling [[DONE]].
+            # git diff --cached --numstat shows "0\t0\tfilename" for files that were
+            # added but have no content (0 insertions, 0 deletions).
+            _, numstat, _ = run_command("git diff --cached --numstat", cwd=cwd)
+            empty_staged = []
+            for line in numstat.strip().splitlines():
+                parts = line.split("\t")
+                if len(parts) == 3 and parts[0] == "0" and parts[1] == "0":
+                    empty_staged.append(parts[2])
+            if empty_staged:
+                _log(f"⚠️  empty staged files: {empty_staged} — pushing back …", "warn")
+                pushback_empty = (
+                    f"⚠️ EMPTY_STAGED_FILES: You staged these files but they contain ZERO "
+                    f"bytes of content: {', '.join(empty_staged)}. "
+                    f"You must write actual code into them before calling [[DONE]]. "
+                    f"Check with: CMD: wc -l {empty_staged[0]} — must be > 10 lines.\n{marker}"
+                )
+                _safari_inject_and_send(pushback_empty)
+                continue
             _log("[[DONE]] — task complete", "ok")
             _notify("Grok Bridge ✓", f"Task done in {_elapsed()} ({turn} turns)")
             return
 
+        # ── Stuck-reply guard ──────────────────────────────────────────────────
+        # If the last 3 replies are identical (fingerprinted by first 250 chars),
+        # Grok is confused and looping.  Poke it once to break the cycle.
+        _reply_ring.append(_strip_grok_chrome(_clean_ui_noise(reply))[:250])
+        if len(_reply_ring) > 3:
+            _reply_ring.pop(0)
+        if (len(_reply_ring) == 3 and len(set(_reply_ring)) == 1
+                and len(_reply_ring[0]) > 10):
+            _log("stuck-reply loop (3 identical replies) — poking Grok", "warn")
+            _reply_ring.clear()
+            no_cmd_streak = 0   # give Grok a fresh chance; old noise turns don't count
+            turn += 1
+            marker = f"[B:{_SESSION_ID}:{turn:04d}]"
+            poke = (
+                "Your last 3 replies were identical — you are stuck in a loop. "
+                "Do NOT repeat yourself. Resume the task: issue the next CMD: "
+                "to make concrete progress. If you believe the task is complete, "
+                "output [[DONE]] now."
+            )
+            _safari_inject_and_send(poke + f"\n{marker}")
+            reply = _safari_stream_reply(marker, timeout=600)
+            # Check for done signal immediately — poke reply might be [[DONE]]
+            if is_done(reply):
+                _log("[[DONE]] received in response to stuck-reply poke", "ok")
+                _notify("Grok Bridge ✓", f"Task done after poke ({turn} turns)")
+                return
+
         cmds = parse_commands(reply) + _collect_diff_cmds(reply, _SESSION_ID)
         if not cmds:
+            # Before incrementing the streak, check whether the reply is a grok.com
+            # intermediate progress update ("Running...", "Reading...", "Thinking...").
+            # These appear when grok.com shows tool-use progress BEFORE the actual
+            # CMD: response, and the bridge catches them early.  They are not "no
+            # command" turns — Grok is still working.  Re-read in 2 s without
+            # penalising the streak.
+            if reply and _GROK_PROGRESS_RE.search(reply) and len(reply.strip()) < 400:
+                _log("grok.com progress update (not a CMD: reply yet) — re-reading in 2s", "ok")
+                time.sleep(2)
+                continue   # streak unchanged; next iteration re-reads
             no_cmd_streak += 1
             if no_cmd_streak >= 3:
                 _log("no command in 3 consecutive replies — stopping", "err")
@@ -1414,6 +1761,10 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
             continue
 
         no_cmd_streak = 0
+        _reply_ring.clear()   # productive turn → reset stuck-reply buffer
+        # Healthy productive turn → clear the rate-limit backoff so an earlier
+        # transient limit doesn't make a later, unrelated hit wait the long path.
+        run_auto_safari._rate_limit_hits = 0  # type: ignore[attr-defined]
 
         # Run each command; skip (don't re-run) duplicates detected this session
         reports: list[str] = []
@@ -1423,6 +1774,8 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
                 _log(f"duplicate command (skipped): {cmd[:80]}", "warn")
                 reports.append(f"$ {cmd}\n(skipped — already executed this session)")
                 continue
+            if len(_SEEN_CMDS) > 400:
+                _SEEN_CMDS.clear()  # evict the full set (>400 cmds is rare; safety valve)
             _SEEN_CMDS.add(norm_key)
             if _SHUTDOWN:
                 break
@@ -1441,27 +1794,19 @@ def run_auto_safari(task: str, cwd: str, auto_approve: bool, yolo: bool,  # noqa
         # Embed new marker so next reply boundary is findable
         marker = f"[B:{_SESSION_ID}:{turn:04d}]"
 
-        # Cap output to avoid rate-limiting on Heavy mode — large file cats are the main trigger.
-        # Grok gets the first OUTPUT_MAX chars + a note; it can request the rest if needed.
-        OUTPUT_MAX = 3500
+        # Tail-truncate long output — keep the LAST OUTPUT_MAX chars because
+        # build errors and compiler output land at the END, not the beginning.
+        # (Old: first 3 500 chars → often just the compile preamble, no errors.)
+        # The React-native setter handles arbitrarily large strings, so no chunking.
+        OUTPUT_MAX = 6000
         if len(sent) > OUTPUT_MAX:
-            sent = sent[:OUTPUT_MAX] + f"\n[output truncated — {len(sent)} chars total, showing first {OUTPUT_MAX}]"
+            omit = len(sent) - OUTPUT_MAX
+            sent = (f"[… {omit:,} chars from start omitted — last {OUTPUT_MAX:,} shown …]\n"
+                    + sent[-OUTPUT_MAX:])
 
         payload = sent + f"\n{marker}"
-
-        # Chunk large payloads — grok.com silently drops very long clipboard pastes
-        if len(payload) > SEND_CHUNK_SIZE:
-            chunks = [payload[i:i + SEND_CHUNK_SIZE]
-                      for i in range(0, len(payload), SEND_CHUNK_SIZE)]
-            _log(f"output {len(payload)} chars — sending in {len(chunks)} chunks …")
-            for ci, chunk in enumerate(chunks):
-                suffix = "" if ci == len(chunks) - 1 else f"\n(continued in next message {ci+2}/{len(chunks)})"
-                _safari_inject_and_send(chunk + suffix)
-                if ci < len(chunks) - 1:
-                    time.sleep(5)  # let Grok acknowledge each chunk (Heavy mode needs more time)
-        else:
-            _log("sending output back to Grok …")
-            _safari_inject_and_send(payload)
+        _log(f"sending {len(payload):,}-char output to Grok …")
+        _safari_inject_and_send(payload)
 
     if _SHUTDOWN:
         _log(f"stopped by Ctrl+C after {turn} turns", "warn")
@@ -1705,9 +2050,18 @@ def main() -> None:
                     help="Exact AppleScript tab this agent drives, e.g. 'tab 3 of window id 603'. "
                          "Set by run_parallel_safari.sh, which pre-creates N tabs SEQUENTIALLY "
                          "(race-free) and assigns one per agent. Overrides --safari-window self-open.")
+    ap.add_argument("--grok-url", metavar="URL", default=None,
+                    help="Override the Grok URL this agent navigates to. Use a project URL "
+                         "(https://grok.com/project/<id>) so agents start chats inside that "
+                         "project instead of in a root new chat. The project page's textarea "
+                         "IS the composer — 'New Chat' logic navigates back to this URL instead "
+                         "of clicking the sidebar link (which would escape to root).")
     args = ap.parse_args()
     global _VERIFY, _GROK_SESSION, _LABEL, _COORDINATE_LANE, _MAX_COMMANDS
-    global _SAFARI_OWN_WINDOW, _THINK, _SAFARI_TARGET
+    global _SAFARI_OWN_WINDOW, _THINK, _SAFARI_TARGET, _GROK_URL
+    if args.grok_url:
+        _GROK_URL = args.grok_url
+        _log(f"grok URL overridden → {_GROK_URL}", "ok")
     _VERIFY = args.verify
     _MAX_COMMANDS = max(0, args.max_commands)
     _SAFARI_OWN_WINDOW = args.safari_window

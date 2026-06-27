@@ -30,6 +30,9 @@ MAX_CMDS="${MAX_CMDS:-60}"
 STAGGER="${STAGGER:-4}"
 # Think (reasoning) mode ON by default; opt out with THINK=0 to save the reasoning quota.
 THINK_FLAG="--think"; [ "${THINK:-1}" = "0" ] && THINK_FLAG=""
+# Optional Grok project URL — agents start chats inside this project instead of root.
+#   GROK_URL=https://grok.com/project/<id> tools/run_parallel_safari.sh "task…"
+GROK_URL_FLAG=""; [ -n "${GROK_URL:-}" ] && GROK_URL_FLAG="--grok-url $GROK_URL"
 
 if [ "$#" -eq 0 ]; then
   echo "usage: $0 \"task 1\" \"task 2\" ...   (one quoted task per parallel agent)" >&2
@@ -62,23 +65,28 @@ if [ "$N" -gt "$LIMIT" ]; then
   N=$LIMIT
 fi
 
-echo "🦋 launching $N parallel SAFARI agents (own tab each · Think on · loop on)"
-echo "   repo=$REPO   max-commands/agent=$MAX_CMDS   device=${RAM_GB}GB → limit ${LIMIT}"
-echo "   tip: run this from a separate macOS Space so the tabs stay off your way."
+THINK_LABEL="off"; [ -n "$THINK_FLAG" ] && THINK_LABEL="on"
+PROJECT_NOTE=""
+[ -n "${GROK_URL:-}" ] && PROJECT_NOTE="   project: ${GROK_URL}"
+echo "🦋 launching $N parallel SAFARI agents"
+echo "   repo=$REPO   cmds/agent=$MAX_CMDS   think=$THINK_LABEL   device=${RAM_GB}GB→cap${LIMIT}"
+[ -n "$PROJECT_NOTE" ] && echo "$PROJECT_NOTE"
+echo "   tip: open a separate macOS Space first so the tabs stay off your way."
 echo
 
 # ── Pre-create N grok.com tabs in ONE fresh window, SEQUENTIALLY (race-free). ──
 # Each agent then drives an assigned tab by index — no two agents can converge on
 # the same tab (the bug when each agent opened its own). Returns "WID:idx1 idx2 …".
-echo "→ creating $N grok.com tabs (race-free) …"
+TARGET_URL="${GROK_URL:-https://grok.com}"
+echo "→ creating $N tabs at $TARGET_URL (race-free) …"
 MAP=$(osascript <<OSA
 tell application "Safari"
   activate
-  set newDoc to make new document with properties {URL:"https://grok.com"}
+  set newDoc to make new document with properties {URL:"$TARGET_URL"}
   set wid to id of front window
   set idxs to (index of current tab of front window as string)
   repeat with j from 2 to $N
-    set t to make new tab at end of tabs of window id wid with properties {URL:"https://grok.com"}
+    set t to make new tab at end of tabs of window id wid with properties {URL:"$TARGET_URL"}
     set idxs to idxs & " " & (index of t as string)
   end repeat
   return (wid as string) & ":" & idxs
@@ -108,6 +116,7 @@ for task in "$@"; do
     --session-name "$name" --label "$name" --coordinate \
     --max-commands "$MAX_CMDS" \
     --cwd "$REPO" \
+    ${GROK_URL_FLAG:+$GROK_URL_FLAG} \
     "$task" > "$out" 2>&1 < /dev/null &
   disown 2>/dev/null || true
   i=$((i + 1))
@@ -116,7 +125,7 @@ done
 
 cat <<EOF
 
-✅ $# Safari agents launched.
+✅ $N Safari agents launched.
    live dashboard : $SCRIPT_DIR/grok_status.sh --watch
    one agent log  : tail -f ~/grok_sessions/safari-1.out
    structured feed: ~/grok_sessions/safari-*.jsonl   (for Salehman ingestion)
