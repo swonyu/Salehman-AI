@@ -1,0 +1,48 @@
+name: CI
+
+# Build + test the Salehman AI macOS app on every push / PR.
+# NOTE: this app targets a very new macOS SDK ("Golden Gate"). GitHub-hosted
+# macOS runners can lag the latest SDK — if the build step fails on an SDK/OS
+# version (not code), switch `runs-on` to a self-hosted runner on your own Mac:
+#     runs-on: [self-hosted, macOS]
+# and register your Mac as a runner in the repo's Settings -> Actions -> Runners.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build & Test (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Xcode / SDK info
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i macos || true
+
+      - name: Build
+        run: |
+          xcodebuild -scheme "Salehman AI" \
+            -destination 'platform=macOS' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee build.log | tail -40
+
+      - name: Test (math-invariant + full unit suite)
+        run: |
+          xcodebuild test -scheme "Salehman AI" \
+            -destination 'platform=macOS' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            -only-testing:"Salehman AITests" 2>&1 | tee test.log | tail -60

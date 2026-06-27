@@ -8812,6 +8812,13 @@ Fixed a correctness bug in `StockSageConvictionCalibration.fitPlatt`: when Newto
 **Two findings surfaced by enriching the index:** (1) `quant_engine_II` already concluded CONDITIONAL-ADOPT **Beta-3param calibration as an OOS-selected candidate** ({isotonic, beta, identity}) — a richer answer than the planned ridge-logistic Platt; flagged to reconcile before iter7. (2) `EDGE_RESEARCH` holds 3 spec'd-but-unbuilt edges (#1 per-symbol vol-regime brake, #4 downside-skew, #5 vol-of-vol gate) — a ready backlog for post-backtest iterations.
 **Result:** ✅ docs only; no code touched. Index discoverable + auto-loaded for every future session.
 
+## 2026-06-27 · CI — GitHub Actions macOS build+test workflow (owner lifted never-push)
+**Files:** `.github/workflows/ci.yml` (new)
+**What & why:** Owner lifted the standing "commit-locally-never-push" rule (2026-06-27) to enable CI. Added a GitHub Actions workflow: on push/PR, `macos-latest` runner runs the canonical `xcodebuild build` + `xcodebuild test -only-testing:"Salehman AITests"` (CODE_SIGNING_ALLOWED=NO), with concurrency-cancel and a 30-min timeout. Pushed the `ideas-card/iter6-net-cost-ev-day` branch (iter1-6 + TASI + research index + CI) to the PRIVATE `origin` (swonyu/Salehman-AI).
+**Caveat (logged honestly):** the app targets macOS 27; GitHub-hosted runners lag the SDK, so the hosted build may fail for ENVIRONMENT reasons (not code). Fallback documented in the yml: register a self-hosted macOS runner (`runs-on: [self-hosted, macOS]`).
+**⚠️ Swift-Testing gotcha discovered (backtest harness):** `xcodebuild -only-testing:".../method"` WITHOUT a trailing `()` runs ZERO tests but reports `TEST SUCCEEDED` (silent no-op). Method-level filters MUST append `()`. Class/target-level filters (what the CI + gates use) are unaffected.
+**Result:** ✅ CI workflow committed + pushed to private origin. CI run result TBD (may need self-hosted runner).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
