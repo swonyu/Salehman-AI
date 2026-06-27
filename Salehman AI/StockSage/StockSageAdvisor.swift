@@ -69,6 +69,15 @@ enum StockSageAdvisor {
     /// nudge (0.65 − 0.10 = 0.55 > 0.50), not just barely reaches it.
     nonisolated static let trendFamilyCap = 0.65
 
+    /// Relative-strength nudge (±0.08 vs the benchmark) — DISABLED 2026-06-27 on parsimony
+    /// (DSR=0, partly redundant w/ the absolute trend term; the documented edge is out-
+    /// performance but the ablation showed it added no net drawdown/return improvement).
+    /// Code is PRESERVED, not deleted: flip to `true` to re-enable the exact prior behavior.
+    /// If revived, consider a LOCAL TASI/sector benchmark rather than the S&P (this app is
+    /// Saudi-first). A `var` (not `let`) so a test can temporarily flip it on to prove the
+    /// term still works when re-enabled, then reset it; default OFF is the shipped behavior.
+    nonisolated(unsafe) static var relativeStrengthEnabled = false
+
     nonisolated static let caveat = "Rules-based & educational — not a guarantee or financial advice. Markets are uncertain; size small and honor your stop."
 
     /// Advice straight from a fetched candle history — wires the live OHLC feed
@@ -185,7 +194,10 @@ enum StockSageAdvisor {
         // momentum edge is OUT-performance, not absolute drift. A name leading the S&P gets
         // a small confirmation; one merely rising with (or lagging) the market is demoted.
         // ±0.08, additive, and skipped entirely when no benchmark is supplied.
-        if let benchmarkCloses,
+        // DISABLED 2026-06-27: gated by relativeStrengthEnabled (default false — parsimony cut;
+        // code preserved, flip to true to re-enable exact prior behavior).
+        if Self.relativeStrengthEnabled,
+           let benchmarkCloses,
            let rs = StockSageIndicators.relativeStrength(symbolCloses: closes, benchmarkCloses: benchmarkCloses) {
             if rs > 0 { score += 0.08; rationale.append(String(format: "Leading the S&P (relative strength +%.0f%%)", rs)) }
             else if rs < 0 { score -= 0.08; rationale.append(String(format: "Lagging the S&P (relative strength %.0f%%)", rs)) }

@@ -19,20 +19,27 @@ import Foundation
 //      largest benchmark index j with benchDates[j] <= symbolDate[i] (nearest-prior). The
 //      live path forwards benchmark?.closes directly. If someone reverts to a naive index
 //      slice (e.g. benchCloses[0...i]), the benchmark length mismatches ⇒ different RS ⇒
-//      ±0.08 swing ⇒ parity RED. RS (±0.08) is the sole live regression guard now.
+//      ±0.08 swing ⇒ parity RED. NOTE (2026-06-27): RS is now DEFAULT-OFF (gated by
+//      relativeStrengthEnabled = false, parsimony cut). Both buildIdeas and runTrades skip
+//      the RS block identically ⇒ parity still holds (both paths see the same nil-ish result
+//      regardless of benchmark alignment). The benchmark-alignment regression is therefore
+//      DORMANT while the flag is off; it will re-activate when relativeStrengthEnabled = true.
+//      The negative control below proves BOTH: off=inert AND on=functional-when-re-enabled.
 //
 // BAR COUNT: 130 (≥128). relativeStrength uses returnOverPeriod(period:126), which requires
 // closes.count > 126. At < 127 bars the RS term is nil-gated and the benchmark-alignment
 // regression goes UNDETECTED. 130 bars also clears sma50; sma200 stays nil (that's fine —
 // both paths see the same nil).
 //
-// NEGATIVE CONTROLS: one live control + one inert-documentation control:
+// NEGATIVE CONTROLS: two controls — both now document INERT terms:
 //   • Volume control (INERT): thin vs full volumes produce IDENTICAL conviction because
 //     the volume term was removed (2026-06-27 parsimony cut). Documented in
 //     negativeControl_volumeInputIsInert.
-//   • Benchmark control: with-benchmark vs no-benchmark calls on the same 130-bar fixture
-//     differ in conviction ⇒ RS TERM IS LIVE (alignment matters). This is now the SOLE
-//     live negative control that prevents vacuous parity passes.
+//   • Benchmark/RS control (GATED): RS is DEFAULT-OFF (relativeStrengthEnabled=false,
+//     2026-06-27 parsimony). negativeControl_benchmarkTermIsLive now proves BOTH:
+//     (A) flag-off ⇒ with-benchmark == no-benchmark (INERT while default-off), AND
+//     (B) flag-on ⇒ with-benchmark != no-benchmark (PRESERVED & functional when re-enabled).
+//     This ensures the parity test's benchmark-alignment guard is not vacuous when flag is on.
 
 // Tolerance tier — matching the math-invariant harness EPS = 1e-6.
 private let _parityEPS: Double = 1e-6
@@ -179,34 +186,57 @@ struct StockSageBacktestParityTests {
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // MARK: 3 — NEGATIVE CONTROL B: RS/benchmark term is LIVE at 130 bars
+    // MARK: 3 — NEGATIVE CONTROL B: RS/benchmark term gated by flag (default-off)
     // ────────────────────────────────────────────────────────────────────────
     //
-    // Proves the relative-strength (benchmark) term is non-trivial at 130 bars.
-    // Without this, the parity asserts could pass even if runTrades mis-aligns the
-    // benchmark (both paths produce a wrong-but-identical RS, and the asserts pass vacuously).
+    // 2026-06-27: RS was gated behind relativeStrengthEnabled (default false — parsimony cut).
+    // This test now proves TWO invariants:
     //
-    // Mechanism:
+    //   (A) DEFAULT-OFF (shipped behavior): supplying a benchmark is INERT — with-benchmark
+    //       and no-benchmark conviction are identical (within _parityEPS). RS block is skipped.
+    //
+    //   (B) PRESERVED & FUNCTIONAL WHEN RE-ENABLED: flipping the flag on restores the exact
+    //       prior RS behavior — benchmark NOW changes conviction by > 1e-9. This proves the
+    //       code is not dead and will work if the owner decides to re-enable it.
+    //
+    // The flag is reset in a defer so a failing #expect can't leak `true` into other tests.
+    // (Tests run serially on this synchronous body — no await between flip and reset —
+    // so no parallel test can observe the true state during the on-window.)
+    //
+    // Mechanism (unchanged from prior version):
     //   relativeStrength requires closes.count > 126 (returnOverPeriod period=126).
     //   At 130 bars: RS = symReturn(126) − benchReturn(126).
     //   cleanUptrend slope 1.0/bar vs approaching52wHigh slope 0.2/bar ⇒ RS > 0 ⇒ +0.08.
-    //   A no-benchmark call gets 0. Conviction must differ by > 1e-9.
+    //   A no-benchmark call gets 0. When enabled, conviction must differ by > 1e-9.
 
     @Test func negativeControl_benchmarkTermIsLive() {
         let bars = 130
         let h = SageFix.history(.cleanUptrend, bars: bars)
         let g = SageFix.history(.approaching52wHigh, bars: bars)
 
-        let withBench = StockSageAdvisor.advise(closes: h.closes, highs: h.highs, lows: h.lows,
-                                                volumes: h.volumes, benchmarkCloses: g.closes)
-        let noBench   = StockSageAdvisor.advise(closes: h.closes, highs: h.highs, lows: h.lows,
-                                                volumes: h.volumes, benchmarkCloses: nil)
+        // (A) DEFAULT-OFF: RS is gated behind relativeStrengthEnabled = false (parsimony cut,
+        // 2026-06-27). With the flag off, supplying a benchmark must be INERT — with-benchmark
+        // and no-benchmark conviction are identical (within parity eps).
+        let offWithBench = StockSageAdvisor.advise(closes: h.closes, highs: h.highs, lows: h.lows,
+                                                   volumes: h.volumes, benchmarkCloses: g.closes)
+        let offNoBench   = StockSageAdvisor.advise(closes: h.closes, highs: h.highs, lows: h.lows,
+                                                   volumes: h.volumes, benchmarkCloses: nil)
+        #expect(abs(offWithBench.conviction - offNoBench.conviction) < _parityEPS,
+                "RS INERT WHEN OFF: with-benchmark vs no-benchmark must match while relativeStrengthEnabled=false (parsimony cut 2026-06-27); if this differs, the RS block leaked past its flag")
 
-        // If RS term is live, adding a benchmark must change conviction by > 1e-9.
-        #expect(abs(withBench.conviction - noBench.conviction) > 1e-9,
-                "BENCHMARK NEGATIVE CONTROL: with-benchmark vs no-benchmark must differ at 130 bars — RS term is not live, meaning the parity test's benchmark-alignment guard is vacuous (130 bars insufficient or fixture has an issue)")
+        // (B) PRESERVED & FUNCTIONAL WHEN RE-ENABLED: flipping the flag on must restore the
+        // exact prior RS behavior — benchmark NOW changes conviction by > 1e-9. Reset in a
+        // defer so a failure can't leave the flag set for other (serially-run) tests.
+        StockSageAdvisor.relativeStrengthEnabled = true
+        defer { StockSageAdvisor.relativeStrengthEnabled = false }
+        let onWithBench = StockSageAdvisor.advise(closes: h.closes, highs: h.highs, lows: h.lows,
+                                                  volumes: h.volumes, benchmarkCloses: g.closes)
+        let onNoBench   = StockSageAdvisor.advise(closes: h.closes, highs: h.highs, lows: h.lows,
+                                                  volumes: h.volumes, benchmarkCloses: nil)
+        #expect(abs(onWithBench.conviction - onNoBench.conviction) > 1e-9,
+                "RS FUNCTIONAL WHEN ON: with relativeStrengthEnabled=true, with-benchmark vs no-benchmark must differ at 130 bars — the preserved RS term must still fire when re-enabled")
 
-        // Sanity: the benchmark at 130 bars is sufficient for RS (> 126 bars)
+        // Sanity: the benchmark at 130 bars is sufficient for RS (> 126 bars) regardless of flag.
         let rsCheck = StockSageIndicators.relativeStrength(symbolCloses: h.closes,
                                                            benchmarkCloses: g.closes)
         #expect(rsCheck != nil,
