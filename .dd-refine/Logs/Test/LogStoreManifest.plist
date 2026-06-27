@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>logFormatVersion</key>
+	<integer>12</integer>
+	<key>logs</key>
+	<dict>
+		<key>3E4434B8-D2E2-4F36-8C03-E00C8BFAAA6A</key>
+		<dict>
+			<key>auxiliaryLogUniqueIdentifier</key>
+			<string>C13FA8C3-C2E0-43BD-9C17-9C3ED47EC736</string>
+			<key>auxiliaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>S</string>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>0</integer>
+			</dict>
+			<key>className</key>
+			<string>IDESchemeActionsInvocationRecord</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>com.apple.dt.unit.cocoaUnitTest</string>
+			<key>fileName</key>
+			<string>Test-Salehman AI-1448.01.12_14-51-30-+0300.xcresult</string>
+			<key>hasAuxiliaryLog</key>
+			<true/>
+			<key>hasCoverageData</key>
+			<true/>
+			<key>hasPrimaryLog</key>
+			<true/>
+			<key>primaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>S</string>
+				<key>totalCodeCoverage</key>
+				<real>0.31116337501460795</real>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>0</integer>
+			</dict>
+			<key>schemeIdentifier-containerName</key>
+			<string>Salehman AI project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>Salehman AI</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Test Salehman AI</string>
+			<key>timeStartedRecording</key>
+			<real>804253890.07259595</real>
+			<key>timeStoppedRecording</key>
+			<real>804253919.23304701</real>
+			<key>title</key>
+			<string>Test Salehman AI</string>
+			<key>uniqueIdentifier</key>
+			<string>3E4434B8-D2E2-4F36-8C03-E00C8BFAAA6A</string>
+		</dict>
+		<key>42E87587-2CF4-491B-A5E4-2998B9CBAEFB</key>
+		<dict>
+			<key>auxiliaryLogUniqueIdentifier</key>
+			<string>6E7D99BD-8659-4D7A-A62B-6346EF6932A7</string>
+			<key>auxiliaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>S</string>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>0</integer>
+			</dict>
+			<key>className</key>
+			<string>IDESchemeActionsInvocationRecord</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>com.apple.dt.unit.cocoaUnitTest</string>
+			<key>fileName</key>
+			<string>Test-Salehman AI-1448.01.12_14-22-05-+0300.xcresult</string>
+			<key>hasAuxiliaryLog</key>
+			<true/>
+			<key>hasCoverageData</key>
+			<true/>
+			<key>hasPrimaryLog</key>
+			<true/>
+			<key>primaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>S</string>
+				<key>totalCodeCoverage</key>
+				<real>0.31133619807652957</real>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>0</integer>
+			</dict>
+			<key>schemeIdentifier-containerName</key>
+			<string>Salehman AI project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>Salehman AI</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Test Salehman AI</string>
+			<key>timeStartedRecording</key>
+			<real>804252125.06359899</real>
+			<key>timeStoppedRecording</key>
+			<real>804252210.13356102</real>
+			<key>title</key>
+			<string>Test Salehman AI</string>
+			<key>uniqueIdentifier</key>
+			<string>42E87587-2CF4-491B-A5E4-2998B9CBAEFB</string>
+		</dict>
+	</dict>
+</dict>
+</plist>
