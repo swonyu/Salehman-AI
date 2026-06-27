@@ -149,7 +149,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Bandwidth + rate-limit pressure scale with universe size; the owner mostly watches a few names. Add an optional pinned-watchlist filter to refresh()/runCycle (fallback to full when nil) so alerts on a small set don't pull the world.
 **Files:** Salehman AI/StockSage/StockSageMonitor.swift:40-59; Salehman AI/StockSage/StockSageStore.swift:538-548
 
-### ⬜ #26 — Backtest input validation + show open-at-end trade count  [medium/small, Backtester/bug]
+### ✅ DONE #26 — Backtest input validation + show open-at-end trade count  [medium/small, Backtester/bug]
 **What:** run() accepts a history with no checks for low<=high, OHLC>0, or monotonic dates — a corrupt feed yields a plausible-looking but wrong backtest. Also, BacktestTrade.Outcome.openAtEnd exists but the UI shows only aggregate metrics, so a user can't tell 15-of-20 trades are still open (skewing avgR/EV).
 **Why:** A wrong backtest is worse than none for a money decision. Add validateHistory() guard returning .empty on bad data, and surface openAtEnd count in the idea detail ('15 closed · 5 open at end').
 **Files:** Salehman AI/StockSage/StockSageBacktester.swift:25-73
@@ -174,12 +174,12 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Hierarchy clarity + honest visual encoding. Bump the header to 13-14pt; return a neutral color when |last-first|/first < ~2% so flat ideas don't look like uptrends.
 **Files:** Salehman AI/Views/MarketsView.swift:2106; Salehman AI/Views/MarketsView.swift:2889-2892
 
-### ⬜ #31 — Promote/justify hardcoded engine thresholds (er>=0.30, significance>=20, div-score weights, breadth sample)  [low/small, Honesty/Calibration/honesty]
+### ✅ DONE #31 — Promote/justify hardcoded engine thresholds (er>=0.30, significance>=20, div-score weights, breadth sample)  [low/small, Honesty/Calibration/honesty]
 **What:** Several money-affecting magic numbers are inline and unjustified: trending threshold er>=0.30, isSignificant trades>=20, diversificationScore 0.7/0.3 weights + cap 8, and the regime breadth sample skewed to 10 US large-caps. No named constants, boundary tests, or cited rationale.
 **Why:** For a money system, every threshold should be auditable. Promote to named constants with a one-line rationale, add boundary tests (er 0.299 vs 0.301), expose a diversificationCaveat, and note the breadth sample is US-tech-biased.
 **Files:** Salehman AI/StockSage/StockSageAdvisor.swift:112; Salehman AI/StockSage/StockSageBacktester.swift:59; Salehman AI/StockSage/StockSagePortfolioAnalytics.swift:94; Salehman AI/StockSage/StockSageRegime.swift:48-56
 
-### ⬜ #32 — Move the gpPerHour RuneScape term out of MoneyVelocityTerm (orphaned in equities glossary)  [low/small, Glossary/visual]
+### ✅ DONE #32 — Move the gpPerHour RuneScape term out of MoneyVelocityTerm (orphaned in equities glossary)  [low/small, Glossary/visual]
 **What:** MoneyVelocityTerm.gpPerHour is a RuneScape GE flip metric living in the equities/crypto money-velocity glossary; grep shows it's used only by the RuneLite plugin, not MarketsView — semantically orphaned.
 **Why:** Cheap clarity. Move it to a RunesVelocityTerm enum (or delete if unused), or add a context comment so the financial glossary stays coherent.
 **Files:** Salehman AI/StockSage/StockSageGlossary.swift:21
