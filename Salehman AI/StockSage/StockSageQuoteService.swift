@@ -261,7 +261,25 @@ enum StockSageUniverse {
 
     private static let groups: [(label: String, tickers: [String])] = [
         // ── Home market first (owner directive: Aramco / Tadawul leads the universe) ──
-        ("🇸🇦 Tadawul (TASI)",     ["2222.SR", "1120.SR", "7010.SR", "2010.SR", "1180.SR", "2350.SR"]),
+        ("🇸🇦 Tadawul (TASI)",     ["2222.SR", "1120.SR", "7010.SR", "2010.SR", "1180.SR", "2350.SR",
+                                    // ── Expansion (2026-06-27): verified large/mid-cap TASI constituents.
+                                    //    Aramco (2222.SR) stays first; all below are appended after it.
+                                    // Banks
+                                    "1010.SR", "1060.SR", "1150.SR", "1080.SR", "1140.SR",
+                                    // Materials / Petrochem
+                                    "1211.SR", "2020.SR", "2290.SR", "2380.SR", "2330.SR",
+                                    // Telecom
+                                    "7020.SR", "7030.SR",
+                                    // Consumer / Food
+                                    "2280.SR", "4190.SR", "6010.SR",
+                                    // Utilities / Transport
+                                    "5110.SR", "4030.SR",
+                                    // Healthcare
+                                    "4013.SR", "4014.SR",
+                                    // Insurance
+                                    "8010.SR", "8210.SR",
+                                    // Cement
+                                    "3030.SR"]),
         // ── United States (mega/large cap, by sector) ──
         ("🇺🇸 US Mega-cap Tech",   ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "AVGO", "TSLA", "ORCL", "AMD"]),
         ("🇺🇸 US Semis & Hardware", ["INTC", "QCOM", "TXN", "MU", "AMAT", "ADI", "LRCX", "KLAC", "CSCO", "IBM"]),
@@ -291,8 +309,8 @@ enum StockSageUniverse {
         ("🇪🇸 Madrid (BME)",       ["SAN.MC", "IBE.MC", "ITX.MC"]),
         ("🇮🇹 Milan (Borsa)",      ["ENI.MI", "ISP.MI", "RACE.MI"]),
         ("🇸🇪 Stockholm (OMX)",    ["VOLV-B.ST", "ERIC-B.ST"]),
-        ("🇦🇪 UAE (ADX/DFM)",      ["FAB.AD", "EMAAR.DU"]),
-        ("🇶🇦 Qatar (QSE)",        ["QNBK.QA"]),
+        ("🇦🇪 UAE (ADX/DFM)",      ["FAB.AD", "EMAAR.DU", "ADNOCGAS.AD", "ADCB.AD", "ALDAR.AD", "DEWA.DU"]),
+        ("🇶🇦 Qatar (QSE)",        ["QNBK.QA", "IQCD.QA", "QIBK.QA", "MARK.QA"]),
         ("🇪🇬 Egypt (EGX)",        ["COMI.CA"]),
         ("🇿🇦 Johannesburg (JSE)", ["NPN.JO", "AGL.JO"]),
         ("🌍 World indices",       ["^GSPC", "^IXIC", "^DJI", "^RUT", "^VIX", "^FTSE", "^GDAXI", "^FCHI", "^STOXX50E", "^N225", "^HSI", "^NSEI", "^TWII", "^STI", "^BVSP", "^AXJO", "^GSPTSE", "^TASI.SR"]),

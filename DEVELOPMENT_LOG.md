@@ -8790,6 +8790,15 @@ Fixed a correctness bug in `StockSageConvictionCalibration.fitPlatt`: when Newto
 **Files:** `Salehman AITests/StockSageExpectedValueTests.swift`, `Salehman AI/StockSage/StockSageExpectedValue.swift`, `Salehman AITests/StockSageMathInvariantTests.swift`.
 **Result:** ✅ ** TEST SUCCEEDED ** — G1/G2/G3/G4/iter6 all pass; iter3/iter4/iter5 not regressed. Floor=0.005, cost model via StockSageNetEdge unchanged.
 
+## 2026-06-27 · Universe expansion — Tadawul (TASI) +22, Gulf +7 (data-only)
+**Files:** `Salehman AI/StockSage/StockSageQuoteService.swift`
+**What & why:** The Saudi-first anchor group only carried 6 names; expanded the bulk-fetched live universe with verified, currently-listed, liquid TASI large/mid-caps and a modest Gulf top-up. DATA-ONLY — touched only the `groups` ticker arrays; no signal/advise/EV/calibration code. Aramco `2222.SR` stays FIRST (new names appended after it), no duplicates, `^TASI.SR` (index) untouched in World indices.
+- **TASI +22** (after the 6 existing): Banks 1010 Riyad, 1060 SAB, 1150 Alinma, 1080 ANB, 1140 Albilad; Materials/Petrochem 1211 Maaden, 2020 SABIC Agri-Nutrients, 2290 Yansab, 2380 Petro Rabigh, 2330 Advanced Petrochemical; Telecom 7020 Mobily, 7030 Zain KSA; Consumer/Food 2280 Almarai, 4190 Jarir, 6010 NADEC; Utilities/Transport 5110 Saudi Electricity, 4030 Bahri; Healthcare 4013 Dr Sulaiman Al Habib, 4014 Dallah; Insurance 8010 Tawuniya, 8210 Bupa Arabia; Cement 3030 Saudi Cement.
+- **Gulf +7:** UAE +4 (ADNOCGAS.AD, ADCB.AD, ALDAR.AD, DEWA.DU); Qatar +3 (IQCD.QA, QIBK.QA, MARK.QA).
+- **Dropped (confidence/modesty):** 1050 Banque Saudi Fransi, 1020 Bank AlJazira, 2310 Sipchem, 2270 Savola, 4001 Al Othaim, 4002 Mouwasat, 4250 Jabal Omar, 4020 Al Akaria — all real, trimmed to hold the ~15-25 modest band on Yahoo's keyless rate-limited feed.
+**Result:** ✅ ** BUILD SUCCEEDED ** and ✅ ** TEST SUCCEEDED ** (Salehman AITests, full suite green). No signal/EV/calibration test touched the change; data-only.
+**Why these codes:** Every 4-digit `.SR` cross-checked against the actual Tadawul listing (numeric-board codes); preferred fewer high-confidence names over a long list with wrong codes (a wrong code = a dead "couldn't fetch" row).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
