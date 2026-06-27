@@ -266,7 +266,15 @@ final class StockSageStore: ObservableObject {
         defer { isLoadingIdeas = false }   // clears on EVERY path: success, feed-failure early-return, AND cancel
         let task = Task { await self.performRefreshIdeas() }
         ideasRefreshTask = task
+        // Auto-cancel after 120 s so the spinner never hangs on a pathological network stall.
+        // Cancelling the work task triggers the isCancelled guards in performRefreshIdeas; the
+        // defer above then clears isLoadingIdeas on the main actor without touching UI state here.
+        let watchdog = Task {
+            try? await Task.sleep(for: .seconds(120))
+            if !Task.isCancelled { task.cancel() }
+        }
         await task.value                   // keep refreshIdeas awaitable so callers see populated `ideas`
+        watchdog.cancel()                  // work finished in time — disarm the watchdog
         ideasRefreshTask = nil
     }
 
