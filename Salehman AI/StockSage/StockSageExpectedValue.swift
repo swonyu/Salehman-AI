@@ -525,7 +525,7 @@ enum StockSageExpectedValue {
             bestSymbol: best?.idea.symbol,
             bestEV: best?.ev.evR,
             fastestSymbol: fastest?.symbol,
-            fastestVelocity: fastest.flatMap { velocity(for: $0, holds: holds, calibration: calibration) },
+            fastestVelocity: fastest.flatMap { netVelocity(for: $0, holds: holds, calibration: calibration) },
             // Honest cadence: an all-crypto lane re-cycles ~7 days/week, equity ~5.
             weeklyR: expectedWeeklyR(ideas, tradingDays: tradingDaysForLane(ideas, holds: holds, calibration: calibration), holds: holds, calibration: calibration),
             worstRunLosses: dd?.losses,
