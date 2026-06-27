@@ -101,6 +101,7 @@ struct MarketsView: View {
     @State private var hoveredPositionID: UUID?
     @State private var hoveredAlertSymbol: String?
     @State private var hoveredHeatID: UUID?
+    @State private var hoveredIdeaID: String?
     /// Staggered entrance. Pre-set under `--qa` so the offscreen snapshot
     /// (onAppear never fires) captures the settled layout, not the pre-entrance pose.
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
@@ -2591,6 +2592,7 @@ struct MarketsView: View {
         let a = idea.advice
         // Legible reason for the earnings-aware rank: a chip when earnings are imminent/approaching.
         let earnFlag = StockSageExpectedValue.earningsRankFlag(for: idea, earnings: store.earnings)
+        let hovered = hoveredIdeaID == idea.id
         return VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -2682,13 +2684,14 @@ struct MarketsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Bezel.cardFill)
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .fill(hovered ? Color.white.opacity(0.055) : DS.Bezel.cardFill)
                 RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
             }
         )
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-            .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .stroke(hovered ? DS.Palette.accent.opacity(0.35) : DS.Palette.surfaceStroke, lineWidth: 1))
         // Leading accent whose intensity scales with conviction — high-conviction ideas
         // stand out at a glance (EV is ~uniform because targets are pinned ~2:1).
         .overlay(alignment: .leading) {
@@ -2697,6 +2700,9 @@ struct MarketsView: View {
                 .frame(width: 3).padding(.vertical, 8)
                 .accessibilityHidden(true)
         }
+        .scaleEffect(hovered ? 1.008 : 1.0)
+        .shadow(color: DS.Palette.accent.opacity(hovered ? 0.10 : 0), radius: 10, y: 3)
+        .animation(DS.Motion.smooth, value: hovered)
         // One combined, activatable element (mirrors the watchlist card): the
         // custom label carries the conviction, the DEFAULT action opens the detail
         // sheet (VoiceOver double-tap), and Backtest is a named rotor action — so
@@ -2721,6 +2727,12 @@ struct MarketsView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { selectedIdea = idea }
+        .onHover { over in
+            withAnimation(DS.Motion.smooth) {
+                if over { hoveredIdeaID = idea.id }
+                else if hoveredIdeaID == idea.id { hoveredIdeaID = nil }
+            }
+        }
         .contextMenu {
             Button { copyIdeaPlan(idea) } label: { Label("Copy trade plan", systemImage: "doc.on.clipboard") }
             Button { selectedIdea = idea } label: { Label("Open details", systemImage: "info.circle") }
@@ -3923,7 +3935,19 @@ struct MarketsView: View {
             .frame(maxWidth: .infinity)                  // …centered on wide windows
         }
         .frame(minWidth: 440, minHeight: 480)
-        .background(DS.Palette.codeSurface)
+        .background(
+            ZStack {
+                DS.Palette.codeSurface
+                RoundedRectangle(cornerRadius: DS.Radius.modal, style: .continuous)
+                    .fill(DS.Bezel.shellFill)
+                RoundedRectangle(cornerRadius: DS.Radius.modal, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Radius.modal, style: .continuous)
+                .stroke(DS.Palette.surfaceStroke, lineWidth: 1)
+        )
         .task(id: idea.symbol) {
             guard !ProcessInfo.processInfo.arguments.contains("--qa") else { return }
             await store.refreshMultiTimeframe(symbol: idea.symbol)
