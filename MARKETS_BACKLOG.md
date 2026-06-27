@@ -109,7 +109,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Net-edge directly gates whether a trade clears costs; a flat assumption mis-rates crypto/FX edges. Branch on StockSageAllocation.assetClass(symbol) for per-class bps and state the assumption in the NetEdge caveat.
 **Files:** Salehman AI/Views/MarketsView.swift:2612; Salehman AI/StockSage/StockSageAllocation.swift
 
-### ⬜ #18 — Surface dropped/unassessable symbols in risk engines (risk-parity, cluster)  [medium/small, Risk/feature]
+### ✅ DONE #18 — Surface dropped/unassessable symbols in risk engines (risk-parity, cluster)  [medium/small, Risk/feature]
 **What:** Risk-parity silently filters holdings with vol<=0 (RiskParity:68) and ClusterCheck returns nil when either side has <2 return points — both with no UI signal, so a concentrated idea can look 'safe' only because data was too sparse to assess.
 **Why:** Silent omission in a risk gate is the dangerous kind. Add a dropped:[String] field to risk-parity output ('excluded X — no vol data') and a faint 'Cluster check unavailable (insufficient history)' note when check() is nil.
 **Files:** Salehman AI/StockSage/StockSageRiskParity.swift:68; Salehman AI/Views/MarketsView.swift:2577-2583
