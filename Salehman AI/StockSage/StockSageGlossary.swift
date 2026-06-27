@@ -18,7 +18,7 @@ enum MoneyVelocityTerm: String, CaseIterable, Sendable {
     case weeklyDollars = "$ / week"
     case compounding = "Compounding"
     case drawdownSurvival = "Drawdown survival"
-    case gpPerHour = "gp / hour"
+    case gpPerHour = "gp / hour"   // RuneScape GE flip metric — surfaced by RuneScapeMarketView, not MarketsView
 }
 
 /// The user-facing money-velocity CAPTIONS, centralized so a test can guarantee each
