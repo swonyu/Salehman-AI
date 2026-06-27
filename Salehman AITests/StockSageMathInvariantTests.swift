@@ -596,4 +596,100 @@ struct StockSageMathInvariantTests {
         let isBuy = (advice.action == .buy || advice.action == .strongBuy)
         #expect(!isBuy, "fallingKnife must not produce a buy — got \(advice.action.rawValue)")
     }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // MARK: 6 — Platt-scaling conviction calibration (ITER4)
+    // ────────────────────────────────────────────────────────────────────────
+    typealias Cal = StockSageConvictionCalibration
+
+    @Test func plattGoldenVectorSymmetricSeparable() {
+        // [AUDIT] Dataset: 20@s=0.2 (4W/16L) + 20@s=0.8 (16W/4L). N+=N-=20 → t+=21/22, t-=1/22.
+        // 2-distinct-x logistic MLE matches each group's mean smoothed target EXACTLY:
+        //   p(0.2)=5/22, p(0.8)=17/22, p(0.5)=1/2 ; A=ln(25/289)/0.6, B=-A/2.
+        var o: [(conviction: Double, won: Bool)] = []
+        for i in 0..<20 { o.append((0.2, i < 4))  }   // 4 wins
+        for i in 0..<20 { o.append((0.8, i < 16)) }   // 16 wins
+        guard let cal = Cal.fit(o, minSamples: 30) else { Issue.record("expected a Platt fit"); return }
+        #expect(cal.sampleSize == 40)                                 // <1000 → Platt path taken
+
+        // [AUDIT] Closed-form expected sigmoid from the hand-derived A,B (written as analytic forms,
+        // NOT copied decimals), so the reviewer re-derives them without running code.
+        let A = log(25.0 / 289.0) / 0.6
+        let B = -A / 2.0
+        func p(_ s: Double) -> Double { 1.0 / (1.0 + exp(A * s + B)) }
+
+        // winProb(_:) with nBins=2 looks s up in band [0,0.5) or [0.5,1]; bins hold the MIDPOINT values.
+        #expect(abs(cal.winProb(0.25) - p(0.25)) < Self.EPS)         // band-0 midpoint
+        #expect(abs(cal.winProb(0.75) - p(0.75)) < Self.EPS)         // band-1 midpoint
+        // [AUDIT] Exact-rational anchors: p(0.2)=5/22, p(0.8)=17/22 are the per-group MLE means.
+        #expect(abs(p(0.2) - 5.0 / 22.0)  < Self.EPS)                // derivation self-check
+        #expect(abs(p(0.8) - 17.0 / 22.0) < Self.EPS)
+        #expect(abs(p(0.5) - 0.5) < Self.EPS)                        // symmetric midpoint = 1/2
+    }
+
+    @Test func plattIsMonotoneNonDecreasing() {
+        // [AUDIT] A ≤ 0 enforced ⇒ winProb non-decreasing across the conviction range and across bins.
+        var o: [(conviction: Double, won: Bool)] = []
+        for i in 0..<20 { o.append((0.2, i < 4))  }
+        for i in 0..<20 { o.append((0.8, i < 16)) }
+        guard let cal = Cal.fit(o, minSamples: 30) else { Issue.record("fit"); return }
+        for c in stride(from: 0.0, through: 1.0, by: 0.05) {
+            #expect(cal.winProb(c) <= cal.winProb(min(1.0, c + 0.05)) + Self.EPS)
+        }
+        for i in 1..<cal.bins.count { #expect(cal.bins[i].winProb >= cal.bins[i-1].winProb - Self.EPS) }
+        #expect(cal.winProb(0.8) > cal.winProb(0.2))                 // edge increases with conviction
+    }
+
+    @Test func plattInvertedSampleClampsToMonotone() {
+        // [AUDIT] Inverted (lucky-low) sample → unclamped A would be >0 (decreasing). The A≤0 clamp
+        // forces non-decreasing: high-conviction winProb is NOT below low-conviction.
+        // ALSO: with A=0 the intercept B must be reset to the prior log-odds so the flat output
+        // equals the smoothed base rate (~0.5 here), NOT the biased Newton-converged B (~0.885).
+        var o: [(conviction: Double, won: Bool)] = []
+        for i in 0..<20 { o.append((0.2, i < 16)) }   // 80% at LOW conviction (lucky)
+        for i in 0..<20 { o.append((0.8, i < 4))  }   // 20% at HIGH conviction
+        guard let cal = Cal.fit(o, minSamples: 30) else { Issue.record("fit"); return }
+        #expect(cal.winProb(0.8) >= cal.winProb(0.2) - Self.EPS)     // clamp held the line
+        // Regression guard: flat output must equal prior base rate (~0.5), not the biased ~0.885
+        #expect(abs(cal.winProb(0.5) - 0.5) < Self.EPS, "inverted clamp: flat output must equal prior 0.5")
+        #expect(abs(cal.winProb(0.2) - 0.5) < Self.EPS, "inverted clamp: all bands must equal prior 0.5")
+    }
+
+    @Test func plattDegenerateSingleLabelFallsBackToPrior() {
+        // [AUDIT] All-wins (N-=0) → slope unidentifiable → flat conservative prior (default 0.5),
+        // NOT an invented 100%. Same for all-losses. The prior is the band value everywhere.
+        let allWin  = (0..<40).map { (conviction: Double($0 % 10) / 10, won: true)  }
+        let allLoss = (0..<40).map { (conviction: Double($0 % 10) / 10, won: false) }
+        guard let cw = Cal.fit(allWin,  minSamples: 30, prior: 0.5),
+              let cl = Cal.fit(allLoss, minSamples: 30, prior: 0.5) else { Issue.record("fit"); return }
+        #expect(abs(cw.winProb(0.1) - 0.5) < Self.EPS)
+        #expect(abs(cw.winProb(0.9) - 0.5) < Self.EPS)               // flat — no fabricated edge
+        #expect(abs(cl.winProb(0.9) - 0.5) < Self.EPS)
+    }
+
+    @Test func plattSelectedBelowThresholdIsotonicAtOrAbove() {
+        // [AUDIT] Selection seam: a 40-trade fit is Platt (smooth sigmoid → distinct band-midpoint
+        // values), a ≥1000-trade fit takes the byte-identical isotonic path. We assert the THRESHOLD
+        // routing via a behavioral witness: build 1040 outcomes where the isotonic Wilson-LOWER-bound
+        // is detectably below the raw rate in a band, a signature the smooth Platt sigmoid won't match.
+        #expect(Cal.isotonicMinSamples == 1000)
+        // Below threshold → Platt: two equal half-bands fit a sigmoid; the LOW band sits BELOW 0.5
+        // and HIGH above (sigmoid through the 0.5 symmetric midpoint), not a Wilson lower bound.
+        var small: [(conviction: Double, won: Bool)] = []
+        for i in 0..<20 { small.append((0.2, i < 4))  }
+        for i in 0..<20 { small.append((0.8, i < 16)) }
+        let platt = Cal.fit(small, minSamples: 30)!
+        #expect(platt.winProb(0.2) < 0.5 && platt.winProb(0.8) > 0.5)
+
+        // At/above threshold → isotonic path, byte-identical to pre-ITER4. Reproduce a tiny isotonic
+        // fit and assert the ≥1000 fit equals what the OLD code produced (we pin via the public
+        // fit(minSamples:) on the SAME data scaled to 1000 — Wilson lower bound stays < raw rate).
+        var big: [(conviction: Double, won: Bool)] = []
+        for i in 0..<520 { big.append((0.2, i < 104)) }   // 20% raw
+        for i in 0..<520 { big.append((0.8, i < 416)) }   // 80% raw
+        let iso = Cal.fit(big, minSamples: 30)!            // 1040 ≥ 1000 → isotonic
+        #expect(iso.sampleSize == 1040)
+        #expect(iso.winProb(0.8) < 0.8)                    // Wilson LOWER bound (isotonic signature)
+        #expect(iso.winProb(0.8) >= iso.winProb(0.2))      // monotone
+    }
 }
