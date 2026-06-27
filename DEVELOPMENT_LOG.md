@@ -9027,6 +9027,11 @@ Added `tools/test_grok_bridge.py` — 30 unit tests over the bug-prone pure core
 **What & why:** `ideaCard()` already showed an earnings badge; `fastLaneStrip` rows only showed the floor badge. A near-earnings idea could appear in the strip with no warning. Added `earningsRankFlag(for:earnings:)` alongside the existing `floorFlag` let-binding; badge text ("⚠︎ earnings ~Xd" / "earnings ~Xd") shown with `warningSoft` for demoted ideas and `.secondary` for approaching. Accessibility label extended. Additive display, no sizing/logic change. ✅ BUILD SUCCEEDED (`7ec8c6b`).
 
 ---
+**2026-06-27 · fix(tests): summaryCompose/summaryMatches pinned to netVelocity (pre-existing iter6 drift)**
+**Files:** `Salehman AITests/StockSageExpectedValueTests.swift`
+**What & why:** Two EV tests had stale expected values. Since iter6, `EV.summary()` returns `netVelocity` (deducts 70bps BTC-USD costs before /holdDays) but tests still pinned gross `1.228/3`. Root cause from xcresult SQLite: `0.023333` delta = `1.228/3 - 1.158/3`. Fixed both tests to compare against `EV.netVelocity(for:)`. Full suite ✅ green. `3b0090e`.
+
+---
 **2026-06-27 · EDGE_RESEARCH #1 — Per-symbol vol-regime brake, VIX-free**
 **Files:** `Salehman AI/StockSage/StockSageVolRegime.swift` (new), `Salehman AI/StockSage/StockSageStore.swift`, `Salehman AI/StockSage/StockSageCapitalAllocator.swift`, `Salehman AITests/StockSageVolRegimeTests.swift` (new, 8 tests)
 **What & why:** Implements the last open edge from EDGE_RESEARCH.md: per-symbol realized-vol regime brake using only the symbol's own close history (no VIX → works on Tadawul/FX/crypto). Rolls 21-bar annualized vol over 252 historical windows, ranks latest via empirical CDF, computes continuous sizing multiplier ≤1 blending absolute-vol anchor (min(1, median/current)) with percentile component (linear 1×→0.5× from p=0.5→1.0). Wired: flagged in idea "Why" rationale when mult<0.95; applied in StockSageCapitalAllocator as weight×=mult after regime bias and vol-targeting (three independent brakes compose). 8 tests pass. All EDGE_RESEARCH items now done. ✅ BUILD SUCCEEDED (`2850a4d`).
