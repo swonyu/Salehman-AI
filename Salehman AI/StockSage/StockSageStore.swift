@@ -537,9 +537,10 @@ final class StockSageStore: ObservableObject {
             strategyError = "Couldn't load histories to backtest the strategy — try again."
             return
         }
-        let (results, trades): ([BacktestResult], [BacktestTrade]) = await Task.detached {
+        let (results, trades, tradeDates): ([BacktestResult], [BacktestTrade], [Date]) = await Task.detached {
             var rs: [BacktestResult] = []
             var ts: [BacktestTrade] = []
+            var ds: [Date] = []
             for sym in symbols {
                 guard let h = histories[sym.uppercased()] else { continue }
                 // Faithful: charge asset-class costs AND feed the ^GSPC benchmark so the backtest
@@ -548,11 +549,15 @@ final class StockSageStore: ObservableObject {
                 // benchmark (symbol bar-counts differ from ^GSPC's — a naive index slice is wrong).
                 let d = StockSageBacktester.runDetailed(h, costs: StockSageNetEdge.defaultCosts(forSymbol: sym),
                                                         benchmark: benchmark)
-                rs.append(d.result); ts.append(contentsOf: d.trades)
+                rs.append(d.result)
+                ts.append(contentsOf: d.trades)
+                // Thread entry dates aligned 1:1 with trades for the pooled chronological DD.
+                // entryIndex = i+1 (the fill bar), always in-bounds: i < n-1 so entryIndex ≤ n-1.
+                ds.append(contentsOf: d.trades.map { h.dates[$0.entryIndex] })
             }
-            return (rs, ts)
+            return (rs, ts, ds)
         }.value
-        strategyBacktest = StockSageStrategyBacktest.aggregate(results, trades: trades)
+        strategyBacktest = StockSageStrategyBacktest.aggregate(results, trades: trades, tradeEntryDates: tradeDates)
         // Learn conviction→win-prob from the realized BACKTEST trades (nil if too thin). The computed
         // `convictionCalibration` prefers the owner's journal fit over this when their journal is rich enough.
         backtestConvictionCalibration = StockSageConvictionCalibration.fit(fromBacktest: trades)

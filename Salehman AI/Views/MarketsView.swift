@@ -3221,6 +3221,8 @@ struct MarketsView: View {
                     ideaMetric("Total R", String(format: "%+.0f", s.totalR),
                                color: s.totalR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                     ideaMetric("Worst-name DD", String(format: "−%.0fR", s.worstDrawdownR), color: DS.Palette.danger)
+                    ideaMetric("Pooled DD (eq-wt)", String(format: "−%.0fR", s.pooledDrawdownR), color: DS.Palette.danger)
+                        .help("Equal-weight pooled proxy: all trades across all names, sorted chronologically, cumulative-R worst peak-to-trough. Ignores position sizing and concurrency — not a true sized-portfolio drawdown. Typically larger than worst single-name DD because losses across symbols stack in time.")
                     ideaMetric("Profit.", "\(s.symbolsProfitable)/\(s.symbolsWithTrades)")
                     Spacer(minLength: 0)
                 }

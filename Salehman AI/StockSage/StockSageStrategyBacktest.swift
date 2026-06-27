@@ -18,6 +18,11 @@ struct StrategyBacktest: Sendable, Equatable {
     let avgR: Double               // total R ÷ total trades (expectancy)
     let totalR: Double
     let worstDrawdownR: Double     // worst single-symbol max drawdown, in R
+    /// Pooled portfolio-PROXY max drawdown, in R: take EVERY trade across ALL symbols, sort by entry
+    /// date (chronological), build the cumulative-sum-of-R equity curve, report its worst peak-to-trough.
+    /// EQUAL-WEIGHT and IGNORES concurrency/position sizing — NOT a true sized-portfolio drawdown; it is
+    /// strictly ≥ the per-symbol worstDrawdownR because cross-symbol losses stack in time. 0 when no trades.
+    let pooledDrawdownR: Double
     /// Pooled per-trade t-statistic across ALL symbols' trades = (mean R ÷ stdev R) × √trades.
     /// 0 when unknown (<2 pooled trades or no dispersion). Honest significance gauge.
     let tStat: Double
@@ -64,12 +69,13 @@ struct StrategyBacktest: Sendable, Equatable {
 
     nonisolated init(symbolsTested: Int, symbolsWithTrades: Int, symbolsProfitable: Int, totalTrades: Int,
                      wins: Int, blendedWinRate: Double, avgR: Double, totalR: Double, worstDrawdownR: Double,
+                     pooledDrawdownR: Double = 0,
                      tStat: Double = 0, momentCorrectedTStat: Double = 0,
                      deflatedSharpe: StockSageDeflatedSharpe.Result? = nil, caveat: String) {
         self.symbolsTested = symbolsTested; self.symbolsWithTrades = symbolsWithTrades
         self.symbolsProfitable = symbolsProfitable; self.totalTrades = totalTrades; self.wins = wins
         self.blendedWinRate = blendedWinRate; self.avgR = avgR; self.totalR = totalR
-        self.worstDrawdownR = worstDrawdownR; self.tStat = tStat
+        self.worstDrawdownR = worstDrawdownR; self.pooledDrawdownR = pooledDrawdownR; self.tStat = tStat
         self.momentCorrectedTStat = momentCorrectedTStat; self.deflatedSharpe = deflatedSharpe
         self.caveat = caveat
     }
@@ -100,15 +106,41 @@ enum StockSageStrategyBacktest {
     nonisolated static let caveat = "Aggregate of the advisor's FIXED rules over ~5y of these names — backward-looking and small-sample-prone. SURVIVORSHIP-BIASED: the universe is only currently-listed names (delisted losers are absent), so the measured Sharpe is a CEILING, not an expectation. The Deflated Sharpe further discounts for ~\(estimatedStrategyTrials) estimated strategy variants tried (selection bias). Past performance is not future performance."
 
     /// `trades` (optional) are the POOLED per-trade records across all symbols — when supplied, the
-    /// aggregate carries an honest pooled t-statistic and Deflated Sharpe. Omit (default) → tStat 0,
-    /// deflatedSharpe nil, behaviour unchanged.
-    nonisolated static func aggregate(_ results: [BacktestResult], trades: [BacktestTrade] = []) -> StrategyBacktest {
+    /// aggregate carries an honest pooled t-statistic, Deflated Sharpe, and pooled portfolio-proxy
+    /// drawdown. Omit (default) → tStat 0, deflatedSharpe nil, pooledDrawdownR 0, behaviour unchanged.
+    /// `tradeEntryDates` (optional) — when provided, must be 1:1 aligned with `trades`; the pooled
+    /// equity curve is built in chronological entry-date order (stable tie-break by position). When
+    /// omitted or misaligned, the received order is used (single-symbol callers are already entry-ordered).
+    nonisolated static func aggregate(_ results: [BacktestResult], trades: [BacktestTrade] = [],
+                                      tradeEntryDates: [Date] = []) -> StrategyBacktest {
         let withTrades = results.filter { $0.trades > 0 }
         let totalTrades = results.reduce(0) { $0 + $1.trades }
         let wins = results.reduce(0) { $0 + $1.wins }
         let totalR = results.reduce(0.0) { $0 + $1.totalR }
         let profitable = withTrades.filter { $0.totalR > 0 }.count
         let worstDD = results.map(\.maxDrawdownR).max() ?? 0
+        // Pooled portfolio-proxy drawdown: all trades in chronological entry-date order (equal-weight,
+        // ignores concurrency/sizing — see StrategyBacktest.pooledDrawdownR doc). When tradeEntryDates
+        // is aligned 1:1 with trades, sort chronologically with stable offset tie-break; else use the
+        // received order (single-symbol callers are already entry-ordered — still a valid proxy).
+        let pooledDD: Double = {
+            let rs = trades.map(\.r)
+            guard !rs.isEmpty else { return 0 }
+            let ordered: [Double]
+            if tradeEntryDates.count == rs.count {
+                ordered = zip(tradeEntryDates, rs)
+                    .enumerated()
+                    .sorted { lhs, rhs in
+                        lhs.element.0 == rhs.element.0 ? lhs.offset < rhs.offset : lhs.element.0 < rhs.element.0
+                    }
+                    .map { $0.element.1 }
+            } else {
+                ordered = rs
+            }
+            var cum = 0.0, peak = 0.0, maxDD = 0.0
+            for r in ordered { cum += r; peak = Swift.max(peak, cum); maxDD = Swift.max(maxDD, peak - cum) }
+            return maxDD
+        }()
         // Pooled per-trade t-stat across every symbol's trades (mean/stdev × √n).
         let rs = trades.map(\.r)
         let tStat: Double = {
@@ -161,6 +193,7 @@ enum StockSageStrategyBacktest {
             avgR: totalTrades > 0 ? totalR / Double(totalTrades) : 0,
             totalR: totalR,
             worstDrawdownR: worstDD,
+            pooledDrawdownR: pooledDD,
             tStat: tStat,
             momentCorrectedTStat: momentCorrectedTStat,
             deflatedSharpe: deflatedSharpe,

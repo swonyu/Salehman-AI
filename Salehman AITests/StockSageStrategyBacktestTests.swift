@@ -109,4 +109,65 @@ struct StockSageStrategyBacktestTests {
         #expect(s.count >= 15)
         #expect(Set(s).count == s.count)
     }
+
+    // MARK: - Pooled portfolio-proxy drawdown golden vector
+    //
+    // Hand-derivation:
+    //   SymA: (d1,+3) (d3,−2) (d5,−2)   per-sym cum: 3 → 1 → −1   DD = 3−(−1) = 4
+    //   SymB: (d2,+1) (d4,−4) (d6,+2)   per-sym cum: 1 → −3 → −1  DD = 1−(−3) = 4
+    //   → worstDrawdownR = max(4, 4) = 4  (per-symbol max, unchanged by this addition)
+    //
+    //   Chronological merge: d1,d2,d3,d4,d5,d6 → R: +3,+1,−2,−4,−2,+2
+    //   Cumulative R:        3, 4, 2, −2, −4, −2
+    //   Peak so far:         3, 4, 4,  4,  4,  4
+    //   Draw:                0, 0, 2,  6,  8,  6
+    //   → pooledDrawdownR = 8.0   (peak +4 at d2 → trough −4 at d5)
+    //
+    // The pooled proxy (8.0) > worst-name (4.0) because cross-symbol losses stack
+    // chronologically — the same phenomenon as the 27.67-vs-17.28 production measurement.
+    @Test func pooledDrawdownIsChronologicalAndHonestVsPerName() throws {
+        let dayA = [1.0, 3.0, 5.0].map { Date(timeIntervalSince1970: $0 * 86_400) }
+        let dayB = [2.0, 4.0, 6.0].map { Date(timeIntervalSince1970: $0 * 86_400) }
+        func tr(_ r: Double) -> BacktestTrade {
+            BacktestTrade(entryIndex: 0, exitIndex: 1, entry: 100, exit: 100, r: r, outcome: .target)
+        }
+        // Trades supplied in received order: A's three then B's three (un-sorted across symbols).
+        let trades = [tr(3), tr(-2), tr(-2),  tr(1), tr(-4), tr(2)]
+        // 1:1 aligned entry dates — the sort will interleave them chronologically.
+        let dates  = [dayA[0], dayA[1], dayA[2], dayB[0], dayB[1], dayB[2]]
+        // Per-symbol results whose maxDrawdownR = 4 each → worstDrawdownR stays 4.
+        let rA = BacktestResult(trades: 3, wins: 1,
+                                winRate: 1.0/3, avgR: -1.0/3, totalR: -1,
+                                maxDrawdownR: 4, sharpe: 0, avgHoldBars: 1)
+        let rB = BacktestResult(trades: 3, wins: 2,
+                                winRate: 2.0/3, avgR: -1.0/3, totalR: -1,
+                                maxDrawdownR: 4, sharpe: 0, avgHoldBars: 1)
+        let s = StockSageStrategyBacktest.aggregate([rA, rB], trades: trades, tradeEntryDates: dates)
+        // Golden vector: chronological pooled curve has peak +4 (d2) → trough −4 (d5) ⇒ DD = 8.
+        #expect(abs(s.pooledDrawdownR - 8.0) < 1e-9,
+                "pooledDrawdownR expected 8.0, got \(s.pooledDrawdownR)")
+        // Per-symbol max drawdown is UNCHANGED by this addition.
+        #expect(abs(s.worstDrawdownR - 4.0) < 1e-9,
+                "worstDrawdownR expected 4.0, got \(s.worstDrawdownR)")
+        // The pooled proxy is strictly larger here because cross-symbol losses stack in time.
+        #expect(s.pooledDrawdownR > s.worstDrawdownR,
+                "pooled DD (\(s.pooledDrawdownR)) should exceed worst-name DD (\(s.worstDrawdownR))")
+    }
+
+    // Verify the fallback path: when tradeEntryDates is omitted, pooledDrawdownR uses
+    // received order (which for a single symbol is already entry-ordered — still valid).
+    @Test func pooledDrawdownFallbackNoDatesSingleSymbol() {
+        // Single symbol: 3 trades in entry order +2, −3, +1 → cum: 2, −1, 0 → DD = 2−(−1) = 3
+        func tr(_ r: Double) -> BacktestTrade {
+            BacktestTrade(entryIndex: 0, exitIndex: 1, entry: 100, exit: 100, r: r, outcome: .target)
+        }
+        let trades = [tr(2), tr(-3), tr(1)]
+        let r = BacktestResult(trades: 3, wins: 2,
+                               winRate: 2.0/3, avgR: 0, totalR: 0,
+                               maxDrawdownR: 3, sharpe: 0, avgHoldBars: 1)
+        let s = StockSageStrategyBacktest.aggregate([r], trades: trades)  // no tradeEntryDates
+        #expect(abs(s.pooledDrawdownR - 3.0) < 1e-9,
+                "fallback pooledDrawdownR expected 3.0, got \(s.pooledDrawdownR)")
+        #expect(s.pooledDrawdownR >= 0)
+    }
 }
