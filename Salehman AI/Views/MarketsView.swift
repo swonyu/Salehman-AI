@@ -2611,8 +2611,8 @@ struct MarketsView: View {
         // to learn why an idea is de-ranked on the velocity board.
         let floorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
         let hovered = hoveredIdeaID == idea.id
-        return VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 10) {
+        return VStack(alignment: .leading, spacing: DS.Space.sm) {
+            HStack(spacing: DS.Space.sm) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(idea.symbol).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
                     Text(idea.market).font(.caption2).foregroundStyle(.secondary)
