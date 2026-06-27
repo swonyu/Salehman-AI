@@ -164,7 +164,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** A trading tool that contradicts its own tax rate and shows pre-tax margin as if net erodes trust. Fix the tooltip to 2%, relabel the chip 'margin (pre-tax)', and add a 'volume/liquidity unknown — may not fill' caveat to the optimizer.
 **Files:** Salehman AI/Views/RuneScapeMarketView.swift:301-309; Salehman AI/StockSage/StockSageGEFlip.swift:50-79
 
-### ⬜ #29 — Stagger launch fetches; opt-in 'refresh ideas on open' to avoid request spike  [medium/small, Perf/perf]
+### ✅ DONE #29 — Stagger launch fetches; opt-in 'refresh ideas on open' to avoid request spike  [medium/small, Perf/perf]
 **What:** onAppear fires refresh() un-awaited while the Monitor also calls refresh() on its first cycle; if ideas auto-refresh is ever enabled, hundreds of parallel fetches can launch in the first seconds, risking a 429 and a CPU/memory spike on launch.
 **Why:** Compounds the rate-limit risk exactly when the user is watching the app start. Gate Monitor's first refresh behind a short delay (or share the onAppear snapshot) and keep ideas-on-open opt-in + staggered after quotes land.
 **Files:** Salehman AI/Views/MarketsView.swift:124-129; Salehman AI/StockSage/StockSageMonitor.swift:45-50
