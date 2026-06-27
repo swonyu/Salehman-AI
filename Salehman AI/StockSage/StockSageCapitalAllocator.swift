@@ -83,6 +83,10 @@ enum StockSageCapitalAllocator {
             // Vol-targeting (match the advisor card): shrink the DEPLOYED risk for high realized vol so
             // a ~70%-vol crypto/growth name isn't sized like a calm equity. nil vol ⇒ no shrink.
             if let v = idea.realizedVol { weight /= StockSageExpectedValue.cryptoRiskScaler(annualizedVol: v) }
+            // Per-symbol vol regime brake (EDGE_RESEARCH #1, VIX-free): further reduces weight when
+            // this name's realized vol is historically elevated vs. its own 12-month distribution.
+            // Composes with cryptoRiskScaler (both apply); nil when history too short → no change.
+            if let mult = idea.volRegime?.sizingMultiplier { weight *= mult }
             guard weight > 0 else { continue }
             fundable.append(Fundable(symbol: idea.symbol, entry: idea.price, stop: stop,
                                      weight: weight, halfKelly: k.halfKelly, evR: ev.evR))

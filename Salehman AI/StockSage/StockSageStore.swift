@@ -19,10 +19,16 @@ struct StockSageIdea: Sendable, Equatable, Identifiable {
     let realizedVol: Double?
     var id: String { symbol }
 
+    /// Per-symbol vol regime computed from the raw close history. nil when history is too short
+    /// (<273 bars). The `sizingMultiplier` is applied by StockSageCapitalAllocator after Kelly sizing.
+    let volRegime: VolRegime?
+
     nonisolated init(symbol: String, market: String, price: Double, advice: TradeAdvice,
-                     spark: [Double], dailyMove: Double? = nil, realizedVol: Double? = nil) {
+                     spark: [Double], dailyMove: Double? = nil, realizedVol: Double? = nil,
+                     volRegime: VolRegime? = nil) {
         self.symbol = symbol; self.market = market; self.price = price
-        self.advice = advice; self.spark = spark; self.dailyMove = dailyMove; self.realizedVol = realizedVol
+        self.advice = advice; self.spark = spark; self.dailyMove = dailyMove
+        self.realizedVol = realizedVol; self.volRegime = volRegime
     }
 }
 
@@ -416,6 +422,11 @@ final class StockSageStore: ObservableObject {
                         extraNotes.append("⚠ Whippy volatility — stop width / size are less reliable here; trade smaller. " + stab.note)
                     }
                 }
+                // Vol regime brake (EDGE_RESEARCH #1): flag in "Why" + applies sizingMultiplier in allocator.
+                let volRegime = StockSageVolRegime.regime(closes: history.closes)
+                if let vr = volRegime, vr.sizingMultiplier < 0.95 {
+                    extraNotes.append("⚠ " + vr.note)
+                }
                 if !extraNotes.isEmpty {
                     advice = TradeAdvice(action: advice.action, conviction: advice.conviction,
                                          regime: advice.regime, rationale: advice.rationale + extraNotes,
@@ -431,7 +442,8 @@ final class StockSageStore: ObservableObject {
                 let realizedVol = StockSageIndicators.annualizedVolatility(history.closes)
                 out.append(StockSageIdea(symbol: sym.symbol, market: sym.market,
                                          price: price, advice: advice, spark: spark,
-                                         dailyMove: dailyMove, realizedVol: realizedVol))
+                                         dailyMove: dailyMove, realizedVol: realizedVol,
+                                         volRegime: volRegime))
             }
             return out
         }.value
