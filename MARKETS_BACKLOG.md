@@ -79,7 +79,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Caching unlocks: offline 'Last updated HH:mm' instead of demo data, resume after a dropped fetch, instant re-open, and graceful partial degradation — and it's the prerequisite for lazy catalog analysis. Persist last-good quotes + top-N histories via JSONEncoder/FileManager; add a 4h TTL idea cache with 'Quick' (cached) vs 'Full' (cache-bust) modes.
 **Files:** Salehman AI/StockSage/StockSageStore.swift:135-174; Salehman AI/StockSage/StockSageStore.swift:538-582
 
-### ⬜ #12 — Progress + cancel + outer timeout on refreshIdeas()  [high/medium, Data/Ideas/perf]
+### ✅ DONE #12 — Progress + cancel + outer timeout on refreshIdeas()  [high/medium, Data/Ideas/perf]
 **What:** refreshIdeas() has a re-entry guard but no Task handle, no progress, and no outer timeout — individual fetches time out at 15s but if the detached advisor compute hangs, isLoadingIdeas stays true forever and the spinner never stops. Briefing generation (MarketsView ~1790) similarly can't be cancelled.
 **Why:** A hung 'Loading ideas…' with no cancel is a dead-end the user can't escape without relaunching. Store the Task, expose cancelIdeasRefresh(), publish ideasProgress (current/total) for 'Loading 45/250…', and wrap in a ~120s watchdog that flips the flag with a clear error.
 **Files:** Salehman AI/StockSage/StockSageStore.swift:135-174; Salehman AI/Views/MarketsView.swift:1790
