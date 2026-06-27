@@ -41,12 +41,17 @@ final class StockSageMonitor {
     /// Start the monitoring loop. Re-evaluates every `interval` seconds (doubled
     /// automatically when `MemoryManager` reports the machine is under
     /// memory/thermal pressure). Throws if already running.
-    func start(interval: TimeInterval = 45) throws {
+    /// `firstCycleDelay` staggers the monitor's first refresh so it doesn't race
+    /// the view's onAppear refresh that fires at the same moment on launch.
+    func start(interval: TimeInterval = 45, firstCycleDelay: TimeInterval = 20) throws {
         guard !isRunning else { throw MonitorError.alreadyRunning }
         isRunning = true
         requestNotificationPermission()
 
         task = Task { [weak self] in
+            // Stagger the first cycle: the view's .task fires store.refresh() on appear;
+            // without this delay both hit Yahoo simultaneously on every cold launch.
+            try? await Task.sleep(for: .seconds(Int(firstCycleDelay)))
             while !Task.isCancelled {
                 // Watchlist-only mode (opt-in, re-read each cycle so toggling takes effect):
                 // fetch + scan ONLY the user's watchlist instead of refreshing the whole core.
