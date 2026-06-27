@@ -219,4 +219,22 @@ enum StockSageIndicators {
     nonisolated static func isBreakout(price: Double, channel: (upper: Double, lower: Double)) -> Bool {
         price > channel.upper
     }
+
+    /// 52-week-high proximity ratio: `price ÷ (highest high over the trailing min(252,count) bars)`.
+    /// The CONTINUOUS anchoring signal (Byun & Jeon 2023) — value rises toward 1 as price nears its
+    /// 1-year high; ≈ 0.5 deep in a drawdown. Replaces the binary breakout trigger, which adds ~0
+    /// incremental edge once a continuous distance is present (Avramov 2018).
+    ///
+    /// HONESTY (Guardrail 4): with < 252 bars this is the proximity to the AVAILABLE-history high,
+    /// NOT a true 52-week high — `effectiveWindow` returns the bars actually used so the caller can
+    /// label the rationale honestly. Uses `highs` (intraday extremes), so an intraday/realtime print
+    /// can make pth slightly > 1; callers must tolerate (and the long-side term naturally caps benefit).
+    /// nil when there are no bars or the rolling-max high is non-positive (degenerate). Pure + total.
+    nonisolated static func highProximity(price: Double, highs: [Double], window: Int = 252)   // [AUDIT] default 252 = ~1yr
+        -> (pth: Double, effectiveWindow: Int)? {
+        guard price > 0, !highs.isEmpty, window > 0 else { return nil }
+        let w = Swift.min(window, highs.count)                 // [AUDIT] min(252,count) — short-history honesty
+        guard let maxHigh = highs.suffix(w).max(), maxHigh > 0 else { return nil }
+        return (pth: price / maxHigh, effectiveWindow: w)      // [AUDIT] pth = price / rollingMaxHigh
+    }
 }

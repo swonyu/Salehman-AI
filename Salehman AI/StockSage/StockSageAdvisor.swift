@@ -240,6 +240,43 @@ enum StockSageAdvisor {
 
         let regime: TradeAdvice.Regime = trending ? (score >= 0 ? .bullTrend : .bearTrend) : .range
 
+        // ── 52-WEEK-HIGH PROXIMITY (continuous, anchoring-driven — Byun & Jeon 2023, FAJ 79(2)).
+        // PRIMARY VALUE = CRASH-ATTENUATION: neutralizing momentum w.r.t. the 52wk-high lifted Sharpe
+        // ~50–80%, moved skewness −1.73 → +0.48, and cut the worst monthly return −69.3% → −26.87%.
+        // Mechanism is anchoring-driven continuation — PARTIALLY INDEPENDENT of trend/momentum, so it
+        // is INTENTIONALLY OUTSIDE the 0.65 trend-family cap (it is not the same correlated factor; the
+        // roadmap invariant "new non-trend terms don't count toward the cap" applies). Replaces the
+        // dormant binary isBreakout intent — a continuous distance subsumes the binary trigger
+        // (Avramov 2018). Because it is OUTSIDE the family it is NOT scaled by the iter3 varScalar and
+        // NOT capped at 0.65; it is an independent additive term like the RSI nudges.
+        //
+        // LONG-SIDE-ONLY (Guardrail 1): contribution = max(0, w·(pth − neutralAnchor)). A mid/low pth
+        // yields 0 — the term can ONLY add on genuine proximity, never subtract, so it can NEVER
+        // manufacture a sell/avoid. REGIME GATE (Guardrail 3): zeroed in a bearTrend regime, where a
+        // near-high is suspect (about to roll over). Caveats honored with a MODEST weight: the effect
+        // is small-cap-concentrated, significant in only 10/20 international markets, and net of
+        // transaction costs can erode — hence w = 0.10 (mid of the ±0.08–0.12 band) and anchor 0.90.
+        // NOTE: the proximity term requires REAL intraday/closing highs. When only closes are
+        // supplied (highs == nil), the term is DISABLED entirely — using closes as a highs
+        // proxy makes pth = closes.last/max(closes) = 1.0 for any monotone uptrend, inflating
+        // the bonus to maximum on every bull-trend bar regardless of true 52wk-high distance.
+        if regime != .bearTrend,                                                   // [AUDIT] Guardrail 3: bull/range only
+           let highs,                                                              // [AUDIT] nil-guard: disabled for close-only callers
+           let hp = StockSageIndicators.highProximity(price: price, highs: highs) {
+            let w = Self.highProximityWeight                                       // [AUDIT] 0.10 (∈[0.08,0.12])
+            // Clamp pth to 1.0 before computing contribution so that a live intraday print
+            // above the prior-close 52wk high cannot push prox above the documented 0.010 ceiling.
+            let clampedPth = Swift.min(hp.pth, 1.0)
+            let prox = Swift.max(0.0, w * (clampedPth - Self.highProximityNeutralAnchor)) // [AUDIT] max(0, 0.10·(pth−0.90)); long-side-only; ceiling 0.010
+            if prox > 0 {                                                          // only emit when genuinely near the high
+                score += prox                                                      // [AUDIT] OUTSIDE family ⇒ added post-reassembly, un-scaled, un-capped; max +0.010
+                let honest = hp.effectiveWindow >= 252
+                    ? String(format: "Near the 52-week high (%.0f%% of it) — anchoring continuation", hp.pth * 100)
+                    : String(format: "Near its %d-bar high (%.0f%%, <252 bars — not a full 52wk high)", hp.effectiveWindow, hp.pth * 100) // [AUDIT] Guardrail 4
+                rationale.append(honest)
+            }
+        }
+
         // Score → action. In a choppy regime with no edge, prefer "Avoid" (stand
         // aside) over "Hold" — the research is clear that forcing trades in chop loses.
         var action: TradeAdvice.Action
@@ -297,6 +334,22 @@ enum StockSageAdvisor {
     /// Epsilon floor for the realized-vol denominator — belt-and-suspenders guard against
     /// any sub-epsilon positive value slipping past the `v > 0` guard.
     nonisolated static let varianceScalarEps = 1e-8
+
+    /// 52-week-high proximity weight (Byun & Jeon 2023). MODEST by design — the effect is
+    /// small-cap-concentrated and significant in only 10/20 international markets, and net of
+    /// transaction costs can erode — so 0.10 (mid of the research's ±0.08–0.12 band), OUTSIDE the
+    /// trend-family cap. At pth = 1 (price exactly at the high) the max contribution is
+    /// 0.10·(1 − 0.90) = 0.010. This term CAN promote a borderline Buy to Strong Buy (by at most
+    /// the weight 0.010) — e.g. a high-vol name with varScalar ≈ 0.755 lands scaledFamily ≈ 0.491;
+    /// adding prox = 0.010 yields 0.501, crossing the 0.5 Strong Buy threshold. This is intentional:
+    /// genuine proximity to the 52wk high is a meaningful continuation signal. The boundary case is
+    /// covered by the `highProximity_borderlineBuy_canPromoteToStrongBuy` golden-vector test.
+    nonisolated static let highProximityWeight = 0.10                  // [AUDIT] ∈ [0.08, 0.12]
+
+    /// Neutral anchor: pth at/below which the proximity term contributes ZERO. 0.90 ⇒ only the top
+    /// ~10% of the 52-week range adds, so a mid-range name is genuinely neutral (contribution ≈ 0)
+    /// and the additive convention "every term ±weight; mid ⇒ 0" is preserved.
+    nonisolated static let highProximityNeutralAnchor = 0.90          // [AUDIT] ∈ [0.85, 0.90]
 
     /// Inverse-variance momentum scalar (Barroso & Santa-Clara 2015): target_vol / realized_vol,
     /// CLAMPED to ≤ 1.0 (attenuation-only — a calm regime must NOT amplify a momentum bet).

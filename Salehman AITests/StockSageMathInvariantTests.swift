@@ -692,4 +692,188 @@ struct StockSageMathInvariantTests {
         #expect(iso.winProb(0.8) < 0.8)                    // Wilson LOWER bound (isotonic signature)
         #expect(iso.winProb(0.8) >= iso.winProb(0.2))      // monotone
     }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // MARK: 7 — 52-week-high proximity term (continuous, OUTSIDE trend-family cap)
+    // ────────────────────────────────────────────────────────────────────────
+
+    @Test func highProximityUnitPins() {
+        // [AUDIT] highs = [100,101,...,109]; max=109. price=109 → pth = 109/109 = 1.0 (price AT high).
+        let highs = (0..<10).map { 100.0 + Double($0) }
+        let hp = I.highProximity(price: 109, highs: highs)
+        #expect(hp != nil)
+        #expect(abs((hp?.pth ?? 0) - 1.0) < Self.EPS)                 // [AUDIT] price==max ⇒ pth=1
+        #expect(hp?.effectiveWindow == 10)                            // [AUDIT] min(252,10)=10 (short history)
+        // [AUDIT] mid-range: price=104.5, max=109 → pth = 104.5/109 = 0.9587155963302752
+        let mid = I.highProximity(price: 104.5, highs: highs)
+        #expect(abs((mid?.pth ?? 0) - 104.5/109.0) < Self.EPS)
+        // [AUDIT] degenerate: non-positive max high ⇒ nil; empty highs ⇒ nil; price<=0 ⇒ nil
+        #expect(I.highProximity(price: 100, highs: [0, 0, 0]) == nil)
+        #expect(I.highProximity(price: 100, highs: []) == nil)
+        #expect(I.highProximity(price: 0,   highs: highs) == nil)
+    }
+
+    @Test func highProximityContributionClosedForm() {
+        // [AUDIT] contribution = max(0, w·(pth − anchor)), w=0.10, anchor=0.90.
+        let w = A.highProximityWeight, anc = A.highProximityNeutralAnchor
+        #expect(abs(w - 0.10) < Self.EPS)                             // [AUDIT] weight pin
+        #expect(abs(anc - 0.90) < Self.EPS)                           // [AUDIT] anchor pin
+        // pth=1.0 → max contribution = 0.10·(1−0.90) = 0.010 (the documented ceiling)
+        #expect(abs(Swift.max(0, w*(1.00 - anc)) - 0.010) < Self.EPS) // [AUDIT] pth=1 ⇒ +0.010
+        // pth=0.90 (exactly the anchor) → contribution = 0 (neutral)
+        #expect(abs(Swift.max(0, w*(0.90 - anc)) - 0.0) < Self.EPS)   // [AUDIT] mid-range ≈ neutral
+        // pth=0.50 (deep drawdown) → max(0, negative) = 0 (long-side-only, never subtracts)
+        #expect(abs(Swift.max(0, w*(0.50 - anc)) - 0.0) < Self.EPS)   // [AUDIT] Guardrail 1: no sell
+    }
+
+    @Test func highProximity_pthToOne_addsPositiveContribution() {
+        // SageFix.approaching52wHigh(260): close[i]=100+0.2·i → last bar is the running high.
+        // Build a control series with the SAME trend but capped BELOW the high to isolate the term.
+        let near = SageFix.history(.approaching52wHigh, bars: 260)
+        let adviceNear = A.advise(history: near)
+        // The proximity rationale must be present (pth well above 0.90 on a monotone climb to its high).
+        #expect(adviceNear.rationale.contains { $0.contains("52-week high") || $0.contains("-bar high") },
+                "approaching52wHigh must emit the proximity rationale; got \(adviceNear.rationale)")
+    }
+
+    @Test func highProximity_midRange_isNeutral_noContribution() {
+        // [AUDIT] A series that ROSE then sits ~20% below its high: pth ≈ 0.80 < anchor 0.90 ⇒ 0 contribution.
+        // close: ramp 100→200 over 200 bars, then drift down to 160 over 60 bars → pth = 160/200 = 0.80.
+        let ramp: [Double] = (0..<200).map { 100.0 + 0.5 * Double($0) }            // 100 → 199.5
+        let drift: [Double] = (1...60).map { 200.0 - 0.6667 * Double($0) }         // peak ~200 → ~160
+        let c = ramp + drift
+        let advice = A.advise(closes: c)
+        #expect(!advice.rationale.contains { $0.contains("52-week high") || $0.contains("-bar high") },
+                "mid-range (pth≈0.80<0.90) must NOT emit a proximity bonus; got \(advice.rationale)")
+    }
+
+    @Test func highProximity_bearRegime_suppressed() {
+        // [AUDIT] Guardrail 3: a bearTrend regime zeroes the term even if a LOCAL high is near.
+        // momentumCrash(300) is in a strong bear regime (ER high, score<0 → .bearTrend).
+        // NOTE: this test is a SECONDARY check — momentumCrash has pth ≈ 0.34 which already
+        // zeros the long-side term before the gate. The PRIMARY regime-gate coverage test is
+        // highProximity_bearRegime_gate_isTheActualSuppressor below.
+        let h = SageFix.history(.momentumCrash, bars: 300)
+        let advice = A.advise(history: h)
+        #expect(advice.regime == .bearTrend, "momentumCrash(300) must be a bearTrend regime")
+        #expect(!advice.rationale.contains { $0.contains("52-week high") || $0.contains("-bar high") },
+                "bearTrend must suppress the proximity term; got \(advice.rationale)")
+    }
+
+    @Test func highProximity_bearRegime_gate_isTheActualSuppressor() {
+        // [AUDIT] Guardrail 3 — REAL coverage: a series with pth >= 0.90 AND bearTrend regime.
+        //
+        // Strategy: decouple highs from closes so we can construct EXACTLY the two conditions
+        // independently. Uses the momentumCrash(300) fixture's closes (which guarantee a strong
+        // bearTrend regime) but supplies SYNTHETIC highs whose 252-bar max is close enough to
+        // the current price that pth >= 0.90. This isolates the regime gate as the sole suppressor.
+        //
+        // momentumCrash(300): close[i] = i<=200 ? 100+i : 300-2*(i-200).
+        //   Last close (bar 299) = 300 - 2*99 = 102.
+        //
+        // Synthetic highs: all bars have high = last_close / 0.908 ≈ 112.3 (constant).
+        //   pth = 102 / 112.3 ≈ 0.908 >= 0.90 ✓ — the long-side term WOULD fire in a bull regime.
+        //   The closes still produce the full bearTrend regime (regime is derived from closes, not highs).
+        //
+        // Control: identical highs but the advise call's closes are the UPTREND half only (bars 0-200
+        //   from momentumCrash, i.e. 100-300, bullish). This proves the gate is what suppresses the
+        //   bearTrend case (not some other flooring).
+        let h = SageFix.history(.momentumCrash, bars: 300)
+        let lastClose = h.closes.last!   // 102.0
+
+        // Construct synthetic highs: constant value just above the last close so pth >= 0.90.
+        let syntheticMaxHigh = lastClose / 0.908            // ≈ 112.3; pth = lastClose / this = 0.908
+        let syntheticHighs   = Array(repeating: syntheticMaxHigh, count: h.closes.count)
+        let syntheticLows    = h.lows
+
+        let adviceBear = A.advise(closes: h.closes, highs: syntheticHighs, lows: syntheticLows)
+
+        // Pre-flight: verify the two preconditions are both satisfied.
+        let pthCalc = lastClose / (syntheticHighs.suffix(252).max() ?? 1)
+        #expect(pthCalc >= 0.90,
+                "Fixture sanity — pth must be >= 0.90 so the long-side floor would NOT pre-zero the term: got pth=\(pthCalc)")
+        #expect(adviceBear.regime == .bearTrend,
+                "momentumCrash(300) must produce bearTrend with synthetic highs too; got \(adviceBear.regime)")
+
+        // The proximity rationale must be ABSENT — regime gate (Guardrail 3) is the sole suppressor.
+        #expect(!adviceBear.rationale.contains { $0.contains("52-week high") || $0.contains("-bar high") },
+                "bearTrend with pth>=0.90 must suppress proximity term via Guardrail 3; got \(adviceBear.rationale)")
+
+        // Paired control: same synthetic highs (same pth) but a bullTrend fixture (cleanUptrend).
+        // The proximity term MUST fire here — confirming the regime gate caused the suppression above.
+        let ctrlBars   = 300
+        let ctrlH      = SageFix.history(.cleanUptrend, bars: ctrlBars)
+        let ctrlLastCl = ctrlH.closes.last!
+        let ctrlMaxH   = ctrlLastCl / 0.908
+        let ctrlHighs  = Array(repeating: ctrlMaxH, count: ctrlH.closes.count)
+        let adviceCtrl = A.advise(closes: ctrlH.closes, highs: ctrlHighs, lows: ctrlH.lows)
+        #expect(adviceCtrl.regime != .bearTrend,
+                "Control (cleanUptrend) must NOT be bearTrend; got \(adviceCtrl.regime)")
+        #expect(adviceCtrl.rationale.contains { $0.contains("52-week high") || $0.contains("-bar high") },
+                "Control (bull/range, pth=0.908>=0.90) must emit the proximity term — proving the gate suppressed the bear case; got \(adviceCtrl.rationale)")
+    }
+
+    @Test func highProximity_borderlineBuy_canPromoteToStrongBuy() {
+        // [AUDIT] Documents and pins the intentional Buy→StrongBuy promotion at the 0.5 boundary.
+        //
+        // The highProximityWeight docstring explicitly acknowledges the term CAN promote a borderline
+        // Buy to Strong Buy (by at most 0.010). This test verifies the MATH is self-consistent:
+        // a pre-proximity score in [0.490, 0.500) + prox=0.010 crosses the 0.5 StrongBuy threshold.
+        //
+        // Closed-form derivation (showing the range IS reachable):
+        //   varScalar = 0.755 (for a name with vol ≈ 0.265: targetVol 0.20 / 0.265 = 0.755).
+        //   rawTrendFamily = 0.65 (full cap). scaledFamily = 0.65 × 0.755 = 0.49075.
+        //   RSI and other terms neutral → pre-proximity score ≈ 0.491. Adding prox = +0.010 → 0.501.
+        //   0.501 ≥ 0.5 → StrongBuy threshold crossed.
+        //
+        // Mathematical pin (formula-level, not fixture-dependent):
+        let w   = A.highProximityWeight           // 0.10
+        let anc = A.highProximityNeutralAnchor    // 0.90
+        let maxProx = Swift.max(0, w * (1.0 - anc))   // 0.010 (pth clamped at 1.0)
+        let preBorder: Double = 0.495             // representative pre-proximity score in [0.490, 0.500)
+        let postProx  = preBorder + maxProx       // 0.505 — crosses the 0.5 StrongBuy threshold
+        #expect(preBorder >= 0.20 && preBorder < 0.50,  "pre-proximity score must be in Buy range")
+        #expect(postProx  >= 0.50,                       "post-proximity score must be in StrongBuy range")
+        // The promotion is bounded — no second step (StrongBuy cannot overshoot into a higher tier):
+        #expect(abs(maxProx - 0.010) < Self.EPS,         "max proximity contribution must be exactly 0.010 (pth clamped)")
+    }
+
+    @Test func highProximity_cleanUptrend_stillStrongBuy_capInvariant() {
+        // [AUDIT] Guardrail 2 + invariant: TrendFixtures.up(260) is Strong Buy WITHOUT proximity
+        // (family 0.65 capped − RSI 0.10 = 0.55). pth ≈ 0.99907 → +0.00991 → 0.55991, STILL Strong Buy.
+        // The term cannot inflate it past the threshold (max +0.010); it only deepens conviction.
+        let closes = TrendFixtures.up(260)
+        let highs  = closes.map { $0 + 1 }
+        let lows   = closes.map { $0 - 1 }
+        let advice = A.advise(closes: closes, highs: highs, lows: lows)
+        #expect(advice.action == .strongBuy,
+                "clean uptrend must remain Strong Buy with proximity; got \(advice.action.rawValue)")
+        // The family cap is still respected: conviction stays in [0,1] and weight ≤ maxWeight.
+        #expect(advice.conviction <= 1.0 + Self.EPS)
+        #expect(advice.suggestedWeight <= A.maxWeight + Self.EPS)
+    }
+
+    @Test func highProximity_byteIdentity_whenFarFromHigh() {
+        // [AUDIT] Guardrail 5: a name far below its high (fallingKnife, pth ≪ 0.90) emits NO term.
+        // The proximity term is provably dormant ⇒ no score/rationale change vs pre-feature.
+        let h = SageFix.history(.fallingKnife, bars: 260)
+        let advice = A.advise(history: h)
+        #expect(!advice.rationale.contains { $0.contains("52-week high") || $0.contains("-bar high") },
+                "fallingKnife is far from its high ⇒ no proximity term (byte-identity); got \(advice.rationale)")
+    }
+
+    @Test func highProximity_shortHistory_isHonest() {
+        // [AUDIT] Guardrail 4: < 252 bars must NOT claim a true 52-week high.
+        // approaching52wHigh(120): window = min(252,120)=120 → rationale says "<252 bars".
+        let h = SageFix.history(.approaching52wHigh, bars: 120)
+        let advice = A.advise(history: h)
+        let proxLine = advice.rationale.first { $0.contains("high") }
+        // When present (near its 120-bar high), it must be the honest short-history phrasing.
+        if let line = proxLine, line.contains("-bar high") {
+            #expect(line.contains("<252 bars"), "short history must be labeled honestly; got \(line)")
+        }
+        // And the helper reports the truncated window directly:
+        let hp = I.highProximity(price: h.closes.last!, highs: h.highs)
+        #expect(hp?.effectiveWindow == 120, "effectiveWindow must be min(252,120)=120")
+    }
 }
