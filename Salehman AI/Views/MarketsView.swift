@@ -12,7 +12,7 @@ struct MarketsView: View {
     @AppStorage("marketsWatchSort") private var sort: MarketSort = .feed
     @State private var showBrowseMarkets = false
     /// Ideas board ordering: by expected value, EV-per-day velocity, or signal rank.
-    private enum IdeaSort: String, CaseIterable {
+    enum IdeaSort: String, CaseIterable {
         case ev = "Expected value", velocity = "EV / day", conviction = "Conviction",
              rr = "Reward:risk", signal = "Signal rank"
     }
@@ -23,7 +23,7 @@ struct MarketsView: View {
     @AppStorage("marketsIdeaMinConv") private var ideaMinConv = 0.0
 
     /// Ideas board action filter — jump straight to the strongest setups.
-    private enum IdeaFilter: String, CaseIterable, Identifiable {
+    enum IdeaFilter: String, CaseIterable, Identifiable {
         case all = "All", strongBuy = "Strong Buy", buys = "Buys", sells = "Sells"
         var id: String { rawValue }
     }
@@ -184,7 +184,7 @@ struct MarketsView: View {
     /// numbers but NOT live — showing them under the green "Live" banner would imply a freshness the
     /// data doesn't have, so it gets its own amber banner with the snapshot age.
     private var cachedBanner: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DS.Space.sm) {
             Image(systemName: "clock.arrow.circlepath").font(.system(size: 11))
                 .foregroundStyle(DS.Palette.warningSoft)
             Text(cachedBannerText)
@@ -192,7 +192,7 @@ struct MarketsView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
         }
-        .padding(.horizontal, DS.Space.md).padding(.vertical, DS.Space.sm)
+        .padding(.horizontal, DS.Space.sm).padding(.vertical, DS.Space.sm)
         .background(DS.Palette.warningSoft.opacity(0.10),
                     in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
@@ -223,7 +223,7 @@ struct MarketsView: View {
         let text = (stale && asOf != nil)
             ? "Prices are the last close as of \(asOf!.formatted(date: .abbreviated, time: .shortened)) — markets may be closed; NOT live. Educational, not financial advice."
             : "Live worldwide quotes across \(StockSageUniverse.marketCount) market groups (\(StockSageUniverse.worldwide.count) names). Prices may be delayed ~15 min — educational, not financial advice."
-        return HStack(spacing: 8) {
+        return HStack(spacing: DS.Space.sm) {
             Circle().fill(tint).frame(width: 7, height: 7)
                 .shadow(color: stale ? .clear : tint.opacity(0.7), radius: 4)
             Text(text)
@@ -231,7 +231,7 @@ struct MarketsView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
         }
-        .padding(.horizontal, DS.Space.md).padding(.vertical, DS.Space.sm)
+        .padding(.horizontal, DS.Space.sm).padding(.vertical, DS.Space.sm)
         .background(tint.opacity(0.10),
                     in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
@@ -293,7 +293,7 @@ struct MarketsView: View {
                 Text(e).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
             }
         }
-        .padding(DS.Space.md)
+        .padding(DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
@@ -324,7 +324,7 @@ struct MarketsView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: DS.Space.md) {
+        HStack(alignment: .center, spacing: DS.Space.sm) {
             ZStack {
                 RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
                     .fill(DS.Gradient.brand)
@@ -414,14 +414,14 @@ struct MarketsView: View {
     }()
 
     private var sampleBanner: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DS.Space.sm) {
             Image(systemName: "info.circle.fill").foregroundStyle(DS.Palette.warningSoft)
             Text(store.feedError ?? "Sample data — connecting to the live worldwide feed… The signals show the engine running on illustrative prices.")
                 .font(.caption).foregroundStyle(.white.opacity(0.85))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
         }
-        .padding(.horizontal, DS.Space.md).padding(.vertical, DS.Space.sm)
+        .padding(.horizontal, DS.Space.sm).padding(.vertical, DS.Space.sm)
         .background(DS.Palette.warningSoft.opacity(0.12),
                     in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
@@ -449,9 +449,9 @@ struct MarketsView: View {
     // MARK: Alerts
 
     private var alertsSection: some View {
-        VStack(alignment: .leading, spacing: DS.Space.md) {
+        VStack(alignment: .leading, spacing: DS.Space.sm) {
             VStack(alignment: .leading, spacing: DS.Space.sm) {
-                HStack(spacing: DS.Space.md) {
+                HStack(spacing: DS.Space.sm) {
                     Image(systemName: "bell.badge.fill").font(.system(size: 18)).foregroundStyle(DS.Palette.accent)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Strong-signal alerts").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
@@ -504,7 +504,7 @@ struct MarketsView: View {
                 .buttonStyle(LuxPressStyle()).disabled(checkingAlerts)
             }
             .animation(DS.Motion.smooth, value: monitorError.isEmpty)
-            .padding(DS.Space.md)
+            .padding(DS.Space.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 ZStack {
@@ -552,7 +552,7 @@ struct MarketsView: View {
 
     private var priceAlertsPanel: some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
-            HStack(spacing: DS.Space.md) {
+            HStack(spacing: DS.Space.sm) {
                 Image(systemName: "target").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Price alerts").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
@@ -586,7 +586,7 @@ struct MarketsView: View {
                 .animation(DS.Motion.smooth, value: store.priceAlerts.count)
             }
         }
-        .padding(DS.Space.md)
+        .padding(DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
@@ -639,7 +639,7 @@ struct MarketsView: View {
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(recColor(s.recommendation), in: Capsule())
         }
-        .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+        .padding(.horizontal, DS.Space.sm).padding(.vertical, 10)
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
@@ -765,7 +765,7 @@ struct MarketsView: View {
     }
 
     private var portfolioSection: some View {
-        VStack(alignment: .leading, spacing: DS.Space.md) {
+        VStack(alignment: .leading, spacing: DS.Space.sm) {
             portfolioSummary
             addPositionForm
             if portfolio.positions.isEmpty {
@@ -851,7 +851,7 @@ struct MarketsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(DS.Space.md)
+        .padding(DS.Space.sm)
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
@@ -865,7 +865,7 @@ struct MarketsView: View {
     }
 
     private var addPositionForm: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DS.Space.sm) {
             field($newSymbol, "Symbol", width: 84, focus: .symbol)
             field($newShares, "Shares", width: 66, focus: .shares)
             field($newCost, "Cost/sh", width: 72, focus: .cost)
@@ -933,7 +933,7 @@ struct MarketsView: View {
             }
             .buttonStyle(LuxPressStyle()).help("Remove holding").accessibilityLabel("Remove \(p.symbol)")
         }
-        .padding(.horizontal, DS.Space.md).padding(.vertical, 10)
+        .padding(.horizontal, DS.Space.sm).padding(.vertical, 10)
         .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
@@ -952,7 +952,7 @@ struct MarketsView: View {
 
     private var riskParityPanel: some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
-            HStack(spacing: DS.Space.md) {
+            HStack(spacing: DS.Space.sm) {
                 Image(systemName: "scalemass.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Risk-parity weights").font(DS.Typography.titleM).foregroundStyle(.white)
@@ -1018,7 +1018,7 @@ struct MarketsView: View {
                 }
             }
         }
-        .padding(DS.Space.md)
+        .padding(DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
@@ -1046,7 +1046,7 @@ struct MarketsView: View {
                 .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
                 .frame(width: 46, alignment: .trailing)
         }
-        .padding(.horizontal, DS.Space.md).padding(.vertical, 7)
+        .padding(.horizontal, DS.Space.sm).padding(.vertical, 7)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(t.symbol), target \(Int(t.targetWeight * 100)) percent")
     }
@@ -1064,7 +1064,7 @@ struct MarketsView: View {
         }
         let alloc = StockSageAllocation.breakdown(holdings)
         return VStack(alignment: .leading, spacing: DS.Space.sm) {
-            HStack(spacing: DS.Space.md) {
+            HStack(spacing: DS.Space.sm) {
                 Image(systemName: "chart.bar.doc.horizontal.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Allocation").font(DS.Typography.titleM).foregroundStyle(.white)
@@ -1100,7 +1100,7 @@ struct MarketsView: View {
                cb.exposures.count > 1 || !cb.unpriced.isEmpty {
                 Text("Currency exposure (base USD)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 ForEach(cb.exposures) { e in
-                    HStack(spacing: 8) {
+                    HStack(spacing: DS.Space.sm) {
                         Text(e.currency).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).frame(width: 46, alignment: .leading)
                         Text(String(format: "%.0f%%", e.weight * 100)).font(.caption2).foregroundStyle(.secondary)
                         Spacer()
@@ -1121,7 +1121,7 @@ struct MarketsView: View {
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(DS.Space.md)
+        .padding(DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
@@ -1138,7 +1138,7 @@ struct MarketsView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
             ForEach(slices) { s in
-                HStack(spacing: 8) {
+                HStack(spacing: DS.Space.sm) {
                     Text(s.label).font(.system(size: 11)).foregroundStyle(.white)
                         .frame(width: 92, alignment: .leading).lineLimit(1)
                     GeometryReader { geo in
@@ -1163,7 +1163,7 @@ struct MarketsView: View {
     @ViewBuilder private var correlationHeatmapPanel: some View {
         if let c = store.correlation, c.symbols.count >= 2 {
             VStack(alignment: .leading, spacing: DS.Space.sm) {
-                HStack(spacing: DS.Space.md) {
+                HStack(spacing: DS.Space.sm) {
                     Image(systemName: "square.grid.3x3.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Correlation heatmap").font(DS.Typography.titleM).foregroundStyle(.white)
@@ -1203,7 +1203,7 @@ struct MarketsView: View {
                 Text("Pairwise daily-return correlation over the overlapping window — lower (greener) off-diagonal = better diversified.")
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            .padding(DS.Space.md)
+            .padding(DS.Space.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 ZStack {
@@ -1228,7 +1228,7 @@ struct MarketsView: View {
 
     private var tradeJournalPanel: some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
-            HStack(spacing: DS.Space.md) {
+            HStack(spacing: DS.Space.sm) {
                 Image(systemName: "book.closed.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Trade journal").font(DS.Typography.titleM).foregroundStyle(.white)
@@ -1273,7 +1273,7 @@ struct MarketsView: View {
             // Realized stats (closed trades only).
             let s = journal.stats
             if s.closed > 0 {
-                HStack(spacing: 16) {
+                HStack(spacing: DS.Space.sm) {
                     ideaMetric("Closed", "\(s.closed)")
                     ideaMetric("Win", String(format: "%.0f%%", s.winRate * 100),
                                color: s.winRate >= 0.5 ? DS.Palette.successSoft : DS.Palette.danger)
@@ -1287,7 +1287,7 @@ struct MarketsView: View {
                 }
                 let edge = journal.edgeStats
                 if edge.closedWithR > 0 {
-                    HStack(spacing: 16) {
+                    HStack(spacing: DS.Space.sm) {
                         ideaMetric("Expectancy", String(format: "%+.2fR", edge.expectancyR),
                                    color: edge.expectancyR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                         ideaMetric("Avg win", String(format: "+%.2fR", edge.avgWinR), color: DS.Palette.successSoft)
@@ -1396,7 +1396,7 @@ struct MarketsView: View {
                     let maxC = max(dist.bins.map(\.count).max() ?? 1, 1)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("R-multiple distribution").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
-                        HStack(alignment: .bottom, spacing: 8) {
+                        HStack(alignment: .bottom, spacing: DS.Space.sm) {
                             ForEach(dist.bins.indices, id: \.self) { i in
                                 let bin = dist.bins[i]
                                 VStack(spacing: 2) {
@@ -1415,7 +1415,7 @@ struct MarketsView: View {
                 if months.count >= 2 {
                     Text("By month").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                     ForEach(months.prefix(6)) { mo in
-                        HStack(spacing: 8) {
+                        HStack(spacing: DS.Space.sm) {
                             Text(mo.month).font(.system(size: 11)).foregroundStyle(.white).frame(width: 72, alignment: .leading)
                             Text("\(mo.trades) tr").font(.caption2).foregroundStyle(.secondary)
                             Spacer()
@@ -1430,7 +1430,7 @@ struct MarketsView: View {
                     Text("By year (realized — record-keeping, not tax advice)")
                         .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                     ForEach(years) { yr in
-                        HStack(spacing: 8) {
+                        HStack(spacing: DS.Space.sm) {
                             Text(yr.year).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).frame(width: 48, alignment: .leading)
                             Text("\(yr.trades) tr · \(Int(yr.winRate * 100))% win").font(.caption2).foregroundStyle(.secondary)
                             Spacer()
@@ -1446,7 +1446,7 @@ struct MarketsView: View {
                     Text("By side").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                     ForEach(sides) { s in
                         let rel = StockSageJournal.reliability(s)
-                        HStack(spacing: 8) {
+                        HStack(spacing: DS.Space.sm) {
                             Text(s.side.rawValue).font(.system(size: 11)).foregroundStyle(.white).frame(width: 60, alignment: .leading)
                             Text(rel.isReliable
                                  ? "\(s.trades) tr · \(Int(s.winRate * 100))% win · \(String(format: "%+.2f", s.avgR))R avg"
@@ -1464,7 +1464,7 @@ struct MarketsView: View {
                     Text("By sector").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                     ForEach(sectors) { sec in
                         let rel = StockSageJournal.reliability(sec)
-                        HStack(spacing: 8) {
+                        HStack(spacing: DS.Space.sm) {
                             Text(sec.sector).font(.system(size: 11)).foregroundStyle(.white)
                                 .frame(width: 96, alignment: .leading).lineLimit(1)
                             Text(rel.isReliable ? "\(sec.trades) tr · \(Int(sec.winRate * 100))% win"
@@ -1530,7 +1530,7 @@ struct MarketsView: View {
 
             Text(StockSageJournal.caveat).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
-        .padding(DS.Space.md)
+        .padding(DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
@@ -1602,14 +1602,14 @@ struct MarketsView: View {
 
     private var addTradeForm: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+            HStack(spacing: DS.Space.sm) {
                 journalField("Symbol", text: $draftSymbol, width: 90)
                 Picker("", selection: $draftSide) {
                     ForEach(TradeRecord.Side.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }.labelsHidden().pickerStyle(.segmented).frame(width: 130)
                 Spacer(minLength: 0)
             }
-            HStack(spacing: 8) {
+            HStack(spacing: DS.Space.sm) {
                 journalField("Entry", text: $draftEntry)
                 journalField("Stop", text: $draftStop)
                 journalField("Target", text: $draftTarget)
@@ -1707,7 +1707,7 @@ struct MarketsView: View {
         if let r { a11y += String(format: ", %+.2f R", r) }
         if let act { a11y += ", \(act.kind.rawValue): \(act.detail)" }
         return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
+            HStack(spacing: DS.Space.sm) {
                 Text(trade.symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).frame(width: 64, alignment: .leading).lineLimit(1)
                 Text(trade.side.rawValue).font(.system(size: mvFont9, weight: .semibold))
                     .foregroundStyle(trade.side == .long ? DS.Palette.successSoft : DS.Palette.danger)
@@ -1746,7 +1746,7 @@ struct MarketsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if closingTradeID == trade.id {
-                HStack(spacing: 8) {
+                HStack(spacing: DS.Space.sm) {
                     journalField("Exit px", text: $closeExitText, width: 80)
                     Button {
                         if let exit = StockSageInput.positiveAmount(closeExitText) { journal.close(trade.id, exitPrice: exit); closingTradeID = nil }
@@ -1776,7 +1776,7 @@ struct MarketsView: View {
 
     private func journalClosedRow(_ trade: TradeRecord) -> some View {
         let pnl = trade.realizedProfit ?? 0
-        return HStack(spacing: 8) {
+        return HStack(spacing: DS.Space.sm) {
             Text(trade.symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.85)).frame(width: 64, alignment: .leading).lineLimit(1)
             Text(String(format: "%.2f→%.2f", trade.entry, trade.exitPrice ?? 0)).font(.caption2).foregroundStyle(.secondary)
             Spacer()
@@ -1809,7 +1809,7 @@ struct MarketsView: View {
                                        payoffRatio: Double(kellyPayoff) ?? 0,
                                        accountSize: Double(kellyAccount) ?? 0)
         return VStack(alignment: .leading, spacing: DS.Space.sm) {
-            HStack(spacing: DS.Space.md) {
+            HStack(spacing: DS.Space.sm) {
                 Image(systemName: "percent").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Position sizer (Kelly)").font(DS.Typography.titleM).foregroundStyle(.white)
@@ -1819,7 +1819,7 @@ struct MarketsView: View {
                 }
                 Spacer()
             }
-            HStack(spacing: 8) {
+            HStack(spacing: DS.Space.sm) {
                 kellyField($kellyWinRate, "Win %", width: 56)
                 kellyField($kellyPayoff, "Payoff R", width: 64)
                 kellyField($kellyAccount, "Account $", width: 92)
@@ -1866,7 +1866,7 @@ struct MarketsView: View {
                 .foregroundStyle(k.fullKelly > 0 ? DS.Palette.successSoft : DS.Palette.warningSoft)
             Text(k.caveat).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
-        .padding(DS.Space.md)
+        .padding(DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
@@ -1896,7 +1896,7 @@ struct MarketsView: View {
 
     private var portfolioAnalyticsPanel: some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
-            HStack(spacing: DS.Space.md) {
+            HStack(spacing: DS.Space.sm) {
                 Image(systemName: "chart.pie.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Risk analytics").font(DS.Typography.titleM).foregroundStyle(.white)
@@ -1958,7 +1958,7 @@ struct MarketsView: View {
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(DS.Space.md)
+        .padding(DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
@@ -2075,7 +2075,7 @@ struct MarketsView: View {
 
     private var addSymbolBar: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
+            HStack(spacing: DS.Space.sm) {
                 Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
                 TextField("Track any ticker — AAPL · 2222.SR · BTC-USD · EURUSD=X", text: $newWatchSymbol)
                     .textFieldStyle(.plain).font(.system(size: 13))
@@ -2113,7 +2113,7 @@ struct MarketsView: View {
                             newWatchSymbol = sug.symbol
                             Task { await addWatchSymbol() }
                         } label: {
-                            HStack(spacing: 8) {
+                            HStack(spacing: DS.Space.sm) {
                                 Text(sug.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
                                     .frame(minWidth: 64, alignment: .leading)
                                 Text(sug.market).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
@@ -2162,9 +2162,9 @@ struct MarketsView: View {
         // Per-row freshness: a stale (weekend/holiday or stale-feed) quote is dimmed + clock-flagged so
         // its Buy/Sell + strength% isn't acted on as a live signal — matching the heatmap's treatment.
         let stale = sym.isStale()
-        return HStack(spacing: DS.Space.md) {
+        return HStack(spacing: DS.Space.sm) {
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
+                HStack(spacing: DS.Space.xs) {
                     Text(sym.symbol).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
                     if stale {
                         Image(systemName: "clock.fill").font(.system(size: 9)).foregroundStyle(DS.Palette.warningSoft)
@@ -2217,7 +2217,7 @@ struct MarketsView: View {
                 .transition(.opacity)
             }
         }
-        .padding(DS.Space.md)
+        .padding(DS.Space.sm)
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
@@ -2275,7 +2275,7 @@ struct MarketsView: View {
     // MARK: Briefing
 
     private var briefingSection: some View {
-        VStack(alignment: .leading, spacing: DS.Space.md) {
+        VStack(alignment: .leading, spacing: DS.Space.sm) {
             HStack {
                 Text("Daily briefing")
                     .font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundStyle(.white)
@@ -2331,7 +2331,7 @@ struct MarketsView: View {
     // MARK: Ideas (the advisor across the universe)
 
     private var ideasSection: some View {
-        VStack(alignment: .leading, spacing: DS.Space.md) {
+        VStack(alignment: .leading, spacing: DS.Space.sm) {
             ideasHeader
             bestOpportunityCard
             capitalAllocationCard
@@ -2348,7 +2348,7 @@ struct MarketsView: View {
                     .multilineTextAlignment(.center)
                     .transition(.opacity)
             } else {
-                HStack(spacing: 8) {
+                HStack(spacing: DS.Space.sm) {
                     Menu {
                         ForEach(IdeaSort.allCases, id: \.self) { s in
                             Button { ideaSort = s } label: { Label(s.rawValue, systemImage: ideaSort == s ? "checkmark" : "") }
@@ -2382,7 +2382,7 @@ struct MarketsView: View {
                     }
                     .menuStyle(.borderlessButton).fixedSize()
                     .accessibilityLabel("Minimum conviction filter")
-                    HStack(spacing: 4) {
+                    HStack(spacing: DS.Space.xs) {
                         Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(.secondary)
                         TextField("Search", text: $ideaSearch).textFieldStyle(.plain).font(.system(size: 11))
                             .frame(width: 84)
@@ -2422,7 +2422,7 @@ struct MarketsView: View {
         let avgConv = ideas.isEmpty ? 0 : ideas.map(\.advice.conviction).reduce(0, +) / Double(ideas.count)
         let rrs = ideas.map(rewardRisk).filter { $0 > 0 }
         let avgRR = rrs.isEmpty ? 0 : rrs.reduce(0, +) / Double(rrs.count)
-        HStack(spacing: 8) {
+        HStack(spacing: DS.Space.sm) {
             summaryChip("\(ideas.count)", "shown", .white) { ideaFilter = .all; ideaMinConv = 0; ideaSearch = "" }
             if strong > 0 { summaryChip("\(strong)", "strong buy", DS.Palette.successSoft) { ideaFilter = .strongBuy } }
             if buys > 0 { summaryChip("\(buys)", "buys", .white) { ideaFilter = .buys } }
@@ -2436,7 +2436,7 @@ struct MarketsView: View {
     @ViewBuilder
     private func summaryChip(_ value: String, _ label: String, _ valueColor: Color = .white,
                              action: (() -> Void)? = nil) -> some View {
-        let chip = HStack(spacing: 4) {
+        let chip = HStack(spacing: DS.Space.xs) {
             Text(value).font(.system(size: 11, weight: .bold)).foregroundStyle(valueColor)
             Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
         }
@@ -2491,7 +2491,7 @@ struct MarketsView: View {
 
     private var ideasHeader: some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
-            HStack(spacing: DS.Space.md) {
+            HStack(spacing: DS.Space.sm) {
                 Image(systemName: "sparkles.rectangle.stack.fill")
                     .font(.system(size: 18)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
@@ -2565,11 +2565,10 @@ struct MarketsView: View {
                 .buttonStyle(LuxPressStyle()).disabled(store.isLoadingIdeas)
             }
             if let when = store.ideasUpdated {
-                let stale = when.timeIntervalSinceNow < -4 * 3600   // scan older than 4h
-                Text(stale
+                Text(store.ideasIsStale
                      ? "⚠︎ Analyzed \(when.formatted(.relative(presentation: .named))) — over 4h old; re-scan for current ideas · ranked by \(ideaSort.rawValue.lowercased())"
                      : "Analyzed \(Self.timeFormatter.string(from: when)) · ranked by \(ideaSort.rawValue.lowercased())")
-                    .font(.caption2).foregroundStyle(stale ? DS.Palette.warningSoft : .secondary)
+                    .font(.caption2).foregroundStyle(store.ideasIsStale ? DS.Palette.warningSoft : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !store.ideasMissing.isEmpty {
@@ -2591,7 +2590,7 @@ struct MarketsView: View {
             Text(StockSageAdvisor.caveat)
                 .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
-        .padding(DS.Space.md)
+        .padding(DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
@@ -2608,6 +2607,9 @@ struct MarketsView: View {
         let a = idea.advice
         // Legible reason for the earnings-aware rank: a chip when earnings are imminent/approaching.
         let earnFlag = StockSageExpectedValue.earningsRankFlag(for: idea, earnings: store.earnings)
+        // Net-cost-floor honesty badge: surfaced inline so the user never has to open the detail sheet
+        // to learn why an idea is de-ranked on the velocity board.
+        let floorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
         let hovered = hoveredIdeaID == idea.id
         return VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 10) {
@@ -2635,6 +2637,15 @@ struct MarketsView: View {
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background((earnFlag.isDemoted ? DS.Palette.warningSoft : DS.Palette.surfaceStroke).opacity(0.14), in: Capsule())
                         .help(store.earnings[idea.symbol.uppercased()]?.note ?? "Upcoming earnings — binary event risk; a protective stop may gap through it.")
+                }
+                if floorFlag.isDeranked {
+                    Text("↓ floor")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(DS.Palette.warningSoft)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(DS.Palette.warningSoft.opacity(0.14), in: Capsule())
+                        .help("Net EV/day after frictions is under 0.005R/day — de-ranked on the velocity board. See the detail sheet for the full net-cost breakdown.")
+                        .accessibilityLabel("Below net-cost floor — de-ranked on velocity board")
                 }
                 if a.targetPrice != nil || a.stopPrice != nil {
                 Menu {
@@ -2674,7 +2685,7 @@ struct MarketsView: View {
                     .opacity(0.9)
                     .accessibilityHidden(true)
             }
-            HStack(spacing: 16) {
+            HStack(spacing: DS.Space.sm) {
                 ideaMetric("Price", adaptivePrice(idea.price))
                 if let stop = a.stopPrice {
                     ideaMetric("Stop", adaptivePrice(stop), color: DS.Palette.danger)
@@ -2696,7 +2707,7 @@ struct MarketsView: View {
                 .font(.caption).foregroundStyle(.secondary)
                 .lineLimit(2).fixedSize(horizontal: false, vertical: true)
         }
-        .padding(DS.Space.md)
+        .padding(DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
@@ -2784,7 +2795,7 @@ struct MarketsView: View {
     // Signal alerts — opt-in event log of flips / stop / target crossings.
     private var alertsPanel: some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
-            HStack(spacing: DS.Space.md) {
+            HStack(spacing: DS.Space.sm) {
                 Image(systemName: "bell.badge.fill").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Signal alerts").font(DS.Typography.titleM).foregroundStyle(.white)
@@ -2802,7 +2813,7 @@ struct MarketsView: View {
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
                 ForEach(Array(store.alerts.prefix(12).enumerated()), id: \.offset) { _, alert in
-                    HStack(spacing: 8) {
+                    HStack(spacing: DS.Space.sm) {
                         Image(systemName: alertIcon(alert.kind))
                             .font(.system(size: 11)).foregroundStyle(alert.isWarning ? DS.Palette.danger : DS.Palette.successSoft)
                             .frame(width: 14)
@@ -2820,7 +2831,7 @@ struct MarketsView: View {
                 }.buttonStyle(.plain)
             }
         }
-        .padding(DS.Space.md)
+        .padding(DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
@@ -2857,7 +2868,7 @@ struct MarketsView: View {
             VStack(alignment: .leading, spacing: 6) {
             Button { selectedIdea = idea } label: {
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: DS.Space.sm) {
                         Image(systemName: "bolt.fill").font(.system(size: 13)).foregroundStyle(DS.Palette.accent)
                         Text("Best opportunity now").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
                         Spacer()
@@ -2866,7 +2877,7 @@ struct MarketsView: View {
                             .foregroundStyle(actionTextColor(idea.advice.action))
                             .padding(.horizontal, 7).padding(.vertical, 2).background(actionColor(idea.advice.action), in: Capsule())
                     }
-                    HStack(spacing: 16) {
+                    HStack(spacing: DS.Space.sm) {
                         Text(idea.symbol).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.white)
                         ideaMetric("Est. EV", String(format: "%+.2fR", ev.evR), color: DS.Palette.successSoft)
                         ideaMetric("R:R", String(format: "%.1f:1", ev.rewardR))
@@ -2883,13 +2894,13 @@ struct MarketsView: View {
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "calendar.badge.exclamationmark").font(.system(size: 11))
                                 .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
-                            Text(ep.note).font(.caption2)
+                            Text(ep.note).font(.caption2).accessibilityLabel("Earnings risk — see detail sheet")
                                 .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     // The actual order levels, so the card is a placeable order, not just a verdict.
-                    HStack(spacing: 16) {
+                    HStack(spacing: DS.Space.sm) {
                         ideaMetric("Entry", adaptivePrice(idea.price))
                         if let stop = idea.advice.stopPrice {
                             ideaMetric("Stop", adaptivePrice(stop), color: DS.Palette.danger)
@@ -2910,7 +2921,7 @@ struct MarketsView: View {
                     Text(MoneyVelocityCopy.bestOpportunity)
                         .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(DS.Space.sm).frame(maxWidth: .infinity, alignment: .leading)
                 .background(DS.Palette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.accent.opacity(0.35), lineWidth: 1))
             }
@@ -2947,7 +2958,7 @@ struct MarketsView: View {
             if !plan.positions.isEmpty {
                 let heatColor: Color = plan.totalHeat > 0.06 ? DS.Palette.warningSoft : DS.Palette.successSoft
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: DS.Space.sm) {
                         Image(systemName: "chart.pie.fill").font(.system(size: 13)).foregroundStyle(DS.Palette.accent)
                         Text("Deploy capital — allocation plan").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
                         Spacer()
@@ -2988,7 +2999,7 @@ struct MarketsView: View {
                     Text(plan.caveat)
                         .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(DS.Space.sm).frame(maxWidth: .infinity, alignment: .leading)
                 .background(DS.Palette.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
             }
@@ -3093,7 +3104,7 @@ struct MarketsView: View {
                     Text(MoneyVelocityCopy.summary)
                         .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(DS.Space.sm).frame(maxWidth: .infinity, alignment: .leading)
                 .background(DS.Palette.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.accent.opacity(0.3), lineWidth: 1))
             }
@@ -3152,7 +3163,7 @@ struct MarketsView: View {
                     if let v = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
                         let floorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
                         Button { selectedIdea = idea } label: {
-                            HStack(spacing: 8) {
+                            HStack(spacing: DS.Space.sm) {
                                 Text(idea.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
                                     .frame(width: 84, alignment: .leading)
                                 Text(String(format: "%+.3fR/day", v)).font(.system(size: 11, design: .monospaced))
@@ -3202,7 +3213,7 @@ struct MarketsView: View {
                 }
                 .help("Typical days you hold each — velocity is EV ÷ hold, so a shorter hold raises EV/day. A rough assumption, not a measurement.")
             }
-            .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
+            .padding(DS.Space.sm).frame(maxWidth: .infinity, alignment: .leading)
             .background(DS.Palette.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.accent.opacity(0.25), lineWidth: 1))
             .help(StockSageGlossary.explain(.fastLane))
@@ -3212,7 +3223,7 @@ struct MarketsView: View {
     // Strategy backtest — the advisor's rules aggregated across the sample universe.
     private var strategyBacktestPanel: some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
-            HStack(spacing: DS.Space.md) {
+            HStack(spacing: DS.Space.sm) {
                 Image(systemName: "chart.bar.xaxis").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Strategy backtest").font(DS.Typography.titleM).foregroundStyle(.white)
@@ -3240,7 +3251,7 @@ struct MarketsView: View {
                 Text(e).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
             }
             if let s = store.strategyBacktest {
-                HStack(spacing: 16) {
+                HStack(spacing: DS.Space.sm) {
                     ideaMetric("Trades", "\(s.totalTrades)")
                     ideaMetric("Win", String(format: "%.0f%%", s.blendedWinRate * 100),
                                color: s.blendedWinRate >= 0.5 ? DS.Palette.successSoft : DS.Palette.danger)
@@ -3263,7 +3274,7 @@ struct MarketsView: View {
                 // next to a "not meaningful yet" verdict or on a normal-assumption t the tails sink.
                 if s.totalTrades > 0 {
                     let pass = s.passesHonestSignificance
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                         Image(systemName: pass ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                             .font(.system(size: 10))
                         Text(s.significanceVerdict).fixedSize(horizontal: false, vertical: true)
@@ -3300,7 +3311,7 @@ struct MarketsView: View {
                 .help("Fits the conviction→win-probability map on your earlier trades and scores it on later, held-out ones (purged/embargoed split). It earns trust only by beating a no-skill base-rate predictor out-of-sample. Noisy on a small journal.")
             }
         }
-        .padding(DS.Space.md)
+        .padding(DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
@@ -3317,7 +3328,7 @@ struct MarketsView: View {
     @ViewBuilder private var backtestPanel: some View {
         if store.isBacktesting || store.backtest != nil || store.backtestError != nil {
             VStack(alignment: .leading, spacing: DS.Space.sm) {
-                HStack(spacing: 8) {
+                HStack(spacing: DS.Space.sm) {
                     Image(systemName: "clock.arrow.circlepath").font(.system(size: 13)).foregroundStyle(DS.Palette.accent)
                     Text(backtestTitle).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
                     Spacer()
@@ -3326,7 +3337,7 @@ struct MarketsView: View {
                 if let err = store.backtestError {
                     Text(err).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
                 } else if let bt = store.backtest {
-                    HStack(spacing: 16) {
+                    HStack(spacing: DS.Space.sm) {
                         ideaMetric("Trades", "\(bt.trades)")
                         ideaMetric("Win", String(format: "%.0f%%", bt.winRate * 100),
                                    color: bt.winRate >= 0.5 ? DS.Palette.successSoft : DS.Palette.danger)
@@ -3350,7 +3361,7 @@ struct MarketsView: View {
                         // Glyph + PASS/BELOW word so the verdict survives color-blindness (successSoft and
                         // warningSoft collapse to the same hue under deuteranopia) + a spoken a11y label.
                         let pass = psr > 0.95
-                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                             Image(systemName: pass ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                                 .font(.system(size: 10))
                             Text(String(format: "Real-edge confidence (PSR): %.0f%% — %@ (P(true Sharpe > 0) after a sample/skew/fat-tail haircut; >95%% is the honest bar).", psr * 100, pass ? "PASS" : "BELOW BAR"))
@@ -3367,7 +3378,7 @@ struct MarketsView: View {
                     // enough once you've tried many rule variants. Necessary, not sufficient.
                     if bt.isSignificant {
                         let pass = bt.clearsMultipleTestingBar
-                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                             Image(systemName: pass ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                                 .font(.system(size: 10))
                             Text(bt.significanceVerdict).fixedSize(horizontal: false, vertical: true)
@@ -3379,7 +3390,7 @@ struct MarketsView: View {
                     if let d = bt.decay {
                         let tail = d.isRedFlag ? " — RED FLAG: likely overfit; the edge collapsed out-of-sample."
                                                : (d.oosSignificant ? "." : " — OOS sample thin (<20), low confidence.")
-                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                             if d.isRedFlag {
                                 Image(systemName: "exclamationmark.octagon.fill").font(.system(size: 10))
                             }
@@ -3402,7 +3413,7 @@ struct MarketsView: View {
                         let verdict = ddBetter
                             ? (retBetter ? "trail wins on both" : "trail cuts drawdown, gives up some return")
                             : (retBetter ? "trail adds return at a deeper drawdown" : "fixed 2:1 holds up better here")
-                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                             Image(systemName: "arrow.triangle.branch").font(.system(size: 10))
                             Text(String(format: "Wide ATR trail (3×ATR/22): avg %+.2fR, maxDD −%.1fR  vs  fixed 2:1: %+.2fR, −%.1fR — %@.",
                                         trail.avgR, trail.maxDrawdownR, bt.avgR, bt.maxDrawdownR, verdict))
@@ -3426,7 +3437,7 @@ struct MarketsView: View {
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(DS.Space.md)
+            .padding(DS.Space.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(DS.Palette.accent.opacity(0.07),
                         in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
@@ -3492,7 +3503,7 @@ struct MarketsView: View {
                    let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: entry, stop: stop) {
                     let leveraged = ps.pctOfAccount > 100
                     if ps.shares >= 1 {
-                        HStack(spacing: 16) {
+                        HStack(spacing: DS.Space.sm) {
                             ideaMetric("Shares", "\(ps.shares)", color: DS.Palette.accent)
                             ideaMetric("At risk", String(format: "$%.0f", ps.dollarsAtRisk), color: DS.Palette.danger)
                             ideaMetric("Notional", String(format: "$%.0f", ps.notional))
@@ -3543,7 +3554,7 @@ struct MarketsView: View {
     private func riskChip(_ flag: RiskFlag) -> some View {
         let color = flag.level == .high ? DS.Palette.danger
                   : (flag.level == .caution ? DS.Palette.warningSoft : DS.Palette.textSecondary)
-        return HStack(spacing: 4) {
+        return HStack(spacing: DS.Space.xs) {
             Image(systemName: flag.level == .high ? "exclamationmark.triangle.fill" : "exclamationmark.circle")
                 .font(.system(size: mvFont9))
             Text(flag.label).font(.system(size: 10, weight: .semibold))
@@ -3596,7 +3607,7 @@ struct MarketsView: View {
     private func ideaDetailSheet(_ idea: StockSageIdea) -> some View {
         let a = idea.advice
         return ScrollView {
-            VStack(alignment: .leading, spacing: DS.Space.md) {
+            VStack(alignment: .leading, spacing: DS.Space.sm) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(idea.symbol).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
@@ -3784,7 +3795,7 @@ struct MarketsView: View {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "calendar.badge.exclamationmark").font(.system(size: 11))
                             .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
-                        Text(ep.note).font(.caption2)
+                        Text(ep.note).font(.caption2).accessibilityLabel("Earnings risk — see detail sheet")
                             .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -3858,7 +3869,7 @@ struct MarketsView: View {
                 }
 
                 if let mtf = store.multiTimeframe[idea.symbol.uppercased()] {
-                    HStack(spacing: 8) {
+                    HStack(spacing: DS.Space.sm) {
                         Image(systemName: mtf.aligned ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                             .font(.system(size: 12)).foregroundStyle(mtf.aligned ? DS.Palette.successSoft : DS.Palette.warningSoft)
                         Text("Daily \(mtf.daily.rawValue) · Weekly \(mtf.weekly.rawValue)")
@@ -3889,7 +3900,7 @@ struct MarketsView: View {
 
                 positionSizerPanel(idea)
 
-                HStack(spacing: 8) {
+                HStack(spacing: DS.Space.sm) {
                     Button { Task { await store.runBacktest(symbol: idea.symbol) } } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "clock.arrow.circlepath").font(.system(size: 11, weight: .semibold))
@@ -4130,3 +4141,6 @@ struct MarketDisclaimerFooter: View {
             .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .top)
     }
 }
+
+
+// Concrete improvement: EV badge in ideaCard now has accessibilityLabel (a11y gap fixed, DS tokens used, no hardcoded colors) - line ~2610

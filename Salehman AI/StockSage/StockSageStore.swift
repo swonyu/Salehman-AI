@@ -490,6 +490,11 @@ final class StockSageStore: ObservableObject {
         return Date().timeIntervalSince(at) > 6 * 3600
     }
 
+    var ideasIsStale: Bool {
+        guard let at = ideasUpdated else { return false }
+        return Date().timeIntervalSince(at) > 4 * 3600
+    }
+
     // Multi-timeframe — daily+weekly trend agreement, cached per symbol.
     @Published private(set) var multiTimeframe: [String: MultiTimeframeTrend] = [:]
 
