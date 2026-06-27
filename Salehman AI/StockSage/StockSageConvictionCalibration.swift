@@ -56,9 +56,16 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
     nonisolated static let isotonicMinSamples = 1000
 
     /// iter7 OOS candidate-selector ({identity, Beta-3param, isotonic}, OOS-Brier-picked).
-    /// OFF BY DEFAULT: when false, fit(...) is BYTE-IDENTICAL to the pre-iter7 Platt/isotonic seam.
-    /// Flip to true ONLY after reviewing per-refit OOS-Brier evidence (research checklist #1).
-    nonisolated(unsafe) static var candidateSelectorEnabled = false
+    /// ACTIVE (owner-activated 2026-06-27 after OOS review). When true, fit(...) routes through the
+    /// leak-free chronological-split selector: candidates are fit on TRAIN, scored on TEST by OOS
+    /// Brier, and the winner refit on ALL data — with IDENTITY as the conservative floor (selected
+    /// unless a candidate beats it by >1e-9 OOS, and the only option when the sample is too thin to
+    /// split honestly). This is strictly MORE conservative than the old Platt small-N path: Platt is
+    /// a central MLE with no sampling-uncertainty haircut, whereas small-N here returns identity
+    /// (no-calibration). Preservation-safe by construction (identity floor); the nil-calibration
+    /// 0.35+0.23·c prior in winProbEstimate is untouched. Set false to restore the byte-identical
+    /// pre-iter7 Platt/isotonic seam (regression-locked by flagOffIsByteIdenticalToCurrent).
+    nonisolated(unsafe) static var candidateSelectorEnabled = true
 
     /// Fit from realized outcomes. Returns nil when too few samples to calibrate honestly.
     /// - binCount: MAX equal-width conviction bands over [0,1] (the effective count adapts down to

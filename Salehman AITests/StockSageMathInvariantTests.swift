@@ -603,6 +603,12 @@ struct StockSageMathInvariantTests {
     typealias Cal = StockSageConvictionCalibration
 
     @Test func plattGoldenVectorSymmetricSeparable() {
+        // [iter7] This test locks the EXACT Platt small-N sigmoid (the preserved flag-OFF path). The
+        // selector is now ACTIVE by default; pin the flag OFF so fit() takes the Platt seam this test
+        // validates. (selectCalibration on this n=40 fixture is too thin to split → returns identity,
+        // a different — and more conservative — map; that path is covered by the selector suite.)
+        let saved = Cal.candidateSelectorEnabled; defer { Cal.candidateSelectorEnabled = saved }
+        Cal.candidateSelectorEnabled = false
         // [AUDIT] Dataset: 20@s=0.2 (4W/16L) + 20@s=0.8 (16W/4L). N+=N-=20 → t+=21/22, t-=1/22.
         // 2-distinct-x logistic MLE matches each group's mean smoothed target EXACTLY:
         //   p(0.2)=5/22, p(0.8)=17/22, p(0.5)=1/2 ; A=ln(25/289)/0.6, B=-A/2.
@@ -628,6 +634,8 @@ struct StockSageMathInvariantTests {
     }
 
     @Test func plattIsMonotoneNonDecreasing() {
+        let saved = Cal.candidateSelectorEnabled; defer { Cal.candidateSelectorEnabled = saved }
+        Cal.candidateSelectorEnabled = false   // [iter7] lock the preserved Platt path under test
         // [AUDIT] A ≤ 0 enforced ⇒ winProb non-decreasing across the conviction range and across bins.
         var o: [(conviction: Double, won: Bool)] = []
         for i in 0..<20 { o.append((0.2, i < 4))  }
@@ -641,6 +649,8 @@ struct StockSageMathInvariantTests {
     }
 
     @Test func plattInvertedSampleClampsToMonotone() {
+        let saved = Cal.candidateSelectorEnabled; defer { Cal.candidateSelectorEnabled = saved }
+        Cal.candidateSelectorEnabled = false   // [iter7] lock the preserved Platt path under test
         // [AUDIT] Inverted (lucky-low) sample → unclamped A would be >0 (decreasing). The A≤0 clamp
         // forces non-decreasing: high-conviction winProb is NOT below low-conviction.
         // ALSO: with A=0 the intercept B must be reset to the prior log-odds so the flat output
@@ -656,6 +666,8 @@ struct StockSageMathInvariantTests {
     }
 
     @Test func plattDegenerateSingleLabelFallsBackToPrior() {
+        let saved = Cal.candidateSelectorEnabled; defer { Cal.candidateSelectorEnabled = saved }
+        Cal.candidateSelectorEnabled = false   // [iter7] lock the preserved Platt path under test
         // [AUDIT] All-wins (N-=0) → slope unidentifiable → flat conservative prior (default 0.5),
         // NOT an invented 100%. Same for all-losses. The prior is the band value everywhere.
         let allWin  = (0..<40).map { (conviction: Double($0 % 10) / 10, won: true)  }
@@ -668,6 +680,11 @@ struct StockSageMathInvariantTests {
     }
 
     @Test func plattSelectedBelowThresholdIsotonicAtOrAbove() {
+        // [iter7] This locks the pre-iter7 Platt↔isotonic SAMPLE-COUNT seam (isotonicMinSamples=1000),
+        // which only exists on the flag-OFF path. With the selector ACTIVE, fit() routes by OOS Brier,
+        // not by sample count, so pin OFF to exercise the seam this test names.
+        let saved = Cal.candidateSelectorEnabled; defer { Cal.candidateSelectorEnabled = saved }
+        Cal.candidateSelectorEnabled = false
         // [AUDIT] Selection seam: a 40-trade fit is Platt (smooth sigmoid → distinct band-midpoint
         // values), a ≥1000-trade fit takes the byte-identical isotonic path. We assert the THRESHOLD
         // routing via a behavioral witness: build 1040 outcomes where the isotonic Wilson-LOWER-bound

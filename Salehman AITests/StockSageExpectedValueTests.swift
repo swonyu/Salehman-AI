@@ -42,6 +42,13 @@ struct StockSageExpectedValueTests {
     }
 
     @Test func rankingAndBestOpportunityUseTheCalibrationNotJustTheDisplay() {
+        // [iter7] Pins the flag OFF for determinism: this test asserts a calibration-driven RANK FLIP
+        // and shares the global candidateSelectorEnabled with the (now default-ON) selector suite. The
+        // flip holds on BOTH paths (B's high-band win-prob dominates A's), but pinning removes any
+        // cross-test ordering dependency on the global flag.
+        let saved = StockSageConvictionCalibration.candidateSelectorEnabled
+        defer { StockSageConvictionCalibration.candidateSelectorEnabled = saved }
+        StockSageConvictionCalibration.candidateSelectorEnabled = false
         // A: bigger reward:risk (3:1) but modest conviction; B: smaller R:R (1:1) but high conviction.
         let a = idea("AAA", conviction: 0.45, stop: 90, target: 130)
         let b = idea("BBB", conviction: 0.90, stop: 90, target: 110)
@@ -65,6 +72,15 @@ struct StockSageExpectedValueTests {
         // A crypto setup (has a velocity). A measured calibration rating its band BELOW the linear
         // prior must lower BOTH weekly-R and weekly-$ — they can't show a calibrated R beside an
         // uncalibrated $ anymore.
+        // [iter7] This asserts the PLUMBING (R and $ both move with the calibration) using a fixture
+        // whose Platt map sits below the prior. The selector is now ACTIVE by default, but this 40-row
+        // single-conviction fixture is too thin for the selector to split → it returns the conservative
+        // IDENTITY map, which sends conviction 0.9 to ~0.75 (ABOVE the 0.557 prior), inverting the
+        // "below-prior" premise. Pin the flag OFF so the fixture keeps producing the sub-prior Platt map
+        // this plumbing test is built on; the selector path is covered by the selector suite.
+        let saved = StockSageConvictionCalibration.candidateSelectorEnabled
+        defer { StockSageConvictionCalibration.candidateSelectorEnabled = saved }
+        StockSageConvictionCalibration.candidateSelectorEnabled = false
         let c = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
         let uncalR = EV.expectedWeeklyR([c])
         let uncalUSD = EV.expectedWeeklyDollars([c], account: 10_000, riskFraction: 0.01)

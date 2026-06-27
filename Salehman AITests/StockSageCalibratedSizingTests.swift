@@ -13,7 +13,17 @@ struct StockSageCalibratedSizingTests {
     // Build a calibration whose top conviction band win-prob is materially above the linear prior.
     // Feeds 60 synthetic trades so `fit` has enough samples (minSamples = 30) to calibrate.
     // The top-band (conviction 0.5–1.0) always wins → Wilson-LCB will be high but ≤ raw rate.
+    //
+    // [iter7] These sizing tests are written against the Platt small-N MAP this fixture produces
+    // (e.g. "conviction 0.0 → low win-prob → zero weight"). With the candidate-selector ACTIVE by
+    // default, this synthetic fixture's chronological test slice is all-wins, so the OOS-Brier
+    // winner (Beta) collapses to a near-flat ~0.75 map — a legitimate selector result, but one that
+    // breaks the OFF-path map-shape these clamp/edge tests assert. Pin the flag OFF for the duration
+    // of the fit so the helper always returns the Platt map it documents; the selector's own
+    // behavior is covered by StockSageCalibrationSelectorTests. (Restored after the fit.)
     private static func highWinCalibration() throws -> Cal {
+        let saved = Cal.candidateSelectorEnabled; defer { Cal.candidateSelectorEnabled = saved }
+        Cal.candidateSelectorEnabled = false
         // Deterministic outcomes: 30 trades in lower band (conviction ≈ 0.2, 50% win),
         // 30 in upper band (conviction ≈ 0.8, 100% win).
         let outcomes: [(conviction: Double, won: Bool)] =

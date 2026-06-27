@@ -150,7 +150,7 @@ struct StockSageCalibrationSelectorTests {
     // MARK: - 4. Selector conservative contract: identity is the floor for thin splits
 
     @Test func selectorPicksIdentityWhenNoCandidateBeatsNoCalibration() {
-        defer { Cal.candidateSelectorEnabled = false }
+        let saved = Cal.candidateSelectorEnabled; defer { Cal.candidateSelectorEnabled = saved }
         Cal.candidateSelectorEnabled = true
 
         // (A) Small-N guard: n=43, testN=13, gap=1, trainEnd=29 < minTrainSamples(30) → identity.
@@ -208,7 +208,7 @@ struct StockSageCalibrationSelectorTests {
     // MARK: - 5. Selector picks non-identity when a candidate genuinely lowers OOS Brier
 
     @Test func selectorPicksNonIdentityWhenCandidateLowersOOSBrier() {
-        defer { Cal.candidateSelectorEnabled = false }
+        let saved = Cal.candidateSelectorEnabled; defer { Cal.candidateSelectorEnabled = saved }
         Cal.candidateSelectorEnabled = true
 
         // Clean separable: first 200 low-conviction all lose, last 200 high-conviction all win.
@@ -230,7 +230,7 @@ struct StockSageCalibrationSelectorTests {
     // MARK: - 6. Selector is leak-free
 
     @Test func selectorIsLeakFree() {
-        defer { Cal.candidateSelectorEnabled = false }
+        let saved = Cal.candidateSelectorEnabled; defer { Cal.candidateSelectorEnabled = saved }
         Cal.candidateSelectorEnabled = true
 
         // n=100. trainEnd = 100 - 30 - 1 = 69. Train = [0,69), test = [70, 100).
@@ -270,7 +270,12 @@ struct StockSageCalibrationSelectorTests {
     // MARK: - 7. Flag-off is byte-identical to current behavior (regression-lock)
 
     @Test func flagOffIsByteIdenticalToCurrent() {
-        #expect(Cal.candidateSelectorEnabled == false, "Flag must default to false")
+        // [iter7] The selector is now ACTIVE by default (owner-activated 2026-06-27). This test still
+        // locks the flag-OFF path as byte-identical to the pre-iter7 Platt/isotonic seam, so it pins the
+        // flag OFF explicitly and restores the prior value in a defer (don't leak global state).
+        let saved = Cal.candidateSelectorEnabled; defer { Cal.candidateSelectorEnabled = saved }
+        #expect(Cal.candidateSelectorEnabled == true, "Flag is now activated by default (iter7)")
+        Cal.candidateSelectorEnabled = false
 
         // Fixture 1: 40-trade 80/20 split (same as StockSageConvictionCalibrationTests).
         var outcomes1: [Outcome] = []
@@ -315,7 +320,7 @@ struct StockSageCalibrationSelectorTests {
     // MARK: - 8. Selector structural invariants across data shapes (tie-break coverage)
 
     @Test func selectorTieBreaksToIdentityThenBeta() {
-        defer { Cal.candidateSelectorEnabled = false }
+        let saved = Cal.candidateSelectorEnabled; defer { Cal.candidateSelectorEnabled = saved }
         Cal.candidateSelectorEnabled = true
 
         // Verify the selector produces valid (monotone, [0,1]) output across a range of data shapes.
