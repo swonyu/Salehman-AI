@@ -9026,6 +9026,11 @@ Added `tools/test_grok_bridge.py` — 30 unit tests over the bug-prone pure core
 **Files:** `Salehman AI/Views/MarketsView.swift:3164-3184`
 **What & why:** `ideaCard()` already showed an earnings badge; `fastLaneStrip` rows only showed the floor badge. A near-earnings idea could appear in the strip with no warning. Added `earningsRankFlag(for:earnings:)` alongside the existing `floorFlag` let-binding; badge text ("⚠︎ earnings ~Xd" / "earnings ~Xd") shown with `warningSoft` for demoted ideas and `.secondary` for approaching. Accessibility label extended. Additive display, no sizing/logic change. ✅ BUILD SUCCEEDED (`7ec8c6b`).
 
+---
+**2026-06-27 · Autonomous monitoring session: 10 commits, iter6 surface polished**
+**Files:** `Salehman AI/Views/MarketsView.swift`, `Salehman AI/StockSage/StockSageExpectedValue.swift`, `Salehman AI/StockSage/StockSageStore.swift`
+**What & why:** 5-hour autonomous Grok+Claude loop landed 10 commits on branch `ideas-card/iter6-net-cost-ev-day`: (1) earnings badge on "Best now" summaryStat, (2) earnings badge on "Fastest" summaryStat, (3) refreshIdeas 120s watchdog, (4) fastLaneStrip earnings badge, (5) velocity card "Best now" earnings badge, (6) fastestVelocity uses net (not gross) velocity, (7) floor badge DRY via floorFlag.badge, (8) detail sheet maxWidth 640→680, (9) floor badge .help() tooltip on velocityIdeaCard, (10) velocity card "Fastest" earnings badge. All build green. ✅ (`5d2e69a`..`3d7ec5e`).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
