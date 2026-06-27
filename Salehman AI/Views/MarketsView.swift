@@ -3781,6 +3781,7 @@ struct MarketsView: View {
                             Text(vFloorFlag.badge + " — net EV/day after frictions is under 0.005R/day; de-ranked on the velocity board.")
                                 .font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                         }
+                        .help("Net EV/day after frictions is under 0.005R/day — de-ranked on the velocity board. See the net-cost breakdown above.")
                     }
                 }
                 if a.suggestedWeight > 0, store.regime != nil {
