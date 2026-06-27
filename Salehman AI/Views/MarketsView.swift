@@ -3918,6 +3918,8 @@ struct MarketsView: View {
                             }
                         }
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Why: \(a.rationale.joined(separator: ". "))")
                 }
 
                 positionSizerPanel(idea)
