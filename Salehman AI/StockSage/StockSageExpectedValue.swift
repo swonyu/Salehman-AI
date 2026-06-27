@@ -513,7 +513,10 @@ enum StockSageExpectedValue {
         // Calibration-aware so every headline number (best EV, fastest velocity, weekly R) uses the
         // SAME measured win-prob as the idea cards — no calibrated-next-to-uncalibrated mismatch.
         let best = bestOpportunity(ideas, regime: regime, earnings: earnings, calibration: calibration)
-        let fastest = fastLane(ideas, holds: holds, calibration: calibration).first
+        // Use rankByVelocity (earnings-aware) then filter to positive-EV — so the header
+        // "Fastest" badge always matches the earnings-penalized board sort, not raw velocity.
+        let fastest = rankByVelocity(ideas, holds: holds, earnings: earnings, calibration: calibration)
+            .first(where: { (ev(for: $0, calibration: calibration)?.evR ?? -1) > 0 })
         // The brake: the owner's worst losing streak, compounded down at the risk fraction.
         let dd = StockSageJournal.equityRisk(trades)
             .flatMap { StockSageRiskOfRuin.scenario(losses: $0.maxConsecutiveLosses, fraction: fraction) }
