@@ -9010,6 +9010,12 @@ Added `tools/test_grok_bridge.py` — 30 unit tests over the bug-prone pure core
 **What & why:** The velocity card's "Fastest" headline badge was computed via `fastLane().first` which sorts by raw velocity and ignores earnings proximity. The board's `.velocity` tab uses `rankByVelocity(earnings:)` which demotes earnings-risky ideas. The mismatch meant the card could crown a near-earnings idea as "Fastest" while the board ranked it lower. Fixed: replaced `fastLane(...).first` with `rankByVelocity(...earnings:...)).first(where: evR > 0)` — same positive-EV filter, now earnings-penalized. One-line change, no new symbols, no sizing/logic change.
 **Result:** ✅ BUILD SUCCEEDED.
 
+---
+**2026-06-27 · StockSageExpectedValue.summary: floor-filtered "Fastest" badge + nonisolated fix**
+**Files:** `Salehman AI/StockSage/StockSageExpectedValue.swift:243,519`
+**What & why:** Extended previous earnings fix: the "Fastest" summary selector now also skips ideas where `netCostFloorFlag(...).isDeranked` is true — below-floor ideas won't be crowned "Fastest" in the velocity card header. Also marked `NetCostFloorFlag.isDeranked` as `nonisolated` to satisfy Swift strict concurrency inside the `nonisolated static func summary` closure. Safari-2 handoff prompted the floor filter; the `nonisolated` annotation was a compile error discovered during the build.
+**Result:** ✅ BUILD SUCCEEDED. Commit `a03071a`.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
