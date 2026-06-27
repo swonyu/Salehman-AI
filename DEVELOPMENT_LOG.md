@@ -9016,6 +9016,11 @@ Added `tools/test_grok_bridge.py` — 30 unit tests over the bug-prone pure core
 **What & why:** Extended previous earnings fix: the "Fastest" summary selector now also skips ideas where `netCostFloorFlag(...).isDeranked` is true — below-floor ideas won't be crowned "Fastest" in the velocity card header. Also marked `NetCostFloorFlag.isDeranked` as `nonisolated` to satisfy Swift strict concurrency inside the `nonisolated static func summary` closure. Safari-2 handoff prompted the floor filter; the `nonisolated` annotation was a compile error discovered during the build.
 **Result:** ✅ BUILD SUCCEEDED. Commit `a03071a`.
 
+---
+**2026-06-27 · StockSageStore.refreshIdeas: 120s auto-cancel watchdog**
+**Files:** `Salehman AI/StockSage/StockSageStore.swift:268-277`
+**What & why:** `refreshIdeas()` had a manual cancel path (`cancelIdeasRefresh()`) but no automatic timeout — a hung network fetch could leave `isLoadingIdeas = true` forever. Added a 120s watchdog `Task` that cancels the work task if it doesn't complete in time, triggering the existing `isCancelled` guards and the `defer { isLoadingIdeas = false }` spinner clear. Watchdog is disarmed immediately when work finishes normally. Safari-1 HANDOFF prompted this; implementation uses task cancellation (cleaner than direct UI mutation). ✅ BUILD SUCCEEDED (`59a46b6`).
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).
