@@ -26,6 +26,12 @@ struct StrategyBacktest: Sendable, Equatable {
     /// kurtosis). The raw `tStat` assumes normal returns; this widens the SE for negative skew + fat tails,
     /// so it's the honest companion. 0 when unknown. Does NOT correct for serial correlation.
     let momentCorrectedTStat: Double
+    /// Deflated Sharpe result — PSR haircut for sample/skew/kurtosis PLUS selection-bias haircut for the
+    /// estimated number of strategy variants tried (StockSageStrategyBacktest.estimatedStrategyTrials).
+    /// nil when there are too few pooled trades (<4) or no dispersion. The `passes` flag (DSR > 0.95) is
+    /// the honest "real edge" bar; because the measured DSR is ≈ 0, the verdict is "unproven edge" — and
+    /// with a higher trials estimate it can only become FIRMER, never flip to "proven."
+    let deflatedSharpe: StockSageDeflatedSharpe.Result?
     /// Below this the aggregate is still noise.
     var isSignificant: Bool { totalTrades >= 100 }
     /// Clears the t > 3 multiple-testing bar (Harvey-Liu-Zhu 2016) — NOT the textbook 2.0. Necessary,
@@ -58,12 +64,14 @@ struct StrategyBacktest: Sendable, Equatable {
 
     nonisolated init(symbolsTested: Int, symbolsWithTrades: Int, symbolsProfitable: Int, totalTrades: Int,
                      wins: Int, blendedWinRate: Double, avgR: Double, totalR: Double, worstDrawdownR: Double,
-                     tStat: Double = 0, momentCorrectedTStat: Double = 0, caveat: String) {
+                     tStat: Double = 0, momentCorrectedTStat: Double = 0,
+                     deflatedSharpe: StockSageDeflatedSharpe.Result? = nil, caveat: String) {
         self.symbolsTested = symbolsTested; self.symbolsWithTrades = symbolsWithTrades
         self.symbolsProfitable = symbolsProfitable; self.totalTrades = totalTrades; self.wins = wins
         self.blendedWinRate = blendedWinRate; self.avgR = avgR; self.totalR = totalR
         self.worstDrawdownR = worstDrawdownR; self.tStat = tStat
-        self.momentCorrectedTStat = momentCorrectedTStat; self.caveat = caveat
+        self.momentCorrectedTStat = momentCorrectedTStat; self.deflatedSharpe = deflatedSharpe
+        self.caveat = caveat
     }
 }
 
@@ -77,10 +85,23 @@ enum StockSageStrategyBacktest {
         "BHP.AX", "RY.TO", "2222.SR", "1120.SR", "005930.KS",
     ]
 
-    nonisolated static let caveat = "Aggregate of the advisor's FIXED rules over ~5y of these names — backward-looking, small-sample-prone, and survivorship-biased (only currently-listed symbols). Past performance is not future performance."
+    /// ESTIMATE of the number of distinct strategy variants explored across this engine's
+    /// development — the researcher degrees of freedom the Deflated Sharpe selection-bias term
+    /// (López de Prado) must discount. NOT precisely derivable (we did not log every config), so
+    /// this is a DEFENSIBLE LOWER BOUND: ~8–12 documented iterations (ITER1…ITER6+ in the
+    /// refinement plan) each trying a few configs (weights, caps, exit modes) ⇒ on the order of
+    /// 12. A LOWER bound is the conservative choice: under-counting trials makes the DSR bar
+    /// EASIER, so picking a modest 12 cannot unfairly fail a real edge. Because measured DSR is
+    /// already ≈ 0 (PSR ≈ expected-max already ⇒ unproven), raising trials can only RAISE the
+    /// selection-bias bar and make the "unproven-edge" verdict FIRMER — it can never flip an
+    /// unproven edge to proven. Bump this if a future audit enumerates more variants.
+    nonisolated static let estimatedStrategyTrials = 12
+
+    nonisolated static let caveat = "Aggregate of the advisor's FIXED rules over ~5y of these names — backward-looking and small-sample-prone. SURVIVORSHIP-BIASED: the universe is only currently-listed names (delisted losers are absent), so the measured Sharpe is a CEILING, not an expectation. The Deflated Sharpe further discounts for ~\(estimatedStrategyTrials) estimated strategy variants tried (selection bias). Past performance is not future performance."
 
     /// `trades` (optional) are the POOLED per-trade records across all symbols — when supplied, the
-    /// aggregate carries an honest pooled t-statistic. Omit (default) → tStat 0, behaviour unchanged.
+    /// aggregate carries an honest pooled t-statistic and Deflated Sharpe. Omit (default) → tStat 0,
+    /// deflatedSharpe nil, behaviour unchanged.
     nonisolated static func aggregate(_ results: [BacktestResult], trades: [BacktestTrade] = []) -> StrategyBacktest {
         let withTrades = results.filter { $0.trades > 0 }
         let totalTrades = results.reduce(0) { $0 + $1.trades }
@@ -109,6 +130,27 @@ enum StockSageStrategyBacktest {
             let denom = Swift.max(1e-12, 1 - m.skew*sr + ((m.kurtosis - 1)/4)*sr*sr).squareRoot()
             return sr * Double(rs.count - 1).squareRoot() / denom
         }()
+        // Deflated Sharpe: PSR haircut (sample/skew/kurtosis) PLUS selection-bias haircut for
+        // estimatedStrategyTrials. varTrialSharpe = variance of per-symbol Sharpes — the honest
+        // in-run dispersion; when zero/degenerate, deflated() falls back to DSR==PSR (no fabricated
+        // haircut). Trials = estimatedStrategyTrials (12), NOT results.count (symbol count ≠ strategy
+        // variants — the researcher DOF that matters is iterations × configs, not scan breadth).
+        let deflatedSharpe: StockSageDeflatedSharpe.Result? = {
+            guard rs.count >= 4, let m = StockSageDeflatedSharpe.moments(rs) else { return nil }
+            let mean = rs.reduce(0, +) / Double(rs.count)
+            let variance = rs.reduce(0.0) { $0 + ($1 - mean) * ($1 - mean) } / Double(rs.count - 1)
+            let sd = variance.squareRoot()
+            guard sd > 0 else { return nil }
+            let pooledSharpe = mean / sd   // per-trade Sharpe (same unit as PSR/expectedMaxSharpe)
+            // Variance of per-symbol Sharpes: honest in-run cross-symbol dispersion.
+            let symbolSharpes = results.map(\.sharpe)
+            let symMean = symbolSharpes.reduce(0, +) / Double(symbolSharpes.count)
+            let varTrial = symbolSharpes.reduce(0.0) { $0 + ($1 - symMean) * ($1 - symMean) } / Double(Swift.max(1, symbolSharpes.count - 1))
+            return StockSageDeflatedSharpe.deflated(observedSharpe: pooledSharpe, nTrades: rs.count,
+                                                    skew: m.skew, kurtosis: m.kurtosis,
+                                                    trials: estimatedStrategyTrials,
+                                                    varTrialSharpe: varTrial)
+        }()
         return StrategyBacktest(
             symbolsTested: results.count,
             symbolsWithTrades: withTrades.count,
@@ -121,6 +163,7 @@ enum StockSageStrategyBacktest {
             worstDrawdownR: worstDD,
             tStat: tStat,
             momentCorrectedTStat: momentCorrectedTStat,
+            deflatedSharpe: deflatedSharpe,
             caveat: caveat)
     }
 }
