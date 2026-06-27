@@ -3630,11 +3630,14 @@ struct MarketsView: View {
                         Text(idea.symbol).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
                         Text(idea.market).font(.caption).foregroundStyle(.secondary)
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(idea.symbol), \(idea.market)")
                     Spacer()
                     Text(a.action.rawValue)
                         .font(.system(size: 12, weight: .bold)).foregroundStyle(actionTextColor(a.action))
                         .padding(.horizontal, 9).padding(.vertical, 4)
                         .background(actionColor(a.action), in: Capsule())
+                        .accessibilityLabel("Action: \(a.action.rawValue)")
                     Button { selectedIdea = nil } label: {
                         Image(systemName: "xmark.circle.fill").font(.system(size: 18)).foregroundStyle(.secondary)
                     }
