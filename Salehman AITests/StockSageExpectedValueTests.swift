@@ -205,13 +205,17 @@ struct StockSageExpectedValueTests {
     }
 
     @Test func summaryComposesBestFastestAndWeeklyR() {
+        let saved = StockSageConvictionCalibration.candidateSelectorEnabled
+        defer { StockSageConvictionCalibration.candidateSelectorEnabled = saved }
+        StockSageConvictionCalibration.candidateSelectorEnabled = false
         let a = idea("A", action: .buy, conviction: 0.2, stop: 90, target: 120)            // EV 0.188
-        let b = idea("BTC-USD", action: .strongBuy, conviction: 0.9, stop: 90, target: 130) // EV 1.228, vel 1.228/3
+        let b = idea("BTC-USD", action: .strongBuy, conviction: 0.9, stop: 90, target: 130) // EV 1.228
         let s = EV.summary([a, b])
         #expect(s.bestSymbol == "BTC-USD")                       // highest positive-EV buy
         #expect(abs((s.bestEV ?? 0) - 1.228) < 1e-9)
-        #expect(s.fastestSymbol == "BTC-USD")                    // highest velocity
-        #expect(abs((s.fastestVelocity ?? 0) - 1.228 / 3) < 1e-9)
+        #expect(s.fastestSymbol == "BTC-USD")                    // highest net velocity
+        // summary() uses netVelocity since iter6 (nets spread+slippage+taker before /holdDays)
+        #expect(s.fastestVelocity == EV.netVelocity(for: b))
         #expect(s.weeklyR != nil)
         #expect(s.hasContent)
         #expect(!EV.summary([]).hasContent)                      // empty → nothing to show
@@ -384,6 +388,9 @@ struct StockSageExpectedValueTests {
     }
 
     @Test func summaryMatchesStandaloneSurfaces() {
+        let saved = StockSageConvictionCalibration.candidateSelectorEnabled
+        defer { StockSageConvictionCalibration.candidateSelectorEnabled = saved }
+        StockSageConvictionCalibration.candidateSelectorEnabled = false
         // The summary card composes the same helpers the standalone surfaces use — pin
         // that they never drift (a future change to summary() that diverges goes red).
         let a = idea("A", action: .buy, conviction: 0.2, stop: 90, target: 120)
@@ -394,7 +401,8 @@ struct StockSageExpectedValueTests {
         #expect(s.bestSymbol == EV.bestOpportunity(ideas)?.idea.symbol)
         #expect(s.bestEV == EV.bestOpportunity(ideas)?.ev.evR)
         #expect(s.fastestSymbol == EV.fastLane(ideas).first?.symbol)
-        #expect(s.fastestVelocity == EV.fastLane(ideas).first.flatMap { EV.velocity(for: $0) })
+        // summary() uses netVelocity since iter6 — match the same helper here
+        #expect(s.fastestVelocity == EV.fastLane(ideas).first.flatMap { EV.netVelocity(for: $0) })
         // summary() uses crypto-aware cadence (tradingDaysForLane: ~7d for a crypto lane, 5d
         // equity), so match that here rather than the default 5 — they must agree by construction.
         #expect(s.weeklyR == EV.expectedWeeklyR(ideas, tradingDays: EV.tradingDaysForLane(ideas)))
