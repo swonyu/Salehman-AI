@@ -526,7 +526,13 @@ final class StockSageStore: ObservableObject {
         strategyError = nil
 
         let symbols = StockSageStrategyBacktest.sampleSymbols
+        // Fetch the ^GSPC benchmark at the SAME 5y range as the symbol histories — a 1y slice
+        // would leave the first ~4y of every symbol with no benchmark → RS silently disabled for
+        // most of the backtest, defeating the fidelity fix. Use 5y so the date-aligned pointer has
+        // full coverage over the entire symbol window.
+        async let benchmarkTask = StockSageQuoteService.fetchHistory("^GSPC", range: "5y")
         let histories = await StockSageQuoteService.fetchHistories(for: symbols, range: "5y")
+        let benchmark = await benchmarkTask
         guard !histories.isEmpty else {
             strategyError = "Couldn't load histories to backtest the strategy — try again."
             return
@@ -536,10 +542,12 @@ final class StockSageStore: ObservableObject {
             var ts: [BacktestTrade] = []
             for sym in symbols {
                 guard let h = histories[sym.uppercased()] else { continue }
-                // Charge each symbol's asset-class round-trip cost so the strategy result
-                // is what you'd net, not a frictionless fantasy. One pass yields both the
-                // aggregate stats AND the per-trade (conviction, outcome) pairs for calibration.
-                let d = StockSageBacktester.runDetailed(h, costs: StockSageNetEdge.defaultCosts(forSymbol: sym))
+                // Faithful: charge asset-class costs AND feed the ^GSPC benchmark so the backtest
+                // measures the SAME relative-strength term the live ideas path uses. The date-aligned
+                // pointer inside runDetailed handles holiday calendar mismatches between symbol and
+                // benchmark (symbol bar-counts differ from ^GSPC's — a naive index slice is wrong).
+                let d = StockSageBacktester.runDetailed(h, costs: StockSageNetEdge.defaultCosts(forSymbol: sym),
+                                                        benchmark: benchmark)
                 rs.append(d.result); ts.append(contentsOf: d.trades)
             }
             return (rs, ts)

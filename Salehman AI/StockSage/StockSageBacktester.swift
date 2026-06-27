@@ -159,17 +159,19 @@ enum StockSageBacktester {
     /// `StockSageNetEdge.defaultCosts(forSymbol:)` for an asset-class default.
     nonisolated static func run(_ history: StockSagePriceHistory, warmup: Int = 200,
                                 costs: StockSageNetEdge.CostAssumption? = nil,
-                                exitMode: ExitMode = .allAtTarget) -> BacktestResult {
-        summarize(runTrades(history, warmup: warmup, costs: costs, exitMode: exitMode))
+                                exitMode: ExitMode = .allAtTarget,
+                                benchmark: StockSagePriceHistory? = nil) -> BacktestResult {
+        summarize(runTrades(history, warmup: warmup, costs: costs, exitMode: exitMode, benchmark: benchmark))
     }
 
     /// Both the aggregate result AND the raw trades from ONE simulation pass — so a caller that
     /// wants both (e.g. strategy stats + conviction calibration) doesn't run the sim twice.
     nonisolated static func runDetailed(_ history: StockSagePriceHistory, warmup: Int = 200,
                                         costs: StockSageNetEdge.CostAssumption? = nil,
-                                        exitMode: ExitMode = .allAtTarget)
+                                        exitMode: ExitMode = .allAtTarget,
+                                        benchmark: StockSagePriceHistory? = nil)
         -> (result: BacktestResult, trades: [BacktestTrade]) {
-        let trades = runTrades(history, warmup: warmup, costs: costs, exitMode: exitMode)
+        let trades = runTrades(history, warmup: warmup, costs: costs, exitMode: exitMode, benchmark: benchmark)
         return (summarize(trades), trades)
     }
 
@@ -178,18 +180,50 @@ enum StockSageBacktester {
     /// `summarize(runTrades(...))`, so the aggregate result is unchanged.
     nonisolated static func runTrades(_ history: StockSagePriceHistory, warmup: Int = 200,
                                       costs: StockSageNetEdge.CostAssumption? = nil,
-                                      exitMode: ExitMode = .allAtTarget) -> [BacktestTrade] {
+                                      exitMode: ExitMode = .allAtTarget,
+                                      benchmark: StockSagePriceHistory? = nil) -> [BacktestTrade] {
         let closes = history.closes, opens = history.opens, highs = history.highs, lows = history.lows
         let n = closes.count
         guard n > warmup + 5, opens.count == n, highs.count == n, lows.count == n else { return [] }
 
+        // VOLUME FIDELITY: forward real volumes ONLY when the series is fully aligned to closes
+        // (matches advise()'s nil-gate; FX/indices with empty/short volume arrays pass nil). The
+        // live path forwards history.volumes unconditionally and advise() handles zero-volume
+        // internally — so the only gap to close here is the alignment precondition.
+        let volumesAligned = history.volumes.count == n
+
+        // BENCHMARK DATE-ALIGNMENT: relativeStrength compares each side's TRAILING-126-bar return,
+        // so the benchmark slice handed to advise() for symbol-bar i MUST end on the SAME CALENDAR
+        // DATE as bar i — NOT the same index (symbol & benchmark differ in length/holidays). Walk a
+        // forward-only pointer `bj` over benchmark.dates: for bar i (date d = history.dates[i]) it is
+        // the largest j with benchmark.dates[j] <= d (nearest-prior). dates are ascending on both
+        // sides and i only advances, so bj only advances → O(n) total.
+        let benchDates = benchmark?.dates
+        let benchCloses = benchmark?.closes
+        let datesUsable = (benchDates?.count == benchCloses?.count) && history.dates.count == n
+        var bj = -1   // last benchmark index with date <= current symbol date; -1 = none yet
+
         var trades: [BacktestTrade] = []
         var i = warmup
         while i < n - 1 {
-            // Decide using ONLY data available at the close of bar i.
+            // Volumes for this decision: same-array prefix, only when aligned.
+            let vol: [Double]? = volumesAligned ? Array(history.volumes[0...i]) : nil
+
+            // Date-aligned benchmark prefix ending on or before symbol bar i's date.
+            var benchPrefix: [Double]? = nil
+            if datesUsable, let bd = benchDates, let bc = benchCloses {
+                let d = history.dates[i]
+                while bj + 1 < bd.count, bd[bj + 1] <= d { bj += 1 }   // advance to nearest-prior
+                if bj >= 0 { benchPrefix = Array(bc[0...bj]) }          // else nil → relStr nil-gated
+            }
+
+            // Decide using ONLY data available at the close of bar i — NOW with the same volume +
+            // benchmark terms the LIVE path feeds advise(), so the backtest measures the SHIPPED rule.
             let advice = StockSageAdvisor.advise(closes: Array(closes[0...i]),
                                                  highs: Array(highs[0...i]),
-                                                 lows: Array(lows[0...i]))
+                                                 lows: Array(lows[0...i]),
+                                                 volumes: vol,
+                                                 benchmarkCloses: benchPrefix)
             guard advice.action == .buy || advice.action == .strongBuy,
                   let stop = advice.stopPrice else { i += 1; continue }
 

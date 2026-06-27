@@ -16,8 +16,17 @@ import Foundation
 //   4. Require a minimum total sample; below it, `fit` returns nil and the caller keeps the
 //      conservative linear prior.
 //
-// Pure + deterministic → unit-tested. Calibrating is honest about uncertainty (lower bound), not
-// optimistic — the whole point is to stop sizing on an invented probability.
+// Two fitting paths (selected by sample size in `fit`):
+//   • ≥ isotonicMinSamples → the Wilson-LOWER-BOUND + isotonic path above: genuinely conservative
+//     (each bin's win-prob is a one-sided lower confidence bound, so a thin/lucky bin can't
+//     over-state edge).
+//   • < isotonicMinSamples → Platt scaling, which is a CENTRAL MLE estimate of P(win | conviction),
+//     NOT a one-sided lower bound. It does NOT apply a Wilson/LCB haircut. Conservatism for this
+//     small-N path is therefore NOT provided by Platt itself — it is the job of the planned
+//     candidate-selector ({isotonic, Beta, identity}, OOS-picked) + identity fallback (iter7).
+//
+// Pure + deterministic → unit-tested. The isotonic path is honest about uncertainty via its lower
+// bound; the Platt path is a best-estimate central map and must not be read as a conservative bound.
 struct StockSageConvictionCalibration: Sendable, Equatable {
     /// One ascending conviction band and its calibrated win probability.
     struct Bin: Sendable, Equatable {
@@ -111,6 +120,10 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
     /// isotonic. Deterministic (fixed init, bounded Newton). Produces the SAME [Bin] substrate as the
     /// isotonic path (sigmoid evaluated at each band's midpoint), so winProb(_:)/bins/sampleSize and
     /// every downstream consumer are unchanged. Monotone non-decreasing iff A ≤ 0, which we enforce.
+    /// HONESTY: this is a CENTRAL MLE estimate of P(win | conviction) (with Platt target smoothing),
+    /// NOT a one-sided conservative lower bound — UNLIKE the isotonic path's Wilson-LCB bins. It does
+    /// not haircut for sampling uncertainty; small-N conservatism is the planned selector+identity
+    /// fallback's job (iter7), not this function's.
     private nonisolated static func fitPlatt(_ outcomes: [(conviction: Double, won: Bool)],
                                              binCount: Int, minPerBin: Int,
                                              prior: Double) -> StockSageConvictionCalibration? {
