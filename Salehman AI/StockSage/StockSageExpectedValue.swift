@@ -240,7 +240,7 @@ enum StockSageExpectedValue {
     enum NetCostFloorFlag: Sendable, Equatable {
         case belowFloor(netVelocity: Double)   // de-ranked: net EV/day under the floor
         case clears                            // at/above floor (or no defined net velocity)
-        var isDeranked: Bool { if case .belowFloor = self { return true }; return false }
+        nonisolated var isDeranked: Bool { if case .belowFloor = self { return true }; return false }
         var badge: String {
             if case .belowFloor = self { return "below net-cost floor" }
             return ""
@@ -513,10 +513,11 @@ enum StockSageExpectedValue {
         // Calibration-aware so every headline number (best EV, fastest velocity, weekly R) uses the
         // SAME measured win-prob as the idea cards — no calibrated-next-to-uncalibrated mismatch.
         let best = bestOpportunity(ideas, regime: regime, earnings: earnings, calibration: calibration)
-        // Use rankByVelocity (earnings-aware) then filter to positive-EV — so the header
-        // "Fastest" badge always matches the earnings-penalized board sort, not raw velocity.
+        // Use rankByVelocity (earnings-aware) then skip below-floor and negative-EV ideas —
+        // so the "Fastest" headline matches the board's floor-de-ranked, earnings-penalized sort.
         let fastest = rankByVelocity(ideas, holds: holds, earnings: earnings, calibration: calibration)
-            .first(where: { (ev(for: $0, calibration: calibration)?.evR ?? -1) > 0 })
+            .first(where: { (ev(for: $0, calibration: calibration)?.evR ?? -1) > 0
+                            && !netCostFloorFlag(for: $0, holds: holds, calibration: calibration).isDeranked })
         // The brake: the owner's worst losing streak, compounded down at the risk fraction.
         let dd = StockSageJournal.equityRisk(trades)
             .flatMap { StockSageRiskOfRuin.scenario(losses: $0.maxConsecutiveLosses, fraction: fraction) }
