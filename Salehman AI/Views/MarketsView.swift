@@ -2532,6 +2532,22 @@ struct MarketsView: View {
                     .help("Copy the ranked ideas as CSV (rank, action, conviction, stop/target, weight, rationale)")
                     .accessibilityLabel("Copy ideas board as CSV")
                 }
+                if store.isLoadingIdeas {
+                    Button { store.cancelIdeasRefresh() } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("Cancel")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(.white.opacity(0.08), in: Capsule())
+                    }
+                    .buttonStyle(LuxPressStyle())
+                    .help("Stop the in-progress ideas scan")
+                    .accessibilityLabel("Cancel ideas analysis")
+                }
                 Button { Task { await store.refreshIdeas() } } label: {
                     HStack(spacing: 6) {
                         Group {

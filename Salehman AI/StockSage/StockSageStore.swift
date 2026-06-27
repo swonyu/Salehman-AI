@@ -79,6 +79,8 @@ final class StockSageStore: ObservableObject {
     // Advice/ideas — the advisor run across the universe on real candle history.
     @Published private(set) var ideas: [StockSageIdea] = []
     @Published private(set) var isLoadingIdeas = false
+    /// In-flight ideas-refresh task, retained so the UI can cancel it (backlog #12).
+    private var ideasRefreshTask: Task<Void, Never>?
     @Published private(set) var ideasUpdated: Date?
     @Published private(set) var ideasError: String?
     /// Symbols the last analysis couldn't fetch history for (feed miss / rate-limit) —
@@ -261,7 +263,16 @@ final class StockSageStore: ObservableObject {
             return
         }
         isLoadingIdeas = true
-        defer { isLoadingIdeas = false }   // stays true across the fetch AND the detached compute
+        defer { isLoadingIdeas = false }   // clears on EVERY path: success, feed-failure early-return, AND cancel
+        let task = Task { await self.performRefreshIdeas() }
+        ideasRefreshTask = task
+        await task.value                   // keep refreshIdeas awaitable so callers see populated `ideas`
+        ideasRefreshTask = nil
+    }
+
+    /// The heavy ideas scan, run as a cancellable child task. MainActor-isolated (inherited),
+    /// so no actor hops are added. Cancellation stops it applying stale results.
+    private func performRefreshIdeas() async {
         ideasError = nil
         let universe = trackedDefs()
         // Fetch the benchmark (^GSPC) in parallel so each idea can be scored on relative
@@ -269,6 +280,7 @@ final class StockSageStore: ObservableObject {
         async let benchmarkTask = StockSageQuoteService.fetchHistory("^GSPC", range: "1y")
         let histories = await StockSageQuoteService.fetchHistories(for: universe.map(\.symbol))
         let benchmark = await benchmarkTask
+        guard !Task.isCancelled else { return }
 
         guard !histories.isEmpty else {
             ideasError = "Couldn't reach the market feed for analysis — try again."
@@ -276,6 +288,7 @@ final class StockSageStore: ObservableObject {
         }
         let cal = convictionCalibration                           // read on the main actor before the await hop
         let built = await Self.buildIdeas(defs: universe, histories: histories, benchmark: benchmark, calibration: cal)
+        guard !Task.isCancelled else { return }
         // Re-reconcile vs the CURRENT tracked set (mirror refresh() at the liveFiltered step): a
         // removeSymbol() that landed DURING the await must win, else the pre-await `universe` snapshot
         // resurrects the dropped ticker into ranked ideas AND the capital allocator (a stale $ size).
@@ -303,6 +316,9 @@ final class StockSageStore: ObservableObject {
         }
         ideasUpdated = Date()
     }
+
+    /// Cancel an in-flight ideas scan (backlog #12). The outer refreshIdeas defer clears the spinner.
+    func cancelIdeasRefresh() { ideasRefreshTask?.cancel() }
 
     /// Re-fetch ONLY the symbols the last scan couldn't price and merge them in, re-ranking.
     /// Cheap relative to a full refresh; user-triggered from the "Retry failed" affordance.
