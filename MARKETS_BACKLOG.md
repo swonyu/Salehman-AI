@@ -129,7 +129,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Color-only P&L and unlabeled destructive buttons are real a11y failures on the owner's own audit trail. Combine each row into one labeled element ('AAPL Long @150, +1.5R, closed'), prefix signs/words for gain/loss, label the trash/Close buttons with the symbol.
 **Files:** Salehman AI/Views/MarketsView.swift:1282-1339
 
-### ⬜ #22 — Earnings fetch: add concurrency cap, timeout, and per-symbol cache  [medium/medium, Data/perf]
+### ✅ DONE #22 — Earnings fetch: add concurrency cap, timeout, and per-symbol cache  [medium/medium, Data/perf]
 **What:** refreshEarnings(symbol:) fetches per-symbol on demand with no concurrency cap, timeout, or cache; a user opening 50 symbol details can launch 50 serial fetches, each silently failing on a hang.
 **Why:** Earnings proximity is a trade-timing input — a silently-stale fetch means trading into earnings blind. Add ~4-parallel + 8s timeout + a symbol-keyed cache (like multiTimeframe), and show 'Earnings data stale' on timeout.
 **Files:** Salehman AI/StockSage/StockSageStore.swift:434-440
