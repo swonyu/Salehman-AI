@@ -3042,7 +3042,7 @@ struct MarketsView: View {
                         Spacer()
                         calibrationChip   // measured (n) vs assumed — qualifies the EV/$ numbers below
                     }
-                    HStack(alignment: .top, spacing: 18) {
+                    HStack(alignment: .top, spacing: DS.Space.lg) {
                         if let sym = s.bestSymbol, let ev = s.bestEV {
                             VStack(alignment: .leading, spacing: 2) {
                                 summaryStat("Best now", sym, String(format: "%+.2fR EV", ev))
@@ -3218,7 +3218,7 @@ struct MarketsView: View {
                 }
                 Text(MoneyVelocityCopy.fastLane)
                     .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 14) {
+                HStack(spacing: DS.Space.md) {
                     Text("Hold est:").font(.system(size: mvFont9)).foregroundStyle(.secondary)
                     Stepper(value: $cryptoHoldDays, in: 1...60, step: 1) {
                         Text("crypto \(Int(cryptoHoldDays))d").font(.system(size: mvFont9)).foregroundStyle(.white)
