@@ -33,6 +33,7 @@ jobs:
 
       - name: Build
         run: |
+          set -o pipefail   # without this, tail's exit 0 masks an xcodebuild failure (false-green)
           xcodebuild -scheme "Salehman AI" \
             -destination 'platform=macOS' \
             -configuration Debug \
@@ -41,6 +42,7 @@ jobs:
 
       - name: Test (math-invariant + full unit suite)
         run: |
+          set -o pipefail
           xcodebuild test -scheme "Salehman AI" \
             -destination 'platform=macOS' \
             -configuration Debug \
