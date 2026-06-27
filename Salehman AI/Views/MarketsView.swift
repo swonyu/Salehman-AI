@@ -3985,7 +3985,7 @@ struct MarketsView: View {
             .frame(maxWidth: 680, alignment: .leading)   // cap content for readability
             .frame(maxWidth: .infinity)                  // …centered on wide windows
         }
-        .frame(minWidth: 440, minHeight: 480)
+        .frame(minWidth: 440, maxWidth: 680, minHeight: 480)
         .background(
             ZStack {
                 DS.Palette.codeSurface
