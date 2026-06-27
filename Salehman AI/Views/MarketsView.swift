@@ -3044,7 +3044,14 @@ struct MarketsView: View {
                     }
                     HStack(alignment: .top, spacing: 18) {
                         if let sym = s.bestSymbol, let ev = s.bestEV {
-                            summaryStat("Best now", sym, String(format: "%+.2fR EV", ev))
+                            VStack(alignment: .leading, spacing: 2) {
+                                summaryStat("Best now", sym, String(format: "%+.2fR EV", ev))
+                                if let ep = store.earnings[sym.uppercased()], ep.isWarning {
+                                    let badge = ep.severity == .imminent ? "⚠︎ earnings ~\(ep.daysUntil)d" : "earnings ~\(ep.daysUntil)d"
+                                    Text(badge).font(.system(size: mvFont8))
+                                        .foregroundStyle(ep.severity == .imminent ? DS.Palette.warningSoft : .secondary)
+                                }
+                            }
                         }
                         if let sym = s.fastestSymbol, let v = s.fastestVelocity {
                             summaryStat("Fastest", sym, String(format: "%+.2fR/day", v))
