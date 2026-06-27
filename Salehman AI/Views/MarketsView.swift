@@ -3054,7 +3054,14 @@ struct MarketsView: View {
                             }
                         }
                         if let sym = s.fastestSymbol, let v = s.fastestVelocity {
-                            summaryStat("Fastest", sym, String(format: "%+.2fR/day", v))
+                            VStack(alignment: .leading, spacing: 2) {
+                                summaryStat("Fastest", sym, String(format: "%+.2fR/day", v))
+                                if let ep = store.earnings[sym.uppercased()], ep.isWarning {
+                                    let badge = ep.severity == .imminent ? "⚠︎ earnings ~\(ep.daysUntil)d" : "earnings ~\(ep.daysUntil)d"
+                                    Text(badge).font(.system(size: mvFont8))
+                                        .foregroundStyle(ep.severity == .imminent ? DS.Palette.warningSoft : .secondary)
+                                }
+                            }
                         }
                         if let wk = s.weeklyR {
                             summaryStat("Est./week", String(format: "%+.1fR", wk), "if you run top 3", subColor: .secondary)
