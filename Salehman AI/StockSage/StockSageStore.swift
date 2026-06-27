@@ -274,7 +274,8 @@ final class StockSageStore: ObservableObject {
             ideasError = "Couldn't reach the market feed for analysis — try again."
             return
         }
-        let built = await Self.buildIdeas(defs: universe, histories: histories, benchmark: benchmark)
+        let cal = convictionCalibration                           // read on the main actor before the await hop
+        let built = await Self.buildIdeas(defs: universe, histories: histories, benchmark: benchmark, calibration: cal)
         // Re-reconcile vs the CURRENT tracked set (mirror refresh() at the liveFiltered step): a
         // removeSymbol() that landed DURING the await must win, else the pre-await `universe` snapshot
         // resurrects the dropped ticker into ranked ideas AND the capital allocator (a stale $ size).
@@ -311,14 +312,17 @@ final class StockSageStore: ObservableObject {
         isLoadingIdeas = true
         defer { isLoadingIdeas = false }
         ideasError = nil
+        let cal = convictionCalibration                           // read on the main actor before the await hop
         let retrySet = Set(ideasMissing.map { $0.uppercased() })
         let defs = trackedDefs().filter { retrySet.contains($0.symbol.uppercased()) }
+        async let benchmarkTask = StockSageQuoteService.fetchHistory("^GSPC", range: "1y")
         let histories = await StockSageQuoteService.fetchHistories(for: defs.map(\.symbol))
+        let benchmark = await benchmarkTask
         guard !histories.isEmpty else {
             ideasError = "Still couldn't reach those symbols — try again later."
             return
         }
-        let built = await Self.buildIdeas(defs: defs, histories: histories)
+        let built = await Self.buildIdeas(defs: defs, histories: histories, benchmark: benchmark, calibration: cal)
         let newSyms = Set(built.map { $0.symbol.uppercased() })
         // Re-reconcile vs the current tracked set (mirror refreshIdeas): a removeSymbol() during the
         // retry await must not resurrect the dropped ticker via the pre-await `defs`/`built`.
@@ -338,7 +342,8 @@ final class StockSageStore: ObservableObject {
     /// symbol's full year). Pure over its inputs; everything it touches is Sendable.
     nonisolated static func buildIdeas(defs: [StockSageSymbol],
                                        histories: [String: StockSagePriceHistory],
-                                       benchmark: StockSagePriceHistory? = nil) async -> [StockSageIdea] {
+                                       benchmark: StockSagePriceHistory? = nil,
+                                       calibration: StockSageConvictionCalibration? = nil) async -> [StockSageIdea] {
         await Task.detached(priority: .userInitiated) {
             var out: [StockSageIdea] = []
             for sym in defs {
@@ -350,7 +355,24 @@ final class StockSageStore: ObservableObject {
                 // there so FX/crypto don't get a meaningless "Leading/Lagging the S&P" term (and an
                 // index never benchmarks against itself, now moot since indices are excluded above).
                 let bench = StockSageAllocation.assetClass(sym.symbol) == "Equity" ? benchmark : nil
-                let advice = StockSageAdvisor.advise(history: history, benchmark: bench)
+                var advice = StockSageAdvisor.advise(history: history, benchmark: bench)
+                // Re-size on the CALIBRATED win-prob (advise() used the conservative linear prior — it
+                // is pure and can't see the runtime calibration). nil calibration ⇒ recompute returns the
+                // SAME prior weight, so the value is unchanged. Only suggestedWeight differs; the
+                // directional score, action, conviction, stop and target are advise()'s deterministic output.
+                if let calibration {
+                    // Realized vol from the FULL raw closes (matches the advisor) for vol-targeting.
+                    let realizedVolForSizing = StockSageIndicators.annualizedVolatility(history.closes)
+                    let calibratedWeight = StockSageAdvisor.suggestedWeight(
+                        action: advice.action, conviction: advice.conviction, price: price,
+                        stop: advice.stopPrice, target: advice.targetPrice,
+                        realizedVol: realizedVolForSizing, calibration: calibration)
+                    advice = TradeAdvice(action: advice.action, conviction: advice.conviction,
+                                         regime: advice.regime, rationale: advice.rationale,
+                                         stopPrice: advice.stopPrice, targetPrice: advice.targetPrice,
+                                         suggestedWeight: calibratedWeight, caveat: advice.caveat,
+                                         stopMultiplier: advice.stopMultiplier, stopReason: advice.stopReason)
+                }
                 let recent = Array(history.closes.suffix(63))
                 let spark = SparkSeries.downsample(recent)
                 // True daily move from the UN-downsampled closes (spark points are ~2 days apart).

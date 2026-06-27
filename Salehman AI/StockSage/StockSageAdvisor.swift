@@ -251,36 +251,47 @@ enum StockSageAdvisor {
         let stopMult = Self.stopMultiple(forVol: realizedVol)
         let stopReason = realizedVol.map { String(format: "%.1f×ATR stop — sized for %.0f%% annualized volatility", stopMult, $0 * 100) }
 
-        // Position size — KELLY-shaped: size by the FULL edge (win prob AND payoff R), not
-        // conviction alone. f* = W − (1−W)/R (1 unit = the stop loss, so f* is a stop-RISK
-        // fraction), half-Kelly, then capped by the fixed 1%-risk budget and the per-idea max.
-        // Replaces the old (0.4+0.6·conviction) scaler, which ignored payoff R — so a 4:1 setup now
-        // sizes larger than a 1.5:1 of equal conviction, and a thin-reward setup sizes DOWN. The 1%
-        // cap keeps it conservative (Kelly only ever shrinks below the budget). Distance is absolute
-        // so a short (stop > price) sizes like a long. (Uses the prior W here; the EV display +
-        // allocator apply the calibrated W.)
-        var weight = 0.0
-        if (isBuy || isSell), let stop, let target {
-            let stopDistPct = abs(price - stop) / price
-            if stopDistPct > 0 {
-                let rr = Swift.min(abs(target - price) / abs(price - stop), 50)
-                let w = StockSageExpectedValue.winProbEstimate(conviction: conviction)
-                let fStar = Swift.max(0, w - (1 - w) / rr)        // Kelly risk fraction
-                var riskFraction = Swift.min(fStar / 2, riskPerTrade)   // half-Kelly, ≤ the 1% budget
-                // VOL TARGETING (risk assets): shrink the RISK budget for high realized volatility —
-                // a ~40%-vol name risks ~½, a ~70%-vol crypto/growth name ~⅓; calm names (≤20% vol)
-                // are unchanged. This is leverage management (the documented Sharpe benefit is for
-                // RISK ASSETS), distinct from the vol-scaled STOP above (which sizes the stop, not
-                // the budget). Floored at 1 so it can only reduce risk. nil vol ⇒ unchanged.
-                if let v = realizedVol { riskFraction /= StockSageExpectedValue.cryptoRiskScaler(annualizedVol: v) }
-                weight = Swift.min(riskFraction / stopDistPct, maxWeight)
-            }
-        }
+        // Position size — KELLY-shaped off the win prob (see `suggestedWeight`). advise() passes
+        // NO calibration ⇒ the conservative linear prior, byte-identical to before. The calibrated
+        // win-prob is applied at the runtime build site (StockSageStore.buildIdeas), which alone
+        // can see the fitted calibration — keeping advise() pure/deterministic for the backtester.
+        let weight = Self.suggestedWeight(action: action, conviction: conviction, price: price,
+                                          stop: stop, target: target, realizedVol: realizedVol,
+                                          calibration: nil)
 
         return TradeAdvice(action: action, conviction: conviction, regime: regime,
                            rationale: rationale, stopPrice: stop, targetPrice: target,
                            suggestedWeight: weight, caveat: caveat,
                            stopMultiplier: stopMult, stopReason: stopReason)
+    }
+
+    /// Half-Kelly position size as a fraction of the book, off the win probability for this
+    /// conviction. Extracted from advise() VERBATIM so advise(…) (calibration nil) is byte-
+    /// identical to the prior inline math. Pass a fitted `calibration` to size on the MEASURED,
+    /// conservative win rate (Wilson-LCB + isotonic) instead of the invented linear prior — used
+    /// by the runtime build site, which alone sees the calibration. Pure + deterministic.
+    ///
+    /// f* = W − (1−W)/R  (1 unit risked = the stop distance), then ×0.5 (half-Kelly), then:
+    ///   • capped by the fixed `riskPerTrade` (1%) budget,
+    ///   • shrunk for realized vol via `cryptoRiskScaler` (leverage management; floored at 1× ⇒ only reduces),
+    ///   • divided by the stop-distance % to convert stop-RISK into a book WEIGHT,
+    ///   • clamped to [0, maxWeight].
+    /// Returns 0 for a non-buy/sell action, a missing stop/target, or a non-positive stop distance.
+    nonisolated static func suggestedWeight(action: TradeAdvice.Action, conviction: Double,
+                                            price: Double, stop: Double?, target: Double?,
+                                            realizedVol: Double?,
+                                            calibration: StockSageConvictionCalibration? = nil) -> Double {
+        let isBuy = action == .buy || action == .strongBuy
+        let isSell = action == .sell || action == .reduce
+        guard (isBuy || isSell), let stop, let target, price > 0 else { return 0 }
+        let stopDistPct = abs(price - stop) / price
+        guard stopDistPct > 0 else { return 0 }
+        let rr = Swift.min(abs(target - price) / abs(price - stop), 50)
+        let w = StockSageExpectedValue.winProbEstimate(conviction: conviction, calibration: calibration)
+        let fStar = Swift.max(0, w - (1 - w) / rr)              // Kelly stop-risk fraction
+        var riskFraction = Swift.min(fStar / 2, riskPerTrade)   // half-Kelly, ≤ the 1% budget
+        if let v = realizedVol { riskFraction /= StockSageExpectedValue.cryptoRiskScaler(annualizedVol: v) }
+        return Swift.min(riskFraction / stopDistPct, maxWeight)
     }
 
     /// Symmetric 2-ATR swing stop + 2:1 target for an actionable buy/sell. Long: stop
