@@ -144,7 +144,7 @@ What's missing to effectively 'list all stocks' without overloading the per-symb
 **Why:** Small but real honesty gap the owner cares about. Relabel to 'N market groups' (or count distinct exchanges programmatically). Note the stale '~99-symbol analysis' / '28 markets' code comments are now wrong too — make the count dynamic.
 **Files:** Salehman AI/Views/MarketsView.swift:150; Salehman AI/Views/MarketsView.swift:301; Salehman AI/StockSage/StockSageQuoteService.swift:307
 
-### ⬜ #25 — Watchlist-scoped Monitor + refresh (stop pulling 250+ symbols to watch 5)  [medium/medium, Monitor/Perf/perf]
+### ✅ DONE #25 — Watchlist-scoped Monitor + refresh (stop pulling 250+ symbols to watch 5)  [medium/medium, Monitor/Perf/perf]
 **What:** Monitor.start() calls full refresh() every 45s and runCycle scans every tracked symbol. A user watching 5 picks still pulls the whole analyzed core each cycle and scans all of it — ~10-50x waste, and it grows with the universe.
 **Why:** Bandwidth + rate-limit pressure scale with universe size; the owner mostly watches a few names. Add an optional pinned-watchlist filter to refresh()/runCycle (fallback to full when nil) so alerts on a small set don't pull the world.
 **Files:** Salehman AI/StockSage/StockSageMonitor.swift:40-59; Salehman AI/StockSage/StockSageStore.swift:538-548
