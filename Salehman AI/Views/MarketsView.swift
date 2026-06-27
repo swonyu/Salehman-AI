@@ -4060,7 +4060,7 @@ struct MarketsView: View {
     // MARK: Empty
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: DS.Space.sm) {
             ZStack {
                 if reduceMotion {
                     // Reduce Motion: static halo (no breathing loop).
