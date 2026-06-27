@@ -160,22 +160,14 @@ enum StockSageAdvisor {
             else if rsi < 20 { score += 0.10; rationale.append("RSI < 20 — washed out") }
         }
 
-        // Volume confirmation (real volumes only): a directional move carried by
-        // above-average participation is more trustworthy; one on thin volume is suspect.
-        // Nudges the MAGNITUDE of the existing signal (±0.05), never flips its direction,
-        // and does nothing when volumes are absent/zero (FX, indices) — close-only callers
-        // get no volume term here. The variance scalar below applies to ALL callers with
-        // ≥30 bars (it is computed from closes alone), so a high-vol stock IS affected
-        // differently from the pre-ITER3 code even in close-only mode.
+        // scoreBeforeConfirm anchors the trend-family boundary: RSI is already applied above
+        // and is excluded from the trend family. The family contribution is computed as
+        // (score - scoreBeforeConfirm) below, capturing RS + volAdjMom (the remaining
+        // trend-family terms added after this point).
+        // NOTE: the ±0.05 volume-confirmation term was removed (parsimony cut, 2026-06-27,
+        // owner-ratified): T2 ablation showed it directionally worsened drawdown and adds
+        // complexity inside the already-capped/variance-scaled trend family. RS (±0.08) stays.
         let scoreBeforeConfirm = score   // RSI already applied & excluded from the trend family
-        if let volumes, abs(score) > 0,
-           let vc = StockSageIndicators.volumeConfirmation(closes: closes, volumes: volumes) {
-            let dir = score >= 0 ? 1.0 : -1.0
-            score += dir * (vc.confirmed ? 0.05 : -0.05)
-            rationale.append(vc.confirmed
-                ? String(format: "Volume-confirmed (recent ×%.1f the prior average)", vc.ratio)
-                : String(format: "Thin volume (recent ×%.1f the prior average) — weak participation", vc.ratio))
-        }
 
         // Volatility-adjusted momentum quality (needs highs/lows for ATR): a move that's
         // large relative to the asset's OWN noise is a clean, risk-efficient trend; a same-%
@@ -211,7 +203,7 @@ enum StockSageAdvisor {
 
         // The scalar multiplies ONLY the trend-family contribution (the correlated momentum bucket
         // the research targets), NOT the independent RSI mean-reversion / nudge terms. Decompose:
-        let rawTrendFamily = trendCore + (score - scoreBeforeConfirm)   // trend+mom+MACD+vol+relStr+volAdjMom
+        let rawTrendFamily = trendCore + (score - scoreBeforeConfirm)   // trend+mom+MACD+RS+volAdjMom (vol term removed 2026-06-27)
         let nonFamily      = score - rawTrendFamily                     // RSI bounce / fade / extended nudges
 
         // 1) SCALE the trend family inversely by variance (attenuation-only).

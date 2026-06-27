@@ -8,29 +8,31 @@ import Foundation
 // (advise(history:benchmark:) = buildIdeas) can NEVER silently diverge again after the
 // d589164 fidelity fix. Two specific regressions are guarded:
 //
-//   1. VOLUME FIDELITY: runTrades gates volumes on `history.volumes.count == n`; the live
-//      path forwards history.volumes unconditionally. If someone reverts that guard, pathB
-//      is built with nil volumes while pathA has volumes ⇒ conviction shifts ≥ 0.05·varScalar
-//      ⇒ parity asserts RED.
+//   1. VOLUME FIDELITY (trivially satisfied after 2026-06-27 parsimony cut): the ±0.05
+//      volume-confirmation term was removed from advise() (owner-ratified: T2 ablation
+//      showed it directionally worsened drawdown). The `volumes` parameter is retained
+//      (callers still pass it; it is simply unused for scoring). Volume input is now
+//      INERT — both paths produce the same result regardless of what volumes are passed.
+//      The volume negative control below documents this invariant.
 //
 //   2. BENCHMARK DATE-ALIGNMENT: runTrades walks a forward-only `bj` pointer to find the
 //      largest benchmark index j with benchDates[j] <= symbolDate[i] (nearest-prior). The
 //      live path forwards benchmark?.closes directly. If someone reverts to a naive index
 //      slice (e.g. benchCloses[0...i]), the benchmark length mismatches ⇒ different RS ⇒
-//      ±0.08 swing ⇒ parity RED.
+//      ±0.08 swing ⇒ parity RED. RS (±0.08) is the sole live regression guard now.
 //
 // BAR COUNT: 130 (≥128). relativeStrength uses returnOverPeriod(period:126), which requires
 // closes.count > 126. At < 127 bars the RS term is nil-gated and the benchmark-alignment
 // regression goes UNDETECTED. 130 bars also clears sma50; sma200 stays nil (that's fine —
 // both paths see the same nil).
 //
-// NEGATIVE CONTROLS: two controls prove the volume and RS terms are individually LIVE at
-// 130 bars — without them the parity asserts could pass vacuously (both paths degenerate
-// to the same nil inputs) and would not catch the fidelity regression:
-//   • Volume control: thin recent volumes (1.0 vs 1_000_000) flip the volumeConfirmation
-//     term (confirmed=false) ⇒ conviction changes vs a no-volume call ⇒ VOLUME TERM IS LIVE.
+// NEGATIVE CONTROLS: one live control + one inert-documentation control:
+//   • Volume control (INERT): thin vs full volumes produce IDENTICAL conviction because
+//     the volume term was removed (2026-06-27 parsimony cut). Documented in
+//     negativeControl_volumeInputIsInert.
 //   • Benchmark control: with-benchmark vs no-benchmark calls on the same 130-bar fixture
-//     differ in conviction ⇒ RS TERM IS LIVE (alignment matters).
+//     differ in conviction ⇒ RS TERM IS LIVE (alignment matters). This is now the SOLE
+//     live negative control that prevents vacuous parity passes.
 
 // Tolerance tier — matching the math-invariant harness EPS = 1e-6.
 private let _parityEPS: Double = 1e-6
@@ -139,50 +141,41 @@ struct StockSageBacktestParityTests {
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // MARK: 2 — NEGATIVE CONTROL A: volume term is LIVE at 130 bars
+    // MARK: 2 — NEGATIVE CONTROL A: volume input is INERT (term removed 2026-06-27)
     // ────────────────────────────────────────────────────────────────────────
     //
-    // Proves the volume term is non-trivial at the chosen fixture size.
-    // Without this, the parity asserts could pass even if runTrades silently drops volumes
-    // (both paths would then compute the same no-volume result and agree vacuously).
+    // Documents that the ±0.05 volume-confirmation term was removed from advise() by
+    // owner-ratified parsimony cut (2026-06-27). T2 ablation showed the term directionally
+    // worsened drawdown; RS (±0.08) has stronger literature backing and stays.
     //
-    // Mechanism:
-    //   volumeConfirmation: recentAvg / priorAvg >= 1 → confirmed (+0.05 to score).
-    //   Thin-recent volumes: prior 20 bars = 1_000_000, last 3 bars = 1.0
-    //   ⇒ ratio = 1.0 / 1_000_000 ≈ 0 ⇒ confirmed = false.
-    //   Close-only call (volumes: nil) = no volume term applied (no +0.05 or −0.05).
-    //   The two calls must differ in conviction by > 1e-9.
+    // The `volumes` parameter is RETAINED on advise() — callers (buildIdeas, runTrades,
+    // backtester) still pass it — but the value is unused for scoring. Volume input is
+    // therefore INERT: thin-recent vs full volumes must produce IDENTICAL conviction.
+    //
+    // This test pins that invariant. If someone re-adds the volume term, this RED.
 
-    @Test func negativeControl_volumeTermIsLive() {
+    @Test func negativeControl_volumeInputIsInert() {
         let bars = 130
-        // Use cleanUptrend closes/highs/lows for a buy signal (abs(score) > 0 so volume term fires).
+        // Use cleanUptrend closes/highs/lows for a buy signal.
         let h = SageFix.history(.cleanUptrend, bars: bars)
         let c  = h.closes
         let hi = h.highs
         let lo = h.lows
 
         // Thin-recent volumes: prior 127 bars = 1_000_000, last 3 bars = 1.0
-        // (lookback=20, recentBars=3; requires volumes.count >= 23 — satisfied by 130 bars)
         var thinVolumes = Array(repeating: 1_000_000.0, count: bars)
         thinVolumes[bars - 1] = 1.0
         thinVolumes[bars - 2] = 1.0
         thinVolumes[bars - 3] = 1.0
 
-        // With thin recent volumes: volumeConfirmation returns (confirmed: false) → score gets −0.05
         let withThinVol = StockSageAdvisor.advise(closes: c, highs: hi, lows: lo,
                                                   volumes: thinVolumes, benchmarkCloses: nil)
-        // With full volumes (constant 1_000_000): ratio = 1.0 → confirmed = true → score gets +0.05
         let withFullVol = StockSageAdvisor.advise(closes: c, highs: hi, lows: lo,
                                                   volumes: h.volumes, benchmarkCloses: nil)
 
-        // The thin-volume call MUST differ from the full-volume call (confirmed flipped)
-        #expect(abs(withThinVol.conviction - withFullVol.conviction) > 1e-9,
-                "VOLUME NEGATIVE CONTROL: thin-recent vs full volumes must produce different conviction — the volume term is not live at 130 bars, or fixture has an issue")
-
-        // Document the directionality: confirmed (full) > thin (unconfirmed)
-        // (assuming the score is positive / buy-family so the +0.05/-0.05 applies)
-        #expect(withThinVol.conviction < withFullVol.conviction,
-                "VOLUME NEGATIVE CONTROL: thin (unconfirmed) must have lower conviction than full-volume (confirmed)")
+        // Volume is inert: thin-recent vs full volumes MUST produce identical conviction.
+        #expect(abs(withThinVol.conviction - withFullVol.conviction) < _parityEPS,
+                "VOLUME INERT: thin-recent vs full volumes must produce identical conviction — volume term was removed (parsimony cut 2026-06-27); if this fails, the term was re-added")
     }
 
     // ────────────────────────────────────────────────────────────────────────

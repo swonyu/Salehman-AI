@@ -440,8 +440,8 @@ struct StockSageMathInvariantTests {
     @Test func varianceScalar_capStillBoundsBeforeKelly() {
         // With scalar == 1.0 (calm cleanUptrend), the trend-family cap (0.65) is still
         // re-asserted after scaling. The raw family on a fully-confirmed uptrend can reach
-        // 0.40 (trend) + 0.15 (mom) + 0.10 (MACD) + 0.05 (vol confirm) + 0.05 (volAdjMom)
-        // + 0.08 (relStr) = 0.83 > 0.65. After scalar×1.0 = 0.83, the cap clamps to 0.65.
+        // 0.40 (trend) + 0.15 (mom) + 0.10 (MACD) + 0.05 (volAdjMom) + 0.08 (RS) = 0.78 > 0.65.
+        // (vol-confirm ±0.05 removed 2026-06-27 parsimony cut.) After scalar×1.0 = 0.78, cap clamps to 0.65.
         // We verify via advise(): suggestedWeight must be finite and ≤ maxWeight 0.20,
         // and the conviction entering Kelly is min(|score|, 1) which only receives the
         // post-cap contribution.
@@ -563,7 +563,7 @@ struct StockSageMathInvariantTests {
         //   mom     +0.15  (6-month return > 0 on accelerating uptrend)
         //   MACD    +0.10  (histogram genuinely > 0 on this convex-up series)
         //   family subtotal = 0.65 (raw), cap = 0.65 (no-op or already at cap)
-        //   vol+relStr nudges: also trend-family, capped at 0.65 total
+        //   volAdjMom+RS nudges: also trend-family, capped at 0.65 total (vol-confirm removed 2026-06-27)
         //   scalar  = 1.0  (calm vol on the smooth ramp → clamp to 1.0)
         //   RSI-extended nudge −0.10 (RSI ~100 on a pure uptrend → extended flag)
         //   score ≈ 0.55–0.65 → Strong Buy (≥ 0.50 threshold)
