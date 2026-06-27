@@ -3373,6 +3373,10 @@ struct MarketsView: View {
                         Text("The rules never triggered a long entry over this window.")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
+                    if bt.openAtEndCount > 0 {
+                        Text("⚠︎ \(bt.trades - bt.openAtEndCount) closed · \(bt.openAtEndCount) open at end — open trades exit at last close, so avgR may be optimistic.")
+                            .font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+                    }
                     // Real-edge confidence: PSR (sample/skew/fat-tail haircut) + out-of-sample decay (overfit).
                     if let psr = bt.probabilisticSharpe {
                         // Glyph + PASS/BELOW word so the verdict survives color-blindness (successSoft and

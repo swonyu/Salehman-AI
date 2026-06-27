@@ -62,17 +62,20 @@ struct BacktestResult: Sendable, Equatable {
     let probabilisticSharpe: Double?
     /// In-sample vs out-of-sample edge decay (overfit red-flag). nil for too few trades to split.
     let decay: WalkForwardDecay?
+    /// Trades still open when history ran out — they inflate avgR/winRate vs truly closed trades.
+    /// Non-zero means the backtest result is optimistic; the UI must say so.
+    let openAtEndCount: Int
 
     /// Defaulted new fields so older constructions (empty, tests) stay valid.
     nonisolated init(trades: Int, wins: Int, winRate: Double, avgR: Double, totalR: Double,
                      maxDrawdownR: Double, sharpe: Double, avgHoldBars: Double,
                      avgWinR: Double = 0, avgLossR: Double = 0, probabilisticSharpe: Double? = nil,
-                     decay: WalkForwardDecay? = nil) {
+                     decay: WalkForwardDecay? = nil, openAtEndCount: Int = 0) {
         self.trades = trades; self.wins = wins; self.winRate = winRate; self.avgR = avgR
         self.totalR = totalR; self.maxDrawdownR = maxDrawdownR; self.sharpe = sharpe
         self.avgHoldBars = avgHoldBars; self.avgWinR = avgWinR; self.avgLossR = avgLossR
         self.probabilisticSharpe = probabilisticSharpe
-        self.decay = decay
+        self.decay = decay; self.openAtEndCount = openAtEndCount
     }
 
     /// Below this, the numbers are noise — the UI must say so.
@@ -443,10 +446,12 @@ enum StockSageBacktester {
         // 70/30 split (≥ 8 → OOS slice ≥ 2); below that it's meaningless, so leave it nil.
         let decay = trades.count >= 8 ? walkForwardDecay(trades) : nil
 
+        let openAtEnd = trades.filter { $0.outcome == .openAtEnd }.count
         return BacktestResult(trades: trades.count, wins: wins,
                               winRate: Double(wins) / Double(trades.count),
                               avgR: avgR, totalR: totalR, maxDrawdownR: maxDD,
                               sharpe: sharpe, avgHoldBars: avgHold,
-                              avgWinR: avgWinR, avgLossR: avgLossR, probabilisticSharpe: psr, decay: decay)
+                              avgWinR: avgWinR, avgLossR: avgLossR, probabilisticSharpe: psr,
+                              decay: decay, openAtEndCount: openAtEnd)
     }
 }
