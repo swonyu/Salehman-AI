@@ -8819,6 +8819,11 @@ Fixed a correctness bug in `StockSageConvictionCalibration.fitPlatt`: when Newto
 **⚠️ Swift-Testing gotcha discovered (backtest harness):** `xcodebuild -only-testing:".../method"` WITHOUT a trailing `()` runs ZERO tests but reports `TEST SUCCEEDED` (silent no-op). Method-level filters MUST append `()`. Class/target-level filters (what the CI + gates use) are unaffected.
 **Result:** ✅ CI workflow committed + pushed to private origin. CI run result TBD (may need self-hosted runner).
 
+## 2026-06-27 · CI — surface the test VERDICT in the log (robust, no false-green regression)
+**Files:** `.github/workflows/ci.yml`
+**What & why:** The test step's `… | tee test.log | tail -60` window landed on unrelated (KnowledgeRAG/Chat) tests, so the CI log never positively showed the parity/DSR/math-invariant verdict — green was enforced only by `pipefail`+exit-code (an observability gap; the audit flagged it). Fixed by wrapping the pipe in `if ! …; then print failing lines + exit 1; fi` then printing the positive verdict line on success. **Deliberately NOT the audit's suggested `grep "TEST SUCCEEDED|FAILED" || tail`** — that `||` lets `grep`'s exit 0 on a "TEST FAILED" line swallow a real failure and RE-CREATE the false-green (the c05ce33 bug). The `if !` form guarantees a failed xcodebuild exits the step non-zero. Verified by reading the next CI run log (verdict line present + conclusion correct).
+**Result:** ✅ CI green is now verifiable IN THE LOG, not just by exit code. yml-only change.
+
 ## Standing notes / known issues
 - **Disk pressure (2026-06-07):** volume hit 100% full (tooling failed with ENOSPC). Cleared DerivedData + Trash → ~5 GB free. Keep an eye on it; `rm -rf ~/Library/Developer/Xcode/DerivedData/*` reclaims the Xcode cache safely. (Update: later cleanup of `AIFramework/.build` + scaffolds brought it to ~10 GB free.)
 - **DeepSeek key exposed (2026-06-07) → RESOLVED by removal (2026-06-12):** owner pasted a DeepSeek key into chat; on 2026-06-12 the owner ordered the provider removed entirely. The integration is gone and the stored Keychain item was deleted. ONE owner action remains: **revoke the key server-side** at platform.deepseek.com/api_keys (it transited chat transcripts, so revoke even though the app no longer uses it).

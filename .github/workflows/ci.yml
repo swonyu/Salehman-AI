@@ -48,8 +48,19 @@ jobs:
       - name: Test (math-invariant + full unit suite)
         run: |
           set -o pipefail
-          xcodebuild test -scheme "Salehman AI" \
+          # Robust verdict surfacing: the `if !` (not a `grep || tail`) guarantees a failed
+          # xcodebuild exits the step non-zero — `grep ... || tail` would let grep's exit 0 on a
+          # "TEST FAILED" line swallow the failure and re-create the false-green. On failure we
+          # print the failing lines + exit 1; on success we print the positive verdict line so the
+          # green is verifiable IN THE LOG (the old `tail -60` window landed on unrelated tests).
+          if ! xcodebuild test -scheme "Salehman AI" \
             -destination 'platform=macOS' \
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
-            -only-testing:"Salehman AITests" 2>&1 | tee test.log | tail -60
+            -only-testing:"Salehman AITests" 2>&1 | tee test.log | tail -60; then
+            echo "=== TEST STEP FAILED — failing lines ==="
+            grep -E "failed \(|error:|TEST FAILED| [1-9][0-9]* failures?" test.log | tail -25
+            exit 1
+          fi
+          echo "=== TEST VERDICT (positive confirmation) ==="
+          grep -E "TEST SUCCEEDED|Executed [0-9]+ test|[0-9]+ failures?|Test Suite .* passed" test.log | tail -8
