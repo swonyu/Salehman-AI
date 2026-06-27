@@ -3774,10 +3774,11 @@ struct MarketsView: View {
                     // [AUDIT iter6] Honest floor label: shown verbatim when net EV/day (after frictions) is
                     // below the 0.005R/day floor. The idea is de-ranked on the velocity board; this badge
                     // surfaces the reason so the re-ordering is transparent and auditable.
-                    if StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration).isDeranked {
+                    let vFloorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
+                    if vFloorFlag.isDeranked {
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "exclamationmark.circle").font(.system(size: 11)).foregroundStyle(DS.Palette.warningSoft)
-                            Text("below net-cost floor — net EV/day after frictions is under 0.005R/day; de-ranked on the velocity board.")
+                            Text(vFloorFlag.badge + " — net EV/day after frictions is under 0.005R/day; de-ranked on the velocity board.")
                                 .font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                         }
                     }
