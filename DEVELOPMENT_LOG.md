@@ -10206,3 +10206,8 @@ Task complete: MarketsIdeasSection.swift written with DS tokens, 123 lines, extr
 Targeted ideaCard UI improvement: metrics HStack spacing tightened to DS.Space.sm for denser scannable layout (DS tokens only)
 safari-2 released - no more high-value in lane (velocity parity already in other edits)
 DS.Space.sm spacing fix applied in velocityIdeaRow (MarketsView.swift)
+
+## 2026-06-28 — iter7 calibration chronology + ideas-progress reset (owner-directed follow-ups)
+**Files:** `Salehman AI/StockSage/StockSageConvictionCalibration.swift`, `Salehman AI/StockSage/StockSageStore.swift`, `DEVELOPMENT_LOG.md`.
+**What & why:** Two follow-ups from the merge-to-main deep review. (#1) `fit(fromJournal:)` now sorts journal trades by `closedAt` before projecting to `(conviction, won)`, so the positional train/test split in `selectCalibration` (test = most-recent slice) is a genuine "OOS = future" holdout, not merely disjoint — the journal store can return trades in insertion/edit order. Leak-free either way (sets were always disjoint); this pins the intended chronological semantics. (#2) `performRefreshIdeas()` clears `ideasProgress` via `defer { ideasProgress = nil }` right after it's set, so the tuple resets on EVERY exit (both `Task.isCancelled` early-returns + the feed-failure early-return), not only success; the redundant success-path reset was removed. (#3 — remove vestigial `volumes` param — DECLINED by owner: deliberately retained as the live/backtest call-site parity contract + the `negativeControl_volumeInputIsInert` sentinel that goes RED if a volume term is re-added.)
+**Result:** ✅ ** TEST SUCCEEDED ** (full unit suite, isolated DD, 0 failures). `advise()` scoring untouched; no golden-vector change. CI gate to follow before main.

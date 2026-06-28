@@ -623,10 +623,16 @@ extension StockSageConvictionCalibration {
     nonisolated static func fit(fromJournal trades: [TradeRecord],
                                 binCount: Int = 5, minSamples: Int = 30,
                                 z: Double = 1.0, prior: Double = 0.5) -> StockSageConvictionCalibration? {
-        let outcomes = trades.compactMap { t -> (conviction: Double, won: Bool)? in
-            guard let c = t.conviction, let r = t.realizedR else { return nil }
-            return (conviction: c, won: r > 0)
-        }
+        // Sort by CLOSE time before the conviction/outcome projection so the positional train/test
+        // split inside selectCalibration (test = the most-recent slice) is a genuine "OOS = future"
+        // holdout, not merely disjoint. The journal store can hand trades back in insertion/edit order;
+        // this pins chronology so the OOS selection honors its intended semantics. Leak-free either way.
+        let outcomes = trades
+            .sorted { ($0.closedAt ?? .distantPast) < ($1.closedAt ?? .distantPast) }
+            .compactMap { t -> (conviction: Double, won: Bool)? in
+                guard let c = t.conviction, let r = t.realizedR else { return nil }
+                return (conviction: c, won: r > 0)
+            }
         return fit(outcomes, binCount: binCount, minSamples: minSamples, z: z, prior: prior)
     }
 

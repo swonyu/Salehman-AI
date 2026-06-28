@@ -293,6 +293,7 @@ final class StockSageStore: ObservableObject {
         let universe = trackedDefs()
         let total = universe.count
         ideasProgress = (current: 0, total: total)
+        defer { ideasProgress = nil }   // clear on EVERY exit (success + the cancel/feed-failure early-returns), not just success
         // Fetch the benchmark (^GSPC) in parallel so each idea can be scored on relative
         // strength vs the index; nil on failure → ideas degrade gracefully to absolute signals.
         async let benchmarkTask = StockSageQuoteService.fetchHistory("^GSPC", range: "1y")
@@ -335,7 +336,6 @@ final class StockSageStore: ObservableObject {
             !analyzed.contains($0.uppercased()) && StockSageAllocation.assetClass($0) != "Index"
         }
         ideasUpdated = Date()
-        ideasProgress = nil
     }
 
     /// Cancel an in-flight ideas scan (backlog #12). The outer refreshIdeas defer clears the spinner.
