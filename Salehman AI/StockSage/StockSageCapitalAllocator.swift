@@ -137,4 +137,74 @@ enum StockSageCapitalAllocator {
         return CapitalAllocation(positions: sorted, totalHeat: totalHeat, requestedHeat: requestedHeat,
                                  scaleApplied: scaleApplied, account: account, maxHeat: cap, caveat: finalCaveat)
     }
+
+    /// Marginal sizing for ONE new idea against the LIVE book — "I have an idea + an open
+    /// book, how much do I add?" Heat-headroom capped (never pushes total open risk past
+    /// `maxHeat`) and correlation-gated (refuses a name that's really doubling down on a
+    /// held one). Composes the same half-Kelly + heat + cluster-check engines as `allocate`,
+    /// just for a single candidate against an already-open book instead of a fresh deploy.
+    nonisolated static func suggestAdd(
+        idea: StockSageIdea,
+        openTrades: [(shares: Double, entry: Double, stop: Double)],
+        holdings: [(symbol: String, returns: [Double])],
+        candidateReturns: [Double],
+        account: Double,
+        maxHeat: Double = 0.10,
+        correlationThreshold: Double = 0.80,
+        calibration: StockSageConvictionCalibration? = nil
+    ) -> AddSuggestion? {
+        guard account > 0 else { return nil }
+        let a = idea.advice
+        guard let stop = a.stopPrice, let target = a.targetPrice, idea.price > 0,
+              let ev = StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop,
+                                                 target: target, calibration: calibration) else { return nil }
+
+        let cap = Swift.min(Swift.max(0, maxHeat), 1)
+        let heat = StockSagePortfolioHeat.compute(openTrades: openTrades, accountSize: account)
+        let heatBefore = heat?.heatPct ?? 0
+        let headroom = Swift.max(0, cap - heatBefore)
+        let cluster = StockSageClusterCheck.check(candidate: idea.symbol, candidateReturns: candidateReturns,
+                                                   holdings: holdings, threshold: correlationThreshold)
+
+        func blocked(_ reason: String) -> AddSuggestion {
+            AddSuggestion(symbol: idea.symbol, approved: false, riskFraction: 0, shares: 0, dollarsAtRisk: 0,
+                         heatBefore: heatBefore, heatHeadroom: headroom,
+                         nearestCorrelation: cluster?.nearest?.correlation, reason: reason, caveat: caveat)
+        }
+
+        // Concentration gate FIRST — a correlated name is a bad add regardless of edge.
+        if let cluster, cluster.isConcentrating { return blocked(cluster.note) }
+        guard ev.evR > 0 else { return blocked("No positive edge for \(idea.symbol) at the current stop/target.") }
+
+        let k = StockSageKelly.compute(winRate: ev.winProbEstimate, payoffRatio: ev.rewardR, accountSize: account)
+        // Same per-position cap `allocate` uses (suggestedFraction, not raw halfKelly), further
+        // capped by whatever heat headroom remains — never pushes total book risk past maxHeat.
+        let suggested = Swift.min(k.suggestedFraction, headroom)
+        guard suggested > 0,
+              let ps = StockSagePositionSizer.size(account: account, riskFraction: suggested, entry: idea.price, stop: stop),
+              ps.shares > 0 else {
+            return blocked(headroom <= 0
+                ? "No heat headroom left — the book is already at \(Int((heatBefore * 100).rounded()))% open risk."
+                : "Position size rounds to zero shares at this account size.")
+        }
+        let reason = suggested < k.suggestedFraction
+            ? "Capped by remaining heat headroom (\(Int((headroom * 100).rounded()))% left of the \(Int((cap * 100).rounded()))% cap)."
+            : "Half-Kelly sized off the estimated edge (evR \(String(format: "%.2f", ev.evR)))."
+        return AddSuggestion(symbol: idea.symbol, approved: true, riskFraction: suggested, shares: ps.shares,
+                             dollarsAtRisk: ps.dollarsAtRisk, heatBefore: heatBefore, heatHeadroom: headroom,
+                             nearestCorrelation: cluster?.nearest?.correlation, reason: reason, caveat: caveat)
+    }
+}
+
+struct AddSuggestion: Sendable, Equatable {
+    let symbol: String
+    let approved: Bool
+    let riskFraction: Double      // suggested heat to add (0 if blocked)
+    let shares: Int
+    let dollarsAtRisk: Double
+    let heatBefore: Double        // current portfolio heat (fraction, 0–1)
+    let heatHeadroom: Double      // maxHeat - heatBefore, floored at 0
+    let nearestCorrelation: Double?
+    let reason: String            // why this size / why blocked
+    let caveat: String
 }

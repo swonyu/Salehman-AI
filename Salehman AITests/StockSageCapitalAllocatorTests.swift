@@ -118,4 +118,66 @@ struct StockSageCapitalAllocatorTests {
                                account: 0).positions.isEmpty)
         #expect(Alloc.allocate(ideas: [], account: 10_000).positions.isEmpty)
     }
+
+    // MARK: - ALLOC_BACKLOG #2: suggestAdd (marginal allocation against the live book)
+
+    @Test func suggestAddSizesAgainstAnEmptyBookAtHalfKellyCappedByHeadroom() {
+        // AAPL 100/90/130 conviction 0.9 → payoff 3, p 0.557, edge Kelly halfKelly ≈0.2047,
+        // suggestedFraction capped at the 20% per-position ceiling. Empty book (0% heat),
+        // default maxHeat 0.10 → the 10% heat headroom binds (tighter than the 20% cap).
+        let candidate = idea("AAPL", price: 100, stop: 90, target: 130, conviction: 0.9)
+        let s = Alloc.suggestAdd(idea: candidate, openTrades: [], holdings: [], candidateReturns: [],
+                                 account: 10_000)!
+        #expect(s.approved)
+        #expect(abs(s.heatBefore) < 1e-9)
+        #expect(abs(s.heatHeadroom - 0.10) < 1e-9)
+        #expect(abs(s.riskFraction - 0.10) < 1e-9)          // headroom (0.10) < suggestedFraction (0.20) → headroom binds
+        #expect(s.shares == 100)
+        #expect(abs(s.dollarsAtRisk - 1000) < 1e-9)         // 100 shares × $10 risk/share
+        #expect(s.nearestCorrelation == nil)                // no holdings supplied
+    }
+
+    @Test func suggestAddIsCappedByRemainingHeatHeadroomOnANearlyFullBook() {
+        // Book already at 9.5% heat ($95k of open risk on a $1M account); default maxHeat 0.10
+        // leaves only 0.5% headroom, which binds far below the 20% per-position cap.
+        let candidate = idea("AAPL", price: 100, stop: 90, target: 130, conviction: 0.9)
+        let openTrades: [(shares: Double, entry: Double, stop: Double)] = [(shares: 950, entry: 100, stop: 0)]
+        let s = Alloc.suggestAdd(idea: candidate, openTrades: openTrades, holdings: [], candidateReturns: [],
+                                 account: 1_000_000)!
+        #expect(s.approved)
+        #expect(abs(s.heatBefore - 0.095) < 1e-9)
+        #expect(abs(s.heatHeadroom - 0.005) < 1e-9)
+        #expect(abs(s.riskFraction - 0.005) < 1e-9)
+        #expect(s.shares == 500)
+        #expect(abs(s.dollarsAtRisk - 5000) < 1e-9)
+        #expect(s.reason.localizedCaseInsensitiveContains("headroom"))
+    }
+
+    @Test func suggestAddBlocksAHighlyCorrelatedCandidateRegardlessOfEdge() {
+        // Candidate returns identical to an already-held name → correlation 1.0, ≥ the 0.80
+        // default threshold → concentration block, even though the idea itself has positive EV.
+        let candidate = idea("ETH-USD", price: 100, stop: 90, target: 130, conviction: 0.9)
+        let series = [0.01, 0.02, -0.01, 0.03, -0.02]
+        let s = Alloc.suggestAdd(idea: candidate, openTrades: [], holdings: [(symbol: "BTC-USD", returns: series)],
+                                 candidateReturns: series, account: 10_000)!
+        #expect(!s.approved)
+        #expect(s.riskFraction == 0)
+        #expect(s.shares == 0)
+        #expect(s.nearestCorrelation != nil && abs(s.nearestCorrelation! - 1.0) < 1e-9)
+        #expect(s.reason.contains("BTC-USD"))
+    }
+
+    @Test func suggestAddReturnsNilForUndefinedRiskOrInvalidAccount() {
+        // No stop → undefined risk → nil (constructed directly since the `idea()` fixture
+        // helper requires non-optional stop/target).
+        let noStop = StockSageIdea(symbol: "MSFT", market: "TEST", price: 100,
+                                   advice: TradeAdvice(action: .buy, conviction: 0.7, regime: .bullTrend,
+                                                       rationale: [], stopPrice: nil, targetPrice: 130,
+                                                       suggestedWeight: 0, caveat: "x"), spark: [])
+        #expect(Alloc.suggestAdd(idea: noStop, openTrades: [], holdings: [], candidateReturns: [],
+                                 account: 10_000) == nil)
+        let clean = idea("AAPL", price: 100, stop: 90, target: 130, conviction: 0.9)
+        #expect(Alloc.suggestAdd(idea: clean, openTrades: [], holdings: [], candidateReturns: [], account: 0) == nil)
+        #expect(Alloc.suggestAdd(idea: clean, openTrades: [], holdings: [], candidateReturns: [], account: -100) == nil)
+    }
 }
