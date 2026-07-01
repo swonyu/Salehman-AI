@@ -474,11 +474,20 @@ enum StockSageExpectedValue {
     /// above the existing `minConvictionToRank` floor raw velocity is not conviction-weighted
     /// the way `qualityAdjustedEVR` is) — ship opt-in only; do not flip the default in
     /// MarketsView without owner sign-off.
+    ///
+    /// `preferConfluence` (default false — byte-identical when off, CONFLUENCE.md item #5's
+    /// tie-break wiring) additionally breaks a near-tie by preferring the idea whose
+    /// `TradeAdvice.timeframeAligned` is true (three-timeframe agreement — see
+    /// `StockSageIndicators.timeframeConfluence`) over one that isn't, applied AFTER the
+    /// conviction tie-break when `preferVelocity` is also on. Composable but independent: either
+    /// flag can be used alone. Like `preferVelocity`, this is a genuine ranking-behavior choice —
+    /// ship opt-in only.
     nonisolated static func bestOpportunity(_ ideas: [StockSageIdea], regime: MarketRegime? = nil,
                                             earnings: [String: EarningsProximity] = [:],
                                             liquidity: [String: LiquidityProfile] = [:],
                                             calibration: StockSageConvictionCalibration? = nil,
                                             preferVelocity: Bool = false,
+                                            preferConfluence: Bool = false,
                                             holds: VelocityHoldDays = .defaults) -> (idea: StockSageIdea, ev: ExpectedValue)? {
         // No "best buy" in a risk-off tape — a crisis/bear is sometimes exactly when an intraday
         // stop gets gapped through. (nil regime → no gate, identical to before.)
@@ -507,21 +516,27 @@ enum StockSageExpectedValue {
                   let e = ev(for: idea, calibration: calibration), e.evR > 0 else { return nil }
             return (idea, e)
         }
-        guard preferVelocity else {
-            // UNCHANGED default path — byte-identical reduction to before #10 (same tie
-            // behavior: the first candidate in `ideas` wins an exact rankVal tie).
+        guard preferVelocity || preferConfluence else {
+            // UNCHANGED default path — byte-identical reduction to before #10/CONFLUENCE#5 (same
+            // tie behavior: the first candidate in `ideas` wins an exact rankVal tie).
             return candidates.max { rankVal($0.0) < rankVal($1.0) }.map { (idea: $0.0, ev: $0.1) }
         }
-        // RANKING_BACKLOG #10 opt-in: near-ties (|Δ rankVal| < 0.01) are broken by higher
-        // conviction instead of array position, so a lower-conviction idea can't "win" a tie
-        // it doesn't deserve. (Not strictly transitive across a long chain of near-ties, same
-        // caveat as the doc's own proposed comparator — acceptable for the small idea lists
-        // this ranks.)
+        // Opt-in tie-breaking: near-ties (|Δ rankVal| < 0.01) are broken by higher conviction
+        // (if preferVelocity), then by confluence alignment (if preferConfluence), instead of
+        // whichever happens to sit earlier in `ideas`. (Not strictly transitive across a long
+        // chain of near-ties, same caveat RANKING #10 already documented — acceptable for the
+        // small idea lists this ranks.)
         let tieBand = 0.01
         return candidates.max { a, b in
             let av = rankVal(a.0), bv = rankVal(b.0)
-            if abs(av - bv) < tieBand { return a.0.advice.conviction < b.0.advice.conviction }
-            return av < bv
+            guard abs(av - bv) < tieBand else { return av < bv }
+            if preferVelocity, a.0.advice.conviction != b.0.advice.conviction {
+                return a.0.advice.conviction < b.0.advice.conviction
+            }
+            if preferConfluence, a.0.advice.timeframeAligned != b.0.advice.timeframeAligned {
+                return !a.0.advice.timeframeAligned && b.0.advice.timeframeAligned
+            }
+            return false   // fully tied on every enabled criterion → keep the earlier candidate
         }.map { (idea: $0.0, ev: $0.1) }
     }
 

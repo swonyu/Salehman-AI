@@ -461,6 +461,56 @@ struct StockSageExpectedValueTests {
         #expect(EV.bestOpportunity([high, low], preferVelocity: true)?.idea.symbol == "HIGHC-USD")
     }
 
+    // MARK: - CONFLUENCE.md #5: preferConfluence tie-break (opt-in)
+
+    private func confluenceIdea(_ symbol: String, conviction: Double, stop: Double, target: Double,
+                                timeframeAligned: Bool) -> StockSageIdea {
+        StockSageIdea(symbol: symbol, market: "M", price: 100,
+                      advice: TradeAdvice(action: .buy, conviction: conviction, regime: .bullTrend, rationale: [],
+                                          stopPrice: stop, targetPrice: target, suggestedWeight: 0.05, caveat: "x",
+                                          timeframeAligned: timeframeAligned, confluenceNote: timeframeAligned ? "note" : nil),
+                      spark: [])
+    }
+
+    @Test func bestOpportunityDefaultIgnoresConfluenceEvenWhenSet() {
+        // Regression: without preferConfluence, an EXACT tie must still resolve by array
+        // position (byte-identical to before this item), never silently by alignment.
+        let notAligned = confluenceIdea("A", conviction: 0.8, stop: 90, target: 130, timeframeAligned: false)
+        let aligned = confluenceIdea("B", conviction: 0.8, stop: 90, target: 130, timeframeAligned: true)
+        #expect(EV.qualityAdjustedEVR(for: notAligned)! == EV.qualityAdjustedEVR(for: aligned)!)   // exact tie
+        #expect(EV.bestOpportunity([notAligned, aligned])?.idea.symbol == "A")   // first wins, alignment ignored
+        #expect(EV.bestOpportunity([notAligned, aligned], preferConfluence: false)?.idea.symbol == "A")
+    }
+
+    @Test func bestOpportunityPreferConfluenceBreaksATieTowardTheAlignedIdea() {
+        let notAligned = confluenceIdea("A", conviction: 0.8, stop: 90, target: 130, timeframeAligned: false)
+        let aligned = confluenceIdea("B", conviction: 0.8, stop: 90, target: 130, timeframeAligned: true)
+        #expect(EV.bestOpportunity([notAligned, aligned], preferConfluence: true)?.idea.symbol == "B")
+        // Order-independent — proves it's alignment-driven, not array-position luck.
+        #expect(EV.bestOpportunity([aligned, notAligned], preferConfluence: true)?.idea.symbol == "B")
+    }
+
+    @Test func bestOpportunityPreferConfluenceNeverOverridesAClearRankValWinner() {
+        // Confluence only breaks a NEAR-tie — a genuinely better rankVal must still win outright,
+        // even against an aligned-but-clearly-worse idea.
+        let clearWinner = confluenceIdea("BIG", conviction: 1.0, stop: 90, target: 400, timeframeAligned: false)
+        let alignedButWorse = confluenceIdea("SMALL", conviction: 0.40, stop: 98, target: 102, timeframeAligned: true)
+        #expect(EV.bestOpportunity([clearWinner, alignedButWorse], preferConfluence: true)?.idea.symbol == "BIG")
+    }
+
+    @Test func bestOpportunityComposesConvictionThenConfluenceTieBreaks() {
+        // Two-way: HIGH_CONV (higher conviction, NOT aligned) must beat LOW_CONV_ALIGNED (lower
+        // conviction, aligned) once preferVelocity's conviction tie-break applies FIRST —
+        // confluence only breaks a tie conviction couldn't already resolve.
+        let lowConvAligned = confluenceIdea("LOWC-USD", conviction: 0.40, stop: 90, target: 200, timeframeAligned: true)
+        let highConvNotAligned = confluenceIdea("HIGHC-USD", conviction: 1.00, stop: 90, target: 173.6207, timeframeAligned: false)
+        let vLow = EV.velocity(for: lowConvAligned)!, vHigh = EV.velocity(for: highConvNotAligned)!
+        #expect(abs(vLow - vHigh) < 0.01)   // genuinely a near-tie on raw velocity
+        // Both flags on: conviction tie-break fires first (HIGHC-USD wins), confluence never gets consulted.
+        #expect(EV.bestOpportunity([lowConvAligned, highConvNotAligned],
+                                   preferVelocity: true, preferConfluence: true)?.idea.symbol == "HIGHC-USD")
+    }
+
     // MARK: - RANKING_BACKLOG #4: liquidity gate
 
     @Test func thinLiquidityIsDemotedInRankingAndBarredFromBestOpportunity() {
