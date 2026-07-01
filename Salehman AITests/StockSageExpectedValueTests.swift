@@ -639,4 +639,34 @@ struct StockSageExpectedValueTests {
         #expect(ne.netExpectancyR != nil)
         #expect(abs(ne.netExpectancyR! - grossEV.evR) < 1e-9)   // [AUDIT] cost 0 ⇒ net == gross
     }
+
+    // MARK: - HARDENING_BACKLOG #12: velocity-hold calibration note vs journal actuals
+
+    private func closedTrade(_ symbol: String, holdDays: Double) -> TradeRecord {
+        TradeRecord(symbol: symbol, side: .long, entry: 100, stop: 90, target: nil, shares: 1,
+                    openedAt: Date(timeIntervalSince1970: 0), exitPrice: 105,
+                    closedAt: Date(timeIntervalSince1970: holdDays * 86_400))
+    }
+
+    @Test func calibrationNoteFlagsCryptoDivergingFromTheHoldAssumption() {
+        // 3 crypto trades held 5 days each vs the 3-day default assumption — (5-3)/3 = 0.667 > 0.20.
+        let trades = (0..<3).map { _ in closedTrade("BTC-USD", holdDays: 5) }
+        let note = EV.calibrationNote(journalTrades: trades)
+        #expect(note != nil)
+        #expect(note!.localizedCaseInsensitiveContains("crypto"))
+        #expect(note!.contains("5.0d") || note!.contains("5d"))
+    }
+
+    @Test func calibrationNoteIsNilWhenHoldsMatchTheAssumption() {
+        // 3 equity trades held exactly 12 days — matches VelocityHoldDays.defaults.equity, 0 divergence.
+        let trades = (0..<3).map { _ in closedTrade("AAPL", holdDays: 12) }
+        #expect(EV.calibrationNote(journalTrades: trades) == nil)
+    }
+
+    @Test func calibrationNoteRequiresAtLeastThreeClosedTradesPerClass() {
+        // Only 2 crypto trades, wildly diverging hold — too thin to estimate honestly → nil.
+        let trades = (0..<2).map { _ in closedTrade("BTC-USD", holdDays: 30) }
+        #expect(EV.calibrationNote(journalTrades: trades) == nil)
+        #expect(EV.calibrationNote(journalTrades: []) == nil)
+    }
 }

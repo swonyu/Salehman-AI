@@ -99,6 +99,20 @@ struct RDistribution: Sendable, Equatable {
     }
     let bins: [Bin]    // ordered: ≤−1, −1..0, 0..1, 1..2, >2
     let total: Int
+    /// 3rd standardized moment of the realized-R sample. Negative = LEFT-tailed (rare big
+    /// losses — fragile); positive = RIGHT-tailed (rare big wins — robust). 0 for a
+    /// symmetric or degenerate (zero-variance) sample.
+    let skewness: Double
+    /// 4th standardized moment, RAW (not excess) — a normal distribution's raw kurtosis is 3.
+    /// >3 = fat-tailed (more extreme outcomes than normal); <3 = thin-tailed. 3 for a
+    /// degenerate (zero-variance) sample (neutral — no shape to read).
+    let kurtosis: Double
+
+    nonisolated var shapeNote: String {
+        if skewness < -0.2 { return "Left-skewed — rare big losses (fragile edge)." }
+        if skewness > 0.2 { return "Right-skewed — rare big wins (robust edge)." }
+        return "Roughly symmetric R outcomes."
+    }
 }
 
 /// Realized performance split by trade side (long vs short).
@@ -435,8 +449,23 @@ enum StockSageJournal {
             else { counts[4] += 1 }
         }
         let labels = ["≤−1R", "−1..0R", "0..1R", "1..2R", ">2R"]
+        // Population moments (matches StockSageReturnShape's convention) — skew/kurtosis
+        // describe the SAMPLE'S shape, not an inferential estimate of a population.
+        let n = Double(rs.count)
+        let mean = rs.reduce(0, +) / n
+        let variance = rs.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / n
+        let sd = variance.squareRoot()
+        let skewness: Double
+        let kurtosis: Double
+        if sd > 0 {
+            skewness = rs.reduce(0) { $0 + pow(($1 - mean) / sd, 3) } / n
+            kurtosis = rs.reduce(0) { $0 + pow(($1 - mean) / sd, 4) } / n
+        } else {
+            skewness = 0   // no variance → no shape to read, not "perfectly symmetric" by inference
+            kurtosis = 3   // normal distribution's raw kurtosis — the neutral baseline
+        }
         return RDistribution(bins: zip(labels, counts).map { RDistribution.Bin(label: $0, count: $1) },
-                             total: rs.count)
+                             total: rs.count, skewness: skewness, kurtosis: kurtosis)
     }
 
     /// How many TOTAL and how many MORE trades to reach |mean R| ≥ z·stderr (z=2 ≈

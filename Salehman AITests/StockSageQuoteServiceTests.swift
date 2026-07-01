@@ -19,6 +19,23 @@ struct StockSageQuoteServiceParsingTests {
         #expect(q2?.price == 150 && q2?.marketTime == nil)
     }
 
+    @Test func parseChartFlagsANewListingOnlyWhenTheFallbackActuallyFired() {
+        // No previousClose AND no chartPreviousClose → falls back to price; isNewListing must be
+        // true so the UI reads "unevaluated," not a real 0%-move hold signal.
+        let noClose = #"{"chart":{"result":[{"meta":{"symbol":"IPOX","regularMarketPrice":42}}]}}"#
+        let q = StockSageQuoteService.parseChart(Data(noClose.utf8))
+        #expect(q?.previousClose == 42 && q?.isNewListing == true)
+        // A REAL previousClose that happens to equal price (a genuinely flat session) must NOT
+        // be flagged — the flag is set precisely at the fallback site, never inferred from equality.
+        let genuinelyFlat = #"{"chart":{"result":[{"meta":{"symbol":"AAPL","regularMarketPrice":150,"previousClose":150}}]}}"#
+        let q2 = StockSageQuoteService.parseChart(Data(genuinelyFlat.utf8))
+        #expect(q2?.previousClose == 150 && q2?.isNewListing == false)
+        // chartPreviousClose fallback (indices) is a REAL prior close, not a new listing.
+        let indexFallback = #"{"chart":{"result":[{"meta":{"symbol":"^GSPC","regularMarketPrice":5000,"chartPreviousClose":4950}}]}}"#
+        let q3 = StockSageQuoteService.parseChart(Data(indexFallback.utf8))
+        #expect(q3?.previousClose == 4950 && q3?.isNewListing == false)
+    }
+
     @Test func parseHistoryRejectsNonPositiveBars() {
         // 4 bars: bar 2 has a 0 close, bar 4 has a negative low — both must be dropped so a
         // garbage price can never become latestClose → price×shares / EV / sizing.

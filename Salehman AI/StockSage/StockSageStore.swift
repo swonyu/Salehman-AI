@@ -23,12 +23,18 @@ struct StockSageIdea: Sendable, Equatable, Identifiable {
     /// (<273 bars). The `sizingMultiplier` is applied by StockSageCapitalAllocator after Kelly sizing.
     let volRegime: VolRegime?
 
+    /// When this idea's advice was computed against a live quote — nil for ideas built without
+    /// one (tests, older persisted state). Stop/target are fixed numbers against THAT quote;
+    /// viewing the idea later, the market has moved and R:R has silently drifted. nil ⇒ no
+    /// "computed at" note is shown (HONESTY_FLOOR: only claim a timestamp we actually have).
+    let generatedAt: Date?
+
     nonisolated init(symbol: String, market: String, price: Double, advice: TradeAdvice,
                      spark: [Double], dailyMove: Double? = nil, realizedVol: Double? = nil,
-                     volRegime: VolRegime? = nil) {
+                     volRegime: VolRegime? = nil, generatedAt: Date? = nil) {
         self.symbol = symbol; self.market = market; self.price = price
         self.advice = advice; self.spark = spark; self.dailyMove = dailyMove
-        self.realizedVol = realizedVol; self.volRegime = volRegime
+        self.realizedVol = realizedVol; self.volRegime = volRegime; self.generatedAt = generatedAt
     }
 }
 
@@ -443,7 +449,7 @@ final class StockSageStore: ObservableObject {
                 out.append(StockSageIdea(symbol: sym.symbol, market: sym.market,
                                          price: price, advice: advice, spark: spark,
                                          dailyMove: dailyMove, realizedVol: realizedVol,
-                                         volRegime: volRegime))
+                                         volRegime: volRegime, generatedAt: Date()))
             }
             return out
         }.value
@@ -757,6 +763,11 @@ final class StockSageStore: ObservableObject {
         precheckFingerprint[up] = fingerprint
     }
 
+    // Symbols whose latest quote had no real previousClose (a brand-new listing) — Yahoo's
+    // fallback (previousClose := price) reads as a genuine flat 0%-move "hold" without this,
+    // when it's actually "unevaluated." Refreshed each `refresh()` cycle alongside `quotes`.
+    @Published private(set) var newListings: Set<String> = []
+
     // Earnings proximity — overnight-gap event risk for an equity. Cached per
     // symbol (earnings dates don't shift within a session).
     @Published private(set) var earnings: [String: EarningsProximity] = [:]
@@ -908,6 +919,7 @@ final class StockSageStore: ObservableObject {
         let universe = trackedDefs()
         let quotes = await StockSageQuoteService.fetchQuotes(for: universe.map(\.symbol))
         isRefreshing = false
+        newListings = Set(quotes.filter { $0.value.isNewListing }.keys)
 
         // Merge each curated symbol (keeps the friendly market label) with its
         // live quote; drop any the feed couldn't price.

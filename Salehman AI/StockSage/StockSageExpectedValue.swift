@@ -547,6 +547,37 @@ enum StockSageExpectedValue {
         return (5 + 2 * Double(crypto) / Double(lane.count)).rounded()
     }
 
+    /// Every velocity rank silently ASSUMES `holds` (crypto 3d / equity 12d by default) — this
+    /// checks that assumption against the owner's OWN closed trades. Diverges >20% for either
+    /// class → surface a note so the velocity card doesn't quietly mis-rank against reality
+    /// (e.g. holding crypto 5d when velocity assumes 3d overstates its EV/day by ~67%). nil
+    /// when there's too little closed data per class (<3 trades) to estimate honestly, or
+    /// nothing diverges past the threshold.
+    nonisolated static func calibrationNote(journalTrades: [TradeRecord], assumes: VelocityHoldDays = .defaults,
+                                            divergenceThreshold: Double = 0.20) -> String? {
+        let closed = journalTrades.filter { $0.closedAt != nil }
+        func avgHoldDays(_ isClass: (String) -> Bool) -> Double? {
+            let holds = closed.compactMap { t -> Double? in
+                guard isClass(t.symbol), let closedAt = t.closedAt else { return nil }
+                return closedAt.timeIntervalSince(t.openedAt) / 86_400
+            }
+            guard holds.count >= 3 else { return nil }
+            return holds.reduce(0, +) / Double(holds.count)
+        }
+        var divergences: [String] = []
+        if assumes.crypto > 0, let actual = avgHoldDays({ StockSageAllocation.assetClass($0) == "Crypto" }),
+           abs(actual - assumes.crypto) / assumes.crypto > divergenceThreshold {
+            divergences.append(String(format: "crypto ~%.1fd vs the %.0fd assumption", actual, assumes.crypto))
+        }
+        if assumes.equity > 0, let actual = avgHoldDays({ StockSageAllocation.assetClass($0) == "Equity" }),
+           abs(actual - assumes.equity) / assumes.equity > divergenceThreshold {
+            divergences.append(String(format: "equity ~%.1fd vs the %.0fd assumption", actual, assumes.equity))
+        }
+        guard !divergences.isEmpty else { return nil }
+        return "Your actual hold times diverge from velocity's assumption — " + divergences.joined(separator: "; ")
+             + " — so EV/day estimates may be off by roughly that ratio."
+    }
+
     /// How much to SHRINK per-trade risk for an asset's realized volatility: max(1, vol/baseline).
     /// FLOORED at 1 so it can only reduce risk, never inflate it — even fast money needs brakes.
     /// e.g. 70%-vol crypto vs a 20% baseline → 3.5× (size 1%/3.5 ≈ 0.29%/trade). Feed `vol` from

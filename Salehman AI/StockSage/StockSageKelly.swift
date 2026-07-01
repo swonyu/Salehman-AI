@@ -22,6 +22,20 @@ struct KellyResult: Sendable, Equatable {
                                    // the position sizer risks (that's ~1% of the account per trade)
     let note: String
     let caveat: String
+    /// How much of the payoff ratio R was shaved off by round-trip costs (0 without a
+    /// `CostProfile`) — the fraction of the win that commission/slippage/spread quietly eat.
+    let costAdjustment: Double
+}
+
+/// Round-trip trading costs expressed in the SAME unit as the payoff ratio R (a fraction of
+/// the risked amount — the entry-to-stop distance), so they subtract directly from R rather
+/// than needing a separate dollar model. 10-50bps round-trip costs quietly eat a thin edge;
+/// naming them is honest and changes sizing, not just the net-of-cost EV shown elsewhere.
+struct CostProfile: Sendable, Equatable {
+    let commissionPct: Double   // e.g. 0.1 = 0.1% round-trip commission
+    let slippagePct: Double
+    let bidAskPct: Double
+    nonisolated var roundTripR: Double { Swift.max(0, commissionPct + slippagePct + bidAskPct) / 100 }
 }
 
 /// A whole BOOK of per-position Kelly fractions scaled to a portfolio heat ceiling. Per-position
@@ -51,22 +65,35 @@ enum StockSageKelly {
     /// Never suggest risking more than this share of the account, whatever Kelly says.
     nonisolated static let maxFraction = 0.20
 
-    /// Kelly from win rate `W` (0–1) and payoff ratio `R` (avg win ÷ avg loss).
-    nonisolated static func compute(winRate: Double, payoffRatio: Double, accountSize: Double) -> KellyResult {
+    /// Kelly from win rate `W` (0–1) and payoff ratio `R` (avg win ÷ avg loss). Optional `costs`
+    /// shaves round-trip commission/slippage/spread directly off R before sizing — nil (the
+    /// default) reproduces today's result byte-for-byte; a `CostProfile` whose round-trip cost
+    /// meets or exceeds R means costs ate the entire reward, so fStar floors at 0 (don't bet),
+    /// same as a non-positive raw edge.
+    nonisolated static func compute(winRate: Double, payoffRatio: Double, accountSize: Double,
+                                    costs: CostProfile? = nil) -> KellyResult {
         let w = Swift.max(0, Swift.min(1, winRate))
         let r = Swift.max(0.0001, payoffRatio)          // guard divide-by-zero
-        let edge = w * r - (1 - w)                       // EV per $1 risked
+        let costAdjustment = costs?.roundTripR ?? 0
+        // Costs subtract directly from R (they eat the win, not the win-rate); floored so a
+        // cost that exceeds R never flips the sign and inflates the divisor toward 0 the wrong way.
+        let netR = Swift.max(0.0001, r - costAdjustment)
+        let edge = w * netR - (1 - w)                    // EV per $1 risked, net of costs
         // f* = W − (1−W)/R, clamped: a non-positive edge ⇒ 0 (don't bet).
-        let fStar = Swift.max(0, Swift.min(1, w - (1 - w) / r))
+        let fStar = Swift.max(0, Swift.min(1, w - (1 - w) / netR))
         let half = fStar / 2
         let quarter = fStar / 4
         let suggested = Swift.min(maxFraction, half)
 
         let note: String
         if fStar <= 0 {
-            note = "No positive edge — Kelly says don't bet."
+            note = costAdjustment > 0 && r - costAdjustment <= 0
+                ? "Round-trip costs eat the entire reward — no edge left after costs."
+                : "No positive edge — Kelly says don't bet."
         } else if half >= maxFraction {
             note = "Half-Kelly exceeds the \(Int(maxFraction * 100))% cap — capped for safety."
+        } else if costAdjustment > 0 {
+            note = "Half-Kelly recommended (reward cut ~\(String(format: "%.2f", costAdjustment))R for round-trip costs); full Kelly risks deep drawdowns."
         } else {
             note = "Half-Kelly recommended; full Kelly risks deep drawdowns."
         }
@@ -74,7 +101,7 @@ enum StockSageKelly {
         return KellyResult(edge: edge, fullKelly: fStar, halfKelly: half, quarterKelly: quarter,
                            suggestedFraction: suggested,
                            dollarsToAllocate: suggested * Swift.max(0, accountSize),
-                           note: note, caveat: caveat)
+                           note: note, caveat: caveat, costAdjustment: costAdjustment)
     }
 
     /// Scale a book of per-position fractions (each already half-Kelly-capped via suggestedFraction)

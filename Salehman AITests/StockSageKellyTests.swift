@@ -80,4 +80,36 @@ struct StockSageKellyTests {
         #expect(k.fullKelly >= 0 && k.fullKelly <= 1)
         #expect(k.dollarsToAllocate >= 0)
     }
+
+    // MARK: - HARDENING_BACKLOG #19: cost/slippage haircut
+
+    @Test func nilCostsReproduceTodaysResultByteForByte() {
+        // Regression guard: the default (no CostProfile) must be untouched by the new param.
+        let k = StockSageKelly.compute(winRate: 0.55, payoffRatio: 2.0, accountSize: 10_000)
+        #expect(abs(k.halfKelly - 0.1625) < 1e-9)   // W=0.55,R=2 → f*=0.55−0.45/2=0.325 → half 0.1625
+        #expect(k.costAdjustment == 0)
+    }
+
+    @Test func costsHaircutTheSuggestedFraction() {
+        // Same W/R as above; a 30%-of-R round-trip cost (commission 15 + slippage 10 + spread 5)
+        // shrinks netR to 1.7, lowering half-Kelly from 0.1625 to ≈0.14265.
+        let costs = CostProfile(commissionPct: 15, slippagePct: 10, bidAskPct: 5)
+        #expect(abs(costs.roundTripR - 0.30) < 1e-9)
+        let k = StockSageKelly.compute(winRate: 0.55, payoffRatio: 2.0, accountSize: 10_000, costs: costs)
+        #expect(k.costAdjustment == costs.roundTripR)
+        #expect(k.halfKelly < 0.1625)                           // strictly reduced vs the no-cost case
+        #expect(abs(k.halfKelly - 0.142647058823529) < 1e-9)    // python-verified: (0.55-0.45/1.7)/2
+        #expect(k.note.localizedCaseInsensitiveContains("cost"))
+    }
+
+    @Test func costsExceedingTheRewardZeroTheSize() {
+        // Round-trip cost (200% of R) exceeds the entire 2.0R reward → no edge left → 0 size,
+        // never a negative/NaN fraction from a flipped-sign divisor.
+        let costs = CostProfile(commissionPct: 100, slippagePct: 100, bidAskPct: 0)
+        let k = StockSageKelly.compute(winRate: 0.55, payoffRatio: 2.0, accountSize: 10_000, costs: costs)
+        #expect(k.fullKelly == 0)
+        #expect(k.suggestedFraction == 0)
+        #expect(k.dollarsToAllocate == 0)
+        #expect(k.note.localizedCaseInsensitiveContains("cost"))
+    }
 }

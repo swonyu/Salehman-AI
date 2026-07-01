@@ -29,9 +29,17 @@ enum StockSageQuoteService {
         /// The quote's own MARKET timestamp (Yahoo `regularMarketTime`), not our fetch time — so the
         /// UI can tell "live" from a days-old weekend/holiday close. nil when the feed omits it.
         let marketTime: Date?
-        init(symbol: String, price: Double, previousClose: Double, marketTime: Date? = nil) {
+        /// True when Yahoo returned no real previousClose (a brand-new listing) and `previousClose`
+        /// was set to `price` as a flat placeholder. WITHOUT this flag that placeholder reads as a
+        /// genuine 0%-move "hold" signal — it's actually "unevaluated," not "no move." Set precisely
+        /// at the fallback site in `parseChart`, never inferred after the fact (a real ticker CAN
+        /// legitimately have previousClose == price on a truly flat session).
+        let isNewListing: Bool
+        init(symbol: String, price: Double, previousClose: Double, marketTime: Date? = nil,
+             isNewListing: Bool = false) {
             self.symbol = symbol; self.price = price
             self.previousClose = previousClose; self.marketTime = marketTime
+            self.isNewListing = isNewListing
         }
     }
 
@@ -87,7 +95,8 @@ enum StockSageQuoteService {
         // label (Yahoo echoes its own canonical symbol, which can differ in case). Carry
         // marketTime through — dropping it silently disabled ALL downstream staleness/banner
         // honesty (quoteAsOf, per-row isStale) since fetchQuotes is built on fetchOne.
-        return LiveQuote(symbol: symbol, price: parsed.price, previousClose: parsed.previousClose, marketTime: parsed.marketTime)
+        return LiveQuote(symbol: symbol, price: parsed.price, previousClose: parsed.previousClose,
+                         marketTime: parsed.marketTime, isNewListing: parsed.isNewListing)
     }
 
     /// GET a request, returning the 200 body. On a 429/503 (Yahoo's keyless endpoint
@@ -121,12 +130,14 @@ enum StockSageQuoteService {
               let symbol = meta["symbol"] as? String else { return nil }
 
         guard let price = number(meta["regularMarketPrice"]), price > 0 else { return nil }
-        let previousClose = number(meta["previousClose"])
-            ?? number(meta["chartPreviousClose"])
-            ?? price   // brand-new listing with no prior close → flat (0% move → hold)
+        let realPreviousClose = number(meta["previousClose"]) ?? number(meta["chartPreviousClose"])
+        // brand-new listing with no prior close → flat placeholder (isNewListing marks it as such,
+        // NOT a genuine 0%-move hold signal).
+        let previousClose = realPreviousClose ?? price
         // The quote's market time (Unix seconds) — lets the UI distinguish live from a stale close.
         let marketTime = number(meta["regularMarketTime"]).map { Date(timeIntervalSince1970: $0) }
-        return LiveQuote(symbol: symbol, price: price, previousClose: previousClose, marketTime: marketTime)
+        return LiveQuote(symbol: symbol, price: price, previousClose: previousClose, marketTime: marketTime,
+                         isNewListing: realPreviousClose == nil)
     }
 
     // MARK: Candle history (for indicators / the advisor)

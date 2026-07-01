@@ -2006,11 +2006,14 @@ struct MarketsView: View {
                         // Per-row freshness: a days-old weekend/holiday close (or a stale crypto
                         // feed) is dimmed + clock-flagged so it isn't read as a live price.
                         let stale = sym.isStale()
+                        // A brand-new listing has no real previousClose — Yahoo's flat placeholder
+                        // reads as a genuine 0% "hold" without this; show "unevaluated," not "flat."
+                        let isNew = store.newListings.contains(sym.symbol.uppercased())
                         VStack(spacing: 3) {
                             Text(sym.symbol)
                                 .font(.system(size: 13, weight: .bold, design: .rounded))
                                 .foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.7)
-                            Text(String(format: "%+.1f%%", change))
+                            Text(isNew ? "N/A (new)" : String(format: "%+.1f%%", change))
                                 .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.92))
                                 .contentTransition(.numericText())
                                 .animation(DS.Motion.smooth, value: change)
@@ -2019,7 +2022,8 @@ struct MarketsView: View {
                         // borderline — a subtle dark shadow lifts the text on any shade.
                         .shadow(color: .black.opacity(0.35), radius: 1, y: 0.5)
                         .frame(maxWidth: .infinity).frame(height: 66)
-                        .background(heatColor(change), in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
+                        .background(isNew ? Color.white.opacity(0.10) : heatColor(change),
+                                   in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
                         .overlay(alignment: .topTrailing) {
                             if stale {
                                 Image(systemName: "clock.fill")
@@ -2038,11 +2042,13 @@ struct MarketsView: View {
                                 else if hoveredHeatID == sym.id { hoveredHeatID = nil }
                             }
                         }
-                        .help(stale
+                        .help(isNew
+                              ? "\(sym.market) — newly listed, no prior close to compare against yet; not a real 0% move."
+                              : (stale
                               ? "\(sym.market) — STALE: last quote \((sym.latest?.time).map { $0.formatted(.relative(presentation: .named)) } ?? "unknown"); market likely closed, not a live price."
-                              : sym.market)
+                              : sym.market))
                         .accessibilityElement(children: .combine)
-                        .accessibilityLabel("\(sym.symbol), \(String(format: "%+.1f percent", change))\(stale ? ", stale quote — market likely closed" : "")")
+                        .accessibilityLabel("\(sym.symbol), \(isNew ? "newly listed, not yet evaluated" : String(format: "%+.1f percent", change))\(stale ? ", stale quote — market likely closed" : "")")
                         .transition(.scale(scale: 0.7).combined(with: .opacity))
                     }
                 }
@@ -3763,6 +3769,16 @@ struct MarketsView: View {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "scalemass.fill").font(.system(size: 11)).foregroundStyle(c)
                         Text(rr.note).font(.caption2).foregroundStyle(c).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                // Stop/Target are fixed numbers against the quote at generatedAt — the market has
+                // moved since, and R:R has silently drifted. nil generatedAt (older/test-built
+                // ideas) → no note, never a fabricated timestamp.
+                if let generatedAt = idea.generatedAt, a.stopPrice != nil, a.targetPrice != nil {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "clock.badge.exclamationmark").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text("Stop & Target computed at \(generatedAt.formatted(.relative(presentation: .named))) — recalculate before entry.")
+                            .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 if let stop = a.stopPrice, let target = a.targetPrice {

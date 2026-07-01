@@ -68,7 +68,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** No automated check that the honesty caveats in MoneyVelocityCopy actually appear in a view. Add a test that greps the view sources for each constant name so a future refactor that drops a caveat fails CI.
 **Why:** The caveats ARE the honesty floor; their silent removal is a compliance bug. Cheap insurance.
 
-### ⬜ #12 — Velocity-hold calibration note vs journal actuals  [medium/medium, honesty]
+### ✅ DONE #12 — Velocity-hold calibration note vs journal actuals  [medium/medium, honesty]
 **File:** Salehman AI/StockSage/StockSageExpectedValue.swift
 **What:** Add calibrationNote(journalTrades:assumes:VelocityHoldDays)->String? computing actual avg hold by asset class from closed trades and returning a note when it diverges >20% from the tuned assumption (crypto 3d, equity 12d). Surface on the velocity card.
 **Why:** If the owner actually holds crypto 5d vs the assumed 3d, every velocity rank is silently off ~67%. Closes a real drift between assumption and measured behavior.
@@ -98,12 +98,12 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** Line 236 `mult = max(0, mult*(1+fraction*r))` correctly stops compounding but freezes silently at 0. Either return Double? with nil=wipeout, or add caveat "a value of 0 means the account was wiped out on this or an earlier trade." Math is fine; UI honesty only.
 **Why:** A flat-at-0 curve reads as "stuck" rather than "ruined"; mislabels the most important outcome.
 
-### ⬜ #18 — New-listing 0%-move quote needs an isNewListing flag surfaced in UI  [medium/small, correctness]
+### ✅ DONE #18 — New-listing 0%-move quote needs an isNewListing flag surfaced in UI  [medium/small, correctness]
 **File:** Salehman AI/StockSage/StockSageQuoteService.swift
 **What:** Line 117 falls back to current price as previousClose for brand-new listings (→0% move→hold). Add LiveQuote.isNewListing (previousClose==price) and render "N/A (newly listed)" instead of "0% (hold)" on the ideas board. Confirmed at :114-118.
 **Why:** A freshly-IPO'd stock shows as flat when it's actually unevaluated — the user mistakes no-data for a real hold signal.
 
-### ⬜ #19 — Kelly position sizing: optional cost/slippage haircut  [medium/medium, feature]
+### ✅ DONE #19 — Kelly position sizing: optional cost/slippage haircut  [medium/medium, feature]
 **File:** Salehman AI/StockSage/StockSageKelly.swift
 **What:** Add optional CostProfile(commissionPct,slippagePct,bidAskPct); compute()? reduces suggested fraction by net-of-cost edge and exposes costAdjustment + updated caveat; costs>edge → zero size. Test cost cuts fraction and zero-edge case.
 **Why:** 10-50bps round-trip costs quietly eat a 1% edge; forcing the owner to name them is honest and changes sizing.
@@ -123,7 +123,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** convictionMeter renders a 0-1 fill with no label; users read 70% fill as 70% win probability. Add label/tooltip mapping conviction→estimated win-prob (per winProbEstimate ~35-58%) with "not a forecast."
 **Why:** Prevents conflating a rules-based conviction with a real probability. Small.
 
-### ⬜ #23 — Idea detail: stop/target are quote-time and drift intraday  [low/small, honesty]
+### ✅ DONE #23 — Idea detail: stop/target are quote-time and drift intraday  [low/small, honesty]
 **File:** Salehman AI/Views/MarketsView.swift
 **What:** Stop/Target shown as fixed numbers against the current quote; viewing an hour later changes R:R silently. Add note "Stop & Target computed at <generatedAt> — recalculate before entry."
 **Why:** Stale R:R can quietly violate the user's intended risk. Small note.
@@ -138,7 +138,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** Line 48 hardcodes taxCap=5_000_000; line 50 dates the 2% rate but not the cap. Add "capped at 5M/item since <date>; verify vs current OSRS rules" and/or parameterize the cap alongside rate.
 **Why:** If Jagex changes the cap the estimate goes silently wrong. One comment + optional param.
 
-### ⬜ #26 — R-distribution skew/kurtosis (fragile vs robust shape)  [low/small, feature]
+### ✅ DONE #26 — R-distribution skew/kurtosis (fragile vs robust shape)  [low/small, feature]
 **File:** Salehman AI/StockSage/StockSageJournal.swift
 **What:** Add skew + kurtosis to RDistribution (standard 3rd/4th moments) with UI note "left skew = fragile, right skew = robust." Test all-equal→skew0/kurt3.
 **Why:** Tells the owner whether the edge is fat-tailed-robust or choppy-fragile. Low value but small.
@@ -177,3 +177,5 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **File:** Salehman AI/StockSage/StockSagePyramiding.swift (new)
 **What:** PyramidLevel + suggest(initialSize:account:riskCap:): tier1 full, tier2 50% at +0.5R, tier3 50%-of-tier2 at +1.5R, total risk<=cap. Test shrinking sizes, ordered triggers, cap respected, caveat present.
 **Why:** Locks early risk but needs more capital and assumes the trend holds (false in chop). Most speculative/dangerous of the features — last. Caveat "only if it runs, never force it" is load-bearing.
+
+**2026-06-28 (Markets-tab scope, OSRS items #14/#25/#27-30 out of scope per owner directive):** #12 (calibrationNote), #18 (isNewListing flag + heatmap tile), #19 (Kelly CostProfile haircut), #23 (idea generatedAt + drift note), #26 (RDistribution skew/kurtosis) all implemented + tested. #31/#32/#33 (sector-rotation/relative-strength/pyramiding conviction-nudges) deliberately deferred — they're adjacent to the already-ablated RS-vs-benchmark territory (`relativeStrengthEnabled`, gated off 2026-06-27 because the ablation showed no net improvement) and the doc itself ranks them lowest/most-speculative; adding new conviction-nudge mechanisms deserves the same rigor as that ablation, not a quick add. HARDENING_BACKLOG.md now fully resolved for in-scope (Markets/StockSage) items.

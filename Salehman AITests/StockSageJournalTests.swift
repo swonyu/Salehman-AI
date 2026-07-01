@@ -326,6 +326,39 @@ struct StockSageJournalTests {
         #expect(StockSageJournal.rDistribution([]) == nil)
     }
 
+    // MARK: - HARDENING_BACKLOG #26: skew/kurtosis (fragile vs robust shape)
+
+    @Test func rDistributionSkewAndKurtosisMatchTheClosedFormMoments() {
+        // Same 9-trade fixture as the partition test — python-verified population moments.
+        let trades = [-2.0, -1, -0.5, 0, 0.5, 1, 1.5, 2, 3].map { closedR($0) }
+        let d = StockSageJournal.rDistribution(trades)!
+        #expect(abs(d.skewness - 0.0) < 1e-9)
+        #expect(abs(d.kurtosis - 2.1390532544378704) < 1e-9)
+    }
+
+    @Test func allEqualRealizedRGuardsToSkew0Kurt3NotNaN() {
+        // Zero variance → moments are mathematically undefined (0/0); guard to the neutral
+        // baseline (skew 0 = no asymmetry to read, kurt 3 = a normal distribution's raw
+        // kurtosis) rather than propagate NaN into the UI.
+        let trades = [1.0, 1.0, 1.0, 1.0].map { closedR($0) }
+        let d = StockSageJournal.rDistribution(trades)!
+        #expect(d.skewness == 0)
+        #expect(d.kurtosis == 3)
+    }
+
+    @Test func leftTailedLossesProduceNegativeSkewRightTailedWinsPositive() {
+        // Four small wins + one big loss → left-tailed (fragile): rare big LOSSES → negative skew.
+        let leftTailed = [0.5, 0.5, 0.5, 0.5, -3.0].map { closedR($0) }
+        let dLeft = StockSageJournal.rDistribution(leftTailed)!
+        #expect(dLeft.skewness < -0.2)
+        #expect(dLeft.shapeNote.localizedCaseInsensitiveContains("fragile"))
+        // Mirror: four small losses + one big win → right-tailed (robust): rare big WINS → positive skew.
+        let rightTailed = [-0.5, -0.5, -0.5, -0.5, 3.0].map { closedR($0) }
+        let dRight = StockSageJournal.rDistribution(rightTailed)!
+        #expect(dRight.skewness > 0.2)
+        #expect(dRight.shapeNote.localizedCaseInsensitiveContains("robust"))
+    }
+
     @Test func tradesToSignificanceEstimate() {
         // rs = [4,−2,4,−2]: mean 1; sample var = 4·9/3 = 12; s = √12; needed = (2√12/1)² = 48.
         let r = StockSageJournal.tradesToSignificance([closedR(4), closedR(-2), closedR(4), closedR(-2)])!
