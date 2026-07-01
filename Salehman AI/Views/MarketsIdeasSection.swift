@@ -226,11 +226,11 @@ struct MarketsIdeasSection: View {
         case .ev:
             sorted = StockSageExpectedValue.rankByEV(
                 store.ideas, regime: store.regime, earnings: store.earnings,
-                calibration: store.convictionCalibration)
+                liquidity: store.liquidity, calibration: store.convictionCalibration)
         case .velocity:
             sorted = StockSageExpectedValue.rankByVelocity(
                 store.ideas, holds: velocityHolds, earnings: store.earnings,
-                calibration: store.convictionCalibration)
+                liquidity: store.liquidity, calibration: store.convictionCalibration)
         case .conviction:
             sorted = store.ideas.sorted { $0.advice.conviction > $1.advice.conviction }
         case .rr:

@@ -387,6 +387,63 @@ struct StockSageExpectedValueTests {
         #expect(EV.fastLaneConcentration([c1]) == nil)   // <2 fast-lane → nil
     }
 
+    // MARK: - RANKING_BACKLOG #4: liquidity gate
+
+    @Test func thinLiquidityIsDemotedInRankingAndBarredFromBestOpportunity() {
+        let thin  = idea("MICROCAP", conviction: 0.9, stop: 90, target: 130)   // higher base EV
+        let deep  = idea("AAPL", conviction: 0.7, stop: 90, target: 115)       // lower base EV
+        // No liquidity data → identical to before (higher-EV name wins).
+        #expect(EV.rankByEV([thin, deep]).first?.symbol == "MICROCAP")
+        #expect(EV.bestOpportunity([thin, deep])?.idea.symbol == "MICROCAP")
+        // Thin liquidity on the higher-EV name → demoted below the deep peer on both boards,
+        // and barred outright from "best opportunity" even though it has the highest EV.
+        let liquidity: [String: LiquidityProfile] = [
+            "MICROCAP": LiquidityProfile(avgDollarVolume: 500_000, tier: .thin)
+        ]
+        #expect(EV.rankByEV([thin, deep], liquidity: liquidity).first?.symbol == "AAPL")
+        #expect(EV.bestOpportunity([thin, deep], liquidity: liquidity)?.idea.symbol == "AAPL")
+        // Hard bar, not mere demotion: even as the ONLY positive-EV buy, a thin name never becomes
+        // "best opportunity" (unlike the earnings gate, which still surfaces a lone imminent idea).
+        #expect(EV.bestOpportunity([thin], liquidity: liquidity) == nil)
+        // Moderate/deep tiers are unaffected.
+        let deepTierLiquidity: [String: LiquidityProfile] = [
+            "MICROCAP": LiquidityProfile(avgDollarVolume: 80_000_000, tier: .deep)
+        ]
+        #expect(EV.rankByEV([thin, deep], liquidity: deepTierLiquidity).first?.symbol == "MICROCAP")
+        #expect(EV.bestOpportunity([thin, deep], liquidity: deepTierLiquidity)?.idea.symbol == "MICROCAP")
+    }
+
+    @Test func thinLiquidityIsDemotedInVelocityRanking() {
+        let thin = idea("MICROCAP", conviction: 0.9, stop: 90, target: 130)
+        let deep = idea("AAPL", conviction: 0.7, stop: 90, target: 115)
+        #expect(EV.rankByVelocity([thin, deep]).first?.symbol == "MICROCAP")   // no liquidity data → unchanged
+        let liquidity: [String: LiquidityProfile] = [
+            "MICROCAP": LiquidityProfile(avgDollarVolume: 500_000, tier: .thin)
+        ]
+        #expect(EV.rankByVelocity([thin, deep], liquidity: liquidity).first?.symbol == "AAPL")
+    }
+
+    // MARK: - RANKING_BACKLOG #8: fast-lane concentration haircuts expectedWeeklyR
+
+    @Test func concentratedFastLaneHaircutsExpectedWeeklyR() {
+        // All-crypto top-3 (matches fastLaneConcentrationFlagsAllSameClass's fixture) — a correlated
+        // bet counted 3× should NOT sum as if independent.
+        let c1 = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
+        let c2 = idea("ETH-USD", conviction: 0.8, stop: 90, target: 130)
+        let c3 = idea("SOL-USD", conviction: 0.7, stop: 90, target: 130)
+        #expect(EV.fastLaneConcentration([c1, c2, c3], topN: 3)!.isConcentrated)   // pin the premise
+        let concentratedWk = EV.expectedWeeklyR([c1, c2, c3], maxConcurrent: 3, tradingDays: 5)!
+        let rawSum = EV.fastLane([c1, c2, c3]).prefix(3).compactMap { EV.velocity(for: $0) }.reduce(0, +) * 5
+        #expect(abs(concentratedWk - rawSum * 0.70) < 1e-9)   // haircut applied
+        // Mixed asset classes (existing fixture from expectedWeeklyRSumsTopFastLaneVelocitiesTimesTradingDays,
+        // re-derived here) — NOT concentrated, so no haircut (byte-identical to before this change).
+        let equity = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        let crypto = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
+        let mixedWk = EV.expectedWeeklyR([equity, crypto], maxConcurrent: 3, tradingDays: 5)!
+        let mixedRawSum = EV.fastLane([equity, crypto]).prefix(3).compactMap { EV.velocity(for: $0) }.reduce(0, +) * 5
+        #expect(abs(mixedWk - mixedRawSum) < 1e-9)   // factor == 1.0, unchanged
+    }
+
     @Test func summaryMatchesStandaloneSurfaces() {
         let saved = StockSageConvictionCalibration.candidateSelectorEnabled
         defer { StockSageConvictionCalibration.candidateSelectorEnabled = saved }

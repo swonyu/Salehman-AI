@@ -163,7 +163,7 @@ struct MarketsView: View {
             // 0 taps from open to the best move. refreshIdeas self-guards re-entry/ToolPolicy.
             if store.ideas.isEmpty { await store.refreshIdeas() }
             // Snapshot today's money-velocity (one per UTC day) so the trend can build.
-            let snap = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds, regime: store.regime, earnings: store.earnings, calibration: store.convictionCalibration)
+            let snap = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration)
             if let wk = snap.weeklyR {
                 velocityHistory.record(weeklyR: wk, bestSymbol: snap.bestSymbol, fastestSymbol: snap.fastestSymbol)
             }
@@ -2477,8 +2477,8 @@ struct MarketsView: View {
     private var displayedIdeas: [StockSageIdea] {
         let sorted: [StockSageIdea]
         switch ideaSort {
-        case .ev:         sorted = StockSageExpectedValue.rankByEV(store.ideas, regime: store.regime, earnings: store.earnings, calibration: store.convictionCalibration)
-        case .velocity:   sorted = StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds, earnings: store.earnings, calibration: store.convictionCalibration)
+        case .ev:         sorted = StockSageExpectedValue.rankByEV(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration)
+        case .velocity:   sorted = StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration)
         case .conviction: sorted = store.ideas.sorted { $0.advice.conviction > $1.advice.conviction }
         case .rr:         sorted = store.ideas.sorted { rewardRisk($0) > rewardRisk($1) }
         case .signal:     sorted = store.ideas
@@ -2885,7 +2885,7 @@ struct MarketsView: View {
 
     // Best opportunity now — the single highest positive-EV buy idea (money velocity).
     @ViewBuilder private var bestOpportunityCard: some View {
-        if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, calibration: store.convictionCalibration) {
+        if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration) {
             let idea = best.idea, ev = best.ev
             // Spoken full order (precomputed OUTSIDE the ViewBuilder so the multi-clause concat does
             // not tip the card body over the type-checker budget).
@@ -3059,11 +3059,11 @@ struct MarketsView: View {
         // Honor the user's editable Risk % so the drawdown brake's magnitude AND its label
         // track the same fraction the rest of the card uses (was a hardcoded 1%).
         let rf = (Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil }) ?? 0.01
-        let s = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, fraction: rf, holds: velocityHolds, regime: store.regime, earnings: store.earnings, calibration: store.convictionCalibration)
+        let s = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, fraction: rf, holds: velocityHolds, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration)
         if s.hasContent {
             VStack(alignment: .leading, spacing: 6) {
             Button {
-                if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, calibration: store.convictionCalibration) { selectedIdea = best.idea }
+                if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration) { selectedIdea = best.idea }
             } label: {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {

@@ -271,6 +271,19 @@ enum StockSageExpectedValue {
         return prox.severity == .imminent ? 2000 : 0
     }
 
+    /// Thin-liquidity demotion for the rank keys. 3000 sits above the earnings-imminent band
+    /// (2000) — a name your own order moves is a worse risk than a name that merely has an
+    /// event coming — but far below the cost (500k) and regime (1M) bands, so a thin name still
+    /// outranks a cost-failed or regime-banned one. No entry (FX/indices report no real share
+    /// volume, or the symbol hasn't been priced yet) → 0, only-real-data. Moderate/deep → 0.
+    /// The DISPLAYED EV/velocity never changes — only the rank key. The per-idea
+    /// LiquidityProfile.note stays the load-bearing slippage disclosure.
+    nonisolated static func liquidityRankPenalty(for idea: StockSageIdea,
+                                                 liquidity: [String: LiquidityProfile]) -> Double {
+        guard let profile = liquidity[idea.symbol.uppercased()] else { return 0 }
+        return profile.tier == .thin ? 3000 : 0
+    }
+
     /// Why an idea sits where it does on the earnings-aware board — the legible companion to
     /// earningsRankPenalty, so the silent re-order shows its reason. Reads the SAME cached
     /// EarningsProximity (no Date math, no network). `isDemoted` mirrors `earningsRankPenalty > 0` exactly,
@@ -370,10 +383,14 @@ enum StockSageExpectedValue {
 
     nonisolated static func rankByVelocity(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults,
                                            earnings: [String: EarningsProximity] = [:],
+                                           liquidity: [String: LiquidityProfile] = [:],
                                            calibration: StockSageConvictionCalibration? = nil) -> [StockSageIdea] {
-        // Demote imminent-earnings ideas inside the velocity key (empty earnings → 0 → unchanged order).
+        // Demote imminent-earnings + thin-liquidity ideas inside the velocity key
+        // (both empty → 0 penalty → unchanged order).
         func key(_ idea: StockSageIdea) -> Double? {
-            velocityRankKey(for: idea, holds: holds, calibration: calibration).map { $0 - earningsRankPenalty(for: idea, earnings: earnings) }
+            velocityRankKey(for: idea, holds: holds, calibration: calibration).map {
+                $0 - earningsRankPenalty(for: idea, earnings: earnings) - liquidityRankPenalty(for: idea, liquidity: liquidity)
+            }
         }
         return ideas.enumerated().sorted { a, b in
             switch (key(a.element), key(b.element)) {
@@ -397,10 +414,14 @@ enum StockSageExpectedValue {
     /// bottom keeping their original relative order (stable).
     nonisolated static func rankByEV(_ ideas: [StockSageIdea], regime: MarketRegime? = nil,
                                      earnings: [String: EarningsProximity] = [:],
+                                     liquidity: [String: LiquidityProfile] = [:],
                                      calibration: StockSageConvictionCalibration? = nil) -> [StockSageIdea] {
-        // Demote imminent-earnings ideas inside the EV key (empty earnings → 0 → unchanged order).
+        // Demote imminent-earnings + thin-liquidity ideas inside the EV key
+        // (both empty → 0 penalty → unchanged order).
         func key(_ idea: StockSageIdea) -> Double? {
-            regimeAdjustedEVRankKey(for: idea, regime: regime, calibration: calibration).map { $0 - earningsRankPenalty(for: idea, earnings: earnings) }
+            regimeAdjustedEVRankKey(for: idea, regime: regime, calibration: calibration).map {
+                $0 - earningsRankPenalty(for: idea, earnings: earnings) - liquidityRankPenalty(for: idea, liquidity: liquidity)
+            }
         }
         return ideas.enumerated().sorted { a, b in
             switch (key(a.element), key(b.element)) {
@@ -416,6 +437,7 @@ enum StockSageExpectedValue {
     /// expected value. nil if no buy idea has positive EV (don't manufacture one).
     nonisolated static func bestOpportunity(_ ideas: [StockSageIdea], regime: MarketRegime? = nil,
                                             earnings: [String: EarningsProximity] = [:],
+                                            liquidity: [String: LiquidityProfile] = [:],
                                             calibration: StockSageConvictionCalibration? = nil) -> (idea: StockSageIdea, ev: ExpectedValue)? {
         // No "best buy" in a risk-off tape — a crisis/bear is sometimes exactly when an intraday
         // stop gets gapped through. (nil regime → no gate, identical to before.)
@@ -425,12 +447,16 @@ enum StockSageExpectedValue {
         // (empty earnings → 0 → identical to before). Demotion, not exclusion: it can still surface
         // if it's the only positive-EV buy.
         func rankVal(_ idea: StockSageIdea) -> Double {
-            (qualityAdjustedEVR(for: idea, calibration: calibration) ?? 0) - earningsRankPenalty(for: idea, earnings: earnings)
+            (qualityAdjustedEVR(for: idea, calibration: calibration) ?? 0)
+                - earningsRankPenalty(for: idea, earnings: earnings)
+                - liquidityRankPenalty(for: idea, liquidity: liquidity)
         }
         return ideas.compactMap { idea -> (StockSageIdea, ExpectedValue)? in
             guard idea.advice.action == .buy || idea.advice.action == .strongBuy,
                   idea.advice.conviction >= minConvictionToRank,   // a #1 pick can't be a low-conviction bet
                   clearsCostAfterFrictions(idea, calibration: calibration),   // …nor a setup that's net-negative after costs
+                  // …nor a name your own order would move (no entry → not gated, only-real-data).
+                  liquidity[idea.symbol.uppercased()]?.tier != .thin,
                   let e = ev(for: idea, calibration: calibration), e.evR > 0 else { return nil }
             return (idea, e)
         }
@@ -462,7 +488,12 @@ enum StockSageExpectedValue {
                                             calibration: StockSageConvictionCalibration? = nil) -> Double? {
         let vels = fastLane(ideas, holds: holds, calibration: calibration).prefix(Swift.max(0, maxConcurrent)).compactMap { velocity(for: $0, holds: holds, calibration: calibration) }
         guard !vels.isEmpty else { return nil }
-        return vels.reduce(0, +) * tradingDays
+        // If the top-N fast-lane setups are all one asset class, they tend to move together —
+        // summing their velocities as if independent overstates the real weekly R by counting
+        // one correlated bet N times. Haircut the total (not each leg) so the raw per-idea
+        // velocities stay honest; 0.70 is a conservative single-token estimate, not a fit.
+        let concentrationFactor = fastLaneConcentration(ideas, topN: maxConcurrent, holds: holds, calibration: calibration)?.isConcentrated == true ? 0.70 : 1.0
+        return vels.reduce(0, +) * tradingDays * concentrationFactor
     }
 
     /// Account-aware weekly $ estimate: expected weekly R × the dollar value of 1R
@@ -506,16 +537,18 @@ enum StockSageExpectedValue {
                                     fraction: Double = 0.01, holds: VelocityHoldDays = .defaults,
                                     regime: MarketRegime? = nil,
                                     earnings: [String: EarningsProximity] = [:],
+                                    liquidity: [String: LiquidityProfile] = [:],
                                     calibration: StockSageConvictionCalibration? = nil) -> MoneyVelocitySummary {
         // Regime-aware so the card's displayed "best bet" matches the regime-gated nav target
         // (a risk-off tape suppresses the best-buy on BOTH). nil regime → identical to before.
-        // Earnings-aware so the summary best-bet matches the demoted board (empty → unchanged).
-        // Calibration-aware so every headline number (best EV, fastest velocity, weekly R) uses the
-        // SAME measured win-prob as the idea cards — no calibrated-next-to-uncalibrated mismatch.
-        let best = bestOpportunity(ideas, regime: regime, earnings: earnings, calibration: calibration)
-        // Use rankByVelocity (earnings-aware) then skip below-floor and negative-EV ideas —
-        // so the "Fastest" headline matches the board's floor-de-ranked, earnings-penalized sort.
-        let fastest = rankByVelocity(ideas, holds: holds, earnings: earnings, calibration: calibration)
+        // Earnings/liquidity-aware so the summary best-bet matches the demoted/gated board
+        // (both empty → unchanged). Calibration-aware so every headline number (best EV, fastest
+        // velocity, weekly R) uses the SAME measured win-prob as the idea cards — no
+        // calibrated-next-to-uncalibrated mismatch.
+        let best = bestOpportunity(ideas, regime: regime, earnings: earnings, liquidity: liquidity, calibration: calibration)
+        // Use rankByVelocity (earnings/liquidity-aware) then skip below-floor and negative-EV
+        // ideas — so the "Fastest" headline matches the board's floor-de-ranked, penalized sort.
+        let fastest = rankByVelocity(ideas, holds: holds, earnings: earnings, liquidity: liquidity, calibration: calibration)
             .first(where: { (ev(for: $0, calibration: calibration)?.evR ?? -1) > 0
                             && !netCostFloorFlag(for: $0, holds: holds, calibration: calibration).isDeranked })
         // The brake: the owner's worst losing streak, compounded down at the risk fraction.
