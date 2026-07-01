@@ -292,7 +292,7 @@ Tests run **in parallel** — never have two tests mutate the same global (`User
 
 ---
 
-_Keep this file current. Last refreshed: 2026-06-05._
+_Keep this file current. Last refreshed: 2026-07-01 (§11 added)._
 
 
 ## 9. New Intelligence Layer Additions (2026-06-10)
@@ -345,4 +345,50 @@ it cannot run tests, so test arithmetic is verified by hand and by adversarial r
 Tests: `StockSageExpectedValueTests`, `StockSageRiskOfRuinTests`, `StockSageGEFlipTests`,
 `StockSageVelocityHistoryTests`, `StockSageGlossaryTests` (+ journal tests for compounding). Hardened by
 adversarial review workflows (passes 23–28; the few findings were honesty/label fixes, not math).
+
+## 11. New StockSage engines (2026-07-01 backlog closeout)
+
+The `StockSage/` directory has grown substantially since §10 (2026-06-21) across many iterations not
+individually cataloged here — `SOURCE_BUNDLE.md` is the authoritative full-source reference and
+`DEVELOPMENT_LOG.md` is the chronological record of every change. This entry covers only what landed
+in the 2026-07-01 backlog-closeout session (RANKING/ALLOC/HARDENING/A11Y/FASTMONEY docs), so a reader
+of just this file isn't missing the newest capabilities:
+
+- **`StockSagePyramid.swift`** — standalone scale-in (pyramiding) ladder, mirrors `StockSagePartialLadder`'s
+  scale-out shape. `levels(entry:stop:initialFraction:riskCap:)` → 3 shrinking tiers (100/50/25%) at
+  0/+0.5R/+1.5R, uniformly scaled to respect `riskCap` (default `StockSageKelly.maxFraction`). Pure,
+  zero `advise()`/`buildIdeas` wiring — an opt-in calculator, not an automatic signal.
+- **`StockSageConvictionScaler.swift`** — `scaledRiskFraction(base:conviction:regimeBias:)`: an explicit,
+  hard-capped-at-2% conviction- and regime-scaled per-trade risk fraction. Deliberately NOT wired into
+  `advise()`/`suggestedWeight()`/`StockSageCapitalAllocator` — ships engine-only pending its own
+  backtest, matching `StockSageCompoundingHorizon`'s earlier graduation pattern.
+- **`StockSageSectorRotation.swift`** — `analyze(allTrades:minTrades:topN:)` ranks the OWNER's own closed
+  trades by realized R/trade per sector, flags the top-N as "rotating in." Reframed from the original
+  backlog spec to be flag-only (a surfaced `rationale` note via `buildIdeas`, same pattern as
+  `StockSageReturnShape`/`StockSageVolStability`) — never a conviction input, since it's the same
+  momentum-chasing premise class as the ablated `relativeStrengthEnabled` term.
+- **`StockSageRelativeStrength.swift`** — `rank(_:[String:Double]) -> [RelativeStrengthRank]`: pure
+  cross-sectional percentile ranking of ideas against each other (tie-averaged, single-holding-neutral).
+  Ships as a standalone, fully-tested but completely UNWIRED utility — no multi-symbol backtest harness
+  exists yet to validate whether it should influence ranking, so it influences nothing today.
+- **`StockSageIndicators.timeframeConfluence(closes:dailyDirection:...)`** + `TradeAdvice.timeframeAligned`/
+  `.confluenceNote` — three-timeframe (long/daily/short) trend-agreement read, computed in `advise()` as a
+  pure POST-HOC observer of the already-resolved score (never fed back into it). Surfaced as a "3-TF
+  confluence" badge on `ideaCard`; not wired into any ranking comparator (a separate, explicit
+  owner-sign-off decision, same bar as `bestOpportunity`'s `preferVelocity` opt-in below).
+- **`StockSageExpectedValue.bestOpportunity(..., preferVelocity:, holds:)`** — opt-in (default `false`,
+  byte-identical) alternate ranking: EV/day instead of quality-adjusted EV, with a conviction tie-break.
+- **`StockSageCapitalAllocator.rebalanceToEdge(...)`** — EV-weighted whole-book reweight (distinct from
+  the existing risk-parity rebalance): trims/grows held names by positive buy-family `evR`, correlation-
+  gates brand-new entries, closed-form churn-caps new-idea share. Returns `EdgeRebalancePlan`.
+- **`StockSageTodayPlan.rankedActions`/`copyAllText`** + `MarketsTodayActionsCard` — top-N fast-lane setups
+  collapsed to one sized+gated row each (`StockSagePositionSizer` + `StockSageTradeGate`), wired into
+  `MarketsView` below `fastLaneStrip`.
+- **`StockSageExpectedValue.momentumQuality`/`rankByVelocityWeighted`** — fast-lane re-rank by
+  velocity × short-horizon momentum quality (Kaufman efficiency ratio + MACD + 21-bar return). Engine
+  shipped and tested; the UI "momentum dot" is a deferred follow-up (needs a cached-closes field on
+  `StockSageIdea`).
+- **`StockSageExpectedValue.fastLaneByClass`/`cryptoRotationDominant`/`laneCorrelation`** — crypto vs
+  equity fast-lane board split + live cross-group correlation, wired into `fastLaneStrip`'s
+  `Both/Crypto/Equities` picker.
 
