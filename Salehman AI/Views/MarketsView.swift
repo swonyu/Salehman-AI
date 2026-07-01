@@ -2700,6 +2700,17 @@ struct MarketsView: View {
                         .help("Net EV/day after frictions is under 0.005R/day — de-ranked on the velocity board. See the detail sheet for the full net-cost breakdown.")
                         .accessibilityLabel("Below net-cost floor — de-ranked on velocity board")
                 }
+                if a.timeframeAligned {
+                    // RANKING_BACKLOG #12 (reframed, pure observer) — display-only badge, never a
+                    // ranking input; see StockSageIndicators.timeframeConfluence.
+                    Text("3-TF confluence")
+                        .font(.system(size: mvFont10, weight: .bold))
+                        .foregroundStyle(DS.Palette.successSoft)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(DS.Palette.successSoft.opacity(0.14), in: Capsule())
+                        .help(a.confluenceNote ?? "1-month, daily, and 1-year trends all agree — a breadth read, not a probability of profit.")
+                        .accessibilityLabel(a.confluenceNote ?? "Three-timeframe confluence")
+                }
                 if a.targetPrice != nil || a.stopPrice != nil {
                 Menu {
                     if let t = a.targetPrice {

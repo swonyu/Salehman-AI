@@ -237,4 +237,39 @@ enum StockSageIndicators {
         guard let maxHigh = highs.suffix(w).max(), maxHigh > 0 else { return nil }
         return (pth: price / maxHigh, effectiveWindow: w)      // [AUDIT] pth = price / rollingMaxHigh
     }
+
+    /// Three-timeframe confluence — RANKING_BACKLOG #12's actual intent ("confluent setups outrank
+    /// single-signal ones"), shipped SAFELY as a pure post-hoc OBSERVER instead of a conviction-score
+    /// input: it reads three horizons already implicit in one daily `closes` array and reports
+    /// whether they agree, but it NEVER feeds back into `score`/conviction/sizing anywhere (see
+    /// `StockSageAdvisor.advise()`'s own `trendFamilyCap` invariant — folding a 4th trend-correlated
+    /// term directly into the score, as originally proposed, was independently re-audited 2026-07-01
+    /// and rejected: it would sit OUTSIDE the 0.65 cap and double-count the SAME underlying trend
+    /// factor the daily/short legs here already partially share).
+    ///
+    ///   • LONG   — `trendOK(closes)` (the SAME 12-1 / 252-bar TSMOM already gating buy-the-dip
+    ///     eligibility elsewhere in `advise()`). nil when < 253 bars — genuinely unknown, not bearish.
+    ///   • DAILY  — the sign of `dailyDirection` (the caller passes the advisor's own RESOLVED,
+    ///     already-fully-computed `score`'s sign — after every existing term, cap, and the iter3
+    ///     variance-scalar attenuation have already applied; this function does not re-derive it).
+    ///   • SHORT  — the sign of `returnOverPeriod(closes, period: shortPeriod)` (~1 month), with a
+    ///     `neutralBandPct` dead-zone so a flat/chop tape can't fake agreement by pure noise.
+    ///
+    /// `aligned` is true only when all three legs are DEFINED and share the same sign. A `long` leg
+    /// of `nil` (short history) makes alignment structurally unavailable — read as "unknown," never
+    /// as "not aligned" / bearish. Pure, deterministic, zero new fetch (reuses `trendOK`/
+    /// `returnOverPeriod`, already-tested primitives).
+    nonisolated static func timeframeConfluence(closes: [Double], dailyDirection: Int,
+                                                shortPeriod: Int = 21, neutralBandPct: Double = 1.0)
+    -> (aligned: Bool, direction: Int, long: Int, short: Int?)? {
+        guard let longUp = trendOK(closes) else { return nil }
+        let longDir = longUp ? 1 : -1
+        guard let shortReturn = returnOverPeriod(closes, period: shortPeriod) else { return nil }
+        let shortDir = abs(shortReturn) < neutralBandPct ? 0 : (shortReturn > 0 ? 1 : -1)
+        guard shortDir != 0, dailyDirection != 0 else {
+            return (aligned: false, direction: 0, long: longDir, short: shortDir == 0 ? nil : shortDir)
+        }
+        let aligned = longDir == dailyDirection && dailyDirection == shortDir
+        return (aligned: aligned, direction: aligned ? dailyDirection : 0, long: longDir, short: shortDir)
+    }
 }

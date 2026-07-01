@@ -285,4 +285,48 @@ struct StockSageAdvisorTests {
         #expect(aLong.action == .strongBuy)
         #expect(aShort.conviction < aLong.conviction)
     }
+
+    // MARK: - RANKING_BACKLOG #12 (reframed, pure observer): timeframeConfluence wiring
+
+    @Test func cleanUptrendReportsTimeframeAlignedWithAConfluenceNote() {
+        // TrendFixtures.up(300) is a clean, strongly-bullish daily score (see
+        // cleanUptrendIsABuyWithStopTargetAndSize for up(250) → .strongBuy), AND
+        // StockSageIndicatorsTests independently python-verified its long/short legs both
+        // read "up" — so all three timeframes should agree here.
+        let a = StockSageAdvisor.advise(closes: TrendFixtures.up(300))
+        #expect(a.action == .strongBuy)
+        #expect(a.timeframeAligned)
+        #expect(a.confluenceNote != nil)
+        #expect(a.confluenceNote!.contains("confluence"))
+        #expect(a.rationale.contains { $0.contains("confluence") })
+    }
+
+    @Test func shortHistoryNeverClaimsTimeframeAlignment() {
+        // <253 bars ⇒ the long leg (trendOK) is nil ⇒ timeframeConfluence itself returns nil ⇒
+        // timeframeAligned stays at its false default — "unknown," never a false positive.
+        let a = StockSageAdvisor.advise(closes: TrendFixtures.up(250))
+        #expect(a.action == .strongBuy)   // still a strong signal by every OTHER measure...
+        #expect(!a.timeframeAligned)      // ...but confluence structurally can't be claimed yet
+        #expect(a.confluenceNote == nil)
+    }
+
+    @Test func timeframeFieldsAreByteCompatDefaultsForTheLegacyInitializer() {
+        let a = TradeAdvice(action: .buy, conviction: 0.5, regime: .bullTrend, rationale: [],
+                            stopPrice: 95, targetPrice: 110, suggestedWeight: 0.05, caveat: "x")
+        #expect(a.timeframeAligned == false)
+        #expect(a.confluenceNote == nil)
+    }
+
+    @Test func timeframeConfluenceNeverChangesTheExistingVerdictOrSizing() {
+        // Regression: adding the observer fields must not perturb score/action/conviction/
+        // stop/target/weight for ANY of this file's already-pinned fixtures.
+        let uptrend = TrendFixtures.up(250)
+        let a = StockSageAdvisor.advise(closes: uptrend)
+        #expect(a.action == .strongBuy)
+        #expect(a.conviction > 0.5)
+        #expect(a.suggestedWeight > 0)
+        let highs = uptrend.map { $0 + 1 }, lows = uptrend.map { $0 - 1 }
+        let capped = StockSageAdvisor.advise(closes: uptrend, highs: highs, lows: lows)
+        #expect(capped.suggestedWeight == StockSageAdvisor.maxWeight)
+    }
 }

@@ -44,6 +44,16 @@ struct TradeAdvice: Sendable, Equatable {
     /// Plain-language reason for the stop width (e.g. "2.5×ATR — sized for 72% volatility"),
     /// surfaced in the idea detail. nil when volatility wasn't available.
     var stopReason: String? = nil
+    /// RANKING_BACKLOG #12 (reframed 2026-07-01, pure observer — see `StockSageIndicators.
+    /// timeframeConfluence`): true when the ~1-month (short), daily-resolved (score), and
+    /// ~1-year 12-1 (long) trends all agree. NEVER an input to `score`/`conviction`/sizing —
+    /// a display-only tie-breaker/badge, false when unknown (short history) or genuinely
+    /// disagreeing. Byte-compat: trailing defaulted, so every existing call site is unaffected.
+    var timeframeAligned: Bool = false
+    /// Plain-language confluence note ("Three-timeframe confluence — 1-month, daily, and
+    /// 1-year trends all up"), appended to `rationale` only when `timeframeAligned`. nil
+    /// otherwise (including "unknown," e.g. short history — never claims agreement it can't see).
+    var confluenceNote: String? = nil
 }
 
 // MARK: - StockSageAdvisor
@@ -300,6 +310,21 @@ enum StockSageAdvisor {
             else if case .buy = action, !rangeOversoldBounce { action = .avoid }
         }
         let conviction = Swift.min(abs(score), 1.0)
+
+        // RANKING_BACKLOG #12 (reframed, pure observer): three-timeframe confluence, computed
+        // from the FINAL resolved score (after every term, the trend-family cap, and the iter3
+        // variance-scalar have already applied) — this NEVER changes score/action/conviction/
+        // sizing above, it only reads them. See `StockSageIndicators.timeframeConfluence`.
+        var timeframeAligned = false
+        var confluenceNote: String? = nil
+        let dailyDirection = score > 0 ? 1 : (score < 0 ? -1 : 0)
+        if let tf = StockSageIndicators.timeframeConfluence(closes: closes, dailyDirection: dailyDirection), tf.aligned {
+            timeframeAligned = true
+            let word = tf.direction > 0 ? "up" : "down"
+            confluenceNote = "Three-timeframe confluence — 1-month, daily, and 1-year trends all \(word)"
+            rationale.append(confluenceNote!)
+        }
+
         // Only a buy-family verdict gets an actionable trade plan. Gating on the
         // ACTION (not raw score>0) stops a "Hold"/"Avoid" card from also showing a
         // stop, target, and position size — which contradicted the recommendation.
@@ -326,7 +351,8 @@ enum StockSageAdvisor {
         return TradeAdvice(action: action, conviction: conviction, regime: regime,
                            rationale: rationale, stopPrice: stop, targetPrice: target,
                            suggestedWeight: weight, caveat: caveat,
-                           stopMultiplier: stopMult, stopReason: stopReason)
+                           stopMultiplier: stopMult, stopReason: stopReason,
+                           timeframeAligned: timeframeAligned, confluenceNote: confluenceNote)
     }
 
     /// Target annualized volatility (20%) the variance scalar normalizes momentum exposure to —

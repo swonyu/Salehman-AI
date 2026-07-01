@@ -174,4 +174,74 @@ struct StockSageIndicatorsTests {
         #expect(StockSageIndicators.annualizedVolatility([100.0, 0, 110.0]) == nil)
         #expect(StockSageIndicators.annualizedVolatility([100.0, 100.0, 110.0]) != nil)
     }
+
+    // MARK: - RANKING_BACKLOG #12 (reframed, pure observer): timeframeConfluence
+
+    private func up300() -> [Double] { (0..<300).map { 50.0 + 0.0153 * pow(Double($0), 2) } }
+    // Stays strictly positive throughout 300 bars (min ≈530), unlike the repo's own
+    // TrendFixtures.down(300, k:0.0153), which crosses zero past i≈256 and corrupts
+    // % returns (division by a negative "past" flips the sign of the ratio).
+    private func down300() -> [Double] { (0..<300).map { 5000.0 - 0.05 * pow(Double($0), 2) } }
+
+    @Test func allThreeLegsAlignedUpReportsAligned() {
+        // python-verified: up(300) → trendOK=true (long=+1), ret21≈+15.04% (short=+1).
+        let tf = I.timeframeConfluence(closes: up300(), dailyDirection: 1)
+        #expect(tf != nil)
+        #expect(tf!.aligned)
+        #expect(tf!.direction == 1)
+        #expect(tf!.long == 1)
+        #expect(tf!.short == 1)
+    }
+
+    @Test func allThreeLegsAlignedDownReportsAligned() {
+        // python-verified: down300() → trendOK=false (long=-1), ret21≈-53.34% (short=-1).
+        let tf = I.timeframeConfluence(closes: down300(), dailyDirection: -1)
+        #expect(tf != nil)
+        #expect(tf!.aligned)
+        #expect(tf!.direction == -1)
+        #expect(tf!.long == -1)
+        #expect(tf!.short == -1)
+    }
+
+    @Test func shortLegFightingLongLegIsNeverAligned() {
+        // Long-term up (trendOK true) but daily/short both claim down — long disagrees, so
+        // aligned must be false regardless of what daily/short agree on between themselves.
+        let tf = I.timeframeConfluence(closes: up300(), dailyDirection: -1)
+        #expect(tf != nil)
+        #expect(!tf!.aligned)
+        #expect(tf!.direction == 0)
+        #expect(tf!.long == 1)   // long leg itself is unaffected by dailyDirection
+    }
+
+    @Test func shortHistoryReturnsNilNeverFalseAlignment() {
+        // <253 bars → trendOK is nil → the WHOLE function is nil ("unknown"), never "not aligned".
+        #expect(I.timeframeConfluence(closes: Array(up300().prefix(250)), dailyDirection: 1) == nil)
+    }
+
+    @Test func flatShortLegWithinNeutralBandIsNotAligned() {
+        // python-verified: last 22 bars pinned flat → ret21 == 0.0 exactly, inside the 1% band.
+        var closes = up300()
+        let pinned = closes[closes.count - 22]
+        for i in (closes.count - 22)..<closes.count { closes[i] = pinned }
+        let tf = I.timeframeConfluence(closes: closes, dailyDirection: 1)
+        #expect(tf != nil)
+        #expect(!tf!.aligned)
+        #expect(tf!.short == nil)   // flat, not "down" — the neutral band prevents a false disagreement read too
+    }
+
+    @Test func zeroDailyDirectionIsNeverAligned() {
+        // A genuinely flat (exactly 0.0) resolved score can't confirm any direction.
+        let tf = I.timeframeConfluence(closes: up300(), dailyDirection: 0)
+        #expect(tf != nil)
+        #expect(!tf!.aligned)
+        #expect(tf!.direction == 0)
+    }
+
+    @Test func customNeutralBandIsHonored() {
+        // A wider neutral band should turn an otherwise-aligned case into "flat" (short=nil).
+        let tf = I.timeframeConfluence(closes: up300(), dailyDirection: 1, neutralBandPct: 20.0)
+        #expect(tf != nil)
+        #expect(!tf!.aligned)   // ret21 ≈ +15.04% < 20% band → treated as flat
+        #expect(tf!.short == nil)
+    }
 }

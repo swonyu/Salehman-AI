@@ -424,7 +424,8 @@ final class StockSageStore: ObservableObject {
                                          regime: advice.regime, rationale: advice.rationale,
                                          stopPrice: advice.stopPrice, targetPrice: advice.targetPrice,
                                          suggestedWeight: calibratedWeight, caveat: advice.caveat,
-                                         stopMultiplier: advice.stopMultiplier, stopReason: advice.stopReason)
+                                         stopMultiplier: advice.stopMultiplier, stopReason: advice.stopReason,
+                                         timeframeAligned: advice.timeframeAligned, confluenceNote: advice.confluenceNote)
                 }
                 // Honesty-only risk reads (EDGE_RESEARCH #4/#5): flag-only notes appended to the
                 // rationale shown in the detail-sheet "Why" ForEach. NOT a sizing/score input —
@@ -456,7 +457,8 @@ final class StockSageStore: ObservableObject {
                                          regime: advice.regime, rationale: advice.rationale + extraNotes,
                                          stopPrice: advice.stopPrice, targetPrice: advice.targetPrice,
                                          suggestedWeight: advice.suggestedWeight, caveat: advice.caveat,
-                                         stopMultiplier: advice.stopMultiplier, stopReason: advice.stopReason)
+                                         stopMultiplier: advice.stopMultiplier, stopReason: advice.stopReason,
+                                         timeframeAligned: advice.timeframeAligned, confluenceNote: advice.confluenceNote)
                 }
                 let recent = Array(history.closes.suffix(63))
                 let spark = SparkSeries.downsample(recent)
