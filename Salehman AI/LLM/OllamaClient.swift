@@ -441,6 +441,9 @@ enum OllamaClient {
         var accumulated = ""
         do {
             for try await line in bytes.lines {
+                // A cancelled generation should stop consuming the stream immediately
+                // rather than draining it to completion before the caller notices.
+                if Task.isCancelled { break }
                 guard let data = line.data(using: .utf8),
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
                 if let chunk = json["response"] as? String, !chunk.isEmpty {

@@ -27,7 +27,10 @@ final class MemoryStore: @unchecked Sendable {
     }
 
     /// Persist `items`. Callers already hold `lock`.
-    private nonisolated func persist() { try? store.save(items) }
+    private nonisolated func persist() {
+        do { try store.save(items) }
+        catch { NSLog("MemoryStore.persist failed: %@", error.localizedDescription) }
+    }
 
     private nonisolated func embed(_ text: String) -> [Float]? {
         guard let e = NLEmbedding.sentenceEmbedding(for: .english) else { return nil }

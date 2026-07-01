@@ -93,7 +93,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** listingRow shows gross margin (high-low) with a pre-tax tooltip but the number itself is gross. Add a second "(net: +Xk)" chip = margin-2% tax, color green if margin>tax, yellow if <2×tax, red at breakeven. Test netMarginAfterTax.
 **Why:** Casual players read 100k margin as 100k profit, not 98k. Concrete honesty improvement, small.
 
-### ⬜ #17 — Compounding curve clamped at 0 needs wipeout labeling  [medium/small, bug]
+### ✅ DONE #17 — Compounding curve clamped at 0 needs wipeout labeling  [medium/small, bug]
 **File:** Salehman AI/StockSage/StockSageJournal.swift
 **What:** Line 236 `mult = max(0, mult*(1+fraction*r))` correctly stops compounding but freezes silently at 0. Either return Double? with nil=wipeout, or add caveat "a value of 0 means the account was wiped out on this or an earlier trade." Math is fine; UI honesty only.
 **Why:** A flat-at-0 curve reads as "stuck" rather than "ruined"; mislabels the most important outcome.
@@ -113,12 +113,12 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** Line 469 compactMaps realizedR; a CLOSED trade with entry==stop has realizedR=nil and vanishes, shrinking sample size invisibly. Count no-defined-risk closed trades and flag them, or reject entry==stop at TradeRecord.init.
 **Why:** Lowers the edge sample without telling the user; for a closed trade zero-risk is anomalous and should be flagged not hidden.
 
-### ⬜ #21 — Fast-lane concentration warning lacks a concrete sizing rule  [low/small, honesty]
+### ✅ DONE #21 — Fast-lane concentration warning lacks a concrete sizing rule  [low/small, honesty]
 **File:** Salehman AI/Views/MarketsView.swift
 **What:** "closer to ONE bet, not N" asserts correlation without a rule. Strengthen: "...likely correlated; size all N TOGETHER at 1-2% total, not per symbol." Applies to summary card + fast-lane strip.
 **Why:** Turns an alarming-but-vague warning into an actionable risk rule; cheap copy change batchable with ranks 8/10.
 
-### ⬜ #22 — Conviction meter needs an "estimate, not probability" label  [low/small, honesty]
+### ✅ DONE #22 — Conviction meter needs an "estimate, not probability" label  [low/small, honesty]
 **File:** Salehman AI/Views/MarketsView.swift
 **What:** convictionMeter renders a 0-1 fill with no label; users read 70% fill as 70% win probability. Add label/tooltip mapping conviction→estimated win-prob (per winProbEstimate ~35-58%) with "not a forecast."
 **Why:** Prevents conflating a rules-based conviction with a real probability. Small.
@@ -128,7 +128,7 @@ Merged and deduplicated the two input lists (18 bugs/honesty items + 24 features
 **What:** Stop/Target shown as fixed numbers against the current quote; viewing an hour later changes R:R silently. Add note "Stop & Target computed at <generatedAt> — recalculate before entry."
 **Why:** Stale R:R can quietly violate the user's intended risk. Small note.
 
-### ⬜ #24 — Realized P&L green number needs a "record, not promise" label  [low/small, honesty]
+### ✅ DONE #24 — Realized P&L green number needs a "record, not promise" label  [low/small, honesty]
 **File:** Salehman AI/Views/MarketsView.swift
 **What:** ideaMetric "Realized P&L" renders green when positive with the caveat buried elsewhere. Prefix "✓ Realized" or add tooltip "Closed trades only — a record, not a promise of future results."
 **Why:** Quick-scan green number reads as a forward fact. Trivial, batch with the other MarketsView honesty polish.

@@ -255,6 +255,10 @@ struct CompoundingCurve: Sendable, Equatable {
     let multiples: [Double]   // running growth multiple after each closed trade
     let fraction: Double      // risk per trade (e.g. 0.01 = 1%)
     nonisolated var finalMultiple: Double { multiples.last ?? 1 }
+    /// The curve clamps at 0 (ruin is absorbing) — a flat line AT 0 means wiped out on
+    /// this or an earlier trade, not merely "stuck". Distinguish that from a genuine ×0
+    /// nonexistent case (multiples is never empty when this type exists) in the UI.
+    nonisolated var isRuined: Bool { finalMultiple == 0 }
 }
 
 enum StockSageJournal {

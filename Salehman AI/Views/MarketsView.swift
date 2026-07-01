@@ -1287,6 +1287,7 @@ struct MarketsView: View {
                                color: s.avgR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                     ideaMetric("Realized P&L", String(format: "%+.2f", s.totalProfit),
                                color: s.totalProfit >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
+                        .help("Closed trades only — a record, not a promise of future results.")
                     Spacer(minLength: 0)
                 }
                 let edge = journal.edgeStats
@@ -1375,7 +1376,9 @@ struct MarketsView: View {
                 if let comp = journal.compounding, comp.multiples.count >= 2 {
                     let up = comp.finalMultiple >= 1
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(String(format: "Compounded to ×%.2f at %.0f%%/trade", comp.finalMultiple, comp.fraction * 100))
+                        Text(comp.isRuined
+                             ? String(format: "Wiped out at %.0f%%/trade — the account hit ruin on this or an earlier trade.", comp.fraction * 100)
+                             : String(format: "Compounded to ×%.2f at %.0f%%/trade", comp.finalMultiple, comp.fraction * 100))
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
                         Sparkline(values: comp.multiples)
@@ -2687,6 +2690,7 @@ struct MarketsView: View {
                 .accessibilityLabel("Backtest \(idea.symbol)")
             }
             convictionMeter(a.conviction, color: actionColor(a.action))
+                .help("Conviction — a rules-based signal strength, not a probability. Estimated win-rate range ~35-58%, not a forecast.")
             if idea.spark.count >= 2 {
                 Sparkline(values: idea.spark)
                     .stroke(sparkColor(idea.spark),
@@ -3222,7 +3226,7 @@ struct MarketsView: View {
                     }
                 }
                 if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), conc.isConcentrated {
-                    Text("⚠︎ Your top \(conc.total) fastest are all \(conc.dominantClass) — that's closer to ONE bet than \(conc.total); they tend to move together. Diversify or size them as one.")
+                    Text("⚠︎ Your top \(conc.total) fastest are all \(conc.dominantClass) — likely correlated; that's closer to ONE bet than \(conc.total). Size all \(conc.total) TOGETHER at 1-2% total risk, not per symbol.")
                         .font(.system(size: mvFont9, weight: .medium))
                         .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                 }
@@ -3666,6 +3670,7 @@ struct MarketsView: View {
                 }
 
                 convictionMeter(a.conviction, color: actionColor(a.action))
+                    .help("Conviction — a rules-based signal strength, not a probability. Estimated win-rate range ~35-58%, not a forecast.")
                 Text("Conviction \(Int(a.conviction * 100))% · \(a.regime.rawValue)")
                     .font(.caption).foregroundStyle(.secondary)
 

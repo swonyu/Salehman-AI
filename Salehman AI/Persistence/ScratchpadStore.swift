@@ -120,7 +120,8 @@ final class ScratchpadStore: ObservableObject {
     private struct Snapshot: Codable { var notes: [Note]; var tasks: [TaskItem] }
 
     private func save() {
-        try? store.save(Snapshot(notes: notes, tasks: tasks))
+        do { try store.save(Snapshot(notes: notes, tasks: tasks)) }
+        catch { NSLog("ScratchpadStore.save failed: %@", error.localizedDescription) }
     }
 
     private func load() {

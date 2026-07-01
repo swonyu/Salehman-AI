@@ -182,6 +182,9 @@ final class ChatViewModel: ObservableObject {
                 }
                 break
             }
+            // A late cancel already had stop() clear these flags directly; skip the
+            // redundant post-loop writes (and the brain-status refresh) in that case.
+            guard !Task.isCancelled else { return }
             isRunning = false
             AppState.shared.aiIsRunning = false
             if AppState.shared.selectedTab != .chat { AppState.shared.chatHasUnread = true }

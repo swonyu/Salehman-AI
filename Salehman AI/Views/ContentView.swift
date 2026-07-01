@@ -1426,11 +1426,27 @@ struct ContentView: View {
     }
 
     // MARK: Attachment actions
+
+    /// Loads several attachments IN PARALLEL instead of serializing them — for images
+    /// each load does an on-device Vision pass (AttachmentLoader.load → VisionAnalyzer.describe),
+    /// so N sequential awaits meant N Vision passes had to finish before ANY attachment
+    /// appeared. A task group runs them concurrently while preserving input order.
+    private func loadAttachments(_ urls: [URL]) async -> [Attachment] {
+        await withTaskGroup(of: (Int, Attachment).self) { group in
+            for (i, url) in urls.enumerated() {
+                group.addTask { (i, await AttachmentLoader.load(url: url)) }
+            }
+            var results: [(Int, Attachment)] = []
+            for await pair in group { results.append(pair) }
+            return results.sorted { $0.0 < $1.0 }.map(\.1)
+        }
+    }
+
     @MainActor private func attachFile() async {
         let urls = AttachmentLoader.pickFiles()
         guard !urls.isEmpty else { return }
         attachmentLoads += 1
-        for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
+        attachments.append(contentsOf: await loadAttachments(urls))
         attachmentLoads -= 1
         inputFocused = true
     }
@@ -1439,7 +1455,7 @@ struct ContentView: View {
         let urls = AttachmentLoader.pickImages()
         guard !urls.isEmpty else { return }
         attachmentLoads += 1
-        for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
+        attachments.append(contentsOf: await loadAttachments(urls))
         attachmentLoads -= 1
         inputFocused = true
     }
@@ -1452,7 +1468,7 @@ struct ContentView: View {
         // 1) Copied file URLs (all of them — Finder multi-copy works).
         if let urls = pb.readObjects(forClasses: [NSURL.self]) as? [URL], !urls.isEmpty {
             attachmentLoads += 1
-            for url in urls { attachments.append(await AttachmentLoader.load(url: url)) }
+            attachments.append(contentsOf: await loadAttachments(urls))
             attachmentLoads -= 1; inputFocused = true; return
         }
         // 2) Raw image data on the clipboard (screenshot / copied image) → temp PNG.

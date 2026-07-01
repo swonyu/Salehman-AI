@@ -47,7 +47,12 @@ final class PromptLibrary: ObservableObject {
     }
 
     private func save() {
-        if let data = try? JSONEncoder().encode(prompts) { try? data.write(to: fileURL, options: .atomic) }
+        do {
+            let data = try JSONEncoder().encode(prompts)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            NSLog("PromptLibrary.save failed: %@", error.localizedDescription)
+        }
     }
 
     static let starters: [SavedPrompt] = [
