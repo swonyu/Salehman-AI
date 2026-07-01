@@ -147,7 +147,7 @@ struct RuneScapeMarketView: View {
         .padding(.horizontal, DS.Space.md).padding(.vertical, DS.Space.sm)
         .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
-            .stroke(LinearGradient(colors: [tint.opacity(0.48), tint.opacity(0.10)],
+            .stroke(LinearGradient(colors: [tint.opacity(0.45), tint.opacity(0.10)],
                                    startPoint: .top, endPoint: .bottom), lineWidth: 1))
     }
 
@@ -169,7 +169,7 @@ struct RuneScapeMarketView: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.white.opacity(searchFocused ? 0.11 : 0.08),
+        .background(searchFocused ? Color.white.opacity(0.11) : DS.Palette.surfaceAlt,
                     in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
             .stroke(searchFocused
@@ -209,10 +209,10 @@ struct RuneScapeMarketView: View {
         // Match the RuneLite plugin's shipped min-margin floor so the two surfaces agree on the same prices.
         let flips = StockSageGEFlip.flips(rows, minMargin: StockSageGEFlip.defaultMinMargin, asOf: Date())
         if flips.count >= 2 {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: DS.Space.sm) {
                 HStack(spacing: 6) {
                     Image(systemName: "hare.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.warningSoft)
-                    Text("Fastest flips — gp/hour").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                    Text("Fastest flips — gp/hour").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
                     Spacer()
                 }
                 ForEach(flips.prefix(3)) { flip in
@@ -243,7 +243,10 @@ struct RuneScapeMarketView: View {
                 }
 
                 // Budget-aware: "with N gp, flip these" (greedy by gp/hour within the budget).
-                Divider().overlay(DS.Palette.surfaceStroke)
+                Rectangle()
+                    .fill(LinearGradient(colors: [DS.Palette.surfaceStroke.opacity(0), DS.Palette.surfaceStroke, DS.Palette.surfaceStroke.opacity(0)],
+                                         startPoint: .leading, endPoint: .trailing))
+                    .frame(height: 1)
                 let validBudget = StockSageInput.positiveInt(geBudgetText)
                 let budget = validBudget ?? 0
                 let plan = StockSageGEFlip.bestFlipsForBudget(flips, budget: budget)
@@ -277,7 +280,9 @@ struct RuneScapeMarketView: View {
             }
             .padding(DS.Space.md).frame(maxWidth: .infinity, alignment: .leading)
             .background(DS.Palette.warningSoft.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.warningSoft.opacity(0.25), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                .stroke(LinearGradient(colors: [DS.Palette.warningSoft.opacity(0.48), DS.Palette.warningSoft.opacity(0.10)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
         }
     }
 
@@ -313,6 +318,7 @@ struct RuneScapeMarketView: View {
                         Text("P2P").font(.system(size: rsFont8, weight: .bold)).foregroundStyle(Color(white: 0.12))
                             .padding(.horizontal, 4).padding(.vertical, 1)
                             .background(DS.Palette.warningSoft, in: Capsule())
+                            .overlay(Capsule().stroke(DS.Palette.warningSoft.opacity(0.5), lineWidth: 0.5))
                     }
                 }
                 if let limit = listing.item.buyLimit {
@@ -382,7 +388,7 @@ struct RuneScapeMarketView: View {
 
     private func priceColumn(_ label: String, _ value: Int?, color: Color) -> some View {
         VStack(alignment: .trailing, spacing: 1) {
-            Text(label).font(.system(size: rsFont9, weight: .semibold)).foregroundStyle(.secondary)
+            Text(label).font(.system(size: rsFont9, weight: .semibold)).foregroundStyle(DS.Palette.textSecondary)
             Text(value.map(RSFormat.gp) ?? "—")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .foregroundStyle(value == nil ? Color.secondary : color)

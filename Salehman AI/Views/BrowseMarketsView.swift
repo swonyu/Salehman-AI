@@ -48,9 +48,9 @@ struct BrowseMarketsView: View {
         VStack(spacing: DS.Space.sm) {
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Browse markets").font(.system(size: 16, weight: .bold)).foregroundStyle(.white)
+                    Text("Browse markets").font(DS.Typography.titleM).foregroundStyle(.white)
                     Text("\(StockSageUniverse.catalog.count) instruments · tap + to track (fetches one live quote)")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("Done") { dismiss() }.buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
@@ -68,7 +68,7 @@ struct BrowseMarketsView: View {
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+            .background(DS.Palette.surfaceAlt, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
 
             Picker("Asset class", selection: $asset) {
                 ForEach(AssetFilter.allCases) { Text($0.rawValue).tag($0) }
@@ -97,9 +97,9 @@ struct BrowseMarketsView: View {
                 }
             }
         }
-        .padding(DS.Space.md)
+        .padding(DS.Space.lg)
         .frame(minWidth: 420, minHeight: 520)
-        .background(DS.Palette.surface)
+        .background(DS.Palette.modalBG)
     }
 
     @ViewBuilder private func row(_for s: StockSageSymbol) -> some View {
@@ -125,6 +125,6 @@ struct BrowseMarketsView: View {
             }
         }
         .padding(.vertical, 8).padding(.horizontal, 6)
-        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 6))
+        .background(DS.Palette.surfaceAlt, in: RoundedRectangle(cornerRadius: DS.Radius.small))
     }
 }

@@ -488,7 +488,7 @@ struct MarketsView: View {
                 Button { Task { await checkAlertsNow() } } label: {
                     HStack(spacing: 6) {
                         Group {
-                            if checkingAlerts { ProgressView().controlSize(.small) }
+                            if checkingAlerts { ProgressView().controlSize(.small).tint(DS.Palette.accent) }
                             else { Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold)) }
                         }
                         .transition(.opacity)
@@ -644,7 +644,7 @@ struct MarketsView: View {
                 .background(recColor(s.recommendation), in: Capsule())
         }
         .padding(.horizontal, DS.Space.sm).padding(.vertical, 10)
-        .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
+        .background(hovered ? DS.Palette.accent.opacity(0.06) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
             withAnimation(DS.Motion.smooth) {
@@ -938,7 +938,7 @@ struct MarketsView: View {
             .buttonStyle(LuxPressStyle()).help("Remove holding").accessibilityLabel("Remove \(p.symbol)")
         }
         .padding(.horizontal, DS.Space.sm).padding(.vertical, 10)
-        .background(hovered ? DS.Palette.accent.opacity(0.07) : Color.clear)
+        .background(hovered ? DS.Palette.accent.opacity(0.06) : Color.clear)
         .contentShape(Rectangle())
         .onHover { over in
             withAnimation(DS.Motion.smooth) {
@@ -1413,7 +1413,7 @@ struct MarketsView: View {
                 if let dist = journal.rDistribution, dist.total >= 3 {
                     let maxC = max(dist.bins.map(\.count).max() ?? 1, 1)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("R-multiple distribution").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                        Text("R-multiple distribution").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
                         HStack(alignment: .bottom, spacing: DS.Space.sm) {
                             ForEach(dist.bins.indices, id: \.self) { i in
                                 let bin = dist.bins[i]
@@ -1433,7 +1433,7 @@ struct MarketsView: View {
                 }
                 let months = journal.monthlyPnL
                 if months.count >= 2 {
-                    Text("By month").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                    Text("By month").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
                     ForEach(months.prefix(6)) { mo in
                         HStack(spacing: DS.Space.sm) {
                             Text(mo.month).font(.system(size: 11)).foregroundStyle(.white).frame(width: 72, alignment: .leading)
@@ -1463,7 +1463,7 @@ struct MarketsView: View {
                 }
                 let sides = journal.sideStats
                 if sides.count == 2 {
-                    Text("By side").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                    Text("By side").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
                     ForEach(sides) { s in
                         let rel = StockSageJournal.reliability(s)
                         HStack(spacing: DS.Space.sm) {
@@ -1481,7 +1481,7 @@ struct MarketsView: View {
                 }
                 let sectors = journal.sectorPnL
                 if sectors.count >= 2 {
-                    Text("By sector").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                    Text("By sector").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
                     ForEach(sectors) { sec in
                         let rel = StockSageJournal.reliability(sec)
                         HStack(spacing: DS.Space.sm) {
@@ -1656,8 +1656,8 @@ struct MarketsView: View {
         TextField(placeholder, text: text)
             .textFieldStyle(.plain).font(.system(size: 12))
             .padding(.horizontal, 8).padding(.vertical, 6).frame(width: width)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.06)))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).fill(Color.white.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
     private var draftIsValid: Bool {
@@ -2105,7 +2105,7 @@ struct MarketsView: View {
                     .onSubmit { Task { await addWatchSymbol() } }
                     .accessibilityLabel("Ticker to add to watchlist")
                 if store.isAddingSymbol {
-                    ProgressView().controlSize(.small)
+                    ProgressView().controlSize(.small).tint(DS.Palette.accent)
                 } else {
                     Button { Task { await addWatchSymbol() } } label: {
                         Image(systemName: "plus.circle.fill").font(.system(size: 18)).foregroundStyle(DS.Palette.accent)
@@ -3379,7 +3379,7 @@ struct MarketsView: View {
                     Image(systemName: "clock.arrow.circlepath").font(.system(size: 13)).foregroundStyle(DS.Palette.accent)
                     Text(backtestTitle).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
                     Spacer()
-                    if store.isBacktesting { ProgressView().controlSize(.small) }
+                    if store.isBacktesting { ProgressView().controlSize(.small).tint(DS.Palette.accent) }
                 }
                 if let err = store.backtestError {
                     Text(err).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
@@ -3938,7 +3938,7 @@ struct MarketsView: View {
                     Text(mtf.note).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 } else {
                     HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
+                        ProgressView().controlSize(.small).tint(DS.Palette.accent)
                         Text("Checking the weekly timeframe…").font(.caption2).foregroundStyle(.secondary)
                     }
                 }
