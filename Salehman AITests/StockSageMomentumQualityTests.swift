@@ -149,4 +149,51 @@ struct StockSageMomentumQualityTests {
         let weighted = EV.rankByVelocityWeighted([sell, goodBuy], closes: ["SHORT-ME": strongUptrendCloses])
         #expect(weighted.map(\.symbol) == ["KEEP"])
     }
+
+    // MARK: - 2026-07-01 adversarial-review fix: a demoted idea must never be resurrected
+
+    @Test func aSubMinConvictionJunkIdeaIsNeverResurrectedByAHotHistory() {
+        // JUNK is below minConvictionToRank (0.40) — fastLane KEEPS it (its own guard is only
+        // evR > 0), but demotes it deep below every clean idea via velocityRankKey's -1000
+        // penalty. A tight stop gives JUNK a large RAW velocity(for:) — exactly the shape that,
+        // before this fix, could resurrect it to #1 once weighted by a red-hot momentum history
+        // (since raw velocity ignores the demotion penalty entirely).
+        let junk = idea("JUNK", conviction: 0.35, stop: 99, target: 112)     // tight stop → high raw velocity
+        let clean = idea("CLEAN", conviction: 0.80, stop: 90, target: 115)  // wider stop → lower raw velocity
+        #expect(EV.velocity(for: junk)! > EV.velocity(for: clean)!)          // fixture sanity: raw velocity favors JUNK
+        let baseline = EV.fastLane([junk, clean])
+        #expect(baseline.map(\.symbol) == ["CLEAN", "JUNK"])                 // fastLane already demotes JUNK to last
+        // Give JUNK a red-hot history and CLEAN a cold one — the old bug would have let JUNK's
+        // large raw velocity × 1.0 quality beat CLEAN's smaller raw velocity × reduced quality.
+        let weighted = EV.rankByVelocityWeighted([junk, clean],
+                                                  closes: ["JUNK": strongUptrendCloses, "CLEAN": choppyCloses])
+        #expect(weighted.map(\.symbol) == ["CLEAN", "JUNK"])                 // still demoted — never resurrected
+    }
+
+    @Test func aBelowNetCostFloorIdeaIsNeverResurrectedByAHotHistory() {
+        // THIN clears the raw-EV bar (fastLane keeps it) but its net-of-cost EV/day is under the
+        // floor once round-trip frictions are applied (very tight stop/target ⇒ a thin edge that
+        // costs eat entirely) — velocityRankKey demotes it -500,000. A tight stop again gives it a
+        // large RAW velocity, the exact shape a hot history could previously exploit.
+        let thin = idea("THIN", conviction: 0.80, stop: 99.8, target: 100.4)   // razor-thin edge
+        let clean = idea("CLEAN", conviction: 0.80, stop: 90, target: 115)
+        #expect(EV.belowNetCostFloor(for: thin))                               // fixture sanity: genuinely demoted
+        #expect(!EV.belowNetCostFloor(for: clean))
+        let baseline = EV.fastLane([thin, clean])
+        #expect(baseline.map(\.symbol) == ["CLEAN", "THIN"])
+        let weighted = EV.rankByVelocityWeighted([thin, clean],
+                                                  closes: ["THIN": strongUptrendCloses, "CLEAN": choppyCloses])
+        #expect(weighted.map(\.symbol) == ["CLEAN", "THIN"])                   // still demoted — never resurrected
+    }
+
+    @Test func closesEmptyDefaultIsByteIdenticalToFastLanesOwnOrder() {
+        // 2026-07-01 fix strengthened this claim from "usually similar" to genuinely byte-identical:
+        // weightedVelocity now uses the SAME key fastLane sorts by (velocityRankKey), so with no
+        // closes supplied the order can never differ, for ANY mix of clean and demoted ideas.
+        let junk = idea("JUNK", conviction: 0.35, stop: 99, target: 112)
+        let clean1 = idea("CLEAN1", conviction: 0.80, stop: 90, target: 140)
+        let clean2 = idea("CLEAN2", conviction: 0.80, stop: 90, target: 120)
+        let ideas = [junk, clean2, clean1]
+        #expect(EV.rankByVelocityWeighted(ideas).map(\.symbol) == EV.fastLane(ideas).map(\.symbol))
+    }
 }

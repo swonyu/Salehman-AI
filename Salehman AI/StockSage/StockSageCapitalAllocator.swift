@@ -206,11 +206,20 @@ enum StockSageCapitalAllocator {
     /// de-weighting) via the existing `StockSageClusterCheck`; a match ≥ `correlationThreshold`
     /// excludes that idea entirely (composed only when a return series is available — too little
     /// spark history silently skips the gate, i.e. size-only, matching `ClusterCheck.check`'s own
-    /// nil behavior). Because `StockSageRebalance.plan` always renormalizes whatever `targets` it's
+    /// nil behavior). A mutually-correlated CLIQUE within the new-idea pool itself (2026-07-01 fix
+    /// — the held-vs-new gate above never checked new-vs-new) is separately DE-WEIGHTED (not
+    /// excluded) via `StockSageCorrelationCluster.correlationAdjustedWeights`, mirroring `allocate`'s
+    /// own Step 2.5. Because `StockSageRebalance.plan` always renormalizes whatever `targets` it's
     /// given up to 100% (there is no "hold cash" residual in that model), a combined new-idea target
     /// share can only be capped at `maxHeat` of the reweighted total when there is an existing
     /// held-edge pool to absorb the remaining share — the closed-form single-pass scale below is
-    /// skipped when nothing fundable is currently held (nothing to cap against). nil when nothing is
+    /// skipped when nothing fundable is currently held (nothing to cap against). A per-position
+    /// concentration ceiling (2026-07-01 fix — `StockSageKelly.maxFraction`, the same 20% cap every
+    /// other sizing tool in this engine enforces) is applied to the FINAL combined targets when
+    /// enough funded names exist to redistribute the excess under it; when they don't (e.g. a sole
+    /// fundable name — capping it would be silently undone by `Rebalance.plan`'s own renormalization,
+    /// since dividing a lone value by itself is always 1.0), the plan is left at its honest,
+    /// concentrated weights with a loud caveat instead of a false sense of safety. nil when nothing is
     /// invested or no symbol anywhere has positive edge (mirrors `Rebalance.plan`'s own "nothing to
     /// do" nil — reused, not reimplemented). Honest: evR is a rules-based ESTIMATE that decays as
     /// price moves; these are reweight TARGETS, not fills, and — exactly like the underlying
@@ -265,6 +274,22 @@ enum StockSageCapitalAllocator {
             }
         }
 
+        // 2026-07-01 adversarial-review fix: the gate above only checks each NEW candidate against
+        // currently-HELD names — two or three brand-new, mutually-correlated ideas (e.g. BTC-USD +
+        // ETH-USD added to a near-empty book) previously passed completely unchecked against EACH
+        // OTHER. De-weight a correlated clique WITHIN the new pool itself, mirroring `allocate`'s own
+        // Step 2.5 (StockSageCorrelationCluster.correlationAdjustedWeights — the same de-weight-by-
+        // cluster-size, not full-exclusion, treatment). No-op when fewer than 3 new symbols or return
+        // series are too short/absent (the primitive's own guard), matching this file's established
+        // "too little data → size-only, never a hard failure" convention.
+        if newWeights.count >= 3 {
+            let newSymbols = newWeights.keys.sorted()
+            let newReturns = newSymbols.map { StockSagePortfolioAnalytics.dailyReturns(ideaBySymbol[$0.uppercased()]?.spark ?? []) }
+            let adjusted = StockSageCorrelationCluster.correlationAdjustedWeights(
+                symbols: newSymbols, weights: newSymbols.map { newWeights[$0]! }, returns: newReturns)
+            for (symbol, weight) in zip(newSymbols, adjusted) { newWeights[symbol] = weight }
+        }
+
         // Closed-form single-pass churn cap: solve for the scale factor on the NEW pool such that,
         // after `Rebalance.plan` renormalizes targets to sum 1, the new pool's combined share is
         // exactly `cap` — Σnew·scale / (Σheld + Σnew·scale) = cap ⟹ scale = cap/(1−cap) · Σheld/Σnew.
@@ -280,11 +305,64 @@ enum StockSageCapitalAllocator {
 
         var targets = heldWeights
         for (symbol, weight) in newWeights { targets[symbol] = weight }
+
+        // 2026-07-01 adversarial-review fix: unlike EVERY other sizing tool in this engine
+        // (StockSageAdvisor.maxWeight, StockSageCapitalAllocator.allocate's Kelly cap,
+        // StockSagePyramid's riskCap), rebalanceToEdge had NO per-position concentration ceiling —
+        // because `StockSageRebalance.plan` always renormalizes `targets` to sum to 1 with no cash
+        // residual, a sole (or dominant) positive-EV name could be recommended at up to 100% of the
+        // book. Attempt to cap each target's NORMALIZED share at `StockSageKelly.maxFraction`,
+        // redistributing the clipped excess proportionally among names still under the cap
+        // (iterative — a redistribution pass can itself push another name over the cap, so repeat
+        // until stable). CRITICALLY: when there's only ONE funded name (or every funded name is
+        // simultaneously pinned at/above the cap with nothing left to redistribute into), the
+        // capped shares no longer sum to 1 — and because `Rebalance.plan` unconditionally
+        // renormalizes whatever `targets` it receives BACK to summing 1, silently feeding it those
+        // partial shares would get the cap invisibly UNDONE by that renormalization, giving a false
+        // sense of safety. In that unfixable case, leave `targets` at its uncapped values (no
+        // silent, ineffective attempt) and surface a LOUD, explicit caveat instead — the caller must
+        // know this recommendation implies full/near-full concentration because nothing else is
+        // fundable to diversify into, not be told a cap was applied when it structurally could not be.
+        var concentrationCapped = false
+        var concentrationUnavoidable = false
+        let targetsSum = targets.values.reduce(0, +)
+        if targetsSum > 0 {
+            var shares = targets.mapValues { $0 / targetsSum }
+            let posCap = StockSageKelly.maxFraction
+            var anyOverCap = false
+            for _ in 0..<shares.count {
+                let overCap = shares.filter { $0.value > posCap }
+                guard !overCap.isEmpty else { break }
+                anyOverCap = true
+                var excess = 0.0
+                for (symbol, share) in overCap { excess += share - posCap; shares[symbol] = posCap }
+                let underCapKeys = shares.keys.filter { shares[$0]! < posCap }
+                let underCapTotal = underCapKeys.reduce(0) { $0 + shares[$1]! }
+                guard underCapTotal > 0 else { break }   // nothing left to redistribute into
+                for symbol in underCapKeys { shares[symbol]! += excess * (shares[symbol]! / underCapTotal) }
+            }
+            if anyOverCap {
+                let redistributedSum = shares.values.reduce(0, +)
+                if abs(redistributedSum - 1.0) < 1e-9 {
+                    targets = shares   // fully absorbed — Rebalance.plan's renormalization is a no-op here
+                    concentrationCapped = true
+                } else {
+                    concentrationUnavoidable = true   // capping would be silently undone by renormalization — don't pretend
+                }
+            }
+        }
+
         guard let plan = StockSageRebalance.plan(holdings: holdings, targets: targets, band: band) else { return nil }
 
         var note = "Targets are each name's positive, buy-family EV estimate (evR), normalized across the held book + new ideas — this chases EDGE, not equal risk. A held name with no current positive-EV idea is trimmed toward the exit. evR decays as price moves; these are reweight targets, not fills, and ignore spread/slippage/tax/min-lot."
         if cappedNew {
             note += String(format: " New-idea entries were capped at a combined %.0f%% of the reweighted book this pass to limit one-shot churn into unproven names.", cap * 100)
+        }
+        if concentrationCapped {
+            note += String(format: " One or more targets were capped at %.0f%% of the book (the same per-position ceiling Kelly sizing uses elsewhere) and the excess redistributed.", StockSageKelly.maxFraction * 100)
+        }
+        if concentrationUnavoidable {
+            note += String(format: " ⚠ CONCENTRATION WARNING: this book has too few fundable names to keep any single position under the usual %.0f%% ceiling — at least one target here exceeds it. Size cautiously; do not treat this as a diversified plan.", StockSageKelly.maxFraction * 100)
         }
         if !excludedNotes.isEmpty {
             note += " Excluded (correlation-blocked): " + excludedNotes.joined(separator: " ")

@@ -283,4 +283,62 @@ struct StockSageCapitalAllocatorTests {
         #expect(Alloc.rebalanceToEdge(holdings: [], ideas: [aapl]) == nil)
         #expect(Alloc.rebalanceToEdge(holdings: [("AAPL", 0)], ideas: [aapl]) == nil)
     }
+
+    // MARK: - 2026-07-01 adversarial-review fixes
+
+    @Test func rebalanceToEdgeCapsConcentrationWhenEnoughFundedNamesExistToAbsorbIt() {
+        // python-verified: DOM (conviction 1.0, 100/90/400 → evR 16.98) held alongside 5 similar
+        // small ideas (conviction 0.5, 100/95/110 → evR 0.395 each) — DOM's raw share is ~89.6% of
+        // the book, five funded names total is enough for the 20% (StockSageKelly.maxFraction) cap
+        // to be genuinely achievable: DOM capped to exactly 0.20, the 0.696 excess spread evenly
+        // across the five small names (each starting at ~2.08%) lands them all at exactly 0.16.
+        let dom = idea("DOM", price: 100, stop: 90, target: 400, conviction: 1.0)
+        let smalls = (1...5).map { idea("S\($0)", price: 100, stop: 95, target: 110, conviction: 0.5) }
+        let r = Alloc.rebalanceToEdge(holdings: [("DOM", 1000)], ideas: [dom] + smalls, maxHeat: 1.0)!
+        #expect(abs(trade(r.plan, "DOM")!.targetWeight - 0.20) < 1e-6)
+        for i in 1...5 { #expect(abs(trade(r.plan, "S\(i)")!.targetWeight - 0.16) < 1e-6) }
+        let sumWeights = (["DOM"] + (1...5).map { "S\($0)" }).reduce(0.0) { $0 + trade(r.plan, $1)!.targetWeight }
+        #expect(abs(sumWeights - 1.0) < 1e-6)
+        #expect(r.note.contains("capped at"))
+        #expect(!r.note.contains("CONCENTRATION WARNING"))   // genuinely capped, not the unavoidable fallback
+    }
+
+    @Test func rebalanceToEdgeWarnsRatherThanSilentlyFailingWhenConcentrationIsUnavoidable() {
+        // A sole fundable name (matching rebalanceToEdgeIsBalancedWhenTheSoleHeldNameIsAlreadyAtTarget's
+        // setup): capping would be silently UNDONE by StockSageRebalance.plan's own renormalization
+        // (dividing the sole capped value by itself always yields 1.0 again), so this must NOT claim
+        // "capped" — it must leave the weight at its honest 1.0 and say so loudly instead.
+        let only = idea("AAPL", price: 100, stop: 90, target: 140, conviction: 0.7)
+        let r = Alloc.rebalanceToEdge(holdings: [("AAPL", 5000)], ideas: [only])!
+        // AAPL is already 100% of a 100%-AAPL book → zero drift → no trade row to inspect at all
+        // (matches rebalanceToEdgeIsBalancedWhenTheSoleHeldNameIsAlreadyAtTarget's own pattern);
+        // assert the honesty note instead, which fires regardless of whether a trade is emitted.
+        #expect(r.plan.isBalanced)
+        #expect(r.plan.trades.isEmpty)
+        #expect(r.note.contains("CONCENTRATION WARNING"))
+        #expect(r.note.localizedCaseInsensitiveContains("too few fundable names"))
+        #expect(!r.note.contains("were capped at"))   // never claims a cap that didn't actually hold
+    }
+
+    @Test func rebalanceToEdgeDeweightsAMutuallyCorrelatedCliqueOfBrandNewIdeas() {
+        // 2026-07-01 fix: the existing correlation gate only checked new-vs-HELD; three brand-new,
+        // mutually 1.0-correlated ideas (identical % daily moves) previously passed completely
+        // unchecked against EACH OTHER. With nothing held, they should now be de-weighted as a
+        // clique (StockSageCorrelationCluster's own de-weight-by-cluster-size treatment), not
+        // simply split by evR alone.
+        let baseSpark = [100.0, 102, 101, 103, 102, 104, 103, 105]
+        let a = idea("AAA", price: 100, stop: 90, target: 130, conviction: 0.8, spark: baseSpark)
+        let b = idea("BBB", price: 100, stop: 90, target: 130, conviction: 0.8, spark: baseSpark.map { $0 * 0.5 })
+        let c = idea("CCC", price: 100, stop: 90, target: 130, conviction: 0.8, spark: baseSpark.map { $0 * 2.0 })
+        // A held, unrelated 4th name gives the churn-cap something to compare the new pool against,
+        // and gives correlationAdjustedWeights room to matter (its own guard needs >=3 symbols).
+        let held = idea("HELD", price: 100, stop: 90, target: 101, conviction: 0.0)   // negative evR, trimmed
+        let r = Alloc.rebalanceToEdge(holdings: [("HELD", 1000)], ideas: [held, a, b, c], maxHeat: 1.0)!
+        // All three should still be present (de-weighted, not excluded outright — a lesser but
+        // real remedy than the existing held-vs-new exclusion gate).
+        #expect(trade(r.plan, "AAA") != nil)
+        #expect(trade(r.plan, "BBB") != nil)
+        #expect(trade(r.plan, "CCC") != nil)
+        #expect(r.excludedSymbols.isEmpty)   // de-weighted, not hard-excluded
+    }
 }

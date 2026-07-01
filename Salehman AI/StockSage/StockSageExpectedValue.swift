@@ -563,8 +563,9 @@ enum StockSageExpectedValue {
     /// purpose-built trend-vs-chop read (already in this engine) and is the correct substitute.
     /// Quality = (# hot signals) ÷ (# signals `closes` was long enough to compute) — a signal that
     /// can't be computed is EXCLUDED from the average, never counted as cold, so a shorter series is
-    /// never punished for missing data. When `closes` is too short for ALL THREE (< 22 bars), returns
-    /// the NEUTRAL ceiling 1.0 — no data ⇒ no penalty, the same only-real-data / floor-never-inflate
+    /// never punished for missing data. When `closes` is too short for ALL THREE (≤ 20 bars — even
+    /// `efficiencyRatio`, the loosest of the three at a >20-bar minimum, is uncomputable there),
+    /// returns the NEUTRAL ceiling 1.0 — no data ⇒ no penalty, the same only-real-data / floor-never-inflate
     /// convention `cryptoRiskScaler` uses elsewhere in this file — so an unweighted call (or a symbol
     /// with no history) never gets silently demoted. HONESTY (the "reversal caveat"): a score near
     /// 1.0 means recent momentum LOOKS clean and hot RIGHT NOW — it is not a forecast that it
@@ -587,32 +588,39 @@ enum StockSageExpectedValue {
         return Double(hot) / Double(total)
     }
 
-    /// `fastLane`, re-ranked within itself by raw velocity (EV/day) × `momentumQuality`, so a
-    /// setup whose short-horizon momentum is genuinely hot out-ranks a same-velocity flat/
+    /// `fastLane`, re-ranked within itself by `fastLane`'s OWN ordering key × `momentumQuality`,
+    /// so a setup whose short-horizon momentum is genuinely hot out-ranks a same-velocity flat/
     /// mean-reverting one. This is a SEPARATE lens from `fastLane`'s own ordering (log-growth at
-    /// half-Kelly, net-cost-scaled) — it never changes `fastLane`'s membership or signature, only
-    /// re-sorts the SAME idea set it already returned. `closes` maps symbol → raw daily closes
-    /// (newest last) for whichever ideas history is available for; deliberately keyed by symbol
-    /// (not threaded through `StockSageIdea`, which only carries a down-sampled `spark` too short
-    /// for `macd`'s 35-bar minimum) so a caller can supply real daily bars without any model change.
-    /// Uses the RAW `velocity(for:)` (always > 0 for every idea `fastLane` already kept — the exact
-    /// guard `fastLane` itself uses) rather than `fastLane`'s internal log-growth key, because that
-    /// key can be driven negative by the low-conviction/net-cost-floor de-rank penalties baked into
-    /// it — multiplying a NEGATIVE key by a 0–1 quality factor would perversely REWARD a demoted,
-    /// cold setup by pulling it toward zero. A positive base is required for the multiply to only
-    /// ever shrink, never invert, rank — matching `cryptoRiskScaler`'s "can only shrink" discipline.
-    /// A symbol absent from `closes` (or an entirely empty `closes`) scores that idea's quality at
-    /// the neutral 1.0 — so passing `closes: [:]` (the default) reproduces `fastLane`'s own idea SET
-    /// stable-sorted by plain velocity, unchanged from calling `fastLane` alone without this function.
+    /// half-Kelly, net-cost-scaled) — it never changes `fastLane`'s membership, only re-sorts the
+    /// SAME idea set it already returned. `closes` maps symbol → raw daily closes (newest last)
+    /// for whichever ideas history is available for; deliberately keyed by symbol (not threaded
+    /// through `StockSageIdea`, which only carries a down-sampled `spark` too short for `macd`'s
+    /// 35-bar minimum) so a caller can supply real daily bars without any model change.
+    ///
+    /// 2026-07-01 adversarial-review fix: this PREVIOUSLY weighted the RAW `velocity(for:)`
+    /// (undemoted EV/day) instead of `fastLane`'s own `velocityRankKey`. `fastLane`'s membership
+    /// guard only requires `evR > 0` — it does NOT exclude a sub-`minConvictionToRank` "junk" idea
+    /// or a below-net-cost-floor idea, it only buries them at the bottom of the lane via a demoted
+    /// key (−1000 / −500,000). Because raw velocity ignores those penalties entirely, a demoted
+    /// idea with a merely-larger raw velocity could get RESURRECTED to #1 by this function —
+    /// directly contradicting `velocityRankKey`'s own documented invariant ("nothing previously
+    /// demoted is resurrected") and `fastLane`'s real order. Fixed: weight `velocityRankKey`
+    /// itself, and ONLY when it's already positive (clean/non-demoted) — a demoted idea's negative
+    /// key passes through completely UNCHANGED (not multiplied), preserving the original design's
+    /// own correct concern that multiplying a NEGATIVE key by a 0–1 quality factor would perversely
+    /// REWARD a demoted, cold setup by pulling it toward zero. This also makes the `closes: [:]`
+    /// default TRULY byte-identical to `fastLane`'s own order (same key, unweighted), not merely
+    /// "usually similar."
     nonisolated static func rankByVelocityWeighted(_ ideas: [StockSageIdea], closes: [String: [Double]] = [:],
                                                    holds: VelocityHoldDays = .defaults,
                                                    calibration: StockSageConvictionCalibration? = nil) -> [StockSageIdea] {
         let lane = fastLane(ideas, holds: holds, calibration: calibration)
         func weightedVelocity(_ idea: StockSageIdea) -> Double {
-            let v = velocity(for: idea, holds: holds, calibration: calibration) ?? 0
+            let key = velocityRankKey(for: idea, holds: holds, calibration: calibration) ?? 0
+            guard key > 0 else { return key }   // demoted/non-positive → pass through unchanged, never resurrected
             let series = closes[idea.symbol] ?? []
-            guard !series.isEmpty else { return v }   // no history for THIS symbol → unweighted (×1)
-            return v * momentumQuality(for: idea, closes: series)
+            guard !series.isEmpty else { return key }   // no history for THIS symbol → unweighted (×1)
+            return key * momentumQuality(for: idea, closes: series)
         }
         return lane.enumerated().sorted { a, b in
             let x = weightedVelocity(a.element), y = weightedVelocity(b.element)
@@ -702,16 +710,28 @@ enum StockSageExpectedValue {
         return Swift.max(1, annualizedVol / baseline)
     }
 
-    /// Honest "how big is a typical day" read for a 24/7 asset: the ALREADY-COMPUTED
-    /// annualized realized vol (the same `idea.realizedVol` that already drives the
-    /// crypto stop-multiple in StockSageAdvisor and the risk scaler above) de-annualized
-    /// by the 365-day crypto calendar rather than the 252-day equity one, which would
-    /// understate a name that never closes. NOT a forecast — a rough one-standard-
-    /// deviation-ish daily-move estimate to size against. nil when there's no realized-vol
-    /// input (not enough history) or it's non-finite/non-positive — never invents a number.
+    /// Honest "how big is a typical day" read for a 24/7 asset: de-annualizes the
+    /// ALREADY-COMPUTED annualized realized vol (the same `idea.realizedVol` that already
+    /// drives the crypto stop-multiple in StockSageAdvisor and the risk scaler above) back
+    /// to a daily figure. NOT a forecast — a rough one-standard-deviation-ish daily-move
+    /// estimate to size against. nil when there's no realized-vol input (not enough
+    /// history) or it's non-finite/non-positive — never invents a number.
+    ///
+    /// 2026-07-01 adversarial-review fix: this PREVIOUSLY divided by √365 on the stated
+    /// (but false) premise that crypto's `realizedVol` is computed on a 365-day calendar.
+    /// It never was — `idea.realizedVol` is ALWAYS `StockSageIndicators.annualizedVolatility
+    /// (history.closes)` at its default `periodsPerYear: 252`, for every asset class,
+    /// crypto included (verified: grepped every call site — no caller ever passes 365).
+    /// Dividing a 252-basis annualized figure by √365 instead of √252 understated the
+    /// reported daily move by a factor of √(252/365) ≈ 0.83 (~17% too low) — the OPPOSITE
+    /// of the original (mistaken) intent. Fixed to the basis the input is ACTUALLY computed
+    /// with. (A genuinely 365-basis crypto realizedVol would need a wider, separate change —
+    /// that annualizedVolatility call also feeds StockSageAdvisor's variance-scaled momentum
+    /// and stop sizing, both already tuned against the existing 252-basis figure — out of
+    /// scope for this contained fix.)
     nonisolated static func dailyVariancePct(annualizedVol: Double?) -> Double? {
         guard let vol = annualizedVol, vol.isFinite, vol > 0 else { return nil }
-        return vol / 365.0.squareRoot() * 100
+        return vol / 252.0.squareRoot() * 100
     }
 
     /// A one-glance money-velocity rollup: the best bet now, the fastest-compounding

@@ -106,4 +106,55 @@ struct StockSageSectorRotationTests {
         #expect(sig.caveat == SR.caveat)
         #expect(!sig.note.isEmpty)
     }
+
+    // MARK: - 2026-07-01 adversarial-review fix: rank alone isn't "paid off"
+
+    @Test func aNetLosingSectorIsNeverFlaggedRotatingInEvenAtRankOne() {
+        // Every eligible sector is a net LOSER — the least-bad one still ranks #1, but "rotating
+        // in" implies capital has recently paid off, which a negative avgR directly contradicts.
+        let techSymbols = ["AAPL", "MSFT", "NVDA", "GOOGL", "AVGO"]
+        let finSymbols = ["JPM", "BAC", "WFC", "GS", "MS"]
+        let trades = techSymbols.enumerated().map { i, s in closedTrade(s, exitR: -0.1, day: i) }
+            + finSymbols.enumerated().map { i, s in closedTrade(s, exitR: -0.5, day: i) }
+        let ranked = SR.analyze(allTrades: trades, minTrades: 5, topN: 3)
+        #expect(ranked.count == 2)
+        #expect(ranked[0].sector == "Technology")
+        #expect(ranked[0].rank == 1)
+        #expect(ranked[0].avgR < 0)
+        #expect(!ranked[0].isRotatingIn)   // rank #1, but still a net loser — not "rotating in"
+        #expect(!ranked[0].note.contains("rotating in"))
+        for r in ranked { #expect(!r.isRotatingIn) }
+    }
+
+    @Test func aGenuinelyProfitableRankOneSectorIsStillFlaggedRotatingIn() {
+        // Regression guard: the fix must not accidentally suppress the TRUE-positive case.
+        let techSymbols = ["AAPL", "MSFT", "NVDA", "GOOGL", "AVGO"]
+        let trades = techSymbols.enumerated().map { i, s in closedTrade(s, exitR: 1.0, day: i) }
+        let ranked = SR.analyze(allTrades: trades, minTrades: 5, topN: 3)
+        #expect(ranked.count == 1)
+        #expect(ranked[0].avgR > 0)
+        #expect(ranked[0].isRotatingIn)
+        #expect(ranked[0].note.contains("rotating in"))
+    }
+
+    @Test func exactAvgRTiesBreakDeterministicallyByAlphabeticalSectorName() {
+        // 2026-07-01 adversarial-review fix: `groups` is a Swift Dictionary internally, whose
+        // iteration order carries NO stability guarantee — two sectors tied at the EXACT same
+        // avgR could previously rank differently from run to run. Technology and Financials here
+        // are both exactly 1.0R avg over 5 trades — "Financials" < "Technology" alphabetically,
+        // so the tie-break must deterministically place Financials at rank #1 every time.
+        let techSymbols = ["AAPL", "MSFT", "NVDA", "GOOGL", "AVGO"]
+        let finSymbols = ["JPM", "BAC", "WFC", "GS", "MS"]
+        let trades = techSymbols.enumerated().map { i, s in closedTrade(s, exitR: 1.0, day: i) }
+            + finSymbols.enumerated().map { i, s in closedTrade(s, exitR: 1.0, day: i) }
+        for _ in 0..<10 {   // repeat: a flaky Dictionary-order bug wouldn't necessarily fail on try #1
+            let ranked = SR.analyze(allTrades: trades, minTrades: 5, topN: 3)
+            #expect(ranked.count == 2)
+            #expect(abs(ranked[0].avgR - ranked[1].avgR) < 1e-9)   // genuine exact tie
+            #expect(ranked[0].sector == "Financials")
+            #expect(ranked[0].rank == 1)
+            #expect(ranked[1].sector == "Technology")
+            #expect(ranked[1].rank == 2)
+        }
+    }
 }

@@ -64,12 +64,22 @@ enum StockSageSectorRotation {
             guard rs.count >= minTrades else { return nil }
             return (sector, rs.reduce(0, +) / Double(rs.count), rs.count)
         }
-        .sorted { $0.1 > $1.1 }   // desc by avgR
+        // desc by avgR, tie-broken alphabetically by sector name (2026-07-01 adversarial-review
+        // fix): `groups` is a Swift Dictionary, whose iteration order carries NO stability
+        // guarantee across runs/processes — two sectors with an EXACT avgR tie could otherwise
+        // rank differently from one run to the next, silently changing which one is flagged
+        // "rotating in" for no real reason.
+        .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0 < $1.0 }
 
         return eligible.enumerated().map { idx, entry in
             let (sector, avgR, n) = entry
             let rank = idx + 1
-            let rotating = rank <= topN
+            // 2026-07-01 adversarial-review fix: rank alone isn't enough — the "rotating in" note
+            // reads as a positive confirmation ("capital has recently paid off"), so a sector that
+            // is merely the LEAST-BAD among eligible sectors (rank #1 with a genuinely negative
+            // avgR — plausible for a newer journal, or when every eligible sector is a net loser)
+            // must never be labeled that way. Require avgR > 0, not just top rank.
+            let rotating = rank <= topN && avgR > 0
             let note = rotating
                 ? String(format: "%@ ranks #%d of your sectors by realized R/trade (%.2fR avg over %d trades) — rotating in.", sector, rank, avgR, n)
                 : String(format: "%@ ranks #%d of your sectors by realized R/trade (%.2fR avg over %d trades).", sector, rank, avgR, n)

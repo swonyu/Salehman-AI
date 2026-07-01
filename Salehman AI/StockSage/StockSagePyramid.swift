@@ -52,11 +52,21 @@ enum StockSagePyramid {
     /// between tiers never change, only the overall scale does.
     ///
     /// nil for a degenerate setup: zero risk distance (entry == stop), non-positive entry,
-    /// non-positive `initialFraction`, or non-positive `riskCap`.
+    /// non-positive `initialFraction`, `initialFraction` above 1 (100% of the account — never
+    /// legitimate), non-positive `riskCap`, or any non-finite input.
     nonisolated static func levels(entry: Double, stop: Double, initialFraction: Double,
                                    riskCap: Double = StockSageKelly.maxFraction) -> PyramidPlan? {
+        // 2026-07-01 adversarial-review fix: the original guard checked only positivity, never
+        // finiteness — Double.infinity > 0 is true, so an infinite entry/stop/initialFraction/
+        // riskCap passed straight through and poisoned every downstream field with NaN (e.g. a
+        // 0 × .infinity term in the tier-price math). `initialFraction <= 1` is also required:
+        // it's an ACCOUNT FRACTION (never legitimately >100%), and without a ceiling a huge-but-
+        // finite value can overflow the tier-sum to .infinity, silently zeroing every
+        // addOnFraction via 0.2/.infinity while still reporting requestedFraction as .infinity.
+        guard entry.isFinite, stop.isFinite, initialFraction.isFinite, riskCap.isFinite,
+              entry > 0, initialFraction > 0, initialFraction <= 1, riskCap > 0 else { return nil }
         let risk = abs(entry - stop)
-        guard risk > 0, entry > 0, initialFraction > 0, riskCap > 0 else { return nil }
+        guard risk > 0, risk.isFinite else { return nil }
         let cap = Swift.min(1, riskCap)
         let sign: Double = entry > stop ? 1 : -1   // long: stop below entry; short: stop above
 

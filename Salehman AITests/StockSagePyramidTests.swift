@@ -94,6 +94,30 @@ struct StockSagePyramidTests {
         #expect(P.levels(entry: 100, stop: 90, initialFraction: 0.10, riskCap: 0) == nil)  // no cap budget
     }
 
+    // MARK: - 2026-07-01 adversarial-review fix: finiteness + fraction-ceiling guards
+
+    @Test func guardsNonFiniteInputsRatherThanProducingNaN() {
+        // Before the fix: Double.infinity > 0 is true, so these passed the old positivity-only
+        // guard and poisoned every tier field with NaN (e.g. 0 x .infinity in the price math).
+        #expect(P.levels(entry: .infinity, stop: 90, initialFraction: 0.10) == nil)
+        #expect(P.levels(entry: 100, stop: .infinity, initialFraction: 0.10) == nil)
+        #expect(P.levels(entry: 100, stop: 90, initialFraction: .infinity) == nil)
+        #expect(P.levels(entry: 100, stop: 90, initialFraction: 0.10, riskCap: .infinity) == nil)
+        #expect(P.levels(entry: .nan, stop: 90, initialFraction: 0.10) == nil)
+        #expect(P.levels(entry: 100, stop: 90, initialFraction: .nan) == nil)
+    }
+
+    @Test func initialFractionAboveOneHundredPercentIsRejected() {
+        // initialFraction is an ACCOUNT FRACTION — >1.0 (>100% of the account) is never
+        // legitimate, and a huge-but-finite value would otherwise overflow the tier sum to
+        // .infinity, silently zeroing every addOnFraction while still reporting an infinite
+        // requestedFraction.
+        #expect(P.levels(entry: 100, stop: 90, initialFraction: 1.01) == nil)
+        #expect(P.levels(entry: 100, stop: 90, initialFraction: 1.2e308) == nil)
+        // Exactly 1.0 remains valid (matches the existing pinned test at initialFraction: 1.0).
+        #expect(P.levels(entry: 100, stop: 90, initialFraction: 1.0, riskCap: 2.0) != nil)
+    }
+
     @Test func caveatIsPresentAndNonEmpty() {
         let p = P.levels(entry: 100, stop: 90, initialFraction: 0.10)!
         #expect(!p.caveat.isEmpty)

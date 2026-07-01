@@ -289,10 +289,13 @@ struct StockSageExpectedValueTests {
 
     // MARK: - FASTMONEY_BACKLOG #3: honest 24/7 daily-variance read
 
-    @Test func dailyVariancePctDeAnnualizesFor365DayCryptoCalendar() {
-        // 70% annualized vol → 70/√365 ≈ 3.66% typical one-day move (crypto trades every day,
-        // not the 252-day equity calendar cryptoRiskScaler's baseline otherwise assumes).
-        let expected70 = 0.70 / 365.0.squareRoot() * 100
+    @Test func dailyVariancePctDeAnnualizesOnTheSameBasisRealizedVolIsActuallyComputedWith() {
+        // 2026-07-01 adversarial-review fix: idea.realizedVol (this function's only real input)
+        // is ALWAYS StockSageIndicators.annualizedVolatility(closes) at its default 252-basis —
+        // for every asset class, crypto included (no caller anywhere passes periodsPerYear: 365).
+        // Dividing by √365 instead of √252 understated the reported daily move by ~17% — the
+        // opposite of the honest intent. 70% annualized vol → 70/√252 ≈ 4.41% typical one-day move.
+        let expected70 = 0.70 / 252.0.squareRoot() * 100
         #expect(abs(EV.dailyVariancePct(annualizedVol: 0.70)! - expected70) < 1e-9)
         // Linear in vol: half the input vol → exactly half the variance read.
         #expect(abs(EV.dailyVariancePct(annualizedVol: 0.35)! - expected70 / 2) < 1e-9)
