@@ -410,6 +410,32 @@ enum StockSageExpectedValue {
                   calibration: calibration)
     }
 
+    /// Why `ev(for:)` is nil for this idea — the legible companion to rankByEV/rankByVelocity's
+    /// nil-key stable-sort, so a board can show "Ranked: N · Incomplete: M" instead of silently
+    /// rendering fewer names than the full ideas count with no explanation. nil when the idea
+    /// DOES have a defined EV (nothing to explain). Additive — does not change ranking/sorting.
+    enum EvSkipReason: Sendable, Equatable {
+        case noStop
+        case noTarget
+        case noStopOrTarget
+
+        nonisolated var label: String {
+            switch self {
+            case .noStop:         return "no stop"
+            case .noTarget:       return "no target"
+            case .noStopOrTarget: return "no stop or target"
+            }
+        }
+    }
+    nonisolated static func evSkipReason(for idea: StockSageIdea) -> EvSkipReason? {
+        switch (idea.advice.stopPrice, idea.advice.targetPrice) {
+        case (nil, nil): return .noStopOrTarget
+        case (nil, _?):  return .noStop
+        case (_?, nil):  return .noTarget
+        case (_?, _?):   return nil
+        }
+    }
+
     /// Ideas sorted by EV (best bet first). Ideas without a defined EV fall to the
     /// bottom keeping their original relative order (stable).
     nonisolated static func rankByEV(_ ideas: [StockSageIdea], regime: MarketRegime? = nil,

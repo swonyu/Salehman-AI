@@ -444,6 +444,24 @@ struct StockSageExpectedValueTests {
         #expect(abs(mixedWk - mixedRawSum) < 1e-9)   // factor == 1.0, unchanged
     }
 
+    // MARK: - RANKING_BACKLOG #13: legible EV-skip reason
+
+    @Test func evSkipReasonExplainsWhyAnIdeaHasNoDefinedEV() {
+        let complete = idea("AAPL", conviction: 0.7, stop: 90, target: 130)
+        let noStop   = idea("MSFT", conviction: 0.7, stop: nil, target: 130)
+        let noTarget = idea("GOOG", conviction: 0.7, stop: 90, target: nil)
+        let neither  = idea("HOLD", conviction: 0.7, stop: nil, target: nil)
+        #expect(EV.evSkipReason(for: complete) == nil)
+        #expect(EV.evSkipReason(for: noStop) == .noStop)
+        #expect(EV.evSkipReason(for: noTarget) == .noTarget)
+        #expect(EV.evSkipReason(for: neither) == .noStopOrTarget)
+        // rankByEV keeps every idea (deprioritizes, never drops) — evSkipReason explains the ones
+        // a "Ranked: N · Incomplete: M" header would count, without changing the ranked count itself.
+        let ranked = EV.rankByEV([complete, noStop])
+        #expect(ranked.count == 2)
+        #expect(ranked.filter { EV.evSkipReason(for: $0) != nil }.count == 1)
+    }
+
     @Test func summaryMatchesStandaloneSurfaces() {
         let saved = StockSageConvictionCalibration.candidateSelectorEnabled
         defer { StockSageConvictionCalibration.candidateSelectorEnabled = saved }
