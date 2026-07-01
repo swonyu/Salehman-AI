@@ -156,9 +156,11 @@ struct RuneScapeMarketView: View {
     private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             TextField("Search any item (e.g. whip, bond, rune)…", text: $query)
                 .textFieldStyle(.plain).font(.system(size: 13))
                 .focused($searchFocused)
+                .accessibilityLabel("Search RuneScape items")
             if !query.isEmpty {
                 Button { query = "" } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 13)).foregroundStyle(.secondary)

@@ -58,8 +58,10 @@ struct BrowseMarketsView: View {
 
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 TextField("Search symbol or market…", text: $query)
                     .textFieldStyle(.plain).font(.system(size: 13))
+                    .accessibilityLabel("Search markets")
                 if !query.isEmpty {
                     Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                         .buttonStyle(.plain)
@@ -117,10 +119,12 @@ struct BrowseMarketsView: View {
                     Image(systemName: "plus.circle.fill").font(.system(size: 15)).foregroundStyle(DS.Palette.accent)
                 }
                 .buttonStyle(.plain)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
                 .accessibilityLabel("Add \(s.symbol), \(s.market)")
             }
         }
-        .padding(.vertical, 4).padding(.horizontal, 6)
+        .padding(.vertical, 8).padding(.horizontal, 6)
         .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 6))
     }
 }

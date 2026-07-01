@@ -402,6 +402,10 @@ struct MarketsView: View {
                 .overlay(Circle().stroke(
                     LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.04)],
                                    startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                // Keep the 30pt visual circle but pad the tappable region to the
+                // 44pt a11y hit-target floor (the only sub-44pt control in this header).
+                .padding(7)
+                .contentShape(Circle())
         }
         .buttonStyle(LuxPressStyle())
         .disabled(store.isRefreshing)
@@ -1218,6 +1222,9 @@ struct MarketsView: View {
             )
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+            // .contain (not .combine) so the per-cell correlation labels above survive as children.
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Correlation heatmap, \(c.symbols.count) symbols")
         }
     }
 
@@ -1385,6 +1392,10 @@ struct MarketsView: View {
                             .stroke(up ? DS.Palette.successSoft : DS.Palette.danger,
                                     style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                             .frame(height: 26).opacity(0.9)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(comp.isRuined
+                                ? "Compounding curve, wiped out"
+                                : String(format: "Compounding curve, currently ×%.2f", comp.finalMultiple))
                         Text("Your OWN logged R compounded at a fixed risk % — the past path of your trades, NOT a projection of future returns.")
                             .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
@@ -1413,6 +1424,8 @@ struct MarketsView: View {
                                         .frame(width: 26, height: max(2, CGFloat(bin.count) / CGFloat(maxC) * 26))
                                     Text(bin.label).font(.system(size: mvFont7)).foregroundStyle(.secondary)
                                 }
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel("\(bin.label): \(bin.count) trades")
                             }
                             Spacer(minLength: 0)
                         }
@@ -2033,6 +2046,9 @@ struct MarketsView: View {
                         .transition(.scale(scale: 0.7).combined(with: .opacity))
                     }
                 }
+                // .contain (not .combine) so each tile's own accessibilityLabel above survives.
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Market heatmap, \(store.symbols.count) symbols by price change")
                 .animation(DS.Motion.smooth, value: store.symbols.count)
                 .transition(.opacity)
             }
@@ -3663,10 +3679,12 @@ struct MarketsView: View {
                 }
 
                 if idea.spark.count >= 2 {
+                    let trendWord = (idea.spark.last ?? 0) >= (idea.spark.first ?? 0) ? "up" : "down"
                     Sparkline(values: idea.spark)
                         .stroke(sparkColor(idea.spark), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                         .frame(height: 64)
-                        .accessibilityHidden(true)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Price sparkline, trending \(trendWord), high \(adaptivePrice(idea.spark.max() ?? 0)), low \(adaptivePrice(idea.spark.min() ?? 0))")
                 }
 
                 convictionMeter(a.conviction, color: actionColor(a.action))
@@ -4047,6 +4065,8 @@ struct MarketsView: View {
             }
         }
         .frame(height: 5)
+        .accessibilityElement(children: .ignore)
+        .accessibilityValue("\(Int(min(max(value, 0), 1) * 100)) percent")
     }
 
     private func actionColor(_ a: TradeAdvice.Action) -> Color {
