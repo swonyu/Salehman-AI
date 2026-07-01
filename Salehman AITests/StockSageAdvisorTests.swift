@@ -329,4 +329,45 @@ struct StockSageAdvisorTests {
         let capped = StockSageAdvisor.advise(closes: uptrend, highs: highs, lows: lows)
         #expect(capped.suggestedWeight == StockSageAdvisor.maxWeight)
     }
+
+    @Test func avoidVerdictNeverShowsABullishConfluenceBadge() {
+        // 2026-07-01 adversarial-review finding: timeframeAligned/confluenceNote were derived
+        // from raw score's sign BEFORE the chop-regime block (lines ~304-311) can downgrade a
+        // would-be Buy into .avoid — so an "Avoid, stand aside" card could still show a bullish
+        // "3-TF confluence — trends all up" badge, contradicting its own verdict. Reproduces the
+        // exact consolidation-after-rally fixture that exposed it: 280 clean uptrend bars, then a
+        // 20-bar +-0.5 zigzag with a mild +2.0 net drift (choppy, RSI-overbought, barely-positive
+        // 21-bar return) — chop demotes what the trend/momentum terms alone would call a Buy.
+        let uptrend = (0..<280).map { 100.0 + 0.15 * Double($0) }
+        let last = uptrend.last!
+        let zigzag = (0..<20).map { i -> Double in
+            let base = last + (2.0 * Double(i) / 20)
+            return base + (i % 2 == 0 ? 0.5 : -0.5)
+        }
+        let a = StockSageAdvisor.advise(closes: uptrend + zigzag)
+        // The fix must hold regardless of which non-actionable verdict this fixture lands on.
+        #expect(!(a.timeframeAligned && (a.action == .avoid || a.action == .hold)))
+        if a.action == .avoid || a.action == .hold {
+            #expect(!a.timeframeAligned)
+            #expect(a.confluenceNote == nil)
+            #expect(!a.rationale.contains { $0.contains("Three-timeframe confluence") })
+        }
+    }
+
+    @Test func timeframeAlignedOnlyEverFiresForAnActionableBuyOrSellVerdict() {
+        // General invariant (not tied to one fixture): across every fixture already used in this
+        // file, timeframeAligned must never be true unless the resolved action is buy- or
+        // sell-family — matching the same discipline the stop/target trade-plan gate uses.
+        let fixtures: [[Double]] = [
+            TrendFixtures.up(250), TrendFixtures.up(300), TrendFixtures.up(70), TrendFixtures.up(120),
+            (0..<250).map { 200.0 - Double($0) * 0.602 },
+        ]
+        for closes in fixtures {
+            let a = StockSageAdvisor.advise(closes: closes)
+            if a.timeframeAligned {
+                #expect(a.action == .buy || a.action == .strongBuy || a.action == .sell || a.action == .reduce,
+                        "timeframeAligned==true but action was \(a.action.rawValue)")
+            }
+        }
+    }
 }

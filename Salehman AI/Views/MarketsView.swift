@@ -2702,12 +2702,17 @@ struct MarketsView: View {
                 }
                 if a.timeframeAligned {
                     // RANKING_BACKLOG #12 (reframed, pure observer) — display-only badge, never a
-                    // ranking input; see StockSageIndicators.timeframeConfluence.
+                    // ranking input; see StockSageIndicators.timeframeConfluence. The engine only
+                    // ever sets timeframeAligned for a buy- or sell-family action (StockSageAdvisor
+                    // gates it on isBuy/isSell), so a.action alone tells us the direction — tint
+                    // matches actionColor's own bullish/bearish convention (2026-07-01 fix: this
+                    // badge used to be hardcoded green even for a bearish-aligned Sell/Reduce card).
+                    let bearish = a.action == .sell || a.action == .reduce
                     Text("3-TF confluence")
                         .font(.system(size: mvFont10, weight: .bold))
-                        .foregroundStyle(DS.Palette.successSoft)
+                        .foregroundStyle(bearish ? DS.Palette.danger : DS.Palette.successSoft)
                         .padding(.horizontal, 7).padding(.vertical, 3)
-                        .background(DS.Palette.successSoft.opacity(0.14), in: Capsule())
+                        .background((bearish ? DS.Palette.danger : DS.Palette.successSoft).opacity(0.14), in: Capsule())
                         .help(a.confluenceNote ?? "1-month, daily, and 1-year trends all agree — a breadth read, not a probability of profit.")
                         .accessibilityLabel(a.confluenceNote ?? "Three-timeframe confluence")
                 }

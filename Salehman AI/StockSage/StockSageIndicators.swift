@@ -248,7 +248,13 @@ enum StockSageIndicators {
     /// factor the daily/short legs here already partially share).
     ///
     ///   • LONG   — `trendOK(closes)` (the SAME 12-1 / 252-bar TSMOM already gating buy-the-dip
-    ///     eligibility elsewhere in `advise()`). nil when < 253 bars — genuinely unknown, not bearish.
+    ///     eligibility elsewhere in `advise()`) AND price-vs-its-own-200DMA must AGREE. TSMOM's
+    ///     12-1 construction structurally SKIPS the most recent ~21 trading days, so it alone can't
+    ///     see a breakout/breakdown that happened THIS month; requiring the 200DMA read to agree
+    ///     catches that gap (a name that broke below its 200DMA this week but whose 12-1 window
+    ///     hasn't rolled forward yet must not still read "long-term bullish"). When the two
+    ///     disagree, the long-term read is itself ambiguous — nil ("unknown"), never a guessed side.
+    ///     nil when < 253 bars (trendOK's own minimum) — genuinely unknown, not bearish.
     ///   • DAILY  — the sign of `dailyDirection` (the caller passes the advisor's own RESOLVED,
     ///     already-fully-computed `score`'s sign — after every existing term, cap, and the iter3
     ///     variance-scalar attenuation have already applied; this function does not re-derive it).
@@ -256,13 +262,15 @@ enum StockSageIndicators {
     ///     `neutralBandPct` dead-zone so a flat/chop tape can't fake agreement by pure noise.
     ///
     /// `aligned` is true only when all three legs are DEFINED and share the same sign. A `long` leg
-    /// of `nil` (short history) makes alignment structurally unavailable — read as "unknown," never
-    /// as "not aligned" / bearish. Pure, deterministic, zero new fetch (reuses `trendOK`/
-    /// `returnOverPeriod`, already-tested primitives).
+    /// of `nil` (short history, or the TSMOM/200DMA disagreement above) makes alignment structurally
+    /// unavailable — read as "unknown," never as "not aligned" / bearish. Pure, deterministic, zero
+    /// new fetch (reuses `trendOK`/`sma`/`returnOverPeriod`, already-tested primitives).
     nonisolated static func timeframeConfluence(closes: [Double], dailyDirection: Int,
                                                 shortPeriod: Int = 21, neutralBandPct: Double = 1.0)
     -> (aligned: Bool, direction: Int, long: Int, short: Int?)? {
         guard let longUp = trendOK(closes) else { return nil }
+        guard let sma200 = sma(closes, period: 200), let price = closes.last, price > 0 else { return nil }
+        guard longUp == (price > sma200) else { return nil }   // TSMOM vs 200DMA disagree → unknown, not a guess
         let longDir = longUp ? 1 : -1
         guard let shortReturn = returnOverPeriod(closes, period: shortPeriod) else { return nil }
         let shortDir = abs(shortReturn) < neutralBandPct ? 0 : (shortReturn > 0 ? 1 : -1)

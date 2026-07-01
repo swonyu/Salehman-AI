@@ -41,6 +41,10 @@ enum StockSageRelativeStrength {
     /// A single-symbol input returns percentile 0.5 (neutral — nothing to compare against, not
     /// trivially "strongest"). Empty input returns an empty array, never a crash.
     nonisolated static func rank(_ returns: [String: Double]) -> [RelativeStrengthRank] {
+        // Non-finite inputs (NaN/±infinity) are a caller bug, not a real return — drop them rather
+        // than let a single garbage value corrupt the sort/tie-detection for every OTHER symbol
+        // (NaN comparisons are neither < nor == under IEEE-754, which would silently break both).
+        let returns = returns.filter { $0.value.isFinite }
         guard !returns.isEmpty else { return [] }
         guard returns.count > 1 else {
             let only = returns.first!

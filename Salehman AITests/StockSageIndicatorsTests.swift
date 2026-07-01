@@ -203,14 +203,45 @@ struct StockSageIndicatorsTests {
         #expect(tf!.short == -1)
     }
 
-    @Test func shortLegFightingLongLegIsNeverAligned() {
-        // Long-term up (trendOK true) but daily/short both claim down — long disagrees, so
-        // aligned must be false regardless of what daily/short agree on between themselves.
+    @Test func dailyDirectionDisagreeingWithBothRealLegsIsNeverAligned() {
+        // Long-term up (trendOK true, price>sma200) and the real short leg (ret21) also up, but
+        // the CALLER-supplied dailyDirection claims down — aligned must be false regardless of
+        // what long/short agree on between themselves. (2026-07-01 adversarial-review naming fix:
+        // this test was previously misnamed "shortLegFightingLongLegIsNeverAligned" — up300()'s
+        // real short leg is actually +15.04%, agreeing with long; only dailyDirection disagrees.
+        // See genuineLongVsShortDisagreementIsNeverAligned below for an actual long-vs-short case.)
         let tf = I.timeframeConfluence(closes: up300(), dailyDirection: -1)
         #expect(tf != nil)
         #expect(!tf!.aligned)
         #expect(tf!.direction == 0)
         #expect(tf!.long == 1)   // long leg itself is unaffected by dailyDirection
+    }
+
+    @Test func genuineLongVsShortDisagreementIsNeverAligned() {
+        // python-verified: 280 up bars + a sharp-but-partial 21-bar pullback (-12% over the tail,
+        // still well above sma200) → trendOK=true, price>sma200=true (long=+1, the two legs of the
+        // LONG read agree with each other), but ret21≈-12% (short=-1) — a REAL pullback-within-an-
+        // uptrend disagreement between the long and short legs, not merely a daily-direction one.
+        let base = (0..<280).map { 50.0 + 0.0153 * pow(Double($0), 2) }
+        let last = base.last!
+        let decline = (1...21).map { last - (last * 0.12) * (Double($0) / 21) }
+        let tf = I.timeframeConfluence(closes: base + decline, dailyDirection: 1)
+        #expect(tf != nil)
+        #expect(tf!.long == 1)
+        #expect(tf!.short == -1)
+        #expect(!tf!.aligned)
+    }
+
+    @Test func trendOKAndTwoHundredDMADisagreementReturnsNilNotAGuess() {
+        // python-verified: 280 up bars + a sharp 21-bar CRASH (-50% over the tail) → trendOK is
+        // STILL true (12-1 TSMOM skips the most recent 21 bars, so it hasn't seen the crash yet),
+        // but price is now BELOW sma200 — the two legs of "long-term bullish" disagree with each
+        // other. The long leg itself is ambiguous here, so the WHOLE function must return nil
+        // ("unknown"), never silently pick trendOK's stale answer.
+        let base = (0..<280).map { 50.0 + 0.0153 * pow(Double($0), 2) }
+        let last = base.last!
+        let crash = (1...21).map { last - (last * 0.5) * (Double($0) / 21) }
+        #expect(I.timeframeConfluence(closes: base + crash, dailyDirection: 1) == nil)
     }
 
     @Test func shortHistoryReturnsNilNeverFalseAlignment() {

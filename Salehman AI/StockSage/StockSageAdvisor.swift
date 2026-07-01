@@ -311,26 +311,33 @@ enum StockSageAdvisor {
         }
         let conviction = Swift.min(abs(score), 1.0)
 
-        // RANKING_BACKLOG #12 (reframed, pure observer): three-timeframe confluence, computed
-        // from the FINAL resolved score (after every term, the trend-family cap, and the iter3
-        // variance-scalar have already applied) — this NEVER changes score/action/conviction/
-        // sizing above, it only reads them. See `StockSageIndicators.timeframeConfluence`.
-        var timeframeAligned = false
-        var confluenceNote: String? = nil
-        let dailyDirection = score > 0 ? 1 : (score < 0 ? -1 : 0)
-        if let tf = StockSageIndicators.timeframeConfluence(closes: closes, dailyDirection: dailyDirection), tf.aligned {
-            timeframeAligned = true
-            let word = tf.direction > 0 ? "up" : "down"
-            confluenceNote = "Three-timeframe confluence — 1-month, daily, and 1-year trends all \(word)"
-            rationale.append(confluenceNote!)
-        }
-
         // Only a buy-family verdict gets an actionable trade plan. Gating on the
         // ACTION (not raw score>0) stops a "Hold"/"Avoid" card from also showing a
         // stop, target, and position size — which contradicted the recommendation.
         let isBuy = action == .buy || action == .strongBuy
 
         let isSell = action == .sell || action == .reduce
+
+        // RANKING_BACKLOG #12 (reframed, pure observer): three-timeframe confluence, computed
+        // from the FINAL resolved score (after every term, the trend-family cap, and the iter3
+        // variance-scalar have already applied) — this NEVER changes score/action/conviction/
+        // sizing above, it only reads them. See `StockSageIndicators.timeframeConfluence`.
+        // Gated on `isBuy`/`isSell` (the POST-chop-downgrade action), the exact same discipline
+        // as the stop/target gate below: `score`'s raw sign can still read "up"/"down" even after
+        // the chop-regime block above demoted the verdict to .avoid/.hold (no edge, stand aside) —
+        // without this gate, an Avoid card could show a bullish-styled confluence badge that
+        // contradicts its own "stand aside" verdict (2026-07-01 adversarial-review finding).
+        var timeframeAligned = false
+        var confluenceNote: String? = nil
+        if isBuy || isSell {
+            let dailyDirection = score > 0 ? 1 : (score < 0 ? -1 : 0)
+            if let tf = StockSageIndicators.timeframeConfluence(closes: closes, dailyDirection: dailyDirection), tf.aligned {
+                timeframeAligned = true
+                let word = tf.direction > 0 ? "up" : "down"
+                confluenceNote = "Three-timeframe confluence — 1-month, daily, and 1-year trends all \(word)"
+                rationale.append(confluenceNote!)
+            }
+        }
 
         // Stop & target — symmetric: a long stops BELOW / targets ABOVE; a short mirrors it.
         // The ATR multiple now scales with the name's realized volatility (wider for crypto,
