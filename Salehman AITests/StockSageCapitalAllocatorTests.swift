@@ -9,12 +9,12 @@ struct StockSageCapitalAllocatorTests {
     typealias Alloc = StockSageCapitalAllocator
 
     private func idea(_ symbol: String, price: Double, stop: Double, target: Double,
-                      conviction: Double, action: TradeAdvice.Action = .buy) -> StockSageIdea {
+                      conviction: Double, action: TradeAdvice.Action = .buy, spark: [Double] = []) -> StockSageIdea {
         StockSageIdea(symbol: symbol, market: "TEST", price: price,
                       advice: TradeAdvice(action: action, conviction: conviction, regime: .bullTrend,
                                           rationale: [], stopPrice: stop, targetPrice: target,
                                           suggestedWeight: 0, caveat: "x"),
-                      spark: [])
+                      spark: spark)
     }
 
     @Test func halfKellyIsAFractionNotDividedByAccount() {
@@ -179,5 +179,108 @@ struct StockSageCapitalAllocatorTests {
         let clean = idea("AAPL", price: 100, stop: 90, target: 130, conviction: 0.9)
         #expect(Alloc.suggestAdd(idea: clean, openTrades: [], holdings: [], candidateReturns: [], account: 0) == nil)
         #expect(Alloc.suggestAdd(idea: clean, openTrades: [], holdings: [], candidateReturns: [], account: -100) == nil)
+    }
+
+    // MARK: - ALLOC_BACKLOG #5: rebalanceToEdge (EV-weighted whole-book reweight)
+
+    private func trade(_ p: RebalancePlan, _ sym: String) -> RebalanceTrade? { p.trades.first { $0.symbol == sym } }
+
+    @Test func rebalanceToEdgeTrimsNegativeGrowsPositiveAndCapsChurnIntoNewIdeas() {
+        // AAPL held, conviction 0 buy at a near-flat 100/90/101 → evR = 0.35·0.1 − 0.65 = −0.615
+        // (negative, trimmed). MSFT held, conviction 1.0 at 200/180/260 → p 0.58, rewardR 3 →
+        // evR = 0.58·3 − 0.42 = 1.32 (positive, kept). NVDA is a brand-new idea (not held),
+        // conviction 0.5 at 50/45/65 → p 0.465, rewardR 3 → evR = 0.465·3 − 0.535 = 0.86.
+        // Raw new-share = 0.86 / (1.32+0.86) ≈ 0.394 > the default 10% maxHeat cap, so it engages:
+        // closed-form scale pins MSFT/NVDA to an exact 90%/10% split of the $8,000 book (python-verified).
+        let aapl = idea("AAPL", price: 100, stop: 90, target: 101, conviction: 0.0)
+        let msft = idea("MSFT", price: 200, stop: 180, target: 260, conviction: 1.0)
+        let nvda = idea("NVDA", price: 50, stop: 45, target: 65, conviction: 0.5)
+        let r = Alloc.rebalanceToEdge(holdings: [("AAPL", 4000), ("MSFT", 4000)], ideas: [aapl, msft, nvda])
+        #expect(r != nil)
+        guard let r else { return }
+        #expect(abs(trade(r.plan, "AAPL")!.targetWeight - 0.0) < 1e-9)
+        #expect(abs(trade(r.plan, "MSFT")!.targetWeight - 0.9) < 1e-9)
+        #expect(abs(trade(r.plan, "NVDA")!.targetWeight - 0.1) < 1e-9)
+        #expect(abs(trade(r.plan, "AAPL")!.deltaValue - (-4000)) < 1e-6)
+        #expect(abs(trade(r.plan, "MSFT")!.deltaValue - 3200) < 1e-6)
+        #expect(abs(trade(r.plan, "NVDA")!.deltaValue - 800) < 1e-6)
+        #expect(r.excludedSymbols.isEmpty)
+        #expect(r.note.contains("capped"))
+    }
+
+    @Test func rebalanceToEdgeDoesNotCapWhenNewSharesAlreadyUnderMaxHeat() {
+        // Same three ideas as above but maxHeat raised to 0.50 (well above the raw ~39.4% new
+        // share) → no cap engages; weights pass straight through the plain evR-proportional split.
+        let aapl = idea("AAPL", price: 100, stop: 90, target: 101, conviction: 0.0)
+        let msft = idea("MSFT", price: 200, stop: 180, target: 260, conviction: 1.0)
+        let nvda = idea("NVDA", price: 50, stop: 45, target: 65, conviction: 0.5)
+        let r = Alloc.rebalanceToEdge(holdings: [("AAPL", 4000), ("MSFT", 4000)], ideas: [aapl, msft, nvda], maxHeat: 0.50)
+        #expect(r != nil)
+        guard let r else { return }
+        #expect(abs(trade(r.plan, "MSFT")!.targetWeight - 0.6055045871559633) < 1e-9)
+        #expect(abs(trade(r.plan, "NVDA")!.targetWeight - 0.39449541284403666) < 1e-9)
+        #expect(!r.note.contains("capped"))
+    }
+
+    @Test func rebalanceToEdgeIsBalancedWhenTheSoleHeldNameIsAlreadyAtTarget() {
+        // A single fully-fundable holding normalizes to weight 1.0 — since it's already the only
+        // position (current weight 1.0 too), drift is exactly 0, under any band.
+        let only = idea("AAPL", price: 100, stop: 90, target: 140, conviction: 0.7)
+        let r = Alloc.rebalanceToEdge(holdings: [("AAPL", 5000)], ideas: [only])!
+        #expect(r.plan.isBalanced)
+        #expect(r.plan.trades.isEmpty)
+    }
+
+    @Test func rebalanceToEdgeExcludesACorrelationBlockedNewIdeaWithANote() {
+        // NVDA's spark is AAPL's spark scaled by 0.5 → identical % daily moves → correlation 1.0,
+        // ≥ the 0.80 default threshold → NVDA is excluded even though its own EV is positive.
+        // MSFT (held, uncorrelated-by-construction, positive EV) keeps the plan non-nil.
+        let aaplSpark = [100.0, 102, 101, 103, 102, 104, 103, 105]
+        let nvdaSpark = aaplSpark.map { $0 * 0.5 }
+        let aapl = idea("AAPL", price: 100, stop: 90, target: 101, conviction: 0.0, action: .hold, spark: aaplSpark)
+        let msft = idea("MSFT", price: 200, stop: 180, target: 260, conviction: 1.0)
+        let nvda = idea("NVDA", price: 50, stop: 45, target: 65, conviction: 0.5, spark: nvdaSpark)
+        let r = Alloc.rebalanceToEdge(holdings: [("AAPL", 4000), ("MSFT", 4000)], ideas: [aapl, msft, nvda])
+        #expect(r != nil)
+        guard let r else { return }
+        #expect(r.excludedSymbols == ["NVDA"])
+        #expect(trade(r.plan, "NVDA") == nil)                       // never entered the plan at all
+        #expect(abs(trade(r.plan, "MSFT")!.targetWeight - 1.0) < 1e-9)   // sole surviving positive-edge name
+        #expect(abs(trade(r.plan, "AAPL")!.targetWeight - 0.0) < 1e-9)   // .hold → not buy-family → trimmed
+        #expect(r.note.contains("NVDA"))
+        #expect(r.note.localizedCaseInsensitiveContains("correlation"))
+    }
+
+    @Test func rebalanceToEdgeSizesOnlyWhenNoReturnSeriesIsSupplied() {
+        // Identical setup to the correlation-block test, but both sparks are empty → ClusterCheck
+        // has nothing to compare, so the gate no-ops and NVDA is sized in normally (size-only).
+        let aapl = idea("AAPL", price: 100, stop: 90, target: 101, conviction: 0.0, action: .hold)
+        let msft = idea("MSFT", price: 200, stop: 180, target: 260, conviction: 1.0)
+        let nvda = idea("NVDA", price: 50, stop: 45, target: 65, conviction: 0.5)
+        let r = Alloc.rebalanceToEdge(holdings: [("AAPL", 4000), ("MSFT", 4000)], ideas: [aapl, msft, nvda])!
+        #expect(r.excludedSymbols.isEmpty)
+        #expect(trade(r.plan, "NVDA") != nil)
+    }
+
+    @Test func rebalanceToEdgeTrimsAHeldSymbolThatHasNoIdeaAtAll() {
+        // GOOG is held but never appears in `ideas` at all (not merely a negative-EV one) — still
+        // absent from targets, still trimmed to 0, exactly like a held name with a flat/negative idea.
+        let xyz = idea("XYZ", price: 100, stop: 90, target: 160, conviction: 1.0)
+        let r = Alloc.rebalanceToEdge(holdings: [("XYZ", 4000), ("GOOG", 4000)], ideas: [xyz])!
+        #expect(abs(trade(r.plan, "XYZ")!.targetWeight - 1.0) < 1e-9)
+        #expect(abs(trade(r.plan, "GOOG")!.targetWeight - 0.0) < 1e-9)
+        #expect(trade(r.plan, "GOOG")!.deltaValue < 0)
+    }
+
+    @Test func rebalanceToEdgeReturnsNilWhenNoPositiveEdgeAnywhere() {
+        let aapl = idea("AAPL", price: 100, stop: 90, target: 101, conviction: 0.0)          // negative evR
+        let msft = idea("MSFT", price: 200, stop: 180, target: 260, conviction: 1.0, action: .sell) // not buy-family
+        #expect(Alloc.rebalanceToEdge(holdings: [("AAPL", 4000), ("MSFT", 4000)], ideas: [aapl, msft]) == nil)
+    }
+
+    @Test func rebalanceToEdgeReturnsNilWhenNothingIsInvested() {
+        let aapl = idea("AAPL", price: 100, stop: 90, target: 140, conviction: 0.7)
+        #expect(Alloc.rebalanceToEdge(holdings: [], ideas: [aapl]) == nil)
+        #expect(Alloc.rebalanceToEdge(holdings: [("AAPL", 0)], ideas: [aapl]) == nil)
     }
 }

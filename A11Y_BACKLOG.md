@@ -33,13 +33,18 @@
 **File:** Salehman AI/Views/MarketsView.swift:3029
 **Fix:** In `convictionMeter` add `.accessibilityElement(children: .ignore).accessibilityValue("\(Int(min(max(value,0),1) * 100)) percent")` to the GeometryReader. In the idea card the conviction % is already in the combined label, and the detail sheet pairs it with a visible 'Conviction X%' Text (line 2695) — so this is a polish-level gap, but the bare meter element is currently unlabeled when focused directly.
 
-### ⬜ #7 — Fixed .system(size:) caption text does not scale with Dynamic Type (MarketsView)
+### ✅ DONE #7 — Fixed .system(size:) caption text does not scale with Dynamic Type (MarketsView)
 **File:** Salehman AI/Views/MarketsView.swift:844
 **Fix:** Add `@ScaledMetric(relativeTo: .caption2) private var mvFont10: CGFloat = 10` and `mvFont11 = 11`, `mvFont13 = 13` near the existing mvFont7/8/9 (line 35-37), then replace the literal `.system(size: 10/11/13)` calls at lines 844, 847, 1085, 1103, 1118, 1133, 1148, 1188 and the add-holding/add-trade fields (611, 1263, 1485) with the scaled vars. mvFont7/8/9 already scale; these were missed.
+**2026-07-01 implementation:** The doc's line numbers were stale (file grew substantially since 06-22) and the scope was far larger than estimated — grepping the current file for exact `.system(size: 10|11|13)` found 128 call sites (not ~11), of which 84 are TEXT (fixed) and 44 are `Image(systemName:)` icon glyphs (correctly left unscaled, matching the item's own "skip icons" instruction). Added `mvFont10/11/13` next to the existing `mvFont7/8/9` and mechanically swapped every TEXT call site via a verified script (icon lines identified by containing `Image(systemName:` on the same line — confirmed zero ambiguous/mixed lines). Byte-identical layout at default Dynamic Type size.
 
 ### ⬜ #8 — Fixed .system(size: 11/12/13) in RuneScape & Browse views don't scale
-**File:** Salehman AI/Views/RuneScapeMarketView.swift:351
-**Fix:** RuneScapeMarketView already has rsFont8/9 (lines 17-18); add `rsFont11 = 11` and `rsFont13 = 13` and apply to priceColumn value (line 351), fastest-flip name/value (212, 217, 219), and search/title text. In BrowseMarketsView add `@ScaledMetric(relativeTo: .caption2)` vars for the literal sizes at lines 51, 62, 86, 106, 107, 111, 117.
+**File:** Salehman AI/Views/RuneScapeMarketView.swift:351 — **OUT OF SCOPE** (OSRS-specific, owner markets-tab-only directive; not touched).
+**Fix (RuneScape portion, deferred/out of scope):** RuneScapeMarketView already has rsFont8/9 (lines 17-18); add `rsFont11 = 11` and `rsFont13 = 13` and apply to priceColumn value (line 351), fastest-flip name/value (212, 217, 219), and search/title text.
+
+### ✅ DONE (Browse portion) #8b — BrowseMarketsView fixed .system(size:) don't scale
+**File:** Salehman AI/Views/BrowseMarketsView.swift (current lines 53, 60, 63, 88, 108, 113, 119 — the doc's original 51/62/86/106/107/111/117 were stale, verified against HEAD by grep, 2026-07-01)
+**Fix:** Added `@ScaledMetric(relativeTo: .caption2) private var bmFont11/12/13/14/15` (first ScaledMetric usage in this file, matching MarketsView's `mvFont7/8/9` / RuneScapeMarketView's `rsFont8/9` naming convention) and replaced all 7 literal `.system(size:)` call sites (subtitle caption 12, search-icon 12, search TextField 13, section header 11, symbol Text 13, tracked checkmark icon 14, add plus-icon 15). Byte-identical layout at default Dynamic Type size; scales up only when the user enlarges system text. See DEVELOPMENT_LOG.md 2026-07-01 entry.
 
 ### ✅ DONE #9 — BrowseMarketsView rows: add/check button hit target undersized
 **File:** Salehman AI/Views/BrowseMarketsView.swift:116
@@ -49,8 +54,11 @@
 **File:** Salehman AI/Views/RuneScapeMarketView.swift:158
 **Fix:** Add `.accessibilityHidden(true)` to the magnifyingglass Image at RuneScapeMarketView.swift:158 and BrowseMarketsView.swift:60. They are non-interactive decoration; without hiding, VoiceOver announces 'magnifying glass image' before the (now-labeled) search field. Low impact, trivial.
 
-### ⬜ #11 — BrowseMarketsView asset-class Picker label hidden from sighted users
+### ✅ DONE #11 — BrowseMarketsView asset-class Picker label hidden from sighted users
 **File:** Salehman AI/Views/BrowseMarketsView.swift:71
 **Fix:** The Picker uses `.labelsHidden()` (line 74), hiding the 'Asset class' label from sighted users. The segmented options (All/Stocks/ETFs/...) are self-describing, so VoiceOver is fine, but for visual clarity optionally add a small `Text("Asset class").font(.caption2).foregroundStyle(.secondary)` above. Cosmetic; lowest priority.
+**2026-07-01 implementation:** Wrapped the Picker in a leading-aligned `VStack` with the suggested `Text("Asset class")` caption above it (nested `VStack(alignment: .leading)` so the label doesn't get centered under the enclosing default-alignment container).
 
-**2026-06-28:** #1-6, #9-10 done (see DEVELOPMENT_LOG.md). #7/#8 (Dynamic Type scaling, ~15 call sites across 3 files) and #11 (cosmetic Picker label) deferred to a dedicated pass.
+**2026-07-01:** A11Y_BACKLOG.md fully resolved — #7/#8/#11 all done.
+
+**2026-07-01:** #8's BrowseMarketsView portion done (bmFont11-15, 7 call sites — see #8b above and DEVELOPMENT_LOG.md). RuneScapeMarketView portion of #8 remains open but is explicitly OUT OF SCOPE per the owner's markets-tab-only directive. #7 and #11 remain open/deferred.

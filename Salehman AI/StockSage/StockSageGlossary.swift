@@ -32,6 +32,9 @@ enum MoneyVelocityCopy {
     nonisolated static let summary =
         "Estimates from conviction & a rough hold — ranks SPEED of payoff, doesn't predict it. Risk control > speed; always size with a stop."
     nonisolated static let weeklyDollars = "estimate, high variance, NOT income."
+    /// FASTMONEY_BACKLOG #7 — the honest tail on the crypto-vs-equity rotation-gap warning.
+    nonisolated static let cannotHedgeOvernight =
+        "You can't hedge 24/7 crypto with 9:30–4 equity hours — overnight risk moves while those positions are simply not tradeable; size down if you can't watch it."
     /// Shared hedge tail for the velocity-history lines (trend + since-last-session).
     nonisolated static let ownHistory = "your own history, not a forecast."
     /// Drawdown-brake tail on the summary card.
@@ -40,7 +43,7 @@ enum MoneyVelocityCopy {
     nonisolated static let growthProjection = "Assumes your past edge persists — it may not, and real variance lowers this. NOT a prediction."
     /// Compact tail for the Today-tab "Best bet" stat tile (rendered after the EV figure).
     nonisolated static let bestBetTile = "EV · estimate"
-    nonisolated static let all: [String] = [bestOpportunity, fastLane, summary, weeklyDollars, ownHistory, drawdownBrake, growthProjection, bestBetTile]
+    nonisolated static let all: [String] = [bestOpportunity, fastLane, summary, weeklyDollars, cannotHedgeOvernight, ownHistory, drawdownBrake, growthProjection, bestBetTile]
 }
 
 enum StockSageGlossary {

@@ -287,6 +287,25 @@ struct StockSageExpectedValueTests {
         #expect(EV.cryptoRiskScaler(annualizedVol: 0.20) == 1.0)
     }
 
+    // MARK: - FASTMONEY_BACKLOG #3: honest 24/7 daily-variance read
+
+    @Test func dailyVariancePctDeAnnualizesFor365DayCryptoCalendar() {
+        // 70% annualized vol → 70/√365 ≈ 3.66% typical one-day move (crypto trades every day,
+        // not the 252-day equity calendar cryptoRiskScaler's baseline otherwise assumes).
+        let expected70 = 0.70 / 365.0.squareRoot() * 100
+        #expect(abs(EV.dailyVariancePct(annualizedVol: 0.70)! - expected70) < 1e-9)
+        // Linear in vol: half the input vol → exactly half the variance read.
+        #expect(abs(EV.dailyVariancePct(annualizedVol: 0.35)! - expected70 / 2) < 1e-9)
+    }
+
+    @Test func dailyVariancePctNeverInventsANumber() {
+        #expect(EV.dailyVariancePct(annualizedVol: nil) == nil)        // no history → no invented number
+        #expect(EV.dailyVariancePct(annualizedVol: 0) == nil)          // zero vol is degenerate, not "0% range"
+        #expect(EV.dailyVariancePct(annualizedVol: -0.5) == nil)       // never negative
+        #expect(EV.dailyVariancePct(annualizedVol: .infinity) == nil)  // non-finite guarded
+        #expect(EV.dailyVariancePct(annualizedVol: .nan) == nil)
+    }
+
     @Test func earningsPenaltyStacksBelowACostFailedPeerAndNeverResurrectsANilKey() {
         // BTC: imminent earnings (−2000) AND after-cost negative (−500k); ETH: cost-fail only; AAPL: clean.
         // The bands stack, so BTC sinks BELOW the cost-only-failed ETH, and both below the clean AAPL.
@@ -385,6 +404,58 @@ struct StockSageExpectedValueTests {
         let mixed = EV.fastLaneConcentration([c1, eq, c2])!
         #expect(!mixed.isConcentrated)
         #expect(EV.fastLaneConcentration([c1]) == nil)   // <2 fast-lane → nil
+    }
+
+    // MARK: - RANKING_BACKLOG #10: bestOpportunity prefers velocity, ties broken by conviction (opt-in)
+
+    @Test func bestOpportunityDefaultIsByteIdenticalWithoutPreferVelocity() {
+        // Regression: omitting `preferVelocity` (or passing it explicitly as false) must rank
+        // EXACTLY like before #10 — by qualityAdjustedEVR, not velocity. AAPL (slow, higher
+        // quality-adjusted EV) still beats SOL-USD (fast, lower quality-adjusted EV) by default,
+        // even though SOL-USD is verifiably the faster compounder.
+        let slow = idea("AAPL", conviction: 0.9, stop: 90, target: 130)     // evR 1.228, hold 12d (equity)
+        let fast = idea("SOL-USD", conviction: 0.9, stop: 90, target: 120)  // evR 0.671, hold 3d (crypto, faster)
+        #expect(EV.qualityAdjustedEVR(for: slow)! > EV.qualityAdjustedEVR(for: fast)!)
+        #expect(EV.velocity(for: fast)! > EV.velocity(for: slow)!)                      // fast really IS faster
+        #expect(EV.bestOpportunity([slow, fast])?.idea.symbol == "AAPL")                // no param → unchanged
+        #expect(EV.bestOpportunity([slow, fast], preferVelocity: false)?.idea.symbol == "AAPL")  // explicit false → identical
+    }
+
+    @Test func bestOpportunityPreferVelocityPicksTheFasterCompounder() {
+        // Same fixture as the regression test above: opting in flips the pick to the
+        // faster-compounding (higher EV/day) setup, even though its quality-adjusted EV is lower —
+        // matching the Fast Lane's own metric instead of the card's EV-only one.
+        let slow = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        let fast = idea("SOL-USD", conviction: 0.9, stop: 90, target: 120)
+        #expect(EV.bestOpportunity([slow, fast], preferVelocity: true)?.idea.symbol == "SOL-USD")
+    }
+
+    @Test func bestOpportunityPreferVelocityFallsBackToQualityAdjustedEVForNoVelocityIdeas() {
+        // FX has no asset-class velocity (expectedHoldDays is nil for it) — preferVelocity must
+        // fall back to qualityAdjustedEVR for it rather than excluding it or scoring it 0. Rigged
+        // so the DEFAULT picks the crypto idea (higher qualityAdjustedEVR) but preferVelocity
+        // flips to FX, because crypto is now ranked by its (lower) velocity while FX's fallback
+        // score is unchanged.
+        let crypto = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)  // evR 1.228, qAdj 1.15432, vel 0.40933
+        let fx = idea("GBPUSD=X", conviction: 0.9, stop: 90, target: 125)     // evR 0.9495, qAdj 0.89253, no velocity
+        #expect(EV.velocity(for: fx) == nil)
+        #expect(EV.qualityAdjustedEVR(for: crypto)! > EV.qualityAdjustedEVR(for: fx)!)
+        #expect(EV.bestOpportunity([crypto, fx])?.idea.symbol == "BTC-USD")                        // default: EV-based
+        #expect(EV.bestOpportunity([crypto, fx], preferVelocity: true)?.idea.symbol == "GBPUSD=X")  // opt-in: FX's fallback beats crypto's now-lower velocity rank
+    }
+
+    @Test func bestOpportunityPreferVelocityTieBreaksByConviction() {
+        // Two crypto buys engineered so raw velocity is a near-tie (|Δ| < 0.01, same 3d crypto
+        // hold) but conviction differs a lot. Without a conviction tie-break, LOW's marginally
+        // higher raw velocity (or mere array position) would win; WITH it, HIGH's conviction wins.
+        let low  = idea("LOWC-USD",  conviction: 0.40, stop: 90, target: 200)       // R:R 10:1,   p 0.442 → evR 3.862
+        let high = idea("HIGHC-USD", conviction: 1.00, stop: 90, target: 173.6207)  // R:R ~7.362:1, p 0.58 → evR ≈3.850
+        let vLow = EV.velocity(for: low)!, vHigh = EV.velocity(for: high)!
+        #expect(abs(vLow - vHigh) < 0.01)     // genuinely a near-tie
+        #expect(vLow > vHigh)                 // LOW's raw velocity is marginally (not tied-away) higher
+        #expect(EV.bestOpportunity([low, high], preferVelocity: true)?.idea.symbol == "HIGHC-USD")
+        // Order-independent — proves it's conviction-driven, not array-position luck.
+        #expect(EV.bestOpportunity([high, low], preferVelocity: true)?.idea.symbol == "HIGHC-USD")
     }
 
     // MARK: - RANKING_BACKLOG #4: liquidity gate

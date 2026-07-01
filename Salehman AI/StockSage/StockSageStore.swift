@@ -314,7 +314,9 @@ final class StockSageStore: ObservableObject {
             return
         }
         let cal = convictionCalibration                           // read on the main actor before the await hop
-        let built = await Self.buildIdeas(defs: universe, histories: histories, benchmark: benchmark, calibration: cal)
+        let journalTrades = StockSageJournalStore.shared.trades   // read on the main actor before the await hop
+        let built = await Self.buildIdeas(defs: universe, histories: histories, benchmark: benchmark,
+                                          calibration: cal, journalTrades: journalTrades)
         guard !Task.isCancelled else { return }
         // Re-reconcile vs the CURRENT tracked set (mirror refresh() at the liveFiltered step): a
         // removeSymbol() that landed DURING the await must win, else the pre-await `universe` snapshot
@@ -356,6 +358,7 @@ final class StockSageStore: ObservableObject {
         defer { isLoadingIdeas = false }
         ideasError = nil
         let cal = convictionCalibration                           // read on the main actor before the await hop
+        let journalTrades = StockSageJournalStore.shared.trades   // read on the main actor before the await hop
         let retrySet = Set(ideasMissing.map { $0.uppercased() })
         let defs = trackedDefs().filter { retrySet.contains($0.symbol.uppercased()) }
         async let benchmarkTask = StockSageQuoteService.fetchHistory("^GSPC", range: "1y")
@@ -365,7 +368,8 @@ final class StockSageStore: ObservableObject {
             ideasError = "Still couldn't reach those symbols — try again later."
             return
         }
-        let built = await Self.buildIdeas(defs: defs, histories: histories, benchmark: benchmark, calibration: cal)
+        let built = await Self.buildIdeas(defs: defs, histories: histories, benchmark: benchmark,
+                                          calibration: cal, journalTrades: journalTrades)
         let newSyms = Set(built.map { $0.symbol.uppercased() })
         // Re-reconcile vs the current tracked set (mirror refreshIdeas): a removeSymbol() during the
         // retry await must not resurrect the dropped ticker via the pre-await `defs`/`built`.
@@ -386,9 +390,15 @@ final class StockSageStore: ObservableObject {
     nonisolated static func buildIdeas(defs: [StockSageSymbol],
                                        histories: [String: StockSagePriceHistory],
                                        benchmark: StockSagePriceHistory? = nil,
-                                       calibration: StockSageConvictionCalibration? = nil) async -> [StockSageIdea] {
+                                       calibration: StockSageConvictionCalibration? = nil,
+                                       journalTrades: [TradeRecord] = []) async -> [StockSageIdea] {
         await Task.detached(priority: .userInitiated) {
             var out: [StockSageIdea] = []
+            // Sector rotation (HARDENING_BACKLOG #31, reframed flag-only): rank ONCE per
+            // buildIdeas call (not per-symbol) and reuse across the loop — same cost profile as
+            // `calibration`/`benchmark`. journalTrades defaults to [] so `analyze` returns [] and
+            // every per-symbol lookup below is a no-op — omitting it is byte-identical to today.
+            let sectorRotation = StockSageSectorRotation.analyze(allTrades: journalTrades)
             for sym in defs {
                 guard let history = histories[sym.symbol.uppercased()], let price = history.latestClose else { continue }
                 // An index LEVEL (^GSPC/^VIX) is not a buyable instrument — never surface it as a
@@ -432,6 +442,14 @@ final class StockSageStore: ObservableObject {
                 let volRegime = StockSageVolRegime.regime(closes: history.closes)
                 if let vr = volRegime, vr.sizingMultiplier < 0.95 {
                     extraNotes.append("⚠ " + vr.note)
+                }
+                // Sector-rotation confirmation (HARDENING_BACKLOG #31, reframed flag-only — see
+                // StockSageSectorRotation.swift header). Surfaced note ONLY: `advice.conviction`,
+                // `.suggestedWeight`, `.stopPrice`, `.targetPrice` are untouched below, exactly
+                // like the ReturnShape/VolStability blocks above.
+                if let rotation = sectorRotation.first(where: { $0.sector == StockSageSector.sector(sym.symbol) }),
+                   rotation.isRotatingIn {
+                    extraNotes.append("⚠ " + rotation.note)
                 }
                 if !extraNotes.isEmpty {
                     advice = TradeAdvice(action: advice.action, conviction: advice.conviction,
@@ -761,6 +779,33 @@ final class StockSageStore: ObservableObject {
             StockSageCorrelationPrecheck.assess(candidate: candReturns, holdings: holdReturns)
         }.value
         precheckFingerprint[up] = fingerprint
+    }
+
+    // Fast-lane cross-correlation (FASTMONEY_BACKLOG #7) — how much the crypto and equity fast-lane
+    // boards are ACTUALLY moving together right now. Mirrors refreshPrecheck's exact pattern:
+    // fingerprint-cached (recomputes only when the fast-lane's symbol SET changes), ToolPolicy-gated,
+    // pure StockSageExpectedValue.laneCorrelation over fetched histories (no new fetch code — reuses
+    // StockSageQuoteService.fetchHistories, the SAME call refreshPrecheck uses).
+    @Published private(set) var laneCorrelationValue: Double?
+    private var laneCorrelationFingerprint: String?
+
+    /// Fetch history for the CURRENT crypto+equity fast-lane symbols and compute their average
+    /// cross-group correlation. No-op if access is off or either side is empty (nothing to
+    /// correlate — clears the stale value so a picker toggle to a one-sided view can't show a
+    /// number from the OLD symbol set).
+    func refreshLaneCorrelation(holds: VelocityHoldDays = .defaults) async {
+        let split = StockSageExpectedValue.fastLaneByClass(ideas, holds: holds, calibration: convictionCalibration)
+        guard !split.crypto.isEmpty, !split.equity.isEmpty else {
+            laneCorrelationValue = nil; laneCorrelationFingerprint = nil; return
+        }
+        let symbols = (split.crypto + split.equity).map(\.symbol)
+        let fingerprint = symbols.sorted().joined(separator: ",")
+        guard laneCorrelationFingerprint != fingerprint else { return }
+        guard ToolPolicy.webToolsDisabledReason() == nil else { return }
+        let histories = await StockSageQuoteService.fetchHistories(for: symbols)
+        laneCorrelationValue = StockSageExpectedValue.laneCorrelation(
+            crypto: split.crypto, equity: split.equity, histories: histories.mapValues(\.closes))
+        laneCorrelationFingerprint = fingerprint
     }
 
     // Symbols whose latest quote had no real previousClose (a brand-new listing) — Yahoo's

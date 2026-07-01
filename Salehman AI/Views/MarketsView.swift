@@ -36,6 +36,13 @@ struct MarketsView: View {
     @AppStorage("velocityCryptoHoldDays") private var cryptoHoldDays = 3.0
     @AppStorage("velocityEquityHoldDays") private var equityHoldDays = 12.0
     private var velocityHolds: VelocityHoldDays { VelocityHoldDays(crypto: cryptoHoldDays, equity: equityHoldDays) }
+    /// FASTMONEY_BACKLOG #7 — which fast-lane board(s) to show. Defaults to Both (the new
+    /// split-board layout replaces the old single blended top-3 list, per the backlog's intent).
+    enum FastLaneBoard: String, CaseIterable, Identifiable {
+        case both = "Both", crypto = "Crypto", equities = "Equities"
+        var id: String { rawValue }
+    }
+    @AppStorage("marketsFastLaneBoard") private var fastLaneBoard: FastLaneBoard = .both
     @ObservedObject private var velocityHistory = StockSageVelocityHistoryStore.shared
 
     // Dynamic-Type-aware small fonts: each equals its base size at the default text
@@ -44,6 +51,9 @@ struct MarketsView: View {
     @ScaledMetric(relativeTo: .caption2) private var mvFont7: CGFloat = 7
     @ScaledMetric(relativeTo: .caption2) private var mvFont8: CGFloat = 8
     @ScaledMetric(relativeTo: .caption2) private var mvFont9: CGFloat = 9
+    @ScaledMetric(relativeTo: .caption2) private var mvFont10: CGFloat = 10
+    @ScaledMetric(relativeTo: .caption2) private var mvFont11: CGFloat = 11
+    @ScaledMetric(relativeTo: .caption2) private var mvFont13: CGFloat = 13
     @ObservedObject private var store = StockSageStore.shared
     @ObservedObject private var portfolio = StockSagePortfolio.shared
     @ObservedObject private var journal = StockSageJournalStore.shared
@@ -134,6 +144,13 @@ struct MarketsView: View {
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 8)
                         .animation(DS.Motion.lux.delay(0.07), value: appeared)
+                    // Always-visible best-move CTA (FASTMONEY_BACKLOG #3) — the single
+                    // highest-EV idea as a concrete, sizeable, copyable order ticket,
+                    // on EVERY section tab (unlike bestOpportunityCard, Ideas-tab only).
+                    bestOpportunityCTA
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 8)
+                        .animation(DS.Motion.lux.delay(0.075), value: appeared)
                     sectionPicker
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 8)
@@ -267,7 +284,7 @@ struct MarketsView: View {
                             else { Image(systemName: "speedometer").font(.system(size: 11, weight: .semibold)) }
                         }
                         Text(store.isLoadingRegime ? "Gauging…" : (store.regime == nil ? "Gauge" : "Refresh"))
-                            .font(.system(size: 11, weight: .semibold)).contentTransition(.opacity)
+                            .font(.system(size: mvFont11, weight: .semibold)).contentTransition(.opacity)
                     }
                     .foregroundStyle(.white).padding(.horizontal, 10).padding(.vertical, 5)
                     .background(DS.Palette.accent, in: Capsule())
@@ -363,7 +380,7 @@ struct MarketsView: View {
                     Eyebrow(text: "Signals & Portfolio")
                 }
                 Text(headerSubtitle)
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .font(.system(size: mvFont11)).foregroundStyle(.secondary)
                     .contentTransition(.opacity)
                     .animation(DS.Motion.smooth, value: headerSubtitle)
             }
@@ -605,7 +622,7 @@ struct MarketsView: View {
 
     private func priceAlertRow(_ a: PriceAlert) -> some View {
         HStack(spacing: 10) {
-            Text(a.symbol).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
+            Text(a.symbol).font(.system(size: mvFont13, weight: .bold, design: .rounded)).foregroundStyle(.white)
             Text("\(a.direction.symbol) \(a.target.formatted())").font(.caption).foregroundStyle(.secondary)
             Spacer()
             if a.triggeredAt != nil {
@@ -639,7 +656,7 @@ struct MarketsView: View {
             Text(s.reason).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             Spacer(minLength: 8)
             Text(s.recommendation.rawValue)
-                .font(.system(size: 11, weight: .bold)).foregroundStyle(recTextColor(s.recommendation))
+                .font(.system(size: mvFont11, weight: .bold)).foregroundStyle(recTextColor(s.recommendation))
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(recColor(s.recommendation), in: Capsule())
         }
@@ -841,17 +858,17 @@ struct MarketsView: View {
             }
             if !unpricedHoldings.isEmpty {
                 Text("\(unpricedHoldings.count) holding\(unpricedHoldings.count == 1 ? "" : "s") with no live price (\(unpricedHoldings.prefix(3).joined(separator: ", "))) — excluded; value/P&L is priced holdings only.")
-                    .font(.system(size: 9)).foregroundStyle(DS.Palette.warningSoft)
+                    .font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !untrackedFXCurrencies.isEmpty {
                 Text("Excludes \(untrackedFXCurrencies.joined(separator: ", ")) holdings — no FX rate to convert to USD (track \(untrackedFXCurrencies.first ?? "")USD=X). P&L uses today's FX, so it blends asset + currency moves.")
-                    .font(.system(size: 9)).foregroundStyle(DS.Palette.warningSoft)
+                    .font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !staleFXCurrencies.isEmpty {
                 Text("FX rate for \(staleFXCurrencies.joined(separator: ", ")) is over \(Int(Self.maxFXAgeSeconds / 3600))h old — those holdings convert to USD at a stale rate, so the total may be off.")
-                    .font(.system(size: 9)).foregroundStyle(DS.Palette.warningSoft)
+                    .font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -889,7 +906,7 @@ struct MarketsView: View {
     private func field(_ text: Binding<String>, _ placeholder: String, width: CGFloat, focus: AddField) -> some View {
         let active = focusedAddField == focus
         return TextField(placeholder, text: text)
-            .textFieldStyle(.plain).font(.system(size: 13))
+            .textFieldStyle(.plain).font(.system(size: mvFont13))
             .focused($focusedAddField, equals: focus)
             .padding(.horizontal, 8).padding(.vertical, 6).frame(width: width)
             .background(Color.white.opacity(active ? 0.11 : 0.09), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
@@ -1042,7 +1059,7 @@ struct MarketsView: View {
     private func parityRow(_ t: RiskParityTarget) -> some View {
         let up = t.deltaWeight >= 0
         return HStack(spacing: 10) {
-            Text(t.symbol).font(.system(size: 13, weight: .bold, design: .rounded))
+            Text(t.symbol).font(.system(size: mvFont13, weight: .bold, design: .rounded))
                 .foregroundStyle(.white).frame(width: 70, alignment: .leading).lineLimit(1)
             Text(String(format: "vol %.0f%%", t.volatility * 100)).font(.caption2).foregroundStyle(.secondary)
             Spacer(minLength: 8)
@@ -1050,7 +1067,7 @@ struct MarketsView: View {
                 .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
                 .contentTransition(.numericText())
             Text((up ? "+" : "") + String(format: "%.0f%%", t.deltaWeight * 100))
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: mvFont11, weight: .bold))
                 .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
                 .frame(width: 46, alignment: .trailing)
         }
@@ -1106,10 +1123,10 @@ struct MarketsView: View {
                 })
             if let cb = StockSageCurrency.breakdown(holdings: ccyHoldings, ratesToBase: fxRates, base: "USD"),
                cb.exposures.count > 1 || !cb.unpriced.isEmpty {
-                Text("Currency exposure (base USD)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                Text("Currency exposure (base USD)").font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.secondary)
                 ForEach(cb.exposures) { e in
                     HStack(spacing: DS.Space.sm) {
-                        Text(e.currency).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).frame(width: 46, alignment: .leading)
+                        Text(e.currency).font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white).frame(width: 46, alignment: .leading)
                         Text(String(format: "%.0f%%", e.weight * 100)).font(.caption2).foregroundStyle(.secondary)
                         Spacer()
                         Text(e.baseValue.formatted(.number.precision(.fractionLength(0)))).font(.caption2).foregroundStyle(.secondary)
@@ -1144,10 +1161,10 @@ struct MarketsView: View {
 
     private func allocationGroup(_ title: String, _ slices: [AllocationBreakdown.Slice]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+            Text(title).font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.secondary)
             ForEach(slices) { s in
                 HStack(spacing: DS.Space.sm) {
-                    Text(s.label).font(.system(size: 11)).foregroundStyle(.white)
+                    Text(s.label).font(.system(size: mvFont11)).foregroundStyle(.white)
                         .frame(width: 92, alignment: .leading).lineLimit(1)
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
@@ -1254,7 +1271,7 @@ struct MarketsView: View {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(csv, forType: .string)
                     } label: {
-                        Text("Copy CSV").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                        Text("Copy CSV").font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                     .help("Copy the whole journal as CSV (Excel / Sheets / Python-ready)")
@@ -1262,7 +1279,7 @@ struct MarketsView: View {
                 Button { withAnimation(.easeOut(duration: 0.15)) { showAddTrade.toggle() } } label: {
                     HStack(spacing: 5) {
                         Image(systemName: showAddTrade ? "xmark" : "plus").font(.system(size: 10, weight: .bold))
-                        Text(showAddTrade ? "Close" : "Log trade").font(.system(size: 11, weight: .semibold))
+                        Text(showAddTrade ? "Close" : "Log trade").font(.system(size: mvFont11, weight: .semibold))
                     }
                     .foregroundStyle(.white).padding(.horizontal, 11).padding(.vertical, 6)
                     .background(DS.Palette.accent, in: Capsule())
@@ -1274,7 +1291,7 @@ struct MarketsView: View {
             if let health = journal.systemHealth {
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: healthIcon(health.verdict)).font(.system(size: 11)).foregroundStyle(healthColor(health.verdict))
-                    Text(health.verdict.rawValue).font(.system(size: 11, weight: .bold)).foregroundStyle(healthColor(health.verdict))
+                    Text(health.verdict.rawValue).font(.system(size: mvFont11, weight: .bold)).foregroundStyle(healthColor(health.verdict))
                     Text(health.reason).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1386,7 +1403,7 @@ struct MarketsView: View {
                         Text(comp.isRuined
                              ? String(format: "Wiped out at %.0f%%/trade — the account hit ruin on this or an earlier trade.", comp.fraction * 100)
                              : String(format: "Compounded to ×%.2f at %.0f%%/trade", comp.finalMultiple, comp.fraction * 100))
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: mvFont11, weight: .semibold))
                             .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
                         Sparkline(values: comp.multiples)
                             .stroke(up ? DS.Palette.successSoft : DS.Palette.danger,
@@ -1413,7 +1430,7 @@ struct MarketsView: View {
                 if let dist = journal.rDistribution, dist.total >= 3 {
                     let maxC = max(dist.bins.map(\.count).max() ?? 1, 1)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("R-multiple distribution").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                        Text("R-multiple distribution").font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white)
                         HStack(alignment: .bottom, spacing: DS.Space.sm) {
                             ForEach(dist.bins.indices, id: \.self) { i in
                                 let bin = dist.bins[i]
@@ -1433,13 +1450,13 @@ struct MarketsView: View {
                 }
                 let months = journal.monthlyPnL
                 if months.count >= 2 {
-                    Text("By month").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                    Text("By month").font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white)
                     ForEach(months.prefix(6)) { mo in
                         HStack(spacing: DS.Space.sm) {
-                            Text(mo.month).font(.system(size: 11)).foregroundStyle(.white).frame(width: 72, alignment: .leading)
+                            Text(mo.month).font(.system(size: mvFont11)).foregroundStyle(.white).frame(width: 72, alignment: .leading)
                             Text("\(mo.trades) tr").font(.caption2).foregroundStyle(.secondary)
                             Spacer()
-                            Text(String(format: "%+.2fR", mo.totalR)).font(.system(size: 11, weight: .semibold))
+                            Text(String(format: "%+.2fR", mo.totalR)).font(.system(size: mvFont11, weight: .semibold))
                                 .foregroundStyle(mo.totalR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                                 .frame(width: 60, alignment: .trailing)
                         }
@@ -1448,13 +1465,13 @@ struct MarketsView: View {
                 let years = journal.yearlyPnL
                 if !years.isEmpty {
                     Text("By year (realized — record-keeping, not tax advice)")
-                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                        .font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.secondary)
                     ForEach(years) { yr in
                         HStack(spacing: DS.Space.sm) {
-                            Text(yr.year).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).frame(width: 48, alignment: .leading)
+                            Text(yr.year).font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white).frame(width: 48, alignment: .leading)
                             Text("\(yr.trades) tr · \(Int(yr.winRate * 100))% win").font(.caption2).foregroundStyle(.secondary)
                             Spacer()
-                            Text(yr.realizedDollars.formatted(.number.precision(.fractionLength(0)).sign(strategy: .always()))).font(.system(size: 11, weight: .semibold))
+                            Text(yr.realizedDollars.formatted(.number.precision(.fractionLength(0)).sign(strategy: .always()))).font(.system(size: mvFont11, weight: .semibold))
                                 .foregroundStyle(yr.realizedDollars >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                             Text(String(format: "%+.1fR", yr.totalR)).font(.caption2).foregroundStyle(.secondary)
                                 .frame(width: 56, alignment: .trailing)
@@ -1463,17 +1480,17 @@ struct MarketsView: View {
                 }
                 let sides = journal.sideStats
                 if sides.count == 2 {
-                    Text("By side").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                    Text("By side").font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white)
                     ForEach(sides) { s in
                         let rel = StockSageJournal.reliability(s)
                         HStack(spacing: DS.Space.sm) {
-                            Text(s.side.rawValue).font(.system(size: 11)).foregroundStyle(.white).frame(width: 60, alignment: .leading)
+                            Text(s.side.rawValue).font(.system(size: mvFont11)).foregroundStyle(.white).frame(width: 60, alignment: .leading)
                             Text(rel.isReliable
                                  ? "\(s.trades) tr · \(Int(s.winRate * 100))% win · \(String(format: "%+.2f", s.avgR))R avg"
                                  : "\(s.trades) tr · \(rel.tooFewLabel)")
                                 .font(.caption2).foregroundStyle(rel.isReliable ? Color.secondary : DS.Palette.warningSoft)
                             Spacer()
-                            Text(String(format: "%+.2fR", s.totalR)).font(.system(size: 11, weight: .semibold))
+                            Text(String(format: "%+.2fR", s.totalR)).font(.system(size: mvFont11, weight: .semibold))
                                 .foregroundStyle(s.totalR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                                 .frame(width: 60, alignment: .trailing)
                         }
@@ -1481,17 +1498,17 @@ struct MarketsView: View {
                 }
                 let sectors = journal.sectorPnL
                 if sectors.count >= 2 {
-                    Text("By sector").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                    Text("By sector").font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white)
                     ForEach(sectors) { sec in
                         let rel = StockSageJournal.reliability(sec)
                         HStack(spacing: DS.Space.sm) {
-                            Text(sec.sector).font(.system(size: 11)).foregroundStyle(.white)
+                            Text(sec.sector).font(.system(size: mvFont11)).foregroundStyle(.white)
                                 .frame(width: 96, alignment: .leading).lineLimit(1)
                             Text(rel.isReliable ? "\(sec.trades) tr · \(Int(sec.winRate * 100))% win"
                                                 : "\(sec.trades) tr · \(rel.tooFewLabel)")
                                 .font(.caption2).foregroundStyle(rel.isReliable ? Color.secondary : DS.Palette.warningSoft)
                             Spacer()
-                            Text(String(format: "%+.2fR", sec.totalR)).font(.system(size: 11, weight: .semibold))
+                            Text(String(format: "%+.2fR", sec.totalR)).font(.system(size: mvFont11, weight: .semibold))
                                 .foregroundStyle(sec.totalR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                                 .frame(width: 60, alignment: .trailing)
                         }
@@ -1499,7 +1516,7 @@ struct MarketsView: View {
                 }
                 if sides.count == 2 || sectors.count >= 2 {
                     Text(StockSageJournal.attributionCaveat)
-                        .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
 
@@ -1528,7 +1545,7 @@ struct MarketsView: View {
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("Portfolio heat: \(Int(heat.heatPct * 100)) percent of account at open risk across \(heat.openCount) trades")
                     }
-                    Text("Open").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                    Text("Open").font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.secondary)
                     // Live "act now": OPEN trades that have crossed their stop or target need action
                     // while the owner is away — the only surface that acts on a position in real time.
                     let urgentActs = StockSageJournal.openActions(journal.open, mark: { currentPrice($0) })
@@ -1543,7 +1560,7 @@ struct MarketsView: View {
                     ForEach(journal.open) { journalOpenRow($0) }
                 }
                 if !journal.closed.isEmpty {
-                    Text("Closed").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                    Text("Closed").font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.secondary)
                     ForEach(journal.closed) { journalClosedRow($0) }
                 }
             }
@@ -1598,10 +1615,10 @@ struct MarketsView: View {
                     Spacer()
                 }
                 if let reason = state.haltReason {
-                    Text(reason).font(.system(size: 11, weight: .semibold))
+                    Text(reason).font(.system(size: mvFont11, weight: .semibold))
                         .foregroundStyle(.white).fixedSize(horizontal: false, vertical: true)
                 }
-                Text(state.caveat).font(.system(size: 9))
+                Text(state.caveat).font(.system(size: mvFont9))
                     .foregroundStyle(.white.opacity(0.82)).fixedSize(horizontal: false, vertical: true)
             }
             .padding(DS.Space.sm).frame(maxWidth: .infinity, alignment: .leading)
@@ -1638,7 +1655,7 @@ struct MarketsView: View {
             journalField("Note (optional)", text: $draftNote, width: 280)
             HStack(spacing: 10) {
                 Button { saveDraftTrade() } label: {
-                    Text("Save").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                    Text("Save").font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white)
                         .padding(.horizontal, 14).padding(.vertical, 6).background(DS.Palette.accent, in: Capsule())
                 }.buttonStyle(LuxPressStyle()).disabled(!draftIsValid)
                 if !draftIsValid {
@@ -1728,13 +1745,13 @@ struct MarketsView: View {
         if let act { a11y += ", \(act.kind.rawValue): \(act.detail)" }
         return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: DS.Space.sm) {
-                Text(trade.symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).frame(width: 64, alignment: .leading).lineLimit(1)
+                Text(trade.symbol).font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white).frame(width: 64, alignment: .leading).lineLimit(1)
                 Text(trade.side.rawValue).font(.system(size: mvFont9, weight: .semibold))
                     .foregroundStyle(trade.side == .long ? DS.Palette.successSoft : DS.Palette.danger)
                 Text("@ \(adaptivePrice(trade.entry))").font(.caption2).foregroundStyle(.secondary)
                 Spacer()
                 if let pnl, let r {
-                    Text(String(format: "%+.2f", pnl)).font(.system(size: 11, weight: .semibold))
+                    Text(String(format: "%+.2f", pnl)).font(.system(size: mvFont11, weight: .semibold))
                         .foregroundStyle(pnl >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                     Text(String(format: "%+.2fR", r)).font(.caption2).foregroundStyle(.secondary).frame(width: 48, alignment: .trailing)
                 } else {
@@ -1744,7 +1761,7 @@ struct MarketsView: View {
                     closeExitText = mark.map { String(format: "%.2f", $0) } ?? ""
                     withAnimation(.easeOut(duration: 0.12)) { closingTradeID = (closingTradeID == trade.id) ? nil : trade.id }
                 } label: {
-                    Text(closingTradeID == trade.id ? "Cancel" : "Close").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                    Text(closingTradeID == trade.id ? "Cancel" : "Close").font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.secondary)
                 }.buttonStyle(.plain)
                 .accessibilityLabel(closingTradeID == trade.id ? "Cancel closing \(trade.symbol)" : "Close \(trade.symbol) position")
             }
@@ -1771,7 +1788,7 @@ struct MarketsView: View {
                     Button {
                         if let exit = StockSageInput.positiveAmount(closeExitText) { journal.close(trade.id, exitPrice: exit); closingTradeID = nil }
                     } label: {
-                        Text("Confirm close").font(.system(size: 10, weight: .semibold)).foregroundStyle(.white)
+                        Text("Confirm close").font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.white)
                             .padding(.horizontal, 10).padding(.vertical, 5).background(DS.Palette.danger, in: Capsule())
                     }.buttonStyle(LuxPressStyle()).disabled(StockSageInput.positiveAmount(closeExitText) == nil)
                     Spacer(minLength: 0)
@@ -1797,10 +1814,10 @@ struct MarketsView: View {
     private func journalClosedRow(_ trade: TradeRecord) -> some View {
         let pnl = trade.realizedProfit ?? 0
         return HStack(spacing: DS.Space.sm) {
-            Text(trade.symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.85)).frame(width: 64, alignment: .leading).lineLimit(1)
+            Text(trade.symbol).font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white.opacity(0.85)).frame(width: 64, alignment: .leading).lineLimit(1)
             Text(String(format: "%.2f→%.2f", trade.entry, trade.exitPrice ?? 0)).font(.caption2).foregroundStyle(.secondary)
             Spacer()
-            Text(String(format: "%+.2f", pnl)).font(.system(size: 11, weight: .semibold))
+            Text(String(format: "%+.2f", pnl)).font(.system(size: mvFont11, weight: .semibold))
                 .foregroundStyle(pnl >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
             if let r = trade.realizedR {
                 Text(String(format: "%+.2fR", r)).font(.caption2).foregroundStyle(.secondary).frame(width: 48, alignment: .trailing)
@@ -1854,7 +1871,7 @@ struct MarketsView: View {
                     HStack(spacing: 5) {
                         Image(systemName: "arrow.down.doc.fill").font(.system(size: 10, weight: .semibold))
                         Text("Use \(store.backtestSymbol ?? "symbol") backtest (\(bt.trades) trades)")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: mvFont10, weight: .semibold))
                     }
                     .foregroundStyle(DS.Palette.accent)
                 }
@@ -1868,7 +1885,7 @@ struct MarketsView: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "book.closed.fill").font(.system(size: 10, weight: .semibold))
-                        Text("Use my journal (\(ji.n) trades)").font(.system(size: 10, weight: .semibold))
+                        Text("Use my journal (\(ji.n) trades)").font(.system(size: mvFont10, weight: .semibold))
                     }
                     .foregroundStyle(DS.Palette.accent)
                 }
@@ -1903,7 +1920,7 @@ struct MarketsView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(.secondary)
             TextField("", text: text)
-                .textFieldStyle(.plain).font(.system(size: 13)).frame(width: width)
+                .textFieldStyle(.plain).font(.system(size: mvFont13)).frame(width: width)
                 .padding(.horizontal, 8).padding(.vertical, 5)
                 .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
@@ -2011,10 +2028,10 @@ struct MarketsView: View {
                         let isNew = store.newListings.contains(sym.symbol.uppercased())
                         VStack(spacing: 3) {
                             Text(sym.symbol)
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .font(.system(size: mvFont13, weight: .bold, design: .rounded))
                                 .foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.7)
                             Text(isNew ? "N/A (new)" : String(format: "%+.1f%%", change))
-                                .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.92))
+                                .font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white.opacity(0.92))
                                 .contentTransition(.numericText())
                                 .animation(DS.Motion.smooth, value: change)
                         }
@@ -2107,7 +2124,7 @@ struct MarketsView: View {
             HStack(spacing: DS.Space.sm) {
                 Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
                 TextField("Track any ticker — AAPL · 2222.SR · BTC-USD · EURUSD=X", text: $newWatchSymbol)
-                    .textFieldStyle(.plain).font(.system(size: 13))
+                    .textFieldStyle(.plain).font(.system(size: mvFont13))
                     .onSubmit { Task { await addWatchSymbol() } }
                     .accessibilityLabel("Ticker to add to watchlist")
                 if store.isAddingSymbol {
@@ -2166,7 +2183,7 @@ struct MarketsView: View {
             }
             Button { showBrowseMarkets = true } label: {
                 Label("Browse all \(StockSageUniverse.catalog.count) markets", systemImage: "square.grid.2x2")
-                    .font(.system(size: 11, weight: .medium)).foregroundStyle(DS.Palette.accent)
+                    .font(.system(size: mvFont11, weight: .medium)).foregroundStyle(DS.Palette.accent)
             }
             .buttonStyle(.plain)
             .help("Browse the full searchable directory by region & asset class; tap + to track any (fetches one quote).")
@@ -2223,7 +2240,7 @@ struct MarketsView: View {
             if let signal {
                 VStack(alignment: .trailing, spacing: 3) {
                     Text(signal.recommendation.rawValue)
-                        .font(.system(size: 11, weight: .bold)).foregroundStyle(recTextColor(signal.recommendation))
+                        .font(.system(size: mvFont11, weight: .bold)).foregroundStyle(recTextColor(signal.recommendation))
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(recColor(signal.recommendation), in: Capsule())
                     // "Strength %" only makes sense for an actual buy/sell signal —
@@ -2365,6 +2382,7 @@ struct MarketsView: View {
             bestOpportunityCard
             capitalAllocationCard
             fastLaneStrip
+            todaysActionsCard
             alertsPanel
             strategyBacktestPanel
             backtestPanel
@@ -2384,7 +2402,7 @@ struct MarketsView: View {
                         }
                     } label: {
                         Label("Sort: \(ideaSort.rawValue)", systemImage: "arrow.up.arrow.down")
-                            .font(.system(size: 10)).foregroundStyle(DS.Palette.accent)
+                            .font(.system(size: mvFont10)).foregroundStyle(DS.Palette.accent)
                     }
                     .menuStyle(.borderlessButton).fixedSize()
                     .accessibilityLabel("Sort ideas")
@@ -2394,7 +2412,7 @@ struct MarketsView: View {
                         }
                     } label: {
                         Label(ideaFilter == .all ? "Filter" : ideaFilter.rawValue, systemImage: "line.3.horizontal.decrease.circle")
-                            .font(.system(size: 10)).foregroundStyle(ideaFilter == .all ? .secondary : DS.Palette.accent)
+                            .font(.system(size: mvFont10)).foregroundStyle(ideaFilter == .all ? .secondary : DS.Palette.accent)
                     }
                     .menuStyle(.borderlessButton).fixedSize()
                     .accessibilityLabel("Filter ideas by action")
@@ -2407,13 +2425,13 @@ struct MarketsView: View {
                         }
                     } label: {
                         Label(ideaMinConv == 0 ? "Conviction" : "≥ \(Int(ideaMinConv * 100))%", systemImage: "speedometer")
-                            .font(.system(size: 10)).foregroundStyle(ideaMinConv == 0 ? .secondary : DS.Palette.accent)
+                            .font(.system(size: mvFont10)).foregroundStyle(ideaMinConv == 0 ? .secondary : DS.Palette.accent)
                     }
                     .menuStyle(.borderlessButton).fixedSize()
                     .accessibilityLabel("Minimum conviction filter")
                     HStack(spacing: DS.Space.xs) {
                         Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(.secondary)
-                        TextField("Search", text: $ideaSearch).textFieldStyle(.plain).font(.system(size: 11))
+                        TextField("Search", text: $ideaSearch).textFieldStyle(.plain).font(.system(size: mvFont11))
                             .frame(width: 84)
                         if !ideaSearch.isEmpty {
                             Button { ideaSearch = "" } label: {
@@ -2466,8 +2484,8 @@ struct MarketsView: View {
     private func summaryChip(_ value: String, _ label: String, _ valueColor: Color = .white,
                              action: (() -> Void)? = nil) -> some View {
         let chip = HStack(spacing: DS.Space.xs) {
-            Text(value).font(.system(size: 11, weight: .bold)).foregroundStyle(valueColor)
-            Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
+            Text(value).font(.system(size: mvFont11, weight: .bold)).foregroundStyle(valueColor)
+            Text(label).font(.system(size: mvFont10)).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background(.white.opacity(0.05), in: Capsule())
@@ -2531,11 +2549,11 @@ struct MarketsView: View {
                     // backtested outcomes or an assumed linear prior — right where they're read.
                     if let cal = store.convictionCalibration {
                         Label("EV win-rates measured from \(cal.sampleSize) realized trades (your journal, else the backtest)", systemImage: "checkmark.seal.fill")
-                            .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
+                            .font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
                             .help("Conviction→win-probability is calibrated from realized backtest outcomes (conservative, monotonic).")
                     } else {
                         Label("EV win-rates are an assumed estimate — run the Strategy backtest to calibrate", systemImage: "exclamationmark.triangle.fill")
-                            .font(.system(size: 10, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
+                            .font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
                             .help("Until a backtest runs, EV uses a cautious hand-set win-prob band (35–58%), not measured rates.")
                     }
                 }
@@ -2549,9 +2567,9 @@ struct MarketsView: View {
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: ideasCopied ? "checkmark" : "doc.on.clipboard")
-                                .font(.system(size: 10, weight: .semibold)).contentTransition(.symbolEffect(.replace))
+                                .font(.system(size: mvFont10, weight: .semibold)).contentTransition(.symbolEffect(.replace))
                             Text(ideasCopied ? "Copied" : "Copy CSV")
-                                .font(.system(size: 11, weight: .semibold)).contentTransition(.opacity)
+                                .font(.system(size: mvFont11, weight: .semibold)).contentTransition(.opacity)
                         }
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10).padding(.vertical, 6)
@@ -2565,9 +2583,9 @@ struct MarketsView: View {
                     Button { store.cancelIdeasRefresh() } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "xmark")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.system(size: mvFont10, weight: .semibold))
                             Text("Cancel")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.system(size: mvFont11, weight: .semibold))
                         }
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10).padding(.vertical, 6)
@@ -2654,12 +2672,12 @@ struct MarketsView: View {
                 }
                 Spacer()
                 Text(a.action.rawValue)
-                    .font(.system(size: 11, weight: .bold)).foregroundStyle(actionTextColor(a.action))
+                    .font(.system(size: mvFont11, weight: .bold)).foregroundStyle(actionTextColor(a.action))
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(actionColor(a.action), in: Capsule())
                 if let ev = StockSageExpectedValue.ev(for: idea, calibration: store.convictionCalibration) {
                     Text(String(format: "%+.2fR EV", ev.evR))
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: mvFont10, weight: .bold))
                         .foregroundStyle(ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft)
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background((ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft).opacity(0.14), in: Capsule())
@@ -2667,7 +2685,7 @@ struct MarketsView: View {
                 }
                 if !earnFlag.badge.isEmpty {
                     Text(earnFlag.badge)
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: mvFont10, weight: .bold))
                         .foregroundStyle(earnFlag.isDemoted ? DS.Palette.warningSoft : .secondary)
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background((earnFlag.isDemoted ? DS.Palette.warningSoft : DS.Palette.surfaceStroke).opacity(0.14), in: Capsule())
@@ -2675,7 +2693,7 @@ struct MarketsView: View {
                 }
                 if floorFlag.isDeranked {
                     Text("↓ floor")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: mvFont10, weight: .bold))
                         .foregroundStyle(DS.Palette.warningSoft)
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background(DS.Palette.warningSoft.opacity(0.14), in: Capsule())
@@ -2851,9 +2869,9 @@ struct MarketsView: View {
                 ForEach(Array(store.alerts.prefix(12).enumerated()), id: \.offset) { _, alert in
                     HStack(spacing: DS.Space.sm) {
                         Image(systemName: alertIcon(alert.kind))
-                            .font(.system(size: 11)).foregroundStyle(alert.isWarning ? DS.Palette.danger : DS.Palette.successSoft)
+                            .font(.system(size: mvFont11)).foregroundStyle(alert.isWarning ? DS.Palette.danger : DS.Palette.successSoft)
                             .frame(width: 14)
-                        Text(alert.symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                        Text(alert.symbol).font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white)
                             .frame(width: 64, alignment: .leading).lineLimit(1)
                         Text(alert.kind.rawValue).font(.caption2)
                             .foregroundStyle(alert.isWarning ? DS.Palette.danger : DS.Palette.successSoft)
@@ -2863,7 +2881,7 @@ struct MarketsView: View {
                     }
                 }
                 Button { store.clearAlerts() } label: {
-                    Text("Clear").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                    Text("Clear").font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.secondary)
                 }.buttonStyle(.plain)
             }
         }
@@ -2909,7 +2927,7 @@ struct MarketsView: View {
                         Text("Best opportunity now").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
                         Spacer()
                         calibrationChip   // is the green Est. EV / Win est. below measured or assumed?
-                        Text(idea.advice.action.rawValue).font(.system(size: 10, weight: .bold))
+                        Text(idea.advice.action.rawValue).font(.system(size: mvFont10, weight: .bold))
                             .foregroundStyle(actionTextColor(idea.advice.action))
                             .padding(.horizontal, 7).padding(.vertical, 2).background(actionColor(idea.advice.action), in: Capsule())
                     }
@@ -3006,7 +3024,7 @@ struct MarketsView: View {
                     }
                     ForEach(plan.positions) { p in
                         HStack(spacing: 12) {
-                            Text(p.symbol).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                            Text(p.symbol).font(.system(size: mvFont13, weight: .bold, design: .rounded)).foregroundStyle(.white)
                                 .frame(width: 64, alignment: .leading)
                             ideaMetric("Risk", String(format: "%.2f%%", p.riskFraction * 100))
                             ideaMetric("Shares", "\(p.shares)")
@@ -3052,11 +3070,11 @@ struct MarketsView: View {
     @ViewBuilder private var calibrationChip: some View {
         if let cal = store.convictionCalibration {
             Label("measured · n=\(cal.sampleSize)", systemImage: "checkmark.seal.fill")
-                .font(.system(size: 9, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
+                .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
                 .help("EV win-rates calibrated from \(cal.sampleSize) realized trades — your journal when it has enough, else the backtest (conservative, monotonic).")
         } else {
             Label("assumed", systemImage: "exclamationmark.triangle.fill")
-                .font(.system(size: 9, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
+                .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
                 .help("EV win-rates use a cautious hand-set band (35–58%), not measured rates — run the Strategy backtest to calibrate.")
         }
     }
@@ -3074,7 +3092,7 @@ struct MarketsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         Image(systemName: "bolt.fill").font(.system(size: 12)).foregroundStyle(DS.Palette.accent)
-                        Text("Money velocity — fastest moves now").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                        Text("Money velocity — fastest moves now").font(.system(size: mvFont11, weight: .bold)).foregroundStyle(.white)
                         Spacer()
                         calibrationChip   // measured (n) vs assumed — qualifies the EV/$ numbers below
                     }
@@ -3141,13 +3159,13 @@ struct MarketsView: View {
                     }
                     if let ddPct = s.worstRunDrawdownPct, let losses = s.worstRunLosses {
                         Text(String(format: "⚠︎ Brake — your worst run (%d) at %d%%/trade ≈ −%.1f%% to the account. %@", losses, Int((s.riskFraction * 100).rounded()), ddPct * 100, MoneyVelocityCopy.drawdownBrake))
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: mvFont10, weight: .semibold))
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                             .accessibilityLabel(String(format: "Risk warning: worst losing run %d trades at %d percent risk is about %.1f percent drawdown. Size to survive variance.", losses, Int((s.riskFraction * 100).rounded()), ddPct * 100))
                     }
                     if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), conc.isConcentrated {
                         Text("⚠︎ Fast lane is concentrated — your top \(conc.total) fastest are all \(conc.dominantClass); that's closer to one bet, not \(conc.total). Diversify or size them as one.")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: mvFont10, weight: .semibold))
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                             .accessibilityLabel("Velocity warning: the fastest \(conc.total) ideas are all \(conc.dominantClass) — concentration risk; size them as one bet")
                     }
@@ -3187,6 +3205,62 @@ struct MarketsView: View {
         }
     }
 
+    /// Always-visible best-move action CTA. Reuses the SAME `bestOpportunity` call
+    /// `moneyVelocityCard`'s tap target already makes (no new fetch), `StockSagePositionSizer`
+    /// for the size line, and `StockSageTodayPlan.build` for the copy action — identical to
+    /// `bestOpportunityCard`, just rendered globally instead of only inside the Ideas tab.
+    /// Renders nothing without a positive-EV buy idea (bestOpportunity's own `e.evR > 0`
+    /// guard) — never manufactures a move. Crypto (`-USD` suffix, the SAME predicate
+    /// `fastLaneStrip` already uses) gets the warning tint + an honest 24h-range variance
+    /// line from the idea's ALREADY-STORED `realizedVol` — no new volatility computation.
+    @ViewBuilder private var bestOpportunityCTA: some View {
+        if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration) {
+            let idea = best.idea, ev = best.ev
+            let isCrypto = idea.symbol.hasSuffix("-USD")
+            let variance: Double? = isCrypto ? StockSageExpectedValue.dailyVariancePct(annualizedVol: idea.realizedVol) : nil
+            let sizeInfo: (text: String, isWarning: Bool) = {
+                if let stop = idea.advice.stopPrice, let acct = Double(sizerAccount), acct > 0,
+                   let rp = Double(sizerRiskPct), rp > 0,
+                   let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
+                    return (StockSagePositionSizer.summaryLine(ps, riskPct: rp), ps.pctOfAccount > 100)
+                }
+                return ("Set account to size — add one in the position sizer below.", false)
+            }()
+            let accessibilityText: String = {
+                var s = "Do this now: \(idea.symbol), \(idea.advice.action.rawValue), estimated EV \(String(format: "%.2f", ev.evR)) R, entry \(adaptivePrice(idea.price))"
+                if let stop = idea.advice.stopPrice { s += ", stop \(adaptivePrice(stop))" }
+                if let variance { s += String(format: ", typical 24-hour range plus or minus %.1f percent", variance) }
+                return s
+            }()
+            BestOpportunityActionCard(
+                symbol: idea.symbol,
+                actionLabel: idea.advice.action.rawValue,
+                actionColor: actionColor(idea.advice.action),
+                actionTextColor: actionTextColor(idea.advice.action),
+                isCrypto: isCrypto,
+                entryText: "Entry ~\(adaptivePrice(idea.price))",
+                stopText: idea.advice.stopPrice.map { "stop \(adaptivePrice($0))" },
+                sizeText: sizeInfo.text,
+                sizeIsWarning: sizeInfo.isWarning,
+                evText: String(format: "EV %+.2fR", ev.evR),
+                caveatText: MoneyVelocityCopy.bestOpportunity,
+                varianceText: variance.map { String(format: "Typical 24h range ±%.1f%% — size down for 24/7.", $0) },
+                accessibilityText: accessibilityText,
+                onTap: { selectedIdea = idea },
+                onCopy: {
+                    let plan = StockSageTodayPlan.build(
+                        idea: idea, ev: ev,
+                        account: Double(sizerAccount),
+                        riskFraction: Double(sizerRiskPct).map { $0 / 100 },
+                        daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
+                        isSample: store.isSampleData)
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(plan, forType: .string)
+                },
+                mvFont9: mvFont9)
+        }
+    }
+
     private func summaryStat(_ label: String, _ value: String, _ sub: String,
                              subColor: Color = DS.Palette.successSoft) -> some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -3196,44 +3270,53 @@ struct MarketsView: View {
         }
     }
 
-    // Fast lane — the highest-turnover positive-EV setups (fastest compounding).
+    // Fast lane — the highest-turnover positive-EV setups, split into a crypto (24/7, ~3d hold)
+    // board and an equity (9:30–4, ~12d hold) board, since blending them hides that the two run
+    // on entirely different clocks (FASTMONEY_BACKLOG #7).
     @ViewBuilder private var fastLaneStrip: some View {
         let lane = StockSageExpectedValue.fastLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration)
         if lane.count >= 2 {
+            let split = StockSageExpectedValue.fastLaneByClass(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Image(systemName: "hare.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.accent)
-                    Text("Fast lane — fastest compounding").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                    Text("Fast lane — fastest compounding").font(.system(size: mvFont11, weight: .bold)).foregroundStyle(.white)
                     Spacer()
+                    Picker("", selection: $fastLaneBoard) {
+                        ForEach(FastLaneBoard.allCases) { b in Text(b.rawValue).tag(b) }
+                    }.labelsHidden().pickerStyle(.segmented).frame(width: 170)
+                    .accessibilityLabel("Fast-lane board filter")
                 }
                 // Why the order can differ from raw EV/day: it's ranked by growth RATE.
                 Text("Ranked by growth rate (log-growth at ½-Kelly) — a steady compounder can out-rank a higher-EV/day but higher-variance lottery setup.")
-                    .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                ForEach(lane.prefix(3), id: \.id) { idea in
-                    if let v = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
-                        let floorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
-                        let earnFlag  = StockSageExpectedValue.earningsRankFlag(for: idea, earnings: store.earnings)
-                        Button { selectedIdea = idea } label: {
-                            HStack(spacing: DS.Space.sm) {
-                                Text(idea.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
-                                    .frame(width: 84, alignment: .leading)
-                                Text(String(format: "%+.3fR/day", v)).font(.system(size: 11, design: .monospaced))
-                                    .foregroundStyle(DS.Palette.successSoft)
-                                if idea.symbol.hasSuffix("-USD") {
-                                    Text("24/7 · volatile").font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft)
-                                }
-                                if !earnFlag.badge.isEmpty {
-                                    Text(earnFlag.badge).font(.system(size: mvFont8))
-                                        .foregroundStyle(earnFlag.isDemoted ? DS.Palette.warningSoft : .secondary)
-                                }
-                                if floorFlag.isDeranked {
-                                    Text("below net-cost floor").font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft)
-                                }
-                                Spacer(minLength: 0)
-                                Image(systemName: "chevron.right").font(.system(size: mvFont8)).foregroundStyle(.secondary)
-                            }.contentShape(Rectangle())
-                        }.buttonStyle(LuxPressStyle())
-                        .accessibilityLabel("\(idea.symbol): \(String(format: "%+.3f", v)) R per day velocity\(idea.symbol.hasSuffix("-USD") ? ", 24/7 volatile" : "")\(!earnFlag.badge.isEmpty ? ", \(earnFlag.badge)" : "")\(floorFlag.isDeranked ? ", below net-cost floor" : ""). Tap for the plan.")
+                    .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+
+                if fastLaneBoard != .equities {
+                    fastLaneBoardSection(title: "Crypto fast lane (~\(Int(cryptoHoldDays))d, 24/7)", ideas: split.crypto)
+                }
+                if fastLaneBoard != .crypto {
+                    fastLaneBoardSection(title: "Equity swing lane (~\(Int(equityHoldDays))d)", ideas: split.equity)
+                }
+
+                if !split.crypto.isEmpty, !split.equity.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.left.and.right").font(.system(size: mvFont9)).foregroundStyle(.secondary)
+                        if let c = store.laneCorrelationValue {
+                            Text(String(format: "Correlation now: %.2f (%@)", c,
+                                        c >= 0.5 ? "moving together — poor hedge" : (c <= -0.2 ? "genuinely offsetting" : "loosely related")))
+                                .font(.system(size: mvFont9, weight: .medium))
+                                .foregroundStyle(c >= 0.5 ? DS.Palette.warningSoft : DS.Palette.textSecondary)
+                        } else {
+                            Text("Correlation — fetching…").font(.system(size: mvFont9)).foregroundStyle(.secondary)
+                        }
+                    }
+                    .task(id: (split.crypto.map(\.symbol) + split.equity.map(\.symbol)).sorted()) {
+                        await store.refreshLaneCorrelation(holds: velocityHolds)
+                    }
+                    if StockSageExpectedValue.cryptoRotationDominant(crypto: split.crypto, equity: split.equity, holds: velocityHolds, calibration: store.convictionCalibration) {
+                        Text("⚠︎ Fastest rotation is 24/7 crypto — gap risk; size down if you sleep. \(MoneyVelocityCopy.cannotHedgeOvernight)")
+                            .font(.system(size: mvFont9, weight: .medium))
+                            .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), holds: velocityHolds, calibration: store.convictionCalibration) {
@@ -3273,6 +3356,64 @@ struct MarketsView: View {
         }
     }
 
+    /// One asset-class sub-board (title + up to 5 rows). Hidden entirely when its bucket is empty
+    /// (e.g. an all-equity day shows no "Crypto fast lane" header at all).
+    @ViewBuilder private func fastLaneBoardSection(title: String, ideas: [StockSageIdea]) -> some View {
+        if !ideas.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title.uppercased()).font(.system(size: mvFont8, weight: .semibold)).foregroundStyle(.secondary)
+                ForEach(ideas.prefix(5), id: \.id) { idea in fastLaneRow(idea) }
+            }
+        }
+    }
+
+    /// A single fast-lane row — factored out of the old inline ForEach so both boards share it
+    /// byte-identically (same fields, same accessibility label as before the split).
+    @ViewBuilder private func fastLaneRow(_ idea: StockSageIdea) -> some View {
+        if let v = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
+            let floorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
+            let earnFlag  = StockSageExpectedValue.earningsRankFlag(for: idea, earnings: store.earnings)
+            Button { selectedIdea = idea } label: {
+                HStack(spacing: DS.Space.sm) {
+                    Text(idea.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                        .frame(width: 84, alignment: .leading)
+                    Text(String(format: "%+.3fR/day", v)).font(.system(size: mvFont11, design: .monospaced))
+                        .foregroundStyle(DS.Palette.successSoft)
+                    if idea.symbol.hasSuffix("-USD") {
+                        Text("24/7 · volatile").font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft)
+                    }
+                    if !earnFlag.badge.isEmpty {
+                        Text(earnFlag.badge).font(.system(size: mvFont8))
+                            .foregroundStyle(earnFlag.isDemoted ? DS.Palette.warningSoft : .secondary)
+                    }
+                    if floorFlag.isDeranked {
+                        Text("below net-cost floor").font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").font(.system(size: mvFont8)).foregroundStyle(.secondary)
+                }.contentShape(Rectangle())
+            }.buttonStyle(LuxPressStyle())
+            .accessibilityLabel("\(idea.symbol): \(String(format: "%+.3f", v)) R per day velocity\(idea.symbol.hasSuffix("-USD") ? ", 24/7 volatile" : "")\(!earnFlag.badge.isEmpty ? ", \(earnFlag.badge)" : "")\(floorFlag.isDeranked ? ", below net-cost floor" : ""). Tap for the plan.")
+        }
+    }
+
+    // Today's ranked action list (FASTMONEY_BACKLOG #4) — the fast lane's top-3 by velocity,
+    // each row already sized (PositionSizer, the account/risk% set below) and gated
+    // (TradeGate) so "do I take #1 or #2 today?" doesn't require opening 3 detail sheets.
+    // Same fast-lane ordering as fastLaneStrip above; this adds the size + verdict it doesn't show.
+    @ViewBuilder private var todaysActionsCard: some View {
+        let plans = StockSageTodayPlan.rankedActions(
+            store.ideas,
+            account: Double(sizerAccount),
+            riskFraction: Double(sizerRiskPct).map { $0 / 100 },
+            holds: velocityHolds,
+            calibration: store.convictionCalibration,
+            earnings: store.earnings)
+        MarketsTodayActionsCard(plans: plans, isSampleData: store.isSampleData) { symbol in
+            if let idea = store.ideas.first(where: { $0.symbol == symbol }) { selectedIdea = idea }
+        }
+    }
+
     // Strategy backtest — the advisor's rules aggregated across the sample universe.
     private var strategyBacktestPanel: some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
@@ -3292,7 +3433,7 @@ struct MarketsView: View {
                             if store.isLoadingStrategy { ProgressView().controlSize(.small).tint(.white) }
                             else { Image(systemName: "play.fill").font(.system(size: 10, weight: .semibold)) }
                         }
-                        Text(store.isLoadingStrategy ? "Running…" : "Run").font(.system(size: 11, weight: .semibold)).contentTransition(.opacity)
+                        Text(store.isLoadingStrategy ? "Running…" : "Run").font(.system(size: mvFont11, weight: .semibold)).contentTransition(.opacity)
                     }
                     .foregroundStyle(.white).padding(.horizontal, 11).padding(.vertical, 6)
                     .background(DS.Palette.accent, in: Capsule())
@@ -3329,7 +3470,7 @@ struct MarketsView: View {
                     let pass = s.passesHonestSignificance
                     HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                         Image(systemName: pass ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                            .font(.system(size: 10))
+                            .font(.system(size: mvFont10))
                         Text(s.significanceVerdict).fixedSize(horizontal: false, vertical: true)
                     }
                     .font(.caption2)
@@ -3352,7 +3493,7 @@ struct MarketsView: View {
             if let oos = store.calibrationOOS {
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: oos.addsSkill ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
-                        .font(.system(size: 11))
+                        .font(.system(size: mvFont11))
                         .foregroundStyle(oos.addsSkill ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     Text(oos.addsSkill
                          ? String(format: "Conviction map holds out-of-sample: Brier %.2f vs %.2f no-skill baseline (%d test trades) — small sample, still firming up.", oos.oosBrier, oos.baselineBrier, oos.n)
@@ -3383,7 +3524,7 @@ struct MarketsView: View {
             VStack(alignment: .leading, spacing: DS.Space.sm) {
                 HStack(spacing: DS.Space.sm) {
                     Image(systemName: "clock.arrow.circlepath").font(.system(size: 13)).foregroundStyle(DS.Palette.accent)
-                    Text(backtestTitle).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                    Text(backtestTitle).font(.system(size: mvFont13, weight: .semibold)).foregroundStyle(.white)
                     Spacer()
                     if store.isBacktesting { ProgressView().controlSize(.small).tint(DS.Palette.accent) }
                 }
@@ -3420,7 +3561,7 @@ struct MarketsView: View {
                         let pass = psr > 0.95
                         HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                             Image(systemName: pass ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                                .font(.system(size: 10))
+                                .font(.system(size: mvFont10))
                             Text(String(format: "Real-edge confidence (PSR): %.0f%% — %@ (P(true Sharpe > 0) after a sample/skew/fat-tail haircut; >95%% is the honest bar).", psr * 100, pass ? "PASS" : "BELOW BAR"))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -3437,7 +3578,7 @@ struct MarketsView: View {
                         let pass = bt.clearsMultipleTestingBar
                         HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                             Image(systemName: pass ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                                .font(.system(size: 10))
+                                .font(.system(size: mvFont10))
                             Text(bt.significanceVerdict).fixedSize(horizontal: false, vertical: true)
                         }
                         .font(.caption2)
@@ -3482,7 +3623,7 @@ struct MarketsView: View {
                     if let u = store.underwater, !u.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text("Buy & hold underwater (5y)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                                Text("Buy & hold underwater (5y)").font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.secondary)
                                 Spacer()
                                 Text(String(format: "worst −%.0f%% · longest %d bars under", u.maxDrawdown, u.longestUnderwaterBars))
                                     .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(DS.Palette.danger)
@@ -3549,7 +3690,7 @@ struct MarketsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Image(systemName: "function").font(.system(size: 11)).foregroundStyle(DS.Palette.accent)
-                    Text("Position size").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                    Text("Position size").font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white)
                     Spacer()
                     Text("Acct $").font(.system(size: mvFont9)).foregroundStyle(.secondary)
                     journalField("10000", text: $sizerAccount, width: 72)
@@ -3614,7 +3755,7 @@ struct MarketsView: View {
         return HStack(spacing: DS.Space.xs) {
             Image(systemName: flag.level == .high ? "exclamationmark.triangle.fill" : "exclamationmark.circle")
                 .font(.system(size: mvFont9))
-            Text(flag.label).font(.system(size: 10, weight: .semibold))
+            Text(flag.label).font(.system(size: mvFont10, weight: .semibold))
         }
         .foregroundStyle(color)
         .padding(.horizontal, 8).padding(.vertical, 4)
@@ -3858,7 +3999,7 @@ struct MarketsView: View {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: pc.isWarning ? "exclamationmark.triangle.fill"
                               : (pc.verdict == .diversifying ? "checkmark.seal.fill" : "circle.grid.2x2.fill"))
-                            .font(.system(size: 11))
+                            .font(.system(size: mvFont11))
                             .foregroundStyle(pc.isWarning ? DS.Palette.danger
                                              : (pc.verdict == .diversifying ? DS.Palette.successSoft : DS.Palette.textSecondary))
                         Text(pc.note).font(.caption2)
@@ -3892,7 +4033,7 @@ struct MarketsView: View {
                 if let liq = store.liquidity[idea.symbol.uppercased()] {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: liq.tier == .thin ? "drop.triangle.fill" : "drop.fill")
-                            .font(.system(size: 11))
+                            .font(.system(size: mvFont11))
                             .foregroundStyle(liq.tier == .thin ? DS.Palette.warningSoft : .secondary)
                         Text(liq.note).font(.caption2)
                             .foregroundStyle(liq.tier == .thin ? DS.Palette.warningSoft : .secondary)
@@ -3925,7 +4066,7 @@ struct MarketsView: View {
                     let impact = StockSageWhatIf.addingHolding(symbol: idea.symbol, addedValue: addValue, to: whatIfHoldings)
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: impact.isWarning ? "exclamationmark.triangle.fill" : "chart.pie.fill")
-                            .font(.system(size: 11)).foregroundStyle(impact.isWarning ? DS.Palette.danger : .secondary)
+                            .font(.system(size: mvFont11)).foregroundStyle(impact.isWarning ? DS.Palette.danger : .secondary)
                         Text(impact.note).font(.caption2)
                             .foregroundStyle(impact.isWarning ? DS.Palette.danger : .secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -4218,6 +4359,83 @@ struct MarketDisclaimerFooter: View {
             // Flat opaque footer + hairline (was translucent material).
             .background(DS.Palette.codeSurfaceSide)
             .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .top)
+    }
+}
+
+/// Purely presentational best-move order ticket — crimson flat-dark styling matching
+/// every other Markets card (DS tokens, LuxPressStyle, no system glass per
+/// research/DESIGN_RESEARCH_macOS27.md's "custom fills for brand/status" guidance).
+/// Takes only already-computed/formatted values; owns layout only.
+struct BestOpportunityActionCard: View {
+    let symbol: String
+    let actionLabel: String
+    let actionColor: Color
+    let actionTextColor: Color
+    let isCrypto: Bool
+    let entryText: String        // "Entry ~184.20"
+    let stopText: String?        // "stop 178.50"
+    let sizeText: String         // sized line OR "Set account to size…"
+    let sizeIsWarning: Bool      // true when the sized notional exceeds the account
+    let evText: String           // "EV +0.62R"
+    let caveatText: String       // MoneyVelocityCopy.bestOpportunity — the honesty tail
+    let varianceText: String?    // crypto-only 24h range line; nil for equities
+    let accessibilityText: String
+    let onTap: () -> Void
+    let onCopy: () -> Void
+    var mvFont9: CGFloat = 9
+
+    private var tint: Color { isCrypto ? DS.Palette.warningSoft : DS.Palette.accent }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: onTap) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: DS.Space.sm) {
+                        Image(systemName: "bolt.fill").font(.system(size: 12)).foregroundStyle(tint)
+                        Text("Do this now").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                        Spacer()
+                        Text(symbol).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                        Text(actionLabel).font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(actionTextColor)
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(actionColor, in: Capsule())
+                    }
+                    HStack(spacing: DS.Space.sm) {
+                        Text(entryText).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                        if let stopText {
+                            Text(stopText).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(DS.Palette.danger)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    Text(sizeText)
+                        .font(.system(size: mvFont9, weight: .medium))
+                        .foregroundStyle(sizeIsWarning ? DS.Palette.warningSoft : DS.Palette.successSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 6) {
+                        Text(evText).font(.system(size: 12, weight: .bold)).foregroundStyle(DS.Palette.successSoft)
+                        Text(caveatText).font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let varianceText {
+                        Text(varianceText)
+                            .font(.system(size: mvFont9, weight: .medium))
+                            .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(DS.Space.sm).frame(maxWidth: .infinity, alignment: .leading)
+                .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(tint.opacity(0.35), lineWidth: 1))
+            }
+            .buttonStyle(LuxPressStyle())
+            .accessibilityLabel(accessibilityText)
+            HStack(spacing: 6) {
+                Spacer()
+                Button(action: onCopy) {
+                    Label("Copy plan", systemImage: "checklist").font(.system(size: mvFont9, weight: .medium))
+                }
+                .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+                .help("Copy a checklist — this move, the pre-trade gate verdict, and the size — to the clipboard. Estimates, not advice.")
+            }
+        }
     }
 }
 

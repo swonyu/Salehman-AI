@@ -194,6 +194,103 @@ enum StockSageCapitalAllocator {
                              dollarsAtRisk: ps.dollarsAtRisk, heatBefore: heatBefore, heatHeadroom: headroom,
                              nearestCorrelation: cluster?.nearest?.correlation, reason: reason, caveat: caveat)
     }
+
+    /// EV-weighted whole-book reweight — "which names deserve MORE of the book right now, given
+    /// today's edge?" Unlike an equal-risk (risk-parity) reweight, targets here are each symbol's
+    /// positive, buy-family `StockSageExpectedValue.ev(for:).evR`, normalized across the union of
+    /// currently-held symbols and candidate `ideas`. A held symbol with no current positive-EV buy
+    /// idea gets edge 0 — i.e. it's simply absent from `targets`, which `StockSageRebalance.plan`
+    /// already treats as "trim to 0" (reused verbatim, band and all — no new drift/band math here).
+    /// A brand-new (not currently held) idea is correlation-gated against the OTHER held names'
+    /// return series (derived from each idea's own `spark`, exactly like `allocate`'s cluster
+    /// de-weighting) via the existing `StockSageClusterCheck`; a match ≥ `correlationThreshold`
+    /// excludes that idea entirely (composed only when a return series is available — too little
+    /// spark history silently skips the gate, i.e. size-only, matching `ClusterCheck.check`'s own
+    /// nil behavior). Because `StockSageRebalance.plan` always renormalizes whatever `targets` it's
+    /// given up to 100% (there is no "hold cash" residual in that model), a combined new-idea target
+    /// share can only be capped at `maxHeat` of the reweighted total when there is an existing
+    /// held-edge pool to absorb the remaining share — the closed-form single-pass scale below is
+    /// skipped when nothing fundable is currently held (nothing to cap against). nil when nothing is
+    /// invested or no symbol anywhere has positive edge (mirrors `Rebalance.plan`'s own "nothing to
+    /// do" nil — reused, not reimplemented). Honest: evR is a rules-based ESTIMATE that decays as
+    /// price moves; these are reweight TARGETS, not fills, and — exactly like the underlying
+    /// `Rebalance.plan` — ignore spread/slippage/tax/min-lot.
+    nonisolated static func rebalanceToEdge(
+        holdings: [(symbol: String, value: Double)],
+        ideas: [StockSageIdea],
+        band: Double = 0.03,
+        maxHeat: Double = 0.10,
+        correlationThreshold: Double = 0.80,
+        calibration: StockSageConvictionCalibration? = nil
+    ) -> EdgeRebalancePlan? {
+        let heldSymbols = Set(holdings.filter { $0.value > 0 }.map { $0.symbol.uppercased() })
+        let ideaBySymbol = Dictionary(ideas.map { ($0.symbol.uppercased(), $0) }, uniquingKeysWith: { a, _ in a })
+
+        // Positive, buy-family edge only (mirrors `allocate`'s own gate) — a held name whose idea
+        // has gone flat/negative, or has none at all, is simply never added to `targets`.
+        func rawWeight(_ idea: StockSageIdea) -> Double? {
+            let a = idea.advice
+            guard a.action == .buy || a.action == .strongBuy, idea.price > 0,
+                  let ev = StockSageExpectedValue.ev(for: idea, calibration: calibration), ev.evR > 0 else { return nil }
+            return ev.evR
+        }
+
+        // Correlation baseline for gating NEW entrants: every currently-held symbol's own idea (if
+        // any) supplies its return series — a held name doesn't need to be independently fundable to
+        // serve as the "you already own this exposure" baseline. Sorted for deterministic output.
+        let heldReturnSeries: [(symbol: String, returns: [Double])] = heldSymbols.sorted().compactMap { sym in
+            guard let idea = ideaBySymbol[sym] else { return nil }
+            let r = StockSagePortfolioAnalytics.dailyReturns(idea.spark)
+            return r.count >= 2 ? (symbol: idea.symbol, returns: r) : nil
+        }
+
+        var heldWeights: [String: Double] = [:]
+        var newWeights: [String: Double] = [:]
+        var excludedSymbols: [String] = []
+        var excludedNotes: [String] = []
+        for idea in ideas {
+            guard let w = rawWeight(idea) else { continue }
+            if heldSymbols.contains(idea.symbol.uppercased()) {
+                heldWeights[idea.symbol] = w
+            } else {
+                let candidateReturns = StockSagePortfolioAnalytics.dailyReturns(idea.spark)
+                if let cluster = StockSageClusterCheck.check(candidate: idea.symbol, candidateReturns: candidateReturns,
+                                                              holdings: heldReturnSeries, threshold: correlationThreshold),
+                   cluster.isConcentrating {
+                    excludedSymbols.append(idea.symbol)
+                    excludedNotes.append(cluster.note)
+                    continue
+                }
+                newWeights[idea.symbol] = w
+            }
+        }
+
+        // Closed-form single-pass churn cap: solve for the scale factor on the NEW pool such that,
+        // after `Rebalance.plan` renormalizes targets to sum 1, the new pool's combined share is
+        // exactly `cap` — Σnew·scale / (Σheld + Σnew·scale) = cap ⟹ scale = cap/(1−cap) · Σheld/Σnew.
+        let heldRaw = heldWeights.values.reduce(0, +)
+        let newRaw = newWeights.values.reduce(0, +)
+        let cap = Swift.min(Swift.max(0, maxHeat), 1)
+        var cappedNew = false
+        if heldRaw > 0, newRaw > 0, cap < 1, newRaw / (heldRaw + newRaw) > cap {
+            let scale = (cap / (1 - cap)) * heldRaw / newRaw
+            newWeights = newWeights.mapValues { $0 * scale }
+            cappedNew = true
+        }
+
+        var targets = heldWeights
+        for (symbol, weight) in newWeights { targets[symbol] = weight }
+        guard let plan = StockSageRebalance.plan(holdings: holdings, targets: targets, band: band) else { return nil }
+
+        var note = "Targets are each name's positive, buy-family EV estimate (evR), normalized across the held book + new ideas — this chases EDGE, not equal risk. A held name with no current positive-EV idea is trimmed toward the exit. evR decays as price moves; these are reweight targets, not fills, and ignore spread/slippage/tax/min-lot."
+        if cappedNew {
+            note += String(format: " New-idea entries were capped at a combined %.0f%% of the reweighted book this pass to limit one-shot churn into unproven names.", cap * 100)
+        }
+        if !excludedNotes.isEmpty {
+            note += " Excluded (correlation-blocked): " + excludedNotes.joined(separator: " ")
+        }
+        return EdgeRebalancePlan(plan: plan, excludedSymbols: excludedSymbols.sorted(), note: note)
+    }
 }
 
 struct AddSuggestion: Sendable, Equatable {
@@ -207,4 +304,13 @@ struct AddSuggestion: Sendable, Equatable {
     let nearestCorrelation: Double?
     let reason: String            // why this size / why blocked
     let caveat: String
+}
+
+/// Result of `StockSageCapitalAllocator.rebalanceToEdge` — the underlying `RebalancePlan` (reused
+/// verbatim, same `trades`/`isBalanced`) plus the transparency the edge-weighting adds: which
+/// brand-new ideas were excluded for concentration, and why.
+struct EdgeRebalancePlan: Sendable, Equatable {
+    let plan: RebalancePlan
+    let excludedSymbols: [String]   // new ideas excluded for correlation-blocking (asc by symbol)
+    let note: String
 }

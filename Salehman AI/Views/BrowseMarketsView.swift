@@ -15,6 +15,16 @@ struct BrowseMarketsView: View {
     @State private var query = ""
     @State private var asset: AssetFilter = .all
 
+    // Dynamic-Type-aware small fonts: each equals its base size at the default text
+    // setting (bmFont13 == 13), so the dense layout is unchanged, but they scale up when
+    // the user enlarges system text — fixing the "tiny fixed size" a11y finding.
+    // (Matches MarketsView's mvFont7/8/9 / RuneScapeMarketView's rsFont8/9 convention.)
+    @ScaledMetric(relativeTo: .caption2) private var bmFont11: CGFloat = 11
+    @ScaledMetric(relativeTo: .caption2) private var bmFont12: CGFloat = 12
+    @ScaledMetric(relativeTo: .caption2) private var bmFont13: CGFloat = 13
+    @ScaledMetric(relativeTo: .caption2) private var bmFont14: CGFloat = 14
+    @ScaledMetric(relativeTo: .caption2) private var bmFont15: CGFloat = 15
+
     enum AssetFilter: String, CaseIterable, Identifiable {
         case all = "All", stocks = "Stocks", etf = "ETFs", crypto = "Crypto", fx = "Forex", index = "Indices"
         var id: String { rawValue }
@@ -50,17 +60,17 @@ struct BrowseMarketsView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Browse markets").font(DS.Typography.titleM).foregroundStyle(.white)
                     Text("\(StockSageUniverse.catalog.count) instruments · tap + to track (fetches one live quote)")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: bmFont12)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("Done") { dismiss() }.buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
             }
 
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
+                Image(systemName: "magnifyingglass").font(.system(size: bmFont12)).foregroundStyle(.secondary)
                     .accessibilityHidden(true)
                 TextField("Search symbol or market…", text: $query)
-                    .textFieldStyle(.plain).font(.system(size: 13))
+                    .textFieldStyle(.plain).font(.system(size: bmFont13))
                     .accessibilityLabel("Search markets")
                 if !query.isEmpty {
                     Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
@@ -70,10 +80,13 @@ struct BrowseMarketsView: View {
             .padding(.horizontal, 10).padding(.vertical, 7)
             .background(DS.Palette.surfaceAlt, in: RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
 
-            Picker("Asset class", selection: $asset) {
-                ForEach(AssetFilter.allCases) { Text($0.rawValue).tag($0) }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Asset class").font(.caption2).foregroundStyle(.secondary)
+                Picker("Asset class", selection: $asset) {
+                    ForEach(AssetFilter.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented).labelsHidden()
             }
-            .pickerStyle(.segmented).labelsHidden()
 
             if let err = store.addSymbolError {
                 Text(err).font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
@@ -85,7 +98,7 @@ struct BrowseMarketsView: View {
                         Section {
                             ForEach(section.rows) { row(_for: $0) }
                         } header: {
-                            Text(section.market).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                            Text(section.market).font(.system(size: bmFont11, weight: .semibold)).foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.vertical, 3).padding(.horizontal, 4)
                                 .background(.ultraThinMaterial)
@@ -105,18 +118,18 @@ struct BrowseMarketsView: View {
     @ViewBuilder private func row(_for s: StockSageSymbol) -> some View {
         let isTracked = tracked.contains(s.symbol.uppercased())
         HStack(spacing: 10) {
-            Text(s.symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+            Text(s.symbol).font(.system(size: bmFont13, weight: .semibold)).foregroundStyle(.white)
                 .frame(width: 96, alignment: .leading).lineLimit(1)
             Text(s.market).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             Spacer(minLength: 4)
             if isTracked {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 14)).foregroundStyle(DS.Palette.successSoft)
+                Image(systemName: "checkmark.circle.fill").font(.system(size: bmFont14)).foregroundStyle(DS.Palette.successSoft)
                     .accessibilityLabel("\(s.symbol) already tracked")
             } else if store.isAddingSymbol {
                 ProgressView().controlSize(.small)
             } else {
                 Button { Task { await store.addSymbol(s.symbol) } } label: {
-                    Image(systemName: "plus.circle.fill").font(.system(size: 15)).foregroundStyle(DS.Palette.accent)
+                    Image(systemName: "plus.circle.fill").font(.system(size: bmFont15)).foregroundStyle(DS.Palette.accent)
                 }
                 .buttonStyle(.plain)
                 .frame(minWidth: 44, minHeight: 44)

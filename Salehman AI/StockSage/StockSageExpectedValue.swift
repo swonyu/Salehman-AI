@@ -460,11 +460,26 @@ enum StockSageExpectedValue {
     }
 
     /// The single best BET right now: the buy-family idea with the highest POSITIVE
-    /// expected value. nil if no buy idea has positive EV (don't manufacture one).
+    /// expected value (or, when `preferVelocity` is on, the highest EV/day). nil if no
+    /// buy idea has positive EV (don't manufacture one).
+    ///
+    /// RANKING_BACKLOG #10: today's default ranks by `qualityAdjustedEVR` (a slow, high-R:R
+    /// setup can be "best" over a faster-compounding one the Fast Lane would prefer), and an
+    /// exact rank-value tie falls back to input-array order rather than conviction.
+    /// `preferVelocity` (default false — IDENTICAL to today for every existing caller) opts
+    /// into: (1) ranking by the idea's raw EV/day when it has one (falls back to
+    /// `qualityAdjustedEVR` for index/FX, which never have a velocity), and (2) on a near-tie
+    /// (|Δ| < 0.01) preferring the HIGHER conviction idea instead of whichever happens to sit
+    /// earlier in `ideas`. This is a genuine design tradeoff (the ranking metric changes, and
+    /// above the existing `minConvictionToRank` floor raw velocity is not conviction-weighted
+    /// the way `qualityAdjustedEVR` is) — ship opt-in only; do not flip the default in
+    /// MarketsView without owner sign-off.
     nonisolated static func bestOpportunity(_ ideas: [StockSageIdea], regime: MarketRegime? = nil,
                                             earnings: [String: EarningsProximity] = [:],
                                             liquidity: [String: LiquidityProfile] = [:],
-                                            calibration: StockSageConvictionCalibration? = nil) -> (idea: StockSageIdea, ev: ExpectedValue)? {
+                                            calibration: StockSageConvictionCalibration? = nil,
+                                            preferVelocity: Bool = false,
+                                            holds: VelocityHoldDays = .defaults) -> (idea: StockSageIdea, ev: ExpectedValue)? {
         // No "best buy" in a risk-off tape — a crisis/bear is sometimes exactly when an intraday
         // stop gets gapped through. (nil regime → no gate, identical to before.)
         if let r = regime, bannedFromTopRank(.buyFamily, regime: r.state) { return nil }
@@ -473,11 +488,17 @@ enum StockSageExpectedValue {
         // (empty earnings → 0 → identical to before). Demotion, not exclusion: it can still surface
         // if it's the only positive-EV buy.
         func rankVal(_ idea: StockSageIdea) -> Double {
-            (qualityAdjustedEVR(for: idea, calibration: calibration) ?? 0)
+            let base: Double
+            if preferVelocity, let v = velocity(for: idea, holds: holds, calibration: calibration) {
+                base = v   // RANKING_BACKLOG #10: EV/day, not raw/quality-adjusted EV, when available
+            } else {
+                base = qualityAdjustedEVR(for: idea, calibration: calibration) ?? 0
+            }
+            return base
                 - earningsRankPenalty(for: idea, earnings: earnings)
                 - liquidityRankPenalty(for: idea, liquidity: liquidity)
         }
-        return ideas.compactMap { idea -> (StockSageIdea, ExpectedValue)? in
+        let candidates = ideas.compactMap { idea -> (StockSageIdea, ExpectedValue)? in
             guard idea.advice.action == .buy || idea.advice.action == .strongBuy,
                   idea.advice.conviction >= minConvictionToRank,   // a #1 pick can't be a low-conviction bet
                   clearsCostAfterFrictions(idea, calibration: calibration),   // …nor a setup that's net-negative after costs
@@ -486,8 +507,22 @@ enum StockSageExpectedValue {
                   let e = ev(for: idea, calibration: calibration), e.evR > 0 else { return nil }
             return (idea, e)
         }
-        .max { rankVal($0.0) < rankVal($1.0) }
-        .map { (idea: $0.0, ev: $0.1) }
+        guard preferVelocity else {
+            // UNCHANGED default path — byte-identical reduction to before #10 (same tie
+            // behavior: the first candidate in `ideas` wins an exact rankVal tie).
+            return candidates.max { rankVal($0.0) < rankVal($1.0) }.map { (idea: $0.0, ev: $0.1) }
+        }
+        // RANKING_BACKLOG #10 opt-in: near-ties (|Δ rankVal| < 0.01) are broken by higher
+        // conviction instead of array position, so a lower-conviction idea can't "win" a tie
+        // it doesn't deserve. (Not strictly transitive across a long chain of near-ties, same
+        // caveat as the doc's own proposed comparator — acceptable for the small idea lists
+        // this ranks.)
+        let tieBand = 0.01
+        return candidates.max { a, b in
+            let av = rankVal(a.0), bv = rankVal(b.0)
+            if abs(av - bv) < tieBand { return a.0.advice.conviction < b.0.advice.conviction }
+            return av < bv
+        }.map { (idea: $0.0, ev: $0.1) }
     }
 
     /// Fast lane: positive-EV ideas that HAVE a velocity (crypto/equity), ranked by
@@ -503,6 +538,86 @@ enum StockSageExpectedValue {
         }
         .sorted { $0.2 == $1.2 ? $0.0 < $1.0 : $0.2 > $1.2 }
         .map { $0.1 }
+    }
+
+    /// ~21 trading bars — the "1-month" leg of the classic 12-1 momentum construction
+    /// (`StockSageIndicators.timeSeriesMomentum`'s `skipRecent` default), reused here as the
+    /// short-horizon follow-through window for `momentumQuality`.
+    private nonisolated static let momentumQualityLookback = 21
+    /// Kaufman efficiency-ratio floor read as "a genuine trend, not chop" (Kaufman's own guidance
+    /// is roughly 0.3–0.4 for a tradable trend). Below this, net price movement is mostly noise.
+    private nonisolated static let momentumQualityTrendThreshold = 0.35
+
+    /// 0–1 read on whether a fast-lane idea's SHORT-HORIZON momentum is genuinely hot right now —
+    /// not just technically positive — so `rankByVelocityWeighted` can out-rank a clean compounder
+    /// over a flat/mean-reverting setup of equal velocity (a classic whipsaw trap: pure EV/day never
+    /// inspects the SHAPE of recent price action). Built from THREE signals `StockSageAdvisor`
+    /// already computes via `StockSageIndicators` — no new math:
+    ///   • Kaufman efficiency ratio (`efficiencyRatio`, default 20-bar) ≥ 0.35 — clean trend vs chop.
+    ///   • MACD histogram (`macd`, default 12/26/9) > 0 — momentum currently accelerating.
+    ///   • Positive ~21-bar return (`returnOverPeriod`) — real short-horizon follow-through.
+    /// DEVIATION FROM THE ORIGINAL BACKLOG WORDING (disclosed, not silent): the spec text proposed
+    /// "RSI in the trend zone" as the third leg; a bounded RSI band is a WEAKER discriminator for
+    /// exactly the failure mode this function exists to catch — a mean-reverting oscillator can sit
+    /// in a "bullish" RSI band repeatedly WHILE chopping sideways. Kaufman's efficiency ratio is the
+    /// purpose-built trend-vs-chop read (already in this engine) and is the correct substitute.
+    /// Quality = (# hot signals) ÷ (# signals `closes` was long enough to compute) — a signal that
+    /// can't be computed is EXCLUDED from the average, never counted as cold, so a shorter series is
+    /// never punished for missing data. When `closes` is too short for ALL THREE (< 22 bars), returns
+    /// the NEUTRAL ceiling 1.0 — no data ⇒ no penalty, the same only-real-data / floor-never-inflate
+    /// convention `cryptoRiskScaler` uses elsewhere in this file — so an unweighted call (or a symbol
+    /// with no history) never gets silently demoted. HONESTY (the "reversal caveat"): a score near
+    /// 1.0 means recent momentum LOOKS clean and hot RIGHT NOW — it is not a forecast that it
+    /// continues; a hot short-horizon run can still reverse. The caller-facing copy must say so.
+    nonisolated static func momentumQuality(for idea: StockSageIdea, closes: [Double]) -> Double {
+        var hot = 0, total = 0
+        if let er = StockSageIndicators.efficiencyRatio(closes) {
+            total += 1
+            if er >= momentumQualityTrendThreshold { hot += 1 }
+        }
+        if let m = StockSageIndicators.macd(closes) {
+            total += 1
+            if m.histogram > 0 { hot += 1 }
+        }
+        if let ret = StockSageIndicators.returnOverPeriod(closes, period: momentumQualityLookback) {
+            total += 1
+            if ret > 0 { hot += 1 }
+        }
+        guard total > 0 else { return 1.0 }   // no computable signal → neutral, never a phantom penalty
+        return Double(hot) / Double(total)
+    }
+
+    /// `fastLane`, re-ranked within itself by raw velocity (EV/day) × `momentumQuality`, so a
+    /// setup whose short-horizon momentum is genuinely hot out-ranks a same-velocity flat/
+    /// mean-reverting one. This is a SEPARATE lens from `fastLane`'s own ordering (log-growth at
+    /// half-Kelly, net-cost-scaled) — it never changes `fastLane`'s membership or signature, only
+    /// re-sorts the SAME idea set it already returned. `closes` maps symbol → raw daily closes
+    /// (newest last) for whichever ideas history is available for; deliberately keyed by symbol
+    /// (not threaded through `StockSageIdea`, which only carries a down-sampled `spark` too short
+    /// for `macd`'s 35-bar minimum) so a caller can supply real daily bars without any model change.
+    /// Uses the RAW `velocity(for:)` (always > 0 for every idea `fastLane` already kept — the exact
+    /// guard `fastLane` itself uses) rather than `fastLane`'s internal log-growth key, because that
+    /// key can be driven negative by the low-conviction/net-cost-floor de-rank penalties baked into
+    /// it — multiplying a NEGATIVE key by a 0–1 quality factor would perversely REWARD a demoted,
+    /// cold setup by pulling it toward zero. A positive base is required for the multiply to only
+    /// ever shrink, never invert, rank — matching `cryptoRiskScaler`'s "can only shrink" discipline.
+    /// A symbol absent from `closes` (or an entirely empty `closes`) scores that idea's quality at
+    /// the neutral 1.0 — so passing `closes: [:]` (the default) reproduces `fastLane`'s own idea SET
+    /// stable-sorted by plain velocity, unchanged from calling `fastLane` alone without this function.
+    nonisolated static func rankByVelocityWeighted(_ ideas: [StockSageIdea], closes: [String: [Double]] = [:],
+                                                   holds: VelocityHoldDays = .defaults,
+                                                   calibration: StockSageConvictionCalibration? = nil) -> [StockSageIdea] {
+        let lane = fastLane(ideas, holds: holds, calibration: calibration)
+        func weightedVelocity(_ idea: StockSageIdea) -> Double {
+            let v = velocity(for: idea, holds: holds, calibration: calibration) ?? 0
+            let series = closes[idea.symbol] ?? []
+            guard !series.isEmpty else { return v }   // no history for THIS symbol → unweighted (×1)
+            return v * momentumQuality(for: idea, closes: series)
+        }
+        return lane.enumerated().sorted { a, b in
+            let x = weightedVelocity(a.element), y = weightedVelocity(b.element)
+            return x == y ? a.offset < b.offset : x > y
+        }.map(\.element)
     }
 
     /// A heavily-caveated estimate of weekly R IF you actually run AND re-cycle the
@@ -587,6 +702,18 @@ enum StockSageExpectedValue {
         return Swift.max(1, annualizedVol / baseline)
     }
 
+    /// Honest "how big is a typical day" read for a 24/7 asset: the ALREADY-COMPUTED
+    /// annualized realized vol (the same `idea.realizedVol` that already drives the
+    /// crypto stop-multiple in StockSageAdvisor and the risk scaler above) de-annualized
+    /// by the 365-day crypto calendar rather than the 252-day equity one, which would
+    /// understate a name that never closes. NOT a forecast — a rough one-standard-
+    /// deviation-ish daily-move estimate to size against. nil when there's no realized-vol
+    /// input (not enough history) or it's non-finite/non-positive — never invents a number.
+    nonisolated static func dailyVariancePct(annualizedVol: Double?) -> Double? {
+        guard let vol = annualizedVol, vol.isFinite, vol > 0 else { return nil }
+        return vol / 365.0.squareRoot() * 100
+    }
+
     /// A one-glance money-velocity rollup: the best bet now, the fastest-compounding
     /// setup, and the estimated weekly R — each a value already computed elsewhere,
     /// composed for a single header. All optional; `hasContent` gates the card.
@@ -661,6 +788,68 @@ enum StockSageExpectedValue {
             .mapValues(\.count)
         guard let dominant = counts.max(by: { $0.value < $1.value }) else { return nil }
         return FastLaneConcentration(dominantClass: dominant.key, count: dominant.value, total: top.count)
+    }
+
+    // ── FASTMONEY_BACKLOG #7 — crypto vs equity fast-lane board split + cross-correlation ──────
+    //
+    // fastLane() blends crypto (3d hold) and equity (12d hold) into one ranked list; the owner
+    // still has to eyeball the mix. These three helpers are PURE compositions of existing,
+    // already-tested primitives — no new ranking math, no new correlation math:
+    //   • fastLaneByClass    partitions the EXISTING fastLane() order by StockSageAllocation.assetClass
+    //     — a pure filter, does not re-rank.
+    //   • cryptoRotationDominant sums the SAME per-idea `velocity(for:)` the weekly-R math already
+    //     sums, just split by side.
+    //   • laneCorrelation reuses StockSagePortfolioAnalytics.correlation/dailyReturns (the SAME
+    //     Pearson-with-alignment primitive the portfolio heatmap and cluster-check already use).
+
+    /// Crypto vs equity partition of the fast lane, each bucket keeping fastLane()'s existing
+    /// growth-rate order — this only SPLITS the list, it never re-ranks. Every fastLane() member
+    /// lands in exactly one bucket: expectedHoldDays(forSymbol:) already returns nil (so fastLane()
+    /// excludes them) for anything that isn't Crypto or Equity (Index/FX), so nothing is dropped or
+    /// double-counted by this split.
+    nonisolated static func fastLaneByClass(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults,
+                                            calibration: StockSageConvictionCalibration? = nil)
+    -> (crypto: [StockSageIdea], equity: [StockSageIdea]) {
+        let lane = fastLane(ideas, holds: holds, calibration: calibration)
+        return (lane.filter { StockSageAllocation.assetClass($0.symbol) == "Crypto" },
+                lane.filter { StockSageAllocation.assetClass($0.symbol) == "Equity" })
+    }
+
+    /// Is the fast lane's rotation dominated by 24/7 crypto? Compares the SUM of each side's
+    /// velocity (EV/day — the same per-idea number expectedWeeklyR already sums): crypto's sum
+    /// clearing 1.5× equity's sum flags the honest gap-risk warning (you can't hedge an overnight
+    /// crypto move with a 9:30–4 equity position). false when there's no crypto velocity to compare
+    /// (nothing to flag) — never manufactures a warning from an empty side.
+    nonisolated static func cryptoRotationDominant(crypto: [StockSageIdea], equity: [StockSageIdea],
+                                                   holds: VelocityHoldDays = .defaults,
+                                                   calibration: StockSageConvictionCalibration? = nil) -> Bool {
+        let cryptoSum = crypto.compactMap { velocity(for: $0, holds: holds, calibration: calibration) }.reduce(0, +)
+        let equitySum = equity.compactMap { velocity(for: $0, holds: holds, calibration: calibration) }.reduce(0, +)
+        guard cryptoSum > 0 else { return false }
+        return cryptoSum > equitySum * 1.5
+    }
+
+    /// Live cross-correlation between the crypto and equity fast-lane boards: the AVERAGE Pearson
+    /// correlation (StockSagePortfolioAnalytics.correlation — the SAME primitive the portfolio
+    /// heatmap/cluster-check use) across every (crypto-symbol, equity-symbol) pair that has a
+    /// usable history. `histories` is keyed by UPPERCASED symbol (daily closes, newest last) —
+    /// supplied by the caller (e.g. StockSageStore, from StockSageQuoteService.fetchHistories), so
+    /// this stays pure/network-free/testable. nil when either side has no symbol with ≥2 daily
+    /// returns (nothing to correlate) — NOT a within-group correlation, and not a forecast.
+    nonisolated static func laneCorrelation(crypto: [StockSageIdea], equity: [StockSageIdea],
+                                            histories: [String: [Double]]) -> Double? {
+        func returns(_ ideas: [StockSageIdea]) -> [[Double]] {
+            ideas.compactMap { histories[$0.symbol.uppercased()] }
+                 .map(StockSagePortfolioAnalytics.dailyReturns)
+                 .filter { $0.count >= 2 }
+        }
+        let cryptoReturns = returns(crypto), equityReturns = returns(equity)
+        guard !cryptoReturns.isEmpty, !equityReturns.isEmpty else { return nil }
+        var sum = 0.0, pairs = 0
+        for c in cryptoReturns {
+            for e in equityReturns { sum += StockSagePortfolioAnalytics.correlation(c, e); pairs += 1 }
+        }
+        return pairs > 0 ? sum / Double(pairs) : nil
     }
 
     nonisolated static let caveat =

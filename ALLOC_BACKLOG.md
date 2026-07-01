@@ -103,7 +103,7 @@ enum StockSageCapitalAllocator {
 Thin composition: `StockSageRiskParity.targets(holdings)` → dict of `targetWeight` → `StockSageRebalance.plan(holdings:targets:band:)`. If `avgCorrelation` (from `PortfolioAnalytics.compute(...).avgCorrelation`) is high (e.g. >=0.7), append a 'correlation-shock — risk-parity benefit shrinks; hold a cash sleeve' note. Reuses RiskParityHolding, targets(), RebalancePlan, Rebalance.plan().
 **testIdea:** (1) AAPL vol 25% / BND 5% / GOLD 15%, equal dollars → targets ∝ 1/vol (BND heaviest); plan sells AAPL, buys BND; deltas sum ≈0. (2) all drifts < band → plan.isBalanced==true, no trades. (3) avgCorrelation 0.9 → note contains the cash-sleeve warning. (4) single positive-vol holding → no rebalance (nil or empty). (5) a holding with vol<=0 is dropped by targets() and excluded from the plan.
 
-### ⬜ #5 — StockSageCapitalAllocator.rebalanceToEdge — edge-weighted whole-book reweight with no-trade band  [medium]
+### ✅ DONE #5 — StockSageCapitalAllocator.rebalanceToEdge — edge-weighted whole-book reweight with no-trade band  [medium]
 **signature:** ```swift
 enum StockSageCapitalAllocator {
     /// Reweight held symbols + new ideas toward EV-edge-weighted targets, suppressing
@@ -119,6 +119,7 @@ enum StockSageCapitalAllocator {
 ```
 Targets = normalized positive `StockSageExpectedValue.ev(for: idea).evR` across held+new symbols (held symbols with no current idea get edge 0 → trimmed). Feed to `StockSageRebalance.plan(holdings:targets:band:)`. Reuses ev(for:), Rebalance.plan, RebalancePlan. Note: edge-weighting differs from risk-parity (rank 4) — this chases EV, rank 4 chases equal risk; ship both, they answer different questions.
 **testIdea:** (1) AAPL (idea EV -0.2R) + MSFT (EV +0.5R) held, new NVDA (EV +0.3R): plan trims AAPL, grows MSFT, adds NVDA. (2) all drifts < band → isBalanced true. (3) a new idea correlated/blocked → excluded with a note (compose ClusterCheck if returns supplied, else size-only). (4) zero positive edge → nil. Honesty: edge decays; targets are EV estimates not fills.
+**2026-07-01 implementation:** shipped as specified with two sound, documented deviations from the doc's exact signature: (a) returns a new `EdgeRebalancePlan{plan, excludedSymbols, note}` rather than a bare `RebalancePlan?`, since `RebalancePlan` itself has no field to carry the correlation-exclusion note the doc's own testIdea (3) requires; (b) `maxHeat` is enforced via a closed-form single-pass scale (`cap/(1−cap) · Σheld/Σnew`) on the combined new-idea target share, only when a held-edge pool exists to absorb the remainder — `Rebalance.plan` has no "hold cash" concept, so the cap is not mathematically enforceable in isolation when nothing fundable is currently held. 8 tests in `StockSageCapitalAllocatorTests.swift` cover all 4 doc testIdeas plus the churn-cap boundary, the sole-holding balanced case, a held-with-no-idea-at-all trim, and the nothing-invested nil.
 
 ### ⬜ #6 — StockSageAllocationOptimizer.optimizeSharpeDeCorrelated — Sharpe-max QP allocator (stretch)  [large]
 **signature:** ```swift
