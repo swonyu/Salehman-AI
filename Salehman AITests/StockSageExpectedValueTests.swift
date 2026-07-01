@@ -669,4 +669,17 @@ struct StockSageExpectedValueTests {
         #expect(EV.calibrationNote(journalTrades: trades) == nil)
         #expect(EV.calibrationNote(journalTrades: []) == nil)
     }
+
+    @Test func evShortTradeParity() {
+        let short = StockSageExpectedValue.ev(conviction: 0.9, entry: 100, stop: 110, target: 80)!
+        #expect(abs(short.rewardR - 2.0) < 1e-9)
+        let p = 0.35 + 0.9 * 0.23
+        #expect(abs(short.winProbEstimate - p) < 1e-9)
+        #expect(abs(short.evR - (p * 2.0 - (1 - p))) < 1e-9)
+        #expect(short.isPositive)
+    }
+
+    @Test func winProbEstimateMidpoint() {
+        #expect(abs(StockSageExpectedValue.winProbEstimate(conviction: 0.5) - 0.465) < 1e-9)
+    }
 }

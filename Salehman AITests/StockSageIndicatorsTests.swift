@@ -135,4 +135,43 @@ struct StockSageIndicatorsTests {
         #expect(!I.isBreakout(price: 29, channel: prior))  // below the band → no breakout
         #expect(!I.isBreakout(price: 30, channel: prior))  // equalling the band is NOT a breakout (strict >)
     }
+
+    @Test func returnOverPeriodRejectsZeroPastPrice() {
+        #expect(StockSageIndicators.returnOverPeriod([0, 100, 110], period: 2) == nil)
+    }
+
+    @Test func macdRejectsFastNotLessThanSlow() {
+        let closes = (0..<60).map { 100.0 + Double($0) }
+        #expect(StockSageIndicators.macd(closes, fast: 26, slow: 12) == nil)
+        #expect(StockSageIndicators.macd(closes, fast: 12, slow: 12) == nil)
+    }
+
+    @Test func efficiencyRatioFlatPriceReturnsZero() {
+        #expect(StockSageIndicators.efficiencyRatio([5.0, 5.0, 5.0, 5.0, 5.0], period: 3)! == 0.0)
+    }
+
+    @Test func emaSeriesRejectsPeriodZero() {
+        #expect(StockSageIndicators.emaSeries([1, 2, 3], period: 0) == [])
+    }
+
+    @Test func rsiRejectsPeriodZero() {
+        #expect(StockSageIndicators.rsi([1, 2, 3], period: 0) == nil)
+    }
+
+    @Test func atrRejectsPeriodZero() {
+        #expect(StockSageIndicators.atr(highs: [10, 12, 11], lows: [8, 9, 9], closes: [9, 11, 10], period: 0) == nil)
+    }
+
+    @Test func efficiencyRatioRejectsPeriodZero() {
+        #expect(StockSageIndicators.efficiencyRatio([1, 2, 3], period: 0) == nil)
+    }
+
+    @Test func returnOverPeriodRejectsPeriodZero() {
+        #expect(StockSageIndicators.returnOverPeriod([100, 110], period: 0) == nil)
+    }
+
+    @Test func annualizedVolatilitySkipsZeroPrice() {
+        #expect(StockSageIndicators.annualizedVolatility([100.0, 0, 110.0]) == nil)
+        #expect(StockSageIndicators.annualizedVolatility([100.0, 100.0, 110.0]) != nil)
+    }
 }

@@ -170,4 +170,16 @@ struct StockSageStrategyBacktestTests {
                 "fallback pooledDrawdownR expected 3.0, got \(s.pooledDrawdownR)")
         #expect(s.pooledDrawdownR >= 0)
     }
+
+    @Test func aggregateSymbolWithZeroReturnIsNotProfitable() {
+        let symbols = [
+            BacktestResult(trades: 10, wins: 5, winRate: 0.5, avgR: 0, totalR: 0, maxDrawdownR: 2, sharpe: 0, avgHoldBars: 5),
+            BacktestResult(trades: 5, wins: 2, winRate: 0.4, avgR: -0.2, totalR: -1, maxDrawdownR: 3, sharpe: -0.5, avgHoldBars: 4)
+        ]
+        let s = StockSageStrategyBacktest.aggregate(symbols)
+        #expect(s.symbolsTested == 2)
+        #expect(s.symbolsWithTrades == 2)
+        #expect(s.symbolsProfitable == 0)
+        #expect(abs(s.totalR - (-1)) < 1e-9)
+    }
 }

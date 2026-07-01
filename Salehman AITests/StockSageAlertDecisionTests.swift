@@ -67,4 +67,18 @@ struct StockSageAlertDecisionTests {
                             stop: 110, target: 80, lastAlertedRecommendation: nil)
         #expect(a?.kind == .stopBreach)
     }
+
+    // MARK: - TEST_BACKLOG: exact-boundary crossings (>= / <= guards)
+
+    @Test func targetCrossedExactlyOnTheLevel() {
+        let a = AD.evaluate(symbol: "X", recommendation: .buy, price: 120, priorPrice: 115,
+                            stop: 90, target: 120, lastAlertedRecommendation: nil)
+        #expect(a?.kind == .targetHit)
+    }
+
+    @Test func stopCrossedExactlyOnTheLevel() {
+        let a = AD.evaluate(symbol: "X", recommendation: .buy, price: 90, priorPrice: 95,
+                            stop: 90, target: 120, lastAlertedRecommendation: nil)
+        #expect(a?.kind == .stopBreach)
+    }
 }

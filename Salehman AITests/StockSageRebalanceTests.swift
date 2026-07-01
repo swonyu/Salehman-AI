@@ -46,4 +46,17 @@ struct StockSageRebalanceTests {
         #expect(RB.plan(holdings: [("A", 1000)], targets: [:]) == nil)    // no targets
         #expect(RB.plan(holdings: [("A", 0)], targets: ["A": 1]) == nil)  // zero value
     }
+
+    @Test func driftExactlyAtBandEdge() {
+        // 0.02 is not exactly representable in binary64, so 5200/4800 vs a 2% band produces a
+        // drift of 0.020000000000000018 (not bit-exact 0.02), spuriously tripping the strict `>`.
+        // Use a band/weight pair that IS bit-exact: band 0.25 (a power of two), holdings weighted
+        // 25%/75% vs a 50/50 target — 0.5 - 0.25 = 0.25 bit-for-bit in binary64.
+        let atBand = StockSageRebalance.plan(holdings: [("A", 2500), ("B", 7500)],
+                                             targets: ["A": 0.5, "B": 0.5], band: 0.25)!
+        #expect(atBand.trades.isEmpty)   // |0.5-0.25| = 0.25, not > 0.25
+        let aboveBand = StockSageRebalance.plan(holdings: [("A", 2400), ("B", 7600)],
+                                                targets: ["A": 0.5, "B": 0.5], band: 0.25)!
+        #expect(!aboveBand.trades.isEmpty)   // |0.5-0.24| = 0.26 > 0.25
+    }
 }

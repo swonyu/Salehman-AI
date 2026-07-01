@@ -30,4 +30,20 @@ struct StockSagePartialLadderTests {
         #expect(L.levels(entry: 100, stop: 90, target: 100, rungs: 3) == nil)   // target == entry
         #expect(L.levels(entry: 100, stop: 90, target: 130, rungs: 0) == nil)   // no rungs
     }
+
+    @Test func singleRungLadderExitsAtTarget() {
+        let l = StockSagePartialLadder.levels(entry: 100, stop: 90, target: 130, rungs: 1)!
+        #expect(l.rungs.count == 1)
+        #expect(abs(l.rungs[0].price - 130) < 1e-9)
+        #expect(abs(l.rungs[0].rMultiple - 3.0) < 1e-9)
+        #expect(abs(l.rungs[0].fraction - 1.0) < 1e-9)
+        #expect(abs(l.blendedExitR - 3.0) < 1e-9)
+    }
+
+    @Test func largeRungsCountBlendingIsCorrect() {
+        let l = StockSagePartialLadder.levels(entry: 100, stop: 90, target: 150, rungs: 10)!
+        #expect(l.rungs.count == 10)
+        #expect(l.rungs.allSatisfy { abs($0.fraction - 0.1) < 1e-9 })
+        #expect(abs(l.blendedExitR - 2.75) < 1e-9)
+    }
 }

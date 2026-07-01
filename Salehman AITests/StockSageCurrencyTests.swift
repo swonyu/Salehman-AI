@@ -73,4 +73,12 @@ struct StockSageCurrencyTests {
         #expect(CC.breakdown(holdings: [], ratesToBase: ["EUR": 1.1], base: "USD") == nil)
         #expect(CC.breakdown(holdings: [(100, "JPY")], ratesToBase: [:], base: "USD") == nil)
     }
+
+    @Test func concentrationJustUnder25PercentNotFlagged() {
+        let b = StockSageCurrency.breakdown(
+            holdings: [(1000, "USD"), (333.33, "EUR")],
+            ratesToBase: ["EUR": 1.0], base: "USD", concentrationThreshold: 0.25)!
+        #expect(b.concentration == nil)
+        #expect(!b.hasFXRisk)
+    }
 }

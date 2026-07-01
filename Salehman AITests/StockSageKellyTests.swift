@@ -112,4 +112,10 @@ struct StockSageKellyTests {
         #expect(k.dollarsToAllocate == 0)
         #expect(k.note.localizedCaseInsensitiveContains("cost"))
     }
+
+    @Test func zeroAccountSizeYieldsZeroDollars() {
+        let k = StockSageKelly.compute(winRate: 0.60, payoffRatio: 2.0, accountSize: 0)
+        #expect(abs(k.suggestedFraction - 0.20) < 1e-9)
+        #expect(k.dollarsToAllocate == 0.0)
+    }
 }

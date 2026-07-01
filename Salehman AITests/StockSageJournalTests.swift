@@ -452,4 +452,55 @@ struct StockSageJournalTests {
         #expect(s.avgR == 0.5)
         #expect(StockSageJournal.stats([]).closed == 0)
     }
+
+    @Test func streakSingleWinTradeIsStreakOfOne() {
+        let single = [TradeRecord(symbol: "AAPL", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
+                                 openedAt: Date(timeIntervalSince1970: 0),
+                                 exitPrice: 120, closedAt: Date(timeIntervalSince1970: 100))]
+        let s = StockSageJournal.streak(single)!
+        #expect(s.streakCount == 1)
+        #expect(s.streakIsWin == true)
+        #expect(abs(s.bestR - 2.0) < 1e-9 && s.bestSymbol == "AAPL")
+    }
+
+    @Test func streakNoStreakWhenAllBreakeven() {
+        let breakeven = (0..<3).map { i in
+            TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
+                        openedAt: Date(timeIntervalSince1970: Double(i) * 100),
+                        exitPrice: 100, closedAt: Date(timeIntervalSince1970: Double(i) * 100 + 50))
+        }
+        let s = StockSageJournal.streak(breakeven)!
+        #expect(s.streakCount == 0)
+    }
+
+    @Test func equityRiskAllWinnersZeroDrawdown() {
+        let winners = [1.5, 2.0, 1.0].enumerated().map { i, r in
+            TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
+                        openedAt: Date(timeIntervalSince1970: Double(i) * 100),
+                        exitPrice: 100 + r * 10, closedAt: Date(timeIntervalSince1970: Double(i) * 100 + 50))
+        }
+        let risk = StockSageJournal.equityRisk(winners)!
+        #expect(risk.maxConsecutiveLosses == 0)
+        #expect(abs(risk.maxDrawdownR) < 1e-9)
+    }
+
+    @Test func expectancyTrendDeltaAtBandExactlyIsFlat() {
+        let flat = (0..<6).map { i -> TradeRecord in
+            let r = i < 3 ? 0.0 : 0.3
+            return TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
+                              openedAt: Date(timeIntervalSince1970: Double(i) * 100),
+                              exitPrice: 100 + r * 10, closedAt: Date(timeIntervalSince1970: Double(i) * 100 + 50))
+        }
+        let t = StockSageJournal.expectancyTrend(flat, band: 0.3)!
+        #expect(t.direction == .flat)
+    }
+
+    @Test func classifyHealthPFBoundaryIsInclusive() {
+        let atBound = StockSageJournal.classifyHealth(profitFactor: 1.5, expectancyR: 0.5, significant: true,
+                                                      n: 30, maxDrawdownR: 3.0, minTrades: 20, deepDrawdownR: 8.0)
+        #expect(atBound.verdict == .strong)
+        let justBelow = StockSageJournal.classifyHealth(profitFactor: 1.49, expectancyR: 0.5, significant: true,
+                                                        n: 30, maxDrawdownR: 3.0, minTrades: 20, deepDrawdownR: 8.0)
+        #expect(justBelow.verdict == .developing)
+    }
 }

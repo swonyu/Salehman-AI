@@ -2,7 +2,7 @@
 
 10 agents -> 43 source-verified test specs. RE-VERIFY each expected value before adding.
 
-### ⬜ StockSageBacktester.summarize — Adverse gap fills BELOW the stop (entry 100, stop 97, gap-open 96)
+### ✅ DONE StockSageBacktester.summarize — Adverse gap fills BELOW the stop (entry 100, stop 97, gap-open 96)
 **Expected:** avgR = -4/3 ≈ -1.333 (filled at the gap-open, not the stop)
 ```swift
 @Test func summarizeAdverseGapFillsAtWorseThanStopPrice() {
@@ -14,7 +14,7 @@
 }
 ```
 
-### ⬜ StockSageBacktester.summarize — Breakeven trade (r==0) counted in trades but excluded from win/loss split [+1, 0, -1]
+### ✅ DONE StockSageBacktester.summarize — Breakeven trade (r==0) counted in trades but excluded from win/loss split [+1, 0, -1]
 **Expected:** trades=3, wins=1, winRate=1/3, totalR=0, avgWinR=1, avgLossR=1, maxDrawdownR=1
 ```swift
 @Test func summarizerBreakevenTradeExcludedFromWinLossSplit() {
@@ -34,7 +34,7 @@
 }
 ```
 
-### ⬜ StockSageBacktester.summarize — Max drawdown peak-to-trough across cumulative R [+5,-2,-2,-2]
+### ✅ DONE StockSageBacktester.summarize — Max drawdown peak-to-trough across cumulative R [+5,-2,-2,-2]
 **Expected:** cum=[5,3,1,-1], peak=5 throughout → maxDrawdownR=6
 ```swift
 @Test func summarizeMaxDrawdownTracksPeakToTrough() {
@@ -49,7 +49,7 @@
 }
 ```
 
-### ⬜ StockSageBacktester.summarize — Average hold bars = mean(exitIndex - entryIndex) for variable holds
+### ✅ DONE StockSageBacktester.summarize — Average hold bars = mean(exitIndex - entryIndex) for variable holds
 **Expected:** avgHoldBars = (1 + 10) / 2 = 5.5
 ```swift
 @Test func summarizeComputesAverageHoldBarsCorrectly() {
@@ -62,7 +62,7 @@
 }
 ```
 
-### ⬜ StockSageIndicators.returnOverPeriod — past price is zero (closes[0]=0) → division guard
+### ✅ DONE StockSageIndicators.returnOverPeriod — past price is zero (closes[0]=0) → division guard
 **Expected:** nil
 ```swift
 @Test func returnOverPeriodRejectsZeroPastPrice() {
@@ -70,7 +70,7 @@
 }
 ```
 
-### ⬜ StockSageIndicators.macd — fast >= slow (inverted / equal) is rejected
+### ✅ DONE StockSageIndicators.macd — fast >= slow (inverted / equal) is rejected
 **Expected:** nil
 ```swift
 @Test func macdRejectsFastNotLessThanSlow() {
@@ -80,7 +80,7 @@
 }
 ```
 
-### ⬜ StockSageIndicators.efficiencyRatio — all prices identical → noise==0 guard
+### ✅ DONE StockSageIndicators.efficiencyRatio — all prices identical → noise==0 guard
 **Expected:** 0.0
 ```swift
 @Test func efficiencyRatioFlatPriceReturnsZero() {
@@ -88,7 +88,7 @@
 }
 ```
 
-### ⬜ StockSageIndicators.emaSeries — period == 0 → guard period > 0 (prevents k = 2/(0+1) blowups)
+### ✅ DONE StockSageIndicators.emaSeries — period == 0 → guard period > 0 (prevents k = 2/(0+1) blowups)
 **Expected:** []
 ```swift
 @Test func emaSeriesRejectsPeriodZero() {
@@ -96,7 +96,7 @@
 }
 ```
 
-### ⬜ StockSageIndicators.rsi — period == 0 → guard prevents /period division
+### ✅ DONE StockSageIndicators.rsi — period == 0 → guard prevents /period division
 **Expected:** nil
 ```swift
 @Test func rsiRejectsPeriodZero() {
@@ -104,7 +104,7 @@
 }
 ```
 
-### ⬜ StockSageIndicators.atr — period == 0 → guard
+### ✅ DONE StockSageIndicators.atr — period == 0 → guard
 **Expected:** nil
 ```swift
 @Test func atrRejectsPeriodZero() {
@@ -112,7 +112,7 @@
 }
 ```
 
-### ⬜ StockSageIndicators.efficiencyRatio — period == 0 → guard (suffix(period+1) safety)
+### ✅ DONE StockSageIndicators.efficiencyRatio — period == 0 → guard (suffix(period+1) safety)
 **Expected:** nil
 ```swift
 @Test func efficiencyRatioRejectsPeriodZero() {
@@ -120,7 +120,7 @@
 }
 ```
 
-### ⬜ StockSageIndicators.returnOverPeriod — period == 0 → guard (index underflow)
+### ✅ DONE StockSageIndicators.returnOverPeriod — period == 0 → guard (index underflow)
 **Expected:** nil
 ```swift
 @Test func returnOverPeriodRejectsPeriodZero() {
@@ -128,7 +128,7 @@
 }
 ```
 
-### ⬜ StockSageStrategyBacktest.aggregate — zero-return symbol (totalR==0) is NOT counted profitable (> not >=)
+### ✅ DONE StockSageStrategyBacktest.aggregate — zero-return symbol (totalR==0) is NOT counted profitable (> not >=)
 **Expected:** symbolsProfitable = 0
 ```swift
 @Test func aggregateSymbolWithZeroReturnIsNotProfitable() {
@@ -144,7 +144,7 @@
 }
 ```
 
-### ⬜ StockSagePortfolioHeat.compute (.level) — heatPct exactly 0.10 is .hot (warm uses < 0.10)
+### ✅ DONE StockSagePortfolioHeat.compute (.level) — heatPct exactly 0.10 is .hot (warm uses < 0.10)
 **Expected:** .hot (1000 risk on 10k = 10%)
 ```swift
 @Test func heatAtExact10PercentBoundaryIsHot() {
@@ -156,7 +156,7 @@
 }
 ```
 
-### ⬜ StockSagePortfolioHeat.compute (.level) — heatPct exactly 0.05 is .warm (cool uses < 0.05)
+### ✅ DONE StockSagePortfolioHeat.compute (.level) — heatPct exactly 0.05 is .warm (cool uses < 0.05)
 **Expected:** .warm (500 risk on 10k = 5%)
 ```swift
 @Test func heatAtExact5PercentBoundaryIsWarm() {
@@ -169,7 +169,7 @@
 }
 ```
 
-### ⬜ StockSageNetEdge.evaluate — netExpectancyR at winProb 0 and 1 (entry100 stop90 target130, no costs)
+### ✅ DONE StockSageNetEdge.evaluate — netExpectancyR at winProb 0 and 1 (entry100 stop90 target130, no costs)
 **Expected:** winProb 0 → -1.0; winProb 1 → 3.0
 ```swift
 @Test func netExpectancyRAtExtremeWinProbs() {
@@ -180,7 +180,7 @@
 }
 ```
 
-### ⬜ StockSageExpectedValue.ev(conviction:entry:stop:target:) — SHORT trade entry>stop, target<entry (entry100 stop110 target80 conv0.9) — abs() parity
+### ✅ DONE StockSageExpectedValue.ev(conviction:entry:stop:target:) — SHORT trade entry>stop, target<entry (entry100 stop110 target80 conv0.9) — abs() parity
 **Expected:** rewardR=2.0, winProbEstimate≈0.557, evR≈0.671, isPositive
 ```swift
 @Test func evShortTradeParity() {
@@ -193,7 +193,7 @@
 }
 ```
 
-### ⬜ StockSageExpectedValue.winProbEstimate(conviction:) — midpoint conviction 0.5 pins the 0.35 + 0.23·c formula
+### ✅ DONE StockSageExpectedValue.winProbEstimate(conviction:) — midpoint conviction 0.5 pins the 0.35 + 0.23·c formula
 **Expected:** 0.465
 ```swift
 @Test func winProbEstimateMidpoint() {
@@ -201,7 +201,7 @@
 }
 ```
 
-### ⬜ StockSageGEFlip.sellTax — sellPrice exactly at taxExemptBelow (50) is NOT exempt (>= guard)
+### ⬜ (OUT OF SCOPE — OSRS/GEFlip, owner-directed markets-tab-only scope) StockSageGEFlip.sellTax — sellPrice exactly at taxExemptBelow (50) is NOT exempt (>= guard)
 **Expected:** 1 (floor(50·0.02))
 ```swift
 @Test func sellTaxAtBoundary50NotExempt() {
@@ -209,7 +209,7 @@
 }
 ```
 
-### ⬜ StockSageGEFlip.sellTax — tax-cap inflection at 250M (floor(250M·0.02)=5M exactly)
+### ⬜ (OUT OF SCOPE — OSRS/GEFlip, owner-directed markets-tab-only scope) StockSageGEFlip.sellTax — tax-cap inflection at 250M (floor(250M·0.02)=5M exactly)
 **Expected:** 249,999,999→4,999,999; 250,000,000→5,000,000; 251,000,000→5,000,000
 ```swift
 @Test func sellTaxAtCapInflection() {
@@ -219,7 +219,7 @@
 }
 ```
 
-### ⬜ StockSageGEFlip.flips — negative profit after tax (buy 1000, sell 1010, tax 20 → -10) is silently dropped
+### ⬜ (OUT OF SCOPE — OSRS/GEFlip, owner-directed markets-tab-only scope) StockSageGEFlip.flips — negative profit after tax (buy 1000, sell 1010, tax 20 → -10) is silently dropped
 **Expected:** empty result
 ```swift
 @Test func flipsFiltersNegativeProfitAfterTax() {
@@ -231,7 +231,7 @@
 }
 ```
 
-### ⬜ StockSageGEFlip.bestFlipsForBudget — greedy remainder below next item's buyPrice is not allocated
+### ⬜ (OUT OF SCOPE — OSRS/GEFlip, owner-directed markets-tab-only scope) StockSageGEFlip.bestFlipsForBudget — greedy remainder below next item's buyPrice is not allocated
 **Expected:** only A bought: units=2, totalCapital=2000 (remainder 500 < B's 2000)
 ```swift
 @Test func bestFlipsForBudgetPartialRemainder() {
@@ -246,7 +246,7 @@
 }
 ```
 
-### ⬜ StockSageGEFlip.gpPerHour — minimum viable profit (profit=1 survives > 0 guard): buy100 sell103 limit100
+### ⬜ (OUT OF SCOPE — OSRS/GEFlip, owner-directed markets-tab-only scope) StockSageGEFlip.gpPerHour — minimum viable profit (profit=1 survives > 0 guard): buy100 sell103 limit100
 **Expected:** 25.0 (profit 1 · 100 ÷ 4h)
 ```swift
 @Test func gpPerHourMinimumViableProfit() {
@@ -255,7 +255,7 @@
 }
 ```
 
-### ⬜ StockSageGEFlip.GEFlip.roiPct — minimal non-zero buyPrice (=1) division boundary
+### ⬜ (OUT OF SCOPE — OSRS/GEFlip, owner-directed markets-tab-only scope) StockSageGEFlip.GEFlip.roiPct — minimal non-zero buyPrice (=1) division boundary
 **Expected:** 10000.0 (profit 100 ÷ 1 · 100)
 ```swift
 @Test func roiPctWithMinimalBuyPrice() {
@@ -265,7 +265,7 @@
 }
 ```
 
-### ⬜ StockSageRiskParity.targets(_:) — negative currentValue (short) is silently filtered (>= 0 guard)
+### ✅ DONE StockSageRiskParity.targets(_:) — negative currentValue (short) is silently filtered (>= 0 guard)
 **Expected:** only LONG survives: count 1
 ```swift
 @Test func negativeCurrentValueSilentlyDropped() {
@@ -278,7 +278,7 @@
 }
 ```
 
-### ⬜ StockSageRiskParity.targets(_:) — all currentValue == 0 → validTotal 0 → currentWeight falls back to target (delta 0)
+### ✅ DONE StockSageRiskParity.targets(_:) — all currentValue == 0 → validTotal 0 → currentWeight falls back to target (delta 0)
 **Expected:** A target 2/3, B target 1/3, both deltaWeight 0
 ```swift
 @Test func allZeroCurrentValueUsesTargetAsCurrentWeight() {
@@ -295,7 +295,7 @@
 }
 ```
 
-### ⬜ StockSageAllocation.breakdown(_:) — mixed long/short — negative-value short dropped from slices (where value > 0) but clamped to 0 in total
+### ✅ DONE StockSageAllocation.breakdown(_:) — mixed long/short — negative-value short dropped from slices (where value > 0) but clamped to 0 in total
 **Expected:** totalValue=175, byClass count 1 (Equity), topClassConcentration=1.0
 ```swift
 @Test func mixedSignHoldingsShortsDroppedFromConcentration() {
@@ -306,7 +306,7 @@
 }
 ```
 
-### ⬜ StockSageKelly.compute(winRate:payoffRatio:accountSize:) — zero accountSize → dollarsToRisk 0 (max(0,account) guard)
+### ✅ DONE StockSageKelly.compute(winRate:payoffRatio:accountSize:) — zero accountSize → dollarsToRisk 0 (max(0,account) guard)
 **Expected:** suggestedFraction 0.20, dollarsToRisk 0.0
 ```swift
 @Test func zeroAccountSizeYieldsZeroDollars() {
@@ -316,7 +316,7 @@
 }
 ```
 
-### ⬜ StockSageRegime.adjustedWeight(base:bias:cap:) — zero bias zeroes the position (base>0 passes, then ·0)
+### ✅ DONE StockSageRegime.adjustedWeight(base:bias:cap:) — zero bias zeroes the position (base>0 passes, then ·0)
 **Expected:** 0.0
 ```swift
 @Test func zeroBiasSilentlyZerosPosition() {
@@ -324,7 +324,7 @@
 }
 ```
 
-### ⬜ StockSageAdvisor.stopTarget(action:price:atr:) — buy with atr == 0 hits the $0>0?…:8% false branch (distinct from atr: nil)
+### ✅ DONE StockSageAdvisor.stopTarget(action:price:atr:) — buy with atr == 0 hits the $0>0?…:8% false branch (distinct from atr: nil)
 **Expected:** stop = 92, target = 116
 ```swift
 @Test func stopTargetWithZeroATRUses8PercentFallback() {
@@ -334,7 +334,7 @@
 }
 ```
 
-### ⬜ StockSageCurrency.breakdown — non-base weight just under 0.25 is NOT flagged (> threshold, strict)
+### ✅ DONE StockSageCurrency.breakdown — non-base weight just under 0.25 is NOT flagged (> threshold, strict)
 **Expected:** concentration == nil, hasFXRisk == false (EUR ≈ 24.9998%)
 ```swift
 @Test func concentrationJustUnder25PercentNotFlagged() {
@@ -347,7 +347,7 @@
 }
 ```
 
-### ⬜ StockSageAlertDecision.evaluate — target crossed EXACTLY on the level (price == target) still fires (>= guard)
+### ✅ DONE StockSageAlertDecision.evaluate — target crossed EXACTLY on the level (price == target) still fires (>= guard)
 **Expected:** .targetHit
 ```swift
 @Test func targetCrossedExactlyOnTheLevel() {
@@ -357,7 +357,7 @@
 }
 ```
 
-### ⬜ StockSageAlertDecision.evaluate — stop crossed EXACTLY on the level (price == stop) still fires (<= guard)
+### ✅ DONE StockSageAlertDecision.evaluate — stop crossed EXACTLY on the level (price == stop) still fires (<= guard)
 **Expected:** .stopBreach
 ```swift
 @Test func stopCrossedExactlyOnTheLevel() {
@@ -367,7 +367,7 @@
 }
 ```
 
-### ⬜ StockSageRebalance.plan — drift exactly at band (2%) is suppressed; 2.1% > band trades (> band, strict)
+### ✅ DONE StockSageRebalance.plan — drift exactly at band (2%) is suppressed; 2.1% > band trades (> band, strict)
 **Expected:** at band → trades empty; above band → trades non-empty
 ```swift
 @Test func driftExactlyAtBandEdge() {
@@ -380,7 +380,7 @@
 }
 ```
 
-### ⬜ StockSagePartialLadder.levels — single-rung (rungs=1) degenerate: whole position exits at the target
+### ✅ DONE StockSagePartialLadder.levels — single-rung (rungs=1) degenerate: whole position exits at the target
 **Expected:** 1 rung at 130, rMultiple 3.0, fraction 1.0, blendedExitR 3.0
 ```swift
 @Test func singleRungLadderExitsAtTarget() {
@@ -393,7 +393,7 @@
 }
 ```
 
-### ⬜ StockSagePartialLadder.levels — large rungs (10) blended average scaling
+### ✅ DONE StockSagePartialLadder.levels — large rungs (10) blended average scaling
 **Expected:** 10 rungs each fraction 0.1, blendedExitR = 2.75 (target 150 → 5R; (1+2+…+10)/10·(5/10)=2.75)
 ```swift
 @Test func largeRungsCountBlendingIsCorrect() {
@@ -406,7 +406,7 @@
 }
 ```
 
-### ⬜ StockSageIndicators.annualizedVolatility — a zero/corrupt price mid-series drops a return; survivors decide nil
+### ✅ DONE StockSageIndicators.annualizedVolatility — a zero/corrupt price mid-series drops a return; survivors decide nil
 **Expected:** [100,0,110] → nil (only 1 valid return); [100,100,110] → non-nil
 ```swift
 @Test func annualizedVolatilitySkipsZeroPrice() {
@@ -415,7 +415,7 @@
 }
 ```
 
-### ⬜ StockSageJournal.streak — single closed trade with R != 0 → streak of 1
+### ✅ DONE StockSageJournal.streak — single closed trade with R != 0 → streak of 1
 **Expected:** streakCount 1, streakIsWin true, bestR 2.0
 ```swift
 @Test func streakSingleWinTradeIsStreakOfOne() {
@@ -429,7 +429,7 @@
 }
 ```
 
-### ⬜ StockSageJournal.streak — all decisive trades breakeven (R==0) → no streak
+### ✅ DONE StockSageJournal.streak — all decisive trades breakeven (R==0) → no streak
 **Expected:** streakCount 0 (not crash/undefined)
 ```swift
 @Test func streakNoStreakWhenAllBreakeven() {
@@ -443,7 +443,7 @@
 }
 ```
 
-### ⬜ StockSageJournal.equityRisk — all winners → zero losing run, zero drawdown
+### ✅ DONE StockSageJournal.equityRisk — all winners → zero losing run, zero drawdown
 **Expected:** maxConsecutiveLosses 0, maxDrawdownR 0.0
 ```swift
 @Test func equityRiskAllWinnersZeroDrawdown() {
@@ -458,7 +458,7 @@
 }
 ```
 
-### ⬜ StockSageJournal.expectancyTrend — delta exactly == band → .flat (delta > band is strict)
+### ✅ DONE StockSageJournal.expectancyTrend — delta exactly == band → .flat (delta > band is strict)
 **Expected:** .flat (early mean 0, recent mean 0.1, band 0.1)
 ```swift
 @Test func expectancyTrendDeltaAtBandExactlyIsFlat() {
@@ -473,7 +473,7 @@
 }
 ```
 
-### ⬜ StockSageJournal.classifyHealth — profitFactor exactly 1.5 is .strong (>= 1.5); 1.49 is .developing
+### ✅ DONE StockSageJournal.classifyHealth — profitFactor exactly 1.5 is .strong (>= 1.5); 1.49 is .developing
 **Expected:** 1.5 → .strong; 1.49 → .developing
 ```swift
 @Test func classifyHealthPFBoundaryIsInclusive() {
@@ -486,7 +486,7 @@
 }
 ```
 
-### ⬜ StockSageAdvisor.advise(closes:highs:lows:) — 50–200 bars uses the lighter 0.20 trend term (buy, not strongBuy) vs full 0.40 at 250 bars
+### ✅ DONE StockSageAdvisor.advise(closes:highs:lows:) — 50–200 bars uses the lighter 0.20 trend term (buy, not strongBuy) vs full 0.40 at 250 bars
 **Expected:** 70-bar uptrend → .buy; 250-bar uptrend → .strongBuy; short conviction < long conviction
 ```swift
 @Test func fiftyBarHistoryUsesLighterTrendScore() {
@@ -497,3 +497,5 @@
     #expect(aShort.conviction < aLong.conviction)
 }
 ```
+
+**2026-06-28 implementation:** All 37 in-scope specs (6 GEFlip/OSRS items excluded per owner's markets-tab-only directive) verified via a 16-agent parallel re-audit against current source (function signatures, independently re-derived expected values, duplicate-coverage checks) before adding — 35/37 confirmed exactly as drafted, 2 needed fixes (a stale raw-integer-ramp fixture replaced with the file's own `TrendFixtures.up()` helper; a floating-point boundary case that didn't land bit-exact in binary64, corrected to values that do). A 38th case (`driftExactlyAtBandEdge`, not part of the 37 above — a StockSageRebalance boundary test) surfaced the SAME floating-point-boundary class of bug during the actual build+test run despite passing the 16-agent audit, and was fixed the same way (0.02/5200/4800 replaced with the bit-exact 0.25/2500/7500 pair). All 37 + the 2 alert-boundary tests (redirected from the wrong target file `StockSageAlertsTests.swift` to the correct `StockSageAlertDecisionTests.swift` — the audit caught that `StockSageAlertDecision` is a distinct enum from `StockSageAlerts`) now pass. Full suite green.

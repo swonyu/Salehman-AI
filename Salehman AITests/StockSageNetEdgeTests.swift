@@ -92,4 +92,11 @@ struct StockSageNetEdgeTests {
         #expect(NE.evaluate(entry: 100, stop: 100, target: 110) == nil)  // zero risk
         #expect(NE.evaluate(entry: 100, stop: 95, target: 100) == nil)   // zero reward
     }
+
+    @Test func netExpectancyRAtExtremeWinProbs() {
+        let e0 = StockSageNetEdge.evaluate(entry: 100, stop: 90, target: 130, winProb: 0)!
+        let e1 = StockSageNetEdge.evaluate(entry: 100, stop: 90, target: 130, winProb: 1)!
+        #expect(abs(e0.netExpectancyR! - (-1.0)) < 1e-9)
+        #expect(abs(e1.netExpectancyR! - 3.0) < 1e-9)
+    }
 }

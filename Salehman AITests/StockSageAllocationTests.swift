@@ -43,4 +43,11 @@ struct StockSageAllocationTests {
         #expect(AL.breakdown([("AAPL", 0)]).totalValue == 0)
         #expect(AL.breakdown([("AAPL", 0)]).byClass.isEmpty)   // zero-value dropped
     }
+
+    @Test func mixedSignHoldingsShortsDroppedFromConcentration() {
+        let b = StockSageAllocation.breakdown([("AAPL", 100), ("SHY", -50), ("MSFT", 75)])
+        #expect(b.totalValue == 175)
+        #expect(b.byClass.count == 1)
+        #expect(abs(b.topClassConcentration - 1.0) < 1e-9)
+    }
 }

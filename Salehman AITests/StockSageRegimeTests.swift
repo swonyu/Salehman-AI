@@ -64,4 +64,8 @@ struct StockSageRegimeTests {
         #expect(StockSageRegime.breadth([short]) == nil)             // none eligible
         #expect(StockSageRegime.breadth([]) == nil)
     }
+
+    @Test func zeroBiasSilentlyZerosPosition() {
+        #expect(StockSageRegime.adjustedWeight(base: 0.10, bias: 0.0, cap: 0.20) == 0.0)
+    }
 }

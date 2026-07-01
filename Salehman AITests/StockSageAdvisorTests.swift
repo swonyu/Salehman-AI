@@ -271,4 +271,18 @@ struct StockSageAdvisorTests {
         #expect(a.action == .buy || a.action == .strongBuy)
         #expect(a.rationale.contains { $0.contains("50DMA") })
     }
+
+    @Test func stopTargetWithZeroATRUses8PercentFallback() {
+        let st = StockSageAdvisor.stopTarget(action: .buy, price: 100, atr: 0)
+        #expect(st.stop == 92)
+        #expect(st.target == 116)
+    }
+
+    @Test func fiftyBarHistoryUsesLighterTrendScore() {
+        let aShort = StockSageAdvisor.advise(closes: TrendFixtures.up(70))
+        let aLong  = StockSageAdvisor.advise(closes: TrendFixtures.up(250))
+        #expect(aShort.action == .buy)
+        #expect(aLong.action == .strongBuy)
+        #expect(aShort.conviction < aLong.conviction)
+    }
 }

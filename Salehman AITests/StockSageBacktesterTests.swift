@@ -248,4 +248,47 @@ struct StockSageBacktesterTests {
         let wider = StockSageNetEdge.CostAssumption(spreadBps: 100, slippageBps: 100, assetClass: "crypto")
         if free.trades > 0 { #expect(StockSageBacktester.run(up, costs: wider).totalR < costed.totalR) }
     }
+
+    @Test func summarizeAdverseGapFillsAtWorseThanStopPrice() {
+        let trade = BacktestTrade(entryIndex: 0, exitIndex: 1, entry: 100, exit: 96, r: -4.0/3.0, outcome: .stop)
+        let result = StockSageBacktester.summarize([trade])
+        #expect(result.trades == 1)
+        #expect(abs(result.avgR - (-4.0/3.0)) < 1e-9)
+    }
+
+    @Test func summarizerBreakevenTradeExcludedFromWinLossSplit() {
+        let trades = [
+            BacktestTrade(entryIndex: 0, exitIndex: 1, entry: 100, exit: 101, r: 1, outcome: .target),
+            BacktestTrade(entryIndex: 1, exitIndex: 2, entry: 101, exit: 101, r: 0, outcome: .openAtEnd),
+            BacktestTrade(entryIndex: 2, exitIndex: 3, entry: 101, exit: 100, r: -1, outcome: .stop)
+        ]
+        let result = StockSageBacktester.summarize(trades)
+        #expect(result.trades == 3)
+        #expect(result.wins == 1)
+        #expect(abs(result.winRate - 1.0/3.0) < 1e-9)
+        #expect(abs(result.totalR) < 1e-9)
+        #expect(abs(result.avgWinR - 1) < 1e-9)
+        #expect(abs(result.avgLossR - 1) < 1e-9)
+        #expect(abs(result.maxDrawdownR - 1) < 1e-9)
+    }
+
+    @Test func summarizeMaxDrawdownTracksPeakToTrough() {
+        let trades = [
+            BacktestTrade(entryIndex: 0, exitIndex: 1, entry: 100, exit: 105, r: 5, outcome: .target),
+            BacktestTrade(entryIndex: 1, exitIndex: 2, entry: 105, exit: 103, r: -2, outcome: .stop),
+            BacktestTrade(entryIndex: 2, exitIndex: 3, entry: 103, exit: 101, r: -2, outcome: .stop),
+            BacktestTrade(entryIndex: 3, exitIndex: 4, entry: 101, exit: 99, r: -2, outcome: .stop)
+        ]
+        let result = StockSageBacktester.summarize(trades)
+        #expect(abs(result.maxDrawdownR - 6) < 1e-9)
+    }
+
+    @Test func summarizeComputesAverageHoldBarsCorrectly() {
+        let trades = [
+            BacktestTrade(entryIndex: 5, exitIndex: 6, entry: 100, exit: 101, r: 1, outcome: .target),
+            BacktestTrade(entryIndex: 10, exitIndex: 20, entry: 100, exit: 110, r: 2, outcome: .target)
+        ]
+        let result = StockSageBacktester.summarize(trades)
+        #expect(abs(result.avgHoldBars - 5.5) < 1e-9)
+    }
 }

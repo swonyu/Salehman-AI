@@ -70,4 +70,26 @@ struct StockSageRiskParityTests {
         #expect(amounts["B"]! < 0)
         #expect(abs(amounts["A"]! + amounts["B"]!) < 1e-6)   // deltas net to ~0
     }
+
+    @Test func negativeCurrentValueSilentlyDropped() {
+        let t = StockSageRiskParity.targets([
+            RiskParityHolding(symbol: "SHORT", currentValue: -100, volatility: 0.20),
+            RiskParityHolding(symbol: "LONG", currentValue: 100, volatility: 0.20),
+        ])
+        #expect(t.count == 1)
+        #expect(t[0].symbol == "LONG")
+    }
+
+    @Test func allZeroCurrentValueUsesTargetAsCurrentWeight() {
+        let t = StockSageRiskParity.targets([
+            RiskParityHolding(symbol: "A", currentValue: 0, volatility: 0.10),
+            RiskParityHolding(symbol: "B", currentValue: 0, volatility: 0.20),
+        ])
+        let a = t.first { $0.symbol == "A" }!
+        let b = t.first { $0.symbol == "B" }!
+        #expect(abs(a.targetWeight - 2.0/3.0) < 1e-9)
+        #expect(abs(b.targetWeight - 1.0/3.0) < 1e-9)
+        #expect(abs(a.deltaWeight) < 1e-9)
+        #expect(abs(b.deltaWeight) < 1e-9)
+    }
 }
