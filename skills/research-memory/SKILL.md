@@ -14,11 +14,29 @@ contradicted. All paths below are relative to the repo root (`/Users/saleh/ai`).
 
 | File | What it is |
 |---|---|
-| `research/INDEX.md` | The catalog: one dated line per research item + key findings. Auto-loaded into every session via CLAUDE.md's `@research/INDEX.md` import. Keep **< ~200 lines** (46 now). |
+| `research/INDEX.md` | The catalog: one dated line per research item + key findings. Auto-loaded into every session via CLAUDE.md's `@research/INDEX.md` import. Keep **< ~200 lines** (its length drifts — never pin it). |
 | `research/RESEARCH_CORPUS_DIGEST.md` | Fast-load distillation of the 3 largest docs. **Originals win on any disagreement.** |
 | `RESEARCH_*.md` (repo **root**, not `research/`) | Detail files — 5 exist, `RESEARCH_2026-06-26_quant_engine.md` … `RESEARCH_2026-07-02_week_horizon_velocity.md`. INDEX links use `../` because of this split. |
 | `EDGE_RESEARCH.md`, `MARKETS_INTELLIGENCE_RESEARCH.md`, `DESIGN_RESEARCH_macOS27.md` | Legacy-named detail files, same status. |
 | `AUDIT_2026-07-02_ideas_board.md` | The 54-finding ideas-board audit (F01–F54) + the owner-gate list. |
+
+## Theory quick-map (verdict → detail file)
+
+Which file to open when your change touches a theory area. Verdicts are one-line
+summaries — the detail file wins on any nuance. (All files verified to exist 2026-07-02;
+re-verify: `ls RESEARCH_*.md EDGE_RESEARCH.md MARKETS_INTELLIGENCE_RESEARCH.md DESIGN_RESEARCH_macOS27.md research/RESEARCH_CORPUS_DIGEST.md`.)
+
+| Verdict (one line) | Detail file |
+|---|---|
+| Half-Kelly 0.5× optimal; sizing > signal; concentration works ONLY top-few names, gross of cost; felt conviction = overconfidence | `RESEARCH_2026-06-27_money_fast_conviction.md` |
+| Backtest validation backbone: walk-forward vs CPCV, purge+embargo, deflated/probabilistic Sharpe; fractional Kelly + vol-targeting + heat caps | `RESEARCH_2026-06-26_quant_engine.md` |
+| Beta calibration = CONDITIONAL candidate alongside isotonic + identity (OOS-selected); stops = regime-gated insurance, not alpha; flat-bps cost model | `RESEARCH_2026-06-27_quant_engine_II.md` |
+| 5 vetted engine-spec'd edges + done/open ledger (net-edge gate, TSMOM, left-tail, vol-of-vol, vol-regime) | `EDGE_RESEARCH.md` |
+| Design charter: 2–3 complementary signals MAX, sizing > signal, both exits defined before entry, diversify by risk, backtest honesty | `MARKETS_INTELLIGENCE_RESEARCH.md` |
+| NO 1–5-day equity edge survives retail costs standalone; cost-avoidance is the biggest lever; 7-item refuse-list | `RESEARCH_2026-07-02_week_horizon_velocity.md` |
+| Confluence alignment + cross-sectional RS: NULL (all p>0.10, every horizon) — keep both unpromoted exactly as shipped | `RESEARCH_2026-07-02_confluence_rs_ablation.md` |
+| UI/design ONLY (no signal content): macOS 27 Liquid Glass vs the app's deliberate crimson flat-dark divergence | `DESIGN_RESEARCH_macOS27.md` |
+| Fast-recall distillation of the 3 largest docs — originals win on any disagreement | `research/RESEARCH_CORPUS_DIGEST.md` |
 
 ## Hard rules (in order)
 
@@ -78,8 +96,9 @@ Full rules in the `fact-discipline` skill; the research-specific floor:
 4. If code shipped with it: `bash tools/bundle_source.sh`, update the touched file's entry
    in `MARKETS_TAB_MAP.md`, leave build+tests green.
 5. Commit **by name** (`git add research/INDEX.md RESEARCH_2026-...md ...`). NEVER
-   `git add -A` — `tools/test_grok_bridge.py` is deliberately untracked and
-   `PROJECT_CONTEXT.md` may be dirty from the other session; never touch either.
+   `git add -A` — `PROJECT_CONTEXT.md` may be dirty from the other session; never touch
+   it. (`tools/test_grok_bridge.py` is TRACKED since 713064e, 2026-07-02 — the old
+   "deliberately untracked" rule is obsolete.)
 
 ### 5. The refuse-list is policy, not opinion
 `RESEARCH_2026-07-02_week_horizon_velocity.md` §"Refuse-list" documents 7 verified
@@ -92,13 +111,10 @@ relitigate one without NEW evidence that itself clears the §3 bar — "Grok say
 ### 6. The audit and its owner gates
 `AUDIT_2026-07-02_ideas_board.md` holds findings F01–F54. When you ship a fix for a
 finding, mark its row **closed with the commit hash** in that file — an unmarked row gets
-re-audited and re-fixed by the next session. The following are **owner-gated: you refuse
-to decide them, you do not flag-and-do them** (present options, pick none):
-- **RANKING #10** — EV-vs-velocity default (`preferVelocity`)
-- **F01/F02** — identity-calibration semantics (the two CRITICALs)
-- **F08** — canonical term "Conviction" vs "Signal strength"
-- **F10** — decimal-comma locale policy ("2,5" → 2.5% vs reject)
-- **F03/F44** — weekly-rollup gross-vs-net netting/labeling
+re-audited and re-fixed by the next session. Several findings are **owner-gated: you refuse
+to decide them, you do not flag-and-do them** (present options, pick none) — the canonical
+registry of those gates lives ONLY in the `gated-scope` skill §1; check it there, never
+from a remembered list.
 
 ## Gotchas (things that actually bit)
 
@@ -108,8 +124,9 @@ to decide them, you do not flag-and-do them** (present options, pick none):
   INDEX entry when you catch drift (that's extending, not re-researching).
 - **"Top-3 concentration" is a DISPLAY projection, not an allocator cap.** `maxConcurrent: 3`
   lives only in `StockSageExpectedValue` (fast-lane card math); the real
-  `StockSageCapitalAllocator` is governed by maxHeat + half-Kelly + the correlation-aware
-  optimizer. A past session nearly "fixed" this non-bug — the week-horizon file §"did NOT
+  `StockSageCapitalAllocator` is governed by maxHeat + half-Kelly + correlation-aware
+  clique de-weighting (`StockSageCorrelationCluster` — NOT the unwired
+  `StockSageAllocationOptimizer`). A past session nearly "fixed" this non-bug — the week-horizon file §"did NOT
   establish" documents why no code change follows.
 - **Detail files live at repo root, INDEX in `research/`** — a link written without `../`
   renders fine in some viewers and 404s in others; copy an existing line's link shape.

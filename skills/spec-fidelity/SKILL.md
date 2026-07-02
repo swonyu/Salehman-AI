@@ -14,22 +14,17 @@ expected to X" is the violation, in every phrasing.
 
 ## Why (all of these happened in THIS repo)
 
-- **F40 circular fixtures.** A velocity-threshold test computed its expected values by calling
-  the implementation's own velocity sums — it could never fail. Its "fixed" replacement used
-  straddle fixtures at **13.4x and 0.40x around a 1.5x threshold**, so any constant in
-  (0.41, 13.4) passed. Circular expected values and non-straddling pins both verify nothing.
-- **NetEdge fixture.** A hand-math error (fixture said reward 40; correct value 30) made a
-  contract test fail. The correct fix was a standalone re-derivation script that proved the
-  fixture wrong — NOT editing the assertion to match the implementation's output. Same edit,
-  opposite epistemics: the derivation is what made it legal.
-- **WHIPPYX vacuous test.** A symbol typo (fixture defined `WHIPPYX`, history dict keyed
-  `WHIPPYEX`) made `buildIdeas` return empty; a soft `guard else return` passed silently and
-  the agent reported green. A test is evidence only when its pasted output proves the behavior
-  fired (e.g. `#expect(ideas.count == 1)`), never when "it passes."
-- **Wave-11 narration.** An implementation agent described its own edits as "pre-existing in
-  wave-11" — the diff contradicted the report. Reports are claims; `git diff` and pasted
-  command output are the facts. (Dev-log drift is the same disease: an entry once claimed a
-  spacer that a later pass had deleted, and "fixtures updated: None" after +3 test files.)
+Full stories live in the `incident-ledger` skill — cite rows, never retell:
+- **F40 circular fixtures** (incident-ledger IL-24): circular expected values and
+  non-straddling pins both verify nothing — a "straddle" that any wide range of constants
+  passes pins nothing.
+- **NetEdge fixture** (incident-ledger IL-25): a failing contract test is fixed by a
+  standalone re-derivation that proves which side is wrong — NOT by editing the assertion to
+  match the implementation. Same edit, opposite epistemics: the derivation makes it legal.
+- **WHIPPYX vacuous test** (incident-ledger IL-23): a test is evidence only when its pasted
+  output proves the behavior fired (e.g. `#expect(ideas.count == 1)`), never when "it passes."
+- **Wave-11 narration** (incident-ledger IL-26): reports are claims; `git diff` and pasted
+  command output are the facts. (Dev-log drift, incident-ledger IL-27, is the same disease.)
 
 ## How (ideas-tab operational procedure)
 
@@ -60,12 +55,11 @@ expected to X" is the violation, in every phrasing.
 5. **Ground-truth the tree, not the narration:** `git diff --stat && git diff -- <claimed files>`
    before writing the `DEVELOPMENT_LOG.md` entry; the entry describes the FINAL tree you just
    read, not what you remember doing.
-6. **Owner gates — parked means parked.** These require explicit owner sign-off; a
-   "⚠️ pending confirmation" note is NOT permission (RANKING #10 held across many waves;
-   F01/F02 held with three options rather than picking one): **RANKING #10**
-   (EV-vs-velocity default ordering) · **F01/F02** (identity-calibration semantics — present
-   the engine options, don't choose) · **F08** (term choice) · **F10** (locale) ·
-   **weekly-rollup netting**. If your fix would "naturally" resolve one, stop and ask.
+6. **Owner gates — parked means parked.** The canonical owner-gate registry lives ONLY in
+   the `gated-scope` skill §1 — check it there; never restate it.
+   Unique to spec work: if a failing test's "natural fix" would resolve a gated question —
+   e.g. by pinning one side of a parked decision into an assertion — stop and ask; a
+   fixture is never how an owner decision gets made.
 
 ## Violation examples
 
@@ -85,7 +79,7 @@ expected to X" is the violation, in every phrasing.
 2. The output proves the behavior FIRED (counts/values asserted; an empty-result path would fail it).
 3. Every expected value traces to the captured spec or a pasted standalone derivation — zero from calling the code under test.
 4. `git diff` agrees with every claim in your report and your dev-log entry.
-5. No owner-gated surface (RANKING #10, F01/F02, F08, F10, weekly-rollup netting) was resolved without sign-off.
+5. No owner-gated surface (canonical registry: `gated-scope` §1) was resolved without sign-off.
 
 ## Gotchas (things that actually bit)
 

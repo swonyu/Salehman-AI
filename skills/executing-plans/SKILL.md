@@ -9,11 +9,12 @@ description: How to execute a multi-step plan in this repo (ideas-tab / Markets 
 
 ## WHY — every clause above is scar tissue from this repo
 
-- **WHIPPYX vacuous test.** A symbol typo (`'WHIPPYX'` in the def vs `'WHIPPYEX'` in the history key) made `buildIdeas` return empty and a soft `guard else return` pass silently; the agent reported the test green. Only adversarial review caught that the test verified NOTHING. Hence "output proves the behavior fired": assert the positive (`#expect(ideas.count == 1)`), and paste the run output — a bare "passed" is compatible with an empty no-op.
-- **Wave-11 "pre-existing" narration.** An implementation agent described its own edits as "pre-existing in wave-11" — its report directly contradicted `git diff`. The orchestrator trusted the tree, not the narration. Reports are claims; the diff and pasted command output are the facts.
-- **F40 circular fixtures.** A threshold test asserted the implementation's own velocity sums back at itself, and its replacement's "straddle" fixtures sat at 13.4x and 0.40x around a 1.5x threshold — ANY constant in (0.41, 13.4) would have passed. Expected values come from the captured spec or hand derivation, never from calling the code under test; boundary pins must genuinely straddle.
-- **NetEdge fixture.** A hand-math error (reward 40 vs actual 30) made a test fail. The fix was RE-DERIVING the number in a standalone swift script — never editing the assertion to match the implementation's output. A red test is a mismatch: STOP and find out which side is wrong before touching either.
-- **Dev-log drift.** A DEVELOPMENT_LOG entry claimed "Added 72px bottom spacer" after the correction pass had DELETED it, and "Test fixtures updated: None" after +3 test files. Logs describe the FINAL tree — re-read the diff before writing the entry, not your memory of what you did.
+Full stories live in the `incident-ledger` skill — cite rows, never retell:
+- **WHIPPYX vacuous test** (incident-ledger IL-23): a test passed green while verifying NOTHING — hence "output proves the behavior fired": assert the positive (`#expect(ideas.count == 1)`) and paste the run output; a bare "passed" is compatible with an empty no-op.
+- **Wave-11 "pre-existing" narration** (incident-ledger IL-26): reports are claims; the diff and pasted command output are the facts.
+- **F40 circular fixtures** (incident-ledger IL-24): expected values come from the captured spec or hand derivation, never from calling the code under test; boundary pins must genuinely straddle.
+- **NetEdge fixture** (incident-ledger IL-25): a red test is a mismatch — STOP and re-derive in a standalone script; never edit the assertion to match the implementation's output.
+- **Dev-log drift** (incident-ledger IL-27): logs describe the FINAL tree — re-read the diff before writing the entry, not your memory of what you did.
 
 ## HOW — the operational loop (ideas-tab workstream)
 
@@ -42,12 +43,8 @@ Per plan step, in order. All commands from the repo root (the dir holding `Saleh
    ```
    Paste the tail showing `** TEST SUCCEEDED **` AND the count of new tests actually running. A new test that never executed proves nothing (WHIPPYX).
 5. **Diff is ground truth.** Before reporting the step done: `git diff --stat` + `git diff -- <files>`. Your report describes what the DIFF shows, in the diff's words. If your narrative and the diff disagree, the diff wins and your narrative gets rewritten (Wave-11).
-6. **Owner gates — a step touching any of these STOPS regardless of how sure you are.** "⚠️ pending confirmation" in a plan is NOT permission; RANKING #10 stayed parked across many waves and that was correct.
-   - **RANKING #10** — EV-vs-velocity default (`preferVelocity` opt-in default)
-   - **F01/F02** — identity-calibration semantics (hold the three options: nil-from-thin-branch / provenance marker / clamp ≤ prior — do not pick one)
-   - **F08** — canonical term: "Conviction" vs "Signal strength"
-   - **F10** — decimal-comma locale policy (Saudi-first; affects every money field)
-   - **F03/F44** — weekly-rollup netting (net the headline vs label it "gross, before costs")
+6. **Owner gates — a step touching a gated item STOPS regardless of how sure you are.** The canonical owner-gate registry lives ONLY in the `gated-scope` skill §1 — check it before every plan step; never copy it into a plan or report.
+   Unique to plan execution: "⚠️ pending confirmation" written IN a plan is NOT permission — a plan cannot pre-authorize a gate (RANKING #10 stayed parked across many waves, and that was correct).
 7. **Log last.** Write the DEVELOPMENT_LOG entry from the final `git diff`, after all correction passes — list test-file changes by counting them in the diff, not from memory.
 
 ## Violation examples
@@ -64,7 +61,7 @@ Per plan step, in order. All commands from the repo root (the dir holding `Saleh
 1. Reality matched the plan — or I STOPPED and reported the exact mismatch instead of adapting.
 2. Verification command OUTPUT is pasted (build/test tail with `** … SUCCEEDED **`), and it proves the new behavior FIRED (positive assertion executed), not merely that nothing failed.
 3. Every expected value was hand-derived (standalone script / spec), never read off the code under test; boundary fixtures genuinely straddle.
-4. My report says only what `git diff` shows; no owner-gated item (RANKING #10, F01/F02, F08, F10, F03/F44 netting) was decided by me.
+4. My report says only what `git diff` shows; no owner-gated item (canonical registry: `gated-scope` §1) was decided by me.
 5. DEVELOPMENT_LOG entry written from the final tree, after corrections — counts verified against the diff.
 
 ## Gotchas (things that actually bit)
@@ -72,5 +69,5 @@ Per plan step, in order. All commands from the repo root (the dir holding `Saleh
 - **A green test can verify nothing.** Soft `guard else return` + wrong fixture key = silent pass (WHIPPYX). Prove the code path fired: assert non-empty results, or temporarily break the implementation and confirm the test goes red before trusting it green.
 - **"Fixing" a red test by editing the assertion** is the NetEdge trap. A red test means plan-vs-reality mismatch — STOP, re-derive by hand, and only then decide which side is wrong.
 - **Your own memory of the session is not the tree.** Correction passes delete things you added earlier (dev-log drift). Always re-diff before reporting or logging.
-- **Test suite ~1,493 cases and parallel** — never have two tests mutate the same global `UserDefaults` key; a flaky collision looks like a plan mismatch and wastes a STOP.
+- **The test suite runs in parallel** (its size drifts — never pin or gate on the count; gate on the verdict line) — never have two tests mutate the same global `UserDefaults` key; a flaky collision looks like a plan mismatch and wastes a STOP.
 - **Never Read the build log or SOURCE_BUNDLE.md into context** — `tee /tmp/salehman_build.log | tail -25`, grep on failure only (CLAUDE.md token discipline).

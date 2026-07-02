@@ -11,10 +11,9 @@ The repo is `swonyu/Salehman-AI` (private); CI runs on a **self-hosted Mac runne
 every push; `gh` lives at **`/opt/homebrew/bin/gh`** (NOT on the Bash tool's default PATH).
 
 **Step 0 — owner-gate check.** Before shipping, confirm nothing in the diff crosses a
-parked owner gate: RANKING #10 (`preferVelocity` default flip), F01/F02 (identity-calibration
-engine options), F08 (Conviction ↔ Signal-strength term), F10 (decimal-comma locale),
-F03 (weekly-rollup gross→net). These are **refused, not flagged-and-done** — full procedure
-and the current registry live in the `gated-scope` skill. Same for the honesty floor: no new
+parked owner gate. Gated items are **refused, not flagged-and-done** — the full procedure
+and the canonical registry live ONLY in the `gated-scope` skill §1; check it there, never
+from a remembered list. Same for the honesty floor: no new
 surface may fabricate a nil, show an unlabeled estimate, mix gross/net unlabeled, or present
 signal-strength as P(profit).
 
@@ -27,8 +26,9 @@ xcodebuild test -scheme "Salehman AI" -destination 'platform=macOS' -configurati
 - Gate on the **verdict LINE**: `** BUILD SUCCEEDED **` / `** TEST SUCCEEDED **`. NOT on `$?`
   — the pipe's exit code is `tail`'s (always 0). This exact false-green happened in CI until
   `set -o pipefail` was added to `ci.yml`.
-- The suite is ~1,450+ Swift Testing cases; **per-test counts fluctuate ±1** from
-  parallel-runner log interleaving — never gate on "Executed N tests", only on the verdict.
+- The suite is large and parallel (its size drifts — never pin the count); **per-test counts
+  fluctuate ±1** from parallel-runner log interleaving — never gate on "Executed N tests",
+  only on the verdict.
 - On failure, list the failures (never Read/cat the log into context):
   ```bash
   grep -E "Test case '.*' failed" /tmp/salehman_build.log | sed -E "s/.*'([^']+)'.*/\1/" | sort -u

@@ -12,19 +12,19 @@ actually happened here.
 ## Hard gates (non-negotiable — each cites the real failure it blocks)
 
 1. **Done = pasted verification OUTPUT proving the behavior FIRED.** Never "it passes."
-   The WHIPPYX test passed green while verifying nothing: a symbol typo ('WHIPPYX' def vs
-   'WHIPPYEX' history key) made `buildIdeas` return empty and a soft `guard else return`
-   exit silently. Assert the positive path (`#expect(ideas.count == 1)`) and paste the run output.
+   The WHIPPYX test (incident-ledger IL-23) passed green while verifying nothing.
+   Assert the positive path (`#expect(ideas.count == 1)`) and paste the run output.
 2. **The diff is the fact; reports are claims.** A wave-11 agent described its own edits as
-   "pre-existing." Trust `git diff` and pasted command output over any narration — including your own.
+   "pre-existing" (incident-ledger IL-26). Trust `git diff` and pasted command output over
+   any narration — including your own.
 3. **Expected test values come from the captured spec or a standalone hand-derivation
    (`swift /tmp/derive.swift`), NEVER from calling the code under test.** F40's fixtures
-   sat at 13.4x and 0.40x around a 1.5x threshold — any constant in (0.41, 13.4) passed.
-   When a fixture fails hand-math (NetEdge: reward 40 vs actual 30), re-derive; never edit
-   the assertion to match the implementation. Boundary pins must genuinely straddle.
-4. **Logs describe the FINAL tree, verified by reading it.** A dev-log entry claimed
-   "Added 72px bottom spacer" after the correction pass had deleted it, and "Test fixtures
-   updated: None" after +3 test files. Re-check the tree before writing the entry.
+   didn't straddle (incident-ledger IL-24); when a fixture fails hand-math
+   (incident-ledger IL-25, NetEdge), re-derive; never edit the assertion to match the
+   implementation. Boundary pins must genuinely straddle.
+4. **Logs describe the FINAL tree, verified by reading it.** The 72px-spacer entry
+   (incident-ledger IL-27) described deleted work as shipped. Re-check the tree before
+   writing the entry.
 5. **A "⚠️ pending confirmation" note is NOT permission to proceed.** RANKING #10 stayed
    parked across many waves; audit F01/F02 held with three options presented, F08 held. Hold gates the same way.
 6. **Every stat carries source+date; unknowns stay labeled.** nil = unknown, never fabricated;
@@ -41,7 +41,9 @@ Exact read order (CLAUDE.md is auto-loaded — obey it; then):
    entries for files you will touch: `grep -n '^### <File>.swift' MARKETS_TAB_MAP.md`
    → Read at that offset (~40 lines). **Never the whole file (~228 KB / 78 entries).**
 3. **`AUDIT_2026-07-02_ideas_board.md` §5** — `grep -n '## 5. Needs owner decision'`
-   → Read that section (~30 lines). These 8 items are the standing owner-gate list.
+   → Read that section (~30 lines) for per-finding detail on parked items. The canonical
+   owner-gate registry itself lives ONLY in the `gated-scope` skill §1 — it wins on any
+   disagreement.
 4. **`DEVELOPMENT_LOG.md` tail** — `grep -n 'Standing notes' DEVELOPMENT_LOG.md`
    → Read the ~60 lines above the anchor (entries append just above it). Never a full-file Read.
 
@@ -62,7 +64,7 @@ Do not trust compacted memories of numbers or line refs — re-grep the `file:li
 | Route | What | Gate |
 |---|---|---|
 | **Opus solo** | Display/label/copy/comment changes; test-only additions; doc updates; QA screenshot passes (`run-salehman-ai` skill) | `driver.sh build` + `test` green with the verdict line pasted; hard gates 1–4 above |
-| **Queue for owner** | Every AUDIT §5 item (F01/F02 identity-calibration, F03/F44 gross-vs-net headline, F10 decimal-comma, F08/F21 term, F09, F13, F12, F19/F20); ANY EV/ranking/threshold/engine-constant change (RANKING #10 precedent); ANY honesty-guard removal or wording weakening; anything the `gated-scope` skill marks BLOCKED (unanswered owner decision / spec fact / measurement) | Write `BLOCKED: <exact question>` with options (the F01/F02 three-option pattern) and STOP. Gate 5: pending ≠ permission |
+| **Queue for owner** | Everything on the canonical owner-gate registry (`gated-scope` §1) and every AUDIT §5 "Needs owner decision" row; ANY EV/ranking/threshold/engine-constant change (RANKING #10 precedent); ANY honesty-guard removal or wording weakening; anything the `gated-scope` skill marks BLOCKED (unanswered owner decision / spec fact / measurement) | Write `BLOCKED: <exact question>` with options (the F01/F02 three-option pattern) and STOP. Gate 5: pending ≠ permission |
 | **Recommend Fable (pay-per-use)** | Adversarial multi-lens verification of engine-math changes; deep-research fan-outs (the corpus standard is 3-vote adversarial verification, source+date per stat — see research/INDEX.md); architecture calls like the F19/F20 view-logic extractions | Tell the owner why the call exceeds your gates; don't attempt a cheap local version |
 
 When unsure which row applies, it's the middle row. A wrong solo change to engine math
@@ -85,7 +87,8 @@ costs real money; a queued question costs a day.
   the harness reads the frontmatter and lists it in every session's available-skills reminder.
   No registration step. `CLAUDE.md` already auto-loads separately. Companion skills in the
   same directory activate the same way: `gated-scope` (refuse, don't flag), `fact-discipline`,
-  `spec-fidelity`, `executing-plans`, `markets-review-gate`, `stocksage-engine`, `run-salehman-ai`.
+  `spec-fidelity`, `executing-plans`, `markets-review-gate`, `stocksage-mental-model`
+  (absorbed the retired `stocksage-engine`), `run-salehman-ai`.
 - Add this pointer line to CLAUDE.md's knowledge-base section (**owner or a session with an
   explicit mandate edits CLAUDE.md — do not add it yourself from this skill**):
 

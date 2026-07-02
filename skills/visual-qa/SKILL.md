@@ -6,7 +6,7 @@ description: Live-app visual QA pass for UI-visible changes in Salehman AI (Mark
 # Visual QA — the live-app pass for UI changes
 
 Tests prove the numbers; they prove nothing about rendering. Wave 11's pinned bar compiled,
-passed 1,493 tests, and still wrapped "Backtest 5 years" mid-word as "Backtes/t 5 years" until
+passed the full test suite, and still wrapped "Backtest 5 years" mid-word as "Backtes/t 5 years" until
 someone looked at actual pixels (DEVELOPMENT_LOG 2026-07-02). This skill is that look, made mandatory.
 
 **Run/screenshot mechanics live in `run-salehman-ai` — use its driver and click map.
@@ -36,30 +36,35 @@ Coordinates are approximate and shift if the window moves.
 
 ## THE CHECKLIST
 Honesty surfaces (a regression here is P1 — the app's whole value is not lying):
+(Anchor `MarketsView.swift` by the grep strings below — NEVER by line number; the file
+shifts constantly and its map anchors are symbol names by repo rule.)
 - [ ] Calibration chip: **"win% assumed"** (⚠ triangle) or **"win% measured · n=N"** (seal) —
-      `Views/MarketsView.swift` ~3507; 4 call sites (best-opp, deploy capital, money velocity, sheet EV).
+      grep `calibrationChip` in `Views/MarketsView.swift`; 4 call sites (best-opp, deploy capital,
+      money velocity, sheet EV).
 - [ ] **"(gross)"** on every EV figure: card header "+0.51R EV (gross)", "Est. EV … (gross)" metric,
       fast-lane/deploy rows, sheet EV line.
-- [ ] Sheet EV line ends **"— estimate, not a forecast."** (~4667).
+- [ ] Sheet EV line ends **"— estimate, not a forecast."** (grep `estimate, not a forecast`).
 - [ ] Partial-universe line when fetches missed: **"⚠︎ N priced · M couldn't be fetched (SYM…) —
-      ranking covers only what loaded."** (~2958). Absent only when everything loaded.
+      ranking covers only what loaded."** (grep `couldn't be fetched`). Absent only when everything loaded.
 - [ ] Gate R:R label reads **"Net reward:risk (after est. costs) X.X:1"** ONLY when the net figure
-      resolved; plain "Reward:risk" otherwise (`StockSage/StockSageTradeGate.swift:53`). The R:R
-      break-even note carries "gross" (`StockSageRewardRisk.swift`).
+      resolved; plain "Reward:risk" otherwise (grep `rrPrefix` in `StockSage/StockSageTradeGate.swift`).
+      The R:R break-even note carries "gross" (`StockSageRewardRisk.swift`).
 Rendering integrity:
 - [ ] No **"Optional(…)"**, "nil", "(nan%)", "(inf%)" anywhere — zoom on dense metric rows.
 - [ ] No mid-word wrap or ellipsis truncation at the sheet's 440pt floor
-      (`.frame(minWidth: 440 …)`, MarketsView ~5129) AND at the default window (~516pt).
+      (grep `minWidth: 440` in MarketsView) AND at the default window (~516pt).
       Drag the sheet to its narrowest and re-check the pinned bar. Canonical catch: the bar once
       wrapped "Backtest 5 years" as "Backtes/t 5 years" and, after a lineLimit fix, truncated the
       verdict to "Proceed…" — it now uses compact labels (Log trade · Copy plan · Backtest 5y).
 - [ ] Pinned-bar verdict chip legible and single-line: **"Clear" / "Caution" / "Do NOT trade"**
       (buy-family only; Hold/Avoid legitimately show buttons without a chip).
-- [ ] Section headers render: **Evidence** (~4634), **Exit plan** (~4729), **Context** (~4844).
+- [ ] Section headers render: **Evidence**, **Exit plan**, **Context** (grep the exact
+      `Text("Evidence")` / `Text("Exit plan")` / `Text("Context")` labels).
       Exit plan/Context are content-gated — MISSING on a Hold/Avoid sheet with no content is correct.
 Both sides of the book:
 - [ ] A BUY-family sheet AND a SELL/REDUCE sheet checked. Position sizer present on BOTH
-      (buy-guard renders it inside; sd#D ~4522 renders it for sell/reduce; Hold/Avoid hide it — no stop).
+      (buy-guard renders it inside; the `sd#D` comment's `positionSizerPanel(idea)` call renders it
+      for sell/reduce — grep `sd#D`; Hold/Avoid hide it — no stop).
 - [ ] Ladder direction on shorts: rungs step DOWN from entry toward the target (sign flip in
       `StockSagePartialLadder.levels`). Ascending rung prices on a sell sheet = bug.
 
@@ -80,10 +85,10 @@ Findings become a fix pass NOW, in this session, before "QA passed" is written a
 3. After any code change: `bash tools/bundle_source.sh`; DEVELOPMENT_LOG.md entry above the
    "Standing notes" anchor (verification-only passes get logged too); update the file's
    MARKETS_TAB_MAP.md entry if a mapped file materially changed.
-4. If a finding's "natural fix" would resolve an owner-gated question — **RANKING #10 (EV-vs-velocity
-   default), F01/F02 (identity-calibration options), F08 (Conviction↔Signal-strength term),
-   F10 (decimal-comma locale), weekly-rollup netting** — REFUSE and ask the owner; see the
-   spec-fidelity skill. These are refused, not flagged-and-done.
+4. If a finding's "natural fix" would resolve an owner-gated question, REFUSE and ask the
+   owner — refused, not flagged-and-done. The canonical owner-gate registry lives ONLY in
+   the `gated-scope` skill §1; check it before any fix that changes a label, default, or
+   number the owner has parked (see also `spec-fidelity` for assertion-side gates).
 
 ## Gotchas (things that actually bit)
 - **@AppStorage persists filters between sessions.** `marketsIdeaFilter` = Sells survives an app

@@ -1,0 +1,137 @@
+---
+name: incident-ledger
+description: The canonical failure-archaeology table for the Salehman AI repo — every named incident (WHIPPYX, F40, NetEdge-40, wave-11 narration, the 72px spacer, CI tail-eats-exit-code false-green, "Backtes/t" wrap, F46 flag drift, the wave-8 sizer burial, BrainPreference lock, DeepSeek key exposure, ENOSPC, the 2026-07-02 session-limit deaths, the calc-wave type-checker timeout, and more) with date, symptom → root cause, evidence pointer, the rule it spawned, and which skill owns that rule today. Use when a failure feels familiar and you want to know if it has happened before; when citing an incident in a report, skill, or log entry (cite the row ID — never retell the story); when writing or reviewing a skill's "Why" section; when a new failure deserves a durable record; or when onboarding and asking "why does this repo have that rule?"
+---
+
+# Incident ledger — one row per scar, one home for every retelling
+
+This table is the single canonical record of the named failures that shaped this repo's
+rules. Each row: what broke, why, where the evidence lives, what rule it spawned, and
+which skill enforces that rule today.
+
+**When NOT to use this:** if you need the *rule to follow right now*, open the owning
+skill in the last column (e.g. a failing test → `spec-fidelity` / `testing-discipline`;
+a live build failure → `debugging-guide`) — this ledger is the why-archive, not the
+how-runbook. Use `debugging-guide` first when something is broken *now*.
+
+## How to cite a row
+
+Write `incident-ledger IL-23 (WHIPPYX)` — id + name, nothing else. One sentence of
+context is fine; a paragraph retelling the story is the anti-pattern this file exists
+to kill (see "Anti-goal" at the bottom).
+
+## Terms used in the table (defined once)
+
+| Term | Meaning |
+|---|---|
+| **wave N** | One numbered improvement iteration on the ideas board (critique → spec → implement → verify → ship; see `wave-cycle`). Waves 1–12 ran 2026-07-02. |
+| **F-numbers (F01…F54)** | Finding IDs from `AUDIT_2026-07-02_ideas_board.md`, the 54-finding ideas-board audit. |
+| **verdict line** | The `** BUILD SUCCEEDED **` / `** TEST SUCCEEDED **` / `** TEST FAILED **` marker in xcodebuild's output tail. It is the only pass/fail signal — never gate on test counts (they fluctuate with the parallel runner) or on `$?` of a pipe ending in `tail`. |
+| **Grok era** | 2026-06-06→27: xAI's Grok was trialed as an extra session/agent fleet via a Safari terminal bridge (`tools/grok_*`). Trial cancelled; the review-gate lessons remain. |
+| **owner** | The human owner of this repo. "Owner-gated" = parked until the owner answers; the canonical gate registry lives ONLY in `gated-scope` §1. |
+| **vacuous test** | A test that passes while verifying nothing (e.g. a soft `guard else return` swallowing an empty result). |
+| **straddle** | A boundary-pin fixture pair placed just above and just below a threshold so any drift of the constant fails the test. |
+| **DL / DLA / CO / CA** | `DEVELOPMENT_LOG.md` / `DEVELOPMENT_LOG_ARCHIVE.md` (2026-06-04→09) / `COORDINATION.md` / `COORDINATION_ARCHIVE.md`. Evidence quotes an entry **heading substring** — grep for it (headings survive; line numbers don't). |
+
+## The ledger
+
+Chronological. Evidence = grep the quoted substring in the named file. Where a rule has
+no skill owner today, the row says so honestly — that is a gap, not an oversight.
+
+| ID | Incident | Date | Symptom → root cause | Evidence (heading / commit) | Rule it spawned | Rule owner today |
+|---|---|---|---|---|---|---|
+| IL-01 | Cloud model-ID rot | 2026-06-05 | Valid keys returned 400/404 → the default provider model IDs (Groq `llama-3.1-70b-versatile`, Cerebras `llama3.1-8b`, OpenRouter free IDs) had been decommissioned upstream | DLA "Fixed stale cloud model IDs (keys worked, models were dead)" | Verify model IDs live against the provider's `/v1/models`; never hard-assert exact provider model strings in tests | No skill owner (rule lives in that entry's rotation-proof tests; candidate gotcha for `testing-discipline`) |
+| IL-02 | DeepSeek key exposure | 2026-06-07 | Owner pasted a live DeepSeek API key into chat → the secret transited transcripts and was treated as burned; on 2026-06-12 the owner had the entire provider removed end-to-end and the Keychain item destroyed | DLA "Unrestricted Mode … + DeepSeek brain" ("Owner pasted a key in chat → flagged as exposed"); CO board row "DEEPSEEK REMOVAL (2026-06-12" | Keys live ONLY in the macOS Keychain; a key pasted in chat is rotated, never reused | `CLAUDE.md` §"Security & secrets" (no skill needed — the rule is auto-loaded every session) |
+| IL-03 | Secret-scare repeats | 2026-06-05→11 | (a) `sk-proj-` key surfaced from `~/.continue/config.yaml` via IDE selection (repo itself audited clean); (b) owner pasted a live Anthropic key (test curl) in chat; (c) owner RunPod key chat-exposed at `/tmp/.runpod_key`, and in the same program a fine-tune adapter was **silently truncated by disk-full** ("this bit us on the 32B") | DLA "Secret-leak audit (repo clean)"; DLA "Security note (2026-06-08)" inside the Code-tab entry; CA fine-tune runbook ("verify the adapter LOADS … a disk-full truncates silently") | Same Keychain rule as IL-02, plus: after any disk-pressure window, verify artifacts actually LOAD before shipping them | `CLAUDE.md` §"Security & secrets"; the artifact-load rule has no skill owner |
+| IL-04 | Grok-era session failures | 2026-06-06→18 | Trial 3rd session (Grok) hit 0% credits mid-task and left the suite RED with half-done test WIP; the later Safari agent fleet leaked "Upgrade to SuperGrok" chrome into commands, executed prose fences as shell, pinned a 16 GB Mac with 10 tabs, missed rate-limit markers, gutted one file and hallucinated one wrong-path file | DLA "AI-quality pass … + Grok session cancelled"; DL "grok_terminal_bridge.py: 6 session-failure bugs fixed"; DL "Parallel Safari Grok fleet (race-free)" | External-AI work runs in rollback-able lanes; unsupervised agent output needs `git diff` review before keeping ANYTHING; the bridge's parse/safety core got unit tests (`tools/test_grok_bridge.py` — TRACKED since commit 713064e) | `markets-review-gate` (trace-to-call-site, route via `GROK_FIXES.md`); relayed-claim hygiene in `fact-discipline` |
+| IL-05 | ENOSPC disk pressure (×2) | 2026-06-07, 2026-06-18 | #1: every tool call failed `ENOSPC` — volume 100% full (Xcode DerivedData); #2: full test run died "No space left on device" mid-compile and the test host crashed into a 0.000s cascade at ~2.8 GiB free | DLA "Faster FreeCoding" entry NOTE; DL "Warm the abliterated 3B" Result; DL "Standing notes / known issues" (Disk pressure) | Environmental failure ≠ code failure; reclaim levers (`rm -rf ~/Library/Developer/Xcode/DerivedData/*`) documented; full-suite green claims need disk headroom | DL "Standing notes / known issues" block (no skill owner; candidate trap-table row for `debugging-guide`) |
+| IL-06 | Committed-red: missing import | 2026-06-11 | Commit 0d1ddac didn't compile (missing `import UniformTypeIdentifiers`), ALL sessions blocked ~10 min, committed red twice → the `swiftc -typecheck` harness of the day resolved the symbol while real xcodebuild failed | DL "Chat C: polish pass #4 … + red-build incident"; CO resolved row "`5d4d240` — import added"; DL "Marathon hour 3 — … red-build incident (mine)" | "Treat board build-flags as interrupts; only the real gate verifies imports" — an independent full xcodebuild build+test is the merge gate, no proxy counts | `shipping-changes` §independent gate |
+| IL-07 | Missed RED via trailing `$?` | 2026-06-11 | Session believed AITests green while it was RED — it read the background `$?` of a trailing `grep`, not the xcodebuild marker | DL "Chat C: QA v6.1 … + AITests fix" (fix 99f258d); CO Chat-C row | Verdict-by-marker: only the verdict line counts as pass/fail — the ancestor of the CI verify-by-log rule | `debugging-guide` §1 ("that line is the gate"); CI side: `shipping-changes` |
+| IL-08 | Q3 narration feedback loop | 2026-06-11→13 | Local fine-tune emitted its agent prompt + meta-reasoning before answers; the narration was saved to history, so the model read its own analysis back and ESCALATED it every turn | DL "strip the local model's reasoning-dump from replies"; DL "Marathon EGM: reasoning-model <think> block stripping" | Strip model self-talk before it enters context (app code `AgentPipeline.stripNarration`, later extended to `<think>` blocks across every surface) | App code + `ARCHITECTURE.md` (product rule, not a process skill) |
+| IL-09 | Curly-quote build breakage | 2026-06-12→13 | App module wouldn't compile (~20 errors; later curly DELIMITERS like `Image(systemName: “…”)`); the test target, which `@testable import`s the app, was un-compilable while 24 test files were authored blind → macOS autocorrect/tooling converted straight quotes | DL "Marathon polish: … ContentView curly-quote fix"; DL "EOAM: 🟥 CRITICAL build-red fix (string-literal syntax)"; DL Standing notes ("straight outer, curly inner") | "Straight outer, curly inner" — sweep for smart quotes on any mysterious string-literal error | DL Standing-notes block (no skill owner; candidate trap-table row for `debugging-guide`) |
+| IL-10 | swiftc-dialect traps | 2026-06-13 | (a) sandboxed xcodebuild dies pre-compile (XCBBuildService denied) → "build green" claims masked a real RED for a full day; (b) bare swiftc without the project's isolation flags analyzed a different dialect → 5 phantom warnings + a phantom `SendingRisksDataRace` chased for a day | DL "Standing notes / known issues" (sandbox-xcodebuild + flag-parity notes) | Never claim green from a tool that cannot build; any swiftc harness must mirror the project's exact flags (`-swift-version 6 -default-isolation MainActor …`) | `tools/typecheck.sh` header (the flags ARE the fix) + `run-salehman-ai` (sandbox rationale) |
+| IL-11 | Duplicate test-struct redeclarations | 2026-06-13→26 | `invalid redeclaration` + macro-error cascades: `AttachmentMergeTests` declared twice (plus a collision with Swift Testing's own `Attachment`); later two standalone StockSage test files collided with structs in `StockSageTests.swift`, leaving the whole test target un-compilable until 2026-06-26 | DL "EOAP: ✅ TEST target green too"; DL "Add run-salehman-ai skill + repair the test target" | The test target auto-joins every file — unique suite names, and test-target compile is part of the gate | `debugging-guide` trap table (`invalid redeclaration` row, with the dup-finder grep) |
+| IL-12 | Global-key test races → the BrainPreference lock | 2026-06-05→27 | Parallel Swift Testing suites mutating the same `UserDefaults.standard` key flaked (`.serialized` is per-suite only — two serialized suites still race); later ≈10 StockSage tests failed in-suite but passed isolated (singleton/UserDefaults bleed, not parallelism) | DLA heading containing `Do all 4` ("added a shared `BrainPreferenceTestLock`"); DL "Conviction: cap trend-family double-counting" ("shared singleton/UserDefaults bleed"); file `Salehman AITests/BrainPreferenceTestLock.swift` | No two tests mutate the same global key (CLAUDE.md hard rule); when a key has no injection seam, take `BrainPreferenceTestLock.lock` — `lock()` THEN `defer { unlock() }`, in that order | `testing-discipline` §parallel runner + global state |
+| IL-13 | Typecheck-can't-run-tests traps | 2026-06-21→22 | (a) A caveat-sweep test was RED ("survive" isn't a substring of "survivable") but "passed" review because the typecheck harness can't EXECUTE tests; (b) a side-aware AlertDecision change flipped a pre-existing assertion RED — logic-flipped assertions compile fine | DL "Features review pass 30 → fixed BOTH confirmed"; DL "RED-TEST FIX (self-caught regression) — side-aware AlertDecision" | When tests can't run, hand-derive the assertion arithmetic; structurally fixed by CI running the real suite on every push | `testing-discipline` (derivation) + `.github/workflows/ci.yml` (structural) |
+| IL-14 | Workflow burn: 5 concurrent nulled | 2026-06-22 | Launching 5 heavy workflows at once hit server-side rate limiting → 3 of 5 returned null, ~2.4M tokens wasted | DL "FASTMONEY #2 — volatility-aware ATR stops" (WORKFLOW BURN NOTE) | Cap at 1–2 concurrent heavy workflows; a nulled workflow is pure loss | User memory `feedback_workflow_models` (token-efficiency policy) — no repo skill |
+| IL-15 | Audit's cost-R "fix" implemented → disproved → REVERTED | 2026-06-22→23 | An audit claimed dividing realized R by (risk+cost) was "NetEdge-consistent"; its own arithmetic was false (−2.1/2.1 = −1.0, not −1.0476) and the change would have HIDDEN friction on losers | DL "Backtest cost-R: audit #5 EVALUATED then REJECTED (re-verify discipline)" (commit 4477511) | Independently re-derive an auditor's math before landing its fix; leave an intent-comment so the rejection isn't "fixed" back in; add a monotonicity regression test | `fact-discipline` (tier-matched evidence) + `spec-fidelity` (standalone derivation) |
+| IL-16 | Real-data honesty self-regressions | 2026-06-23 | Series on live data: a half-timestamped GE spread rendered as "live" (SELF-REGRESSION #4); an adaptivePrice fix missed per-share sites including the trade-WRITE path (incomplete-fix regression) | DL "SELF-REGRESSION #4 caught + fixed — half-timestamped GE spread rendered as live"; DL "SELF-REGRESSION (incomplete fix) — adaptivePrice now covers EVERY per-share site" | The honesty floor: staleness never renders as live, estimates stay labeled — and a fix must sweep ALL sibling call sites, not the reported one | `visual-qa` (honesty surfaces checklist) + `stocksage-mental-model` (honesty floor) |
+| IL-17 | 10 invisible red tests on first test-target compile | 2026-06-26 | The moment the long-broken test target compiled (IL-11), 10 latent failures surfaced: perfectly-linear ramp fixtures (flat MACD sign-noise), a trend-family cap colliding with the Strong-Buy line, stale assertions, `sampleSeed` singleton pollution | DL "Add run-salehman-ai skill + repair the test target" (and the follow-up fix entries it cites) | Fixtures must be realistic, not degenerate (`TrendFixtures.up/down` — accelerating, not linear); re-derive stale assertions instead of trusting them | `testing-discipline` (fixture realism + derivation) |
+| IL-18 | Grok zero-byte extraction + relayed-diff bugs | 2026-06-27 | (a) An agent stalled mid-extraction leaving `MarketsIdeasSection.swift` EMPTY (0 bytes) with the old `ideasSection` body dangling — build-breaking half-state (the never-wired duplicate was deleted outright 2026-07-01); (b) a relayed handoff diff broke an awaited velocity-record caller and removed a `defer`, caught pre-commit by the review gate | `GROK_FIXES.md` "Agent-1 ideas extraction — broken intermediate state"; DL "Deleted dead `MarketsIdeasSection.swift`"; DL "feat(markets): cancellable ideas refresh + Cancel button" (the corrected impl) | Gate every other-session/agent diff: trace to call sites, distinguish transient mid-write states from regressions, route fixes via `GROK_FIXES.md` tickets | `markets-review-gate` |
+| IL-19 | CI tail-eats-exit-code false-green | 2026-06-27 | First CI reported green while the hosted runner actually BUILD FAILED → the `xcodebuild \| tee \| tail` pipe's exit code is `tail`'s (always 0) | DL "CI — surface the test VERDICT in the log" (names the c05ce33 bug; fix rejects `grep … \|\| tail` because it would re-create the false-green); `.github/workflows/ci.yml` (`set -o pipefail` + `if !` verdict surfacing) | Verify-by-log: the verdict line must APPEAR in the CI log; `set -o pipefail`; never `\|\| tail` | `shipping-changes` (CI section + "tail eats the failure exit code" gotcha) |
+| IL-20 | F46: INDEX said off, shipped code said on | 2026-06-27→07-02 | `candidateSelectorEnabled` was owner-activated (`= true`) on 2026-06-27 but `research/INDEX.md` still described it as "off-by-default" until the audit flagged the drift (F46); the INDEX entry now carries a dated UPDATE | `AUDIT_2026-07-02_ideas_board.md` F46 row; `research/INDEX.md` iter7 entry ("UPDATE 2026-06-27 (owner-approved): … shipped ACTIVATED"); symbol `candidateSelectorEnabled` in `StockSageConvictionCalibration.swift` | Shipped Swift defaults win over any doc claim — grep the source before relying on a documented flag state; docs get dated UPDATEs, never silent edits | `stocksage-flags-and-config` (leads with "grep the source; this table is a map, not the territory"); gotcha also in `research-memory` |
+| IL-21 | Floating-point band-edge failure | logged 2026-06-28 | `StockSageRebalanceTests.driftExactlyAtBandEdge` failed on the real build despite passing its own audit → 0.02 isn't exactly representable in binary64; an exact-boundary compare missed by 1 ulp | DL "TEST_BACKLOG.md: 37 boundary/edge-case tests across 16 files" (the "38th, unrelated case" paragraph; heading dated 2026-06-28 — the citable record) | Boundary fixtures use bit-exact values (powers-of-two-friendly, e.g. 0.25 with 2500/7500) or assert with a tolerance | `testing-discipline` (floating-point gotcha) |
+| IL-22 | Wave-8 sizer burial | 2026-07-02 | The wave-8 detail-sheet restructure buried the position-sizer panel inside the buy-guard, deleting it for sell/reduce ideas — a "display-only" wave silently removed a money surface; 3 independent wave-9 verify lenses converged on it | DL "Ideas-card wave 8+9: detail-sheet decision-first restructure" ("sizer panel restored for sell/reduce ideas (wave 8 had buried it in the buy-guard — 3 verifiers converged)") | The wave sequence is HARD — adversarial verify runs every time; "display-only" scoping is re-checked against what the diff actually removes; QA checks BUY and SELL/REDUCE sheets | `wave-cycle` (sequence + scope drift) + `visual-qa` (both-sheets checklist item) |
+| IL-23 | WHIPPYX vacuous test | 2026-07-02 | A symbol typo (fixture `WHIPPYX` vs history key `WHIPPYEX`) made `buildIdeas` return empty; a soft `guard else return` passed silently and the agent reported green — the test verified NOTHING; caught only by adversarial review | DL "Ideas-engine test hardening: 27 new tests … (F05/F06/F17/F40)" | Hard assertions only: assert the positive count (`#expect(ideas.count == 1)` + `Issue.record`); "it passes" is a claim — paste output proving the behavior FIRED | `testing-discipline` (hard-assert rule); the paste-the-output half in `fact-discipline` |
+| IL-24 | F40 circular / non-straddling fixtures | 2026-07-02 | The fast-lane 1.5× crypto-dominance threshold was asserted with the implementation's own velocity sums (could never fail), and the first "straddle" replacement actually sat at 13.4× / 0.40× — any constant in (0.41, 13.4) passed | Same DL entry as IL-23 (fix: straddle pair 1.455 FALSE / 1.533 TRUE via standalone `derive_hardening.swift`); `AUDIT_2026-07-02_ideas_board.md` F40 row | Expected values come from the captured spec or a standalone derivation script — NEVER from calling the code under test; boundary pins genuinely straddle | `spec-fidelity` (the rule) + `testing-discipline` (the derive-script pattern) |
+| IL-25 | NetEdge reward-40 fixture error | 2026-07-02 | A draft NetEdgeTests fixture hardcoded `reward: 40` for entry 100 / target 130 (true reward 30); the test failed immediately — an arithmetic slip in a hand-built fixture | DL "Week-horizon research roadmap #2 completion" Result paragraph; date correction recorded in DL "Skill-library fix pass: 3 review findings" | A failing contract test is never fixed by editing the assertion — re-derive independently first; the edit is legal only as a consequence of the pasted derivation | `spec-fidelity` (never-edit-the-assertion) |
+| IL-26 | Wave-11 "pre-existing" narration | 2026-07-02 | An implementation agent described its own edits as "pre-existing in wave-11" — its report directly contradicted `git diff`; the orchestrator trusted the tree | Retold consistently in `spec-fidelity`/`fact-discipline`/`executing-plans`/`gated-scope` Why sections; no dedicated DL heading exists (this row is the canonical record) | Reports are claims; `git diff` + pasted command output are the facts — including your own narration | `fact-discipline` §"git diff is ground truth" |
+| IL-27 | 72px-spacer dev-log drift | 2026-07-02 | A wave-11 log draft claimed "added a 72px bottom spacer" and "Test fixtures updated: None" after the correction pass had already DELETED the spacer (it double-gapped ~96px under `.safeAreaInset`) and added +3 test files — the entry was written from memory of the plan, not the final tree | DL "Wave-11: 6 display/label-only improvements to ideaDetailSheet" (correction-pass text: "the earlier 72px spacer double-gapped and was removed") | A DEVELOPMENT_LOG entry describes the FINAL tree — re-read the diff before writing it. (The correction text lives in the Wave-11 entry) | `shipping-changes` §log entry ("describes the FINAL tree") |
+| IL-28 | "Backtes/t 5 years" pinned-bar wrap | 2026-07-02 | Waves 11+12 merged test-suite-green, yet live visual QA found the pinned CTA bar wrapping mid-word ("Backtes/t 5 years", "Log this trade" on 3 lines) and the first fix truncated the verdict chip to "Proceed…" — minWidth-440 layout had never been checked in pixels | DL "Pinned-bar visual-QA fix: compact button + verdict labels (display-only)" | A green test suite is not visual verification; only pixels are — risky layout changes get pre-merge live QA at the width floor | `visual-qa` (the whole skill; this is its charter incident) |
+| IL-29 | Type-checker-timeout build breaks (recurring) | 2026-06-12→07-02 | "unable to type-check this expression in reasonable time" from expression-level inference blowups: the composer controls row (split into subviews), an Int/Double `.map` ternary in tests, and — flagship — the calc-wave's inherited diff whose chained `enumerated().map{}.sorted{}.map(\.idea)` NEVER COMPILED (the predecessor session died before ever building it) | DL "Chat tab high-end design parity" (composer split); DL "Add run-salehman-ai skill + repair the test target" (ternary); DL "Calc-quality wave — calibration provenance …" ("Build break found in the inherited diff") | Split chained/tuple-heavy expressions into explicitly-typed statements (semantics identical); and NEVER trust an inherited diff compiled — verify hunk-by-hunk against the spec, then build it yourself | `debugging-guide` (trap-table row); inherited-diff verification in `executing-plans` |
+| IL-30 | Session/usage-limit death cluster (+ stray-keystroke interrupt) | 2026-07-02 | Four deaths in one day: the calc-wave session died mid-test-writing; a plan dry-run died awaiting its baseline build; the ~18:00 Fable usage limit shipped 3 commits (d914cd8 / 058de64 / 713064e) WITHOUT mandated log entries; the skill-library fixer agent died with 3 findings unapplied. Also: the owner's stray backspace interrupted a live turn ("i pressed backspace by mistake", session transcript 2026-07-02 ~17:29Z — impact on in-flight work UNCERTAIN, recorded as the interrupt-risk exemplar) | DL "Calc-quality wave" Files paragraph ("died at the session limit mid-test-writing"); DL "Flagship-plan dry run (redo)"; DL "BACKFILL: three commits the parked session shipped without log entries"; DL "Skill-library fix pass: 3 review findings the parked fixer never applied" | The durability directive: impl agents work in git worktrees with WIP commits as they go; the handoff file updates at every phase boundary; unlogged commits get BACKFILL entries; recovery follows the playbook, never re-runs blindly | `~/.claude/salehman-ideas-handoff.md` (recovery playbook) + user memory `feedback_workflow_models` — no repo skill owner (candidate section for `opus-operating`) |
+
+## Below the fold — logged but not promoted to rows
+
+Named in the logs, lower rule-yield; promote any of these if it recurs:
+launchd triple failure (Python-3.9 crash-loop in `tools/ingest_sessions.py`, the 13,500×
+Ollama crash-loop, the never-ran autocheckpoint job — CO board item, 2026-06-11; lesson:
+verify silent-daemon health by log); Xcode "live issues" going stale after external edits
+(DL Standing notes); the QA runner's AUDIT.json read-before-refresh race; Gemini free-tier
+`limit:0` 429s (account state, not an app bug); the 15-agents-for-"who are you" complexity
+misjudgment; the 2026-06-06 cross-lane regression green-up (repo moves must sweep ALL path
+constants).
+
+## How to add a row
+
+A failure earns a row when it (1) is named/nameable, (2) has a diagnosed root cause, and
+(3) spawned or sharpened a rule. Then:
+
+1. **Verify before writing.** Find the DEVELOPMENT_LOG / archive / audit heading (or
+   commit) and quote a grep-able substring of it. No evidence pointer → no row.
+2. **Append with the next IL-nn id.** Never renumber existing rows — they are cited by id.
+3. **Name the rule's owner.** If a skill owns the rule, name it; if none does, write "no
+   skill owner" honestly — that column doubles as the skill-library gap list.
+4. **Point the owner at the row.** The owning skill's "Why" gets a one-line anchor citing
+   `incident-ledger IL-nn` — not a retelling (see Anti-goal).
+5. **Never pin counts.** No test counts, universe sizes, or line numbers in a row — they
+   drift. Gate on the verdict line, cite headings and symbol names.
+
+## Anti-goal: this ledger DE-DUPLICATES the retellings
+
+Before this file, the same five incidents (IL-23/24/25/26/27) were retold near-verbatim
+in six skills' "Why" sections — and the copies had already begun to diverge (dates,
+wave-11 vs wave-12 attribution). The failure mode this file prevents is the **seventh
+divergent retelling**. The contract:
+
+- **This table is the only place an incident's story is told in full.**
+- Other skills keep their RULES and a one-line incident anchor (`incident-ledger IL-nn`)
+  — enough to feel the scar, never the full narrative.
+- If you are about to paste an incident paragraph into a skill, a plan, or a report:
+  stop, cite the row.
+
+## Provenance and maintenance
+
+Compiled 2026-07-02 by mining `DEVELOPMENT_LOG.md` (10k+ lines), `DEVELOPMENT_LOG_ARCHIVE.md`,
+`COORDINATION.md`/`COORDINATION_ARCHIVE.md`, `GROK_FIXES.md`, `AUDIT_2026-07-02_ideas_board.md`,
+the root `*_BUGHUNT.md`/`*_AUDIT*.md` files, and `~/.claude/salehman-ideas-handoff.md`.
+Every evidence pointer was verified against the file on that date. Re-verify before
+trusting a row that decisions hang on:
+
+```bash
+# A row's evidence heading still exists (swap in the quoted substring):
+grep -n "Ideas-engine test hardening" DEVELOPMENT_LOG.md DEVELOPMENT_LOG_ARCHIVE.md
+# IL-04: the bridge test file is still tracked:
+git ls-files --error-unmatch tools/test_grok_bridge.py
+# IL-19: CI still carries the pipefail + if-! verdict surfacing:
+grep -n "pipefail\|if !" .github/workflows/ci.yml
+# IL-20: the flag's shipped default (source wins over every doc, this row included):
+grep -n "candidateSelectorEnabled" "Salehman AI/StockSage/StockSageConvictionCalibration.swift"
+# IL-12: the lock pattern file still exists:
+ls "Salehman AITests/BrainPreferenceTestLock.swift"
+# Rule-owner column: the named skills still exist:
+ls skills/ .claude/skills/
+```
+
+If a command's output disagrees with a row: the output wins; fix the row in the same
+pass and log it (IL-20's own rule, applied to this file).

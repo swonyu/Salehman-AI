@@ -57,9 +57,11 @@ This is the primary surface (`Views/MarketsView.swift`). Verified click sequence
 `driver.sh run` + `open_application("Salehman AI")`, window in its default centered position
 (~516 px wide, top-left ~`(430, 245)`); coordinates are approximate and shift if you move the window:
 1. **Markets** tab → click `(753, 292)`. The **Ideas** sub-tab is selected by default.
-2. **Find ideas** → click `(847, 484)`, then `wait ~8s`. It analyses the ~185-name core; the
-   top banner flips from amber *"Last-good (cached) … NOT live"* to green *"● Live worldwide
-   quotes …"*, and three cards populate: **Money velocity**, **Best opportunity now**, **Fast lane**.
+2. **Find ideas** → click `(847, 484)`, then `wait ~8s`. It analyses the core name universe
+   (its size drifts as names are added — never pin the count; the board's own
+   *"N priced · M couldn't be fetched"* line is the live number). The top banner flips from
+   amber *"Last-good (cached) … NOT live"* to green *"● Live worldwide quotes …"*, and three
+   cards populate: **Money velocity**, **Best opportunity now**, **Fast lane**.
 3. The default window is short — the **Best opportunity now** / **Fast lane** cards sit below the
    fold. Either drag the bottom-right resize corner down (`left_click_drag (944,628)→(944,845)`)
    or `scroll` down ~10 ticks at `(688, 480)`, then `screenshot(save_to_disk: true)`.
@@ -82,9 +84,10 @@ type-checks the app target alone, which catches the large majority of Swift mist
 ```bash
 .claude/skills/run-salehman-ai/driver.sh test     # xcodebuild test, only-testing the app suite
 ```
-~1,100+ Swift Testing cases (1,110 as of 2026-06-27, and growing). The verdict line is
-`** TEST SUCCEEDED **` / `** TEST FAILED **`;
-list failures with:
+A large, growing Swift Testing suite. **Gate on the verdict line —
+`** TEST SUCCEEDED **` / `** TEST FAILED **` — never on the case count** (the count
+drifts as tests are added, and the parallel runner's tally interleaves ±1 between
+identical runs). List failures with:
 ```bash
 grep -E "Test case '.*' failed" /tmp/salehman_build.log | sed -E "s/.*'([^']+)'.*/\1/" | sort -u
 ```

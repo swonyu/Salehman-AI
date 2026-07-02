@@ -29,7 +29,7 @@ xcodebuild test -scheme "Salehman AI" -destination 'platform=macOS' -configurati
 
 ## 2. Test-count ±1 is noise, the verdict line is signal
 
-The suite (~1,100+ Swift Testing cases) runs in parallel and the runner's per-test
+The suite runs in parallel (its size drifts — never pin the count) and the runner's per-test
 tally interleaves in the log — counts fluctuate ±1 across identical runs. Do NOT chase
 a "missing test": if the tail says `** TEST SUCCEEDED **`, it succeeded. A count delta
 is only meaningful alongside a `Test case '…' failed` line.
@@ -88,10 +88,11 @@ context-burn anti-pattern.
 - **If the tree contradicts a DEVELOPMENT_LOG entry, the tree wins and the log gets
   corrected** (append the correction above the "Standing notes" anchor — precedent: an
   entry claimed a spacer that a later pass had deleted).
-- Reading `git status` here: `?? tools/test_grok_bridge.py` is a permanently untracked
-  fixture — leave it; a dirty `PROJECT_CONTEXT.md` may belong to ANOTHER live session —
-  never touch or "clean it up". Stage by name only (`git add <file> …`), **never
-  `git add -A`** — it would sweep in both.
+- Reading `git status` here: `tools/test_grok_bridge.py` is TRACKED (since 713064e,
+  2026-07-02 — the old "permanently untracked" note is obsolete; treat it like any other
+  file); a dirty `PROJECT_CONTEXT.md` may belong to ANOTHER live session — never touch
+  or "clean it up". Stage by name only (`git add <file> …`), **never `git add -A`** —
+  it would sweep in a concurrent session's edits.
 - After any fix lands: `bash tools/bundle_source.sh`, DEVELOPMENT_LOG entry above
   "Standing notes", and the `MARKETS_TAB_MAP.md` entry if a mapped file materially
   changed. A fix without these is not done.
@@ -106,10 +107,9 @@ Some failures are not bugs; they are open questions with an owner. Write
   the 0.65 trend cap, `skipRecent:21` TSMOM, RS gated OFF, identity-floored
   calibration. Changing engine math without citing the index entry is a violation,
   not a fix.
-- **Anything on the owner-gate registry** — refuse, don't flag-and-do:
-  RANKING #10 (`preferVelocity` default), F01/F02 (identity-calibration semantics —
-  three options stand, pick none), F08 (Conviction vs Signal-strength term),
-  F10 (decimal-comma locale), F03/F44 (weekly-rollup gross-vs-net).
+- **Anything on the owner-gate registry** — refuse, don't flag-and-do. The canonical
+  registry lives ONLY in the `gated-scope` skill §1 — check it there; never work from
+  a remembered list.
 - **Honesty floor** — a "fix" that fabricates a nil (unknown), drops an "assumed"
   label, blurs gross vs net, or shows signal-strength as P(profit) is a regression by
   definition, even if it makes a test green.

@@ -25,3 +25,10 @@ You do NOT edit the owning session's lane (e.g. `Views/*`). For a real break, ap
 
 ## The Grok heuristic (hard-won)
 Grok — relayed or as a Safari agent — is genuinely strong at **reasoning and reading real files**, and **fabricates pasteable code**: invented type names (`StockIdea` vs `StockSageIdea`), invented commit SHAs, iOS-only APIs in a macOS app, hollow shells that call no real code, and proposing already-shipped features. **Never paste Grok code.** Verify even its *grounded* answers against the call site — its best, well-cited answer once mischaracterized a wiring that the call site disproved.
+
+## External handoff (outbound) — added 2026-07-02
+This skill is the INBOUND half of external work (reviewing what comes back). The OUTBOUND half — handing the app to an external AI or person — has two freshness chores, both owner directives in `CLAUDE.md`:
+1. **Regenerate the source bundle:** `bash tools/bundle_source.sh`. `SOURCE_BUNDLE.md` must contain every line of current source, and CLAUDE.md explicitly requires regenerating it "before handing the app to an external AI/person". Never Read the bundle yourself (~530k tokens, generated output).
+2. **`PROJECT_CONTEXT.md` freshness:** CLAUDE.md names it the canonical "everything about this app" doc for an external reader — before handoff, confirm it reflects any structural change shipped since its last update (new file/brain/tool/removed module). It may be dirty from a concurrent session: verify content, never blind-stage it.
+Grok onboarding prompts (`GROK_SESSION_PROMPT.md` / `GROK_TEAM_PROMPT.md`) remain in the repo if the owner ever re-enables an external Grok session; the Grok heuristic above applies unchanged to whatever comes back.
+Re-verify these citations: `grep -n 'handing the app\|canonical' CLAUDE.md` · `ls tools/bundle_source.sh GROK_SESSION_PROMPT.md GROK_TEAM_PROMPT.md`.

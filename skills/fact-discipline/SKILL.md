@@ -10,11 +10,12 @@ description: The evidence rules for the Markets/ideas-tab workstream in Salehman
 No exceptions for "obvious", "small", "I just ran it", or "the agent said so".
 
 ## Why — every one of these happened in THIS repo
-- **WHIPPYX vacuous test.** A symbol typo (def `WHIPPYX` vs history key `WHIPPYEX`) made `buildIdeas` return empty; a soft `guard else return` passed silently and the agent reported the test green. Only adversarial review caught that the test verified NOTHING. "It passes" is claim-tier; a done step needs the pasted assertion output proving the behavior *fired* (e.g. `#expect(ideas.count == 1)`).
-- **Wave-11 "pre-existing" narration.** An implementation agent described its own edits as "pre-existing in wave-11" — its report contradicted `git diff`. The orchestrator trusted the tree, not the narration. Reports are claims; the diff and the pasted output are the facts.
-- **F40 circular fixtures.** A threshold test asserted the implementation's own velocity sums; its "straddle" replacement sat at 13.4× and 0.40× around a 1.5× threshold — any constant in (0.41, 13.4) passed. Expected values come from the captured spec / hand derivation, and boundary pins must genuinely straddle.
-- **NetEdge fixture.** A hand-math error (reward 40 vs actual 30) failed a test; the fix was RE-DERIVING with a standalone script — never editing the assertion to match the implementation's output. When derivation and code disagree, one of them is wrong; find out which.
-- **Dev-log drift.** A DEVELOPMENT_LOG entry claimed "Added 72px bottom spacer" after the correction pass had DELETED it, and "Test fixtures updated: None" after +3 test files. Logs describe the final tree, verified by reading it — not your memory of intermediate states.
+Full stories live in the `incident-ledger` skill — cite rows, never retell:
+- **WHIPPYX vacuous test** (incident-ledger IL-23): "it passes" is claim-tier; a done step needs the pasted assertion output proving the behavior *fired* (e.g. `#expect(ideas.count == 1)`).
+- **Wave-11 "pre-existing" narration** (incident-ledger IL-26): reports are claims; the diff and the pasted output are the facts.
+- **F40 circular fixtures** (incident-ledger IL-24): expected values come from the captured spec / hand derivation, and boundary pins must genuinely straddle.
+- **NetEdge fixture** (incident-ledger IL-25): when derivation and code disagree, one of them is wrong — re-derive with a standalone script; never edit the assertion to match the implementation.
+- **Dev-log drift** (incident-ledger IL-27): logs describe the final tree, verified by reading it — not your memory of intermediate states.
 - **What good looks like here:** research corpus uses 3-vote adversarial verification with source+date on every stat (`research/INDEX.md`); the board says "191 priced · 1 couldn't be fetched — ranking covers only what loaded"; an owner-relayed "50% weekly usage cap" claim was flagged unconfirmed, not repeated as fact.
 
 ## How — the operational procedure
@@ -36,12 +37,8 @@ No exceptions for "obvious", "small", "I just ran it", or "the agent said so".
 6. **Owner-relayed and Grok-relayed claims are claims.** Verify against the tree/docs before acting; if unverifiable, carry them forward explicitly flagged "unconfirmed" (the 50%-cap precedent). Never paste relayed code (see `markets-review-gate`).
 
 ## Owner gates — "⚠️ pending confirmation" is NOT permission
-These decisions are parked for owner sign-off. Do not pick a side, "temporarily" default one, or bundle them into adjacent work (`AUDIT_2026-07-02_ideas_board.md`, `RANKING_BACKLOG.md`):
-- **RANKING #10** — EV-vs-velocity default (`preferVelocity`). Held across many waves; ranking changes require empirical validation or owner sign-off.
-- **F01/F02** — identity-calibration semantics (nil-from-thin-branch vs provenance marker vs clamp-≤-prior). Present all three; pick none.
-- **F08** — canonical term "Conviction" vs "Signal strength" (blocks the F21 sweep).
-- **F10** — decimal-comma locale policy ("2,5" → 2.5% vs reject-ambiguous) for a Saudi-first app; touches every money field.
-- **Weekly-rollup netting (F03/F44)** — gross vs net for `expectedWeeklyR`; relabeling/netting a headline number and the VelocityHistory continuity break are owner calls.
+The canonical owner-gate registry lives ONLY in the `gated-scope` skill §1 — read it there before acting; never restate it here or in a report.
+Unique evidence rule: an owner gate is never closed by evidence YOU produce — do not pick a side, "temporarily" default one, or bundle a gated decision into adjacent work; present the options with tier-matched evidence and stop.
 
 ## Violation examples
 **Violating:** "Added the velocity floor. Tests pass, build is green. Also went ahead and defaulted `preferVelocity = true` since the audit leans that way, and updated the log ('fixtures: none')."
@@ -54,4 +51,4 @@ These decisions are parked for owner sign-off. Do not pick a side, "temporarily"
 2. Every expected value hand-derived by a standalone script from the spec — never from the code under test; boundaries genuinely straddle.
 3. `git diff` read and it matches what I'm about to report; the log entry describes the final tree.
 4. Every number I'm reporting has a source + as-of date; estimates labeled "assumed"; gross/net labeled; absences backed by a pasted search.
-5. Nothing I touched decides an owner gate (RANKING #10, F01/F02, F08, F10, weekly netting) — if it would, STOP and present options instead.
+5. Nothing I touched decides an owner gate (canonical registry: `gated-scope` §1) — if it would, STOP and present options instead.

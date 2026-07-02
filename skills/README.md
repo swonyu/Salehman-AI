@@ -7,7 +7,10 @@ extend, validate, and advance the **ideas card** — the StockSage money engine
 
 `.claude/` is git-ignored, so these live here (tracked) and are **symlinked**
 into `.claude/skills/` on this machine so the Claude Code harness loads them.
-This directory is the single source of truth; edit the files here.
+This directory is the single source of truth for EVERY skill; edit the files
+here. (The former three-dir exception ended 2026-07-03: run-salehman-ai and
+markets-review-gate were promoted into `skills/` + symlinked; stocksage-engine
+was deleted after its merge into stocksage-mental-model §7.)
 
 ## Activate on a fresh clone (install step)
 
@@ -42,22 +45,41 @@ Verify: `ls -la .claude/skills/` shows the symlinks, and each resolves to a
 - **research-memory** — using and extending research/INDEX.md (the only durable research record) and the validation gate for ranking/signal changes.
 - **opus-operating** — session onboarding read order, model-routing, and maintenance triggers for Opus 4.8 running this workstream.
 
-Also present (operational, not part of this handoff library, still living only
-in `.claude/skills/`): `run-salehman-ai` (build/run/screenshot driver),
-`markets-review-gate`, `stocksage-engine`.
+### Campaign + reference (added 2026-07-02)
+- **money-campaign-map** — the decision-gated campaign map for the "no proven edge" problem: phased state machine, ranked solution menu, fenced anti-edges, DSR/PSR promotion bar.
+- **stocksage-flags-and-config** — every live engine flag with its ratified default, byte-identical-default params, the deliberately-UNWIRED module registry, and the @AppStorage keys that fake bugs.
+- **ablation-harness** — how to run an empirical walk-forward / Deflated-Sharpe validation on real data (in-app Swift harness + standalone-script recipe; net-of-cost mandatory).
+- **diagnostics-toolkit** — the `tools/` scripts (typecheck, bundle check, QA, grok-bridge tests) and what their verdict lines mean.
+- **incident-ledger** — the canonical failure-archaeology table (IL-01…IL-30); cite rows by id, never retell an incident.
+
+### Operational (promoted into `skills/` 2026-07-03 — the exception list is ended)
+Two operational dirs that predated this library were PROMOTED here on
+2026-07-03 (git mv preserving history + the driver's executable bit) and are
+now symlinked from `.claude/skills/` like everything else; the third,
+stocksage-engine, was deleted the same day (its content lives in
+stocksage-mental-model §7). Verify with `ls skills/` — it shows both dirs:
+- **run-salehman-ai** — build/typecheck/run/screenshot/test driver (`driver.sh`) + click map + launch gotchas.
+- **markets-review-gate** — review gate on other sessions' / external code, plus the outbound external-handoff chores (bundle regen, PROJECT_CONTEXT freshness).
+- **stocksage-engine** — RETIRED: merged into `stocksage-mental-model` §7 on 2026-07-02; the dir was deleted 2026-07-03 (no tombstone remains).
 
 ## Status (2026-07-02)
 
 Authored + adversarially cold-read-reviewed by a Fable-xhigh workflow. The
-review's **fix pass did not run** (Fable usage limit; resets Jul 7). A few
-skills therefore carry known, unfixed review findings to resolve when that
-workflow resumes — notably: `debugging-guide` (the failed-test-extraction grep
-is buggy), `visual-qa` (says "5 call sites" for `calibrationChip`; it is 4),
-`testing-discipline` (wrong date attributed to the NetEdge reward-40 incident).
-Treat those specific lines with suspicion until the fix pass lands.
+review's fix pass **landed** the same day in commit `0171621` ("Skill-library
+fix pass"), repairing the three named findings: the `debugging-guide`
+failed-test-extraction grep, `visual-qa`'s `calibrationChip` call-site count
+(5 → 4), and `testing-discipline`'s NetEdge incident date. A same-day hygiene
+pass then de-duplicated the owner-gate registry (canonical copy now ONLY in
+`gated-scope` §1 — every other skill points there) and corrected the stale
+"`tools/test_grok_bridge.py` is untracked" lines (it is TRACKED since
+`713064e`). The same day, five campaign/reference skills were added,
+`stocksage-engine` was merged into `stocksage-mental-model` (and retired to a
+tombstone), and the two remaining operational skills stayed tracked in-place
+at `.claude/skills/` (see above — the promotion has not landed).
+Verify: `git log --oneline | grep 0171621`.
 
 ## Provenance and maintenance
 
 - **Re-link after clone / when a skill is added:** the install loop above.
 - **Source of truth is `skills/`;** `.claude/skills/<name>` are symlinks — never edit through the symlink expecting a separate copy.
-- **Skill content drifts** when the repo's commands/paths/flags change; each SKILL.md ends with its own re-verification commands — run them if a skill sends you down a wrong path.
+- **Skill content drifts** when the repo's commands/paths/flags change; the domain/tooling/reference skills end with their own re-verification commands (Provenance sections) — run them if a skill sends you down a wrong path. The discipline/workflow skills carry no Provenance block; verify their claims against the tree directly.

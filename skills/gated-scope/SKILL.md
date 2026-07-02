@@ -1,6 +1,6 @@
 ---
 name: gated-scope
-description: Hard scope gate for the Markets/ideas-tab workstream in Salehman AI. Work blocked on an unanswered external question (owner decision, unverified spec, missing measurement) is REFUSED for that step, not shipped with a warning. Use before starting any ideas-tab task and before declaring any step done.
+description: Hard scope gate for the Markets/ideas-tab workstream in Salehman AI. Work blocked on an unanswered external question (owner decision, unverified spec, missing measurement) is REFUSED for that step, not shipped with a warning. Hosts the CANONICAL owner-gate registry ("How" step 1, a.k.a. "§1" — RANKING #10, F01/F02, F08, F10, F03/F44) that every other skill points to. Use before starting any ideas-tab task, before declaring any step done, and whenever you need the owner-gate list.
 ---
 
 # Gated scope — refuse, don't flag
@@ -11,21 +11,21 @@ A "⚠️ pending confirmation" note attached to shipped work is a violation, no
 
 ## Why — these all actually happened here
 - **RANKING #10 / F01-F02 / F08 (the gates that held).** #10's `preferVelocity` default sat parked across many waves because flipping the app's most prominent "best idea" signal is the owner's call; audit F01/F02 was answered with three options, not a pick; F08's term choice was held. These are the template: parked ≠ stalled — the non-gated work continued around them.
-- **WHIPPYX vacuous test (DEVELOPMENT_LOG, 2026-07-02 F05/F40 entry).** A symbol typo (`WHIPPYX` def vs `WHIPPYEX` history key) made `buildIdeas` return empty and a soft `guard else return` pass silently; the agent reported the test green. It had verified NOTHING — only an adversarial review caught it. "It passes" answered a question ("did the behavior fire?") that only pasted output like `#expect(ideas.count == 1)` can answer.
-- **F40 circular fixtures (same entry).** A threshold test asserted the implementation's own velocity sums, and its replacement's "straddle" fixtures sat at 13.4× and 0.40× around a 1.5× threshold — any constant in (0.41, 13.4) passed. Expected values must come from the captured spec via hand derivation, never from calling the code under test.
-- **NetEdge fixture.** A hand-math error (reward 40 vs actual 30) failed a test; the fix was RE-DERIVING via a standalone script. Editing the assertion to match the implementation's output would have laundered the unknown into a green checkmark.
-- **Wave-11 "pre-existing" narration.** An implementation agent described its own edits as "pre-existing in wave-11" — its report contradicted the diff. The orchestrator trusted `git diff`, not the narration. Reports are claims; the diff and pasted command output are the facts.
-- **Dev-log drift.** A DEVELOPMENT_LOG entry claimed "Added 72px bottom spacer" after the correction pass had DELETED it, and "Test fixtures updated: None" after +3 test files. Logs describe the final tree, verified by reading it.
+- **WHIPPYX vacuous test** (incident-ledger IL-23): a test passed green while verifying NOTHING — "it passes" answers nothing; only pasted output like `#expect(ideas.count == 1)` proves the behavior fired.
+- **F40 circular fixtures** (incident-ledger IL-24): expected values must come from the captured spec via hand derivation, never from calling the code under test; boundary pins must genuinely straddle.
+- **NetEdge fixture** (incident-ledger IL-25): a failing test is fixed by RE-DERIVING via a standalone script — editing the assertion toward the implementation launders the unknown into a green checkmark.
+- **Wave-11 "pre-existing" narration** (incident-ledger IL-26): reports are claims; the diff and pasted command output are the facts.
+- **Dev-log drift** (incident-ledger IL-27): logs describe the final tree, verified by reading it.
 - **Unverified relayed claim.** A "50% weekly usage cap" in an owner-relayed prompt was flagged as unconfirmed rather than repeated as fact. Owner-relayed ≠ owner-verified (see also the Grok heuristic in `markets-review-gate`).
 
 ## How — the operational procedure (ideas-tab workstream)
 
-**1. Check the parked owner-gate list before planning.** Currently gated (as of 2026-07-02; see `RANKING_BACKLOG.md` + `AUDIT_2026-07-02_ideas_board.md`):
+**1. Check the parked owner-gate list before planning.** **CANONICAL REGISTRY — this is the "§1" every other skill cites: the single source of truth for owner gates; every other skill points here and never restates the list (a copy is a divergence waiting to happen).** Currently gated (as of 2026-07-02; see `RANKING_BACKLOG.md` + `AUDIT_2026-07-02_ideas_board.md`):
 - **RANKING #10** — flipping MarketsView's `bestOpportunity` default to `preferVelocity: true` (shipped opt-in only; the default flip is a product decision).
 - **F01/F02** — identity-calibration semantics: nil-from-thin-branch vs provenance marker vs clamp ≤ prior. Three options stand; do not pick one. Owner-activated + test-locked — touching it without the answer breaks a ratified default.
 - **F08** — canonical term "Conviction" vs "Signal strength" (blocks the unification sweep and the F21 reword).
 - **F10** — decimal-comma locale policy ("2,5" → 2.5% vs reject-ambiguous) for a Saudi-first app; affects every money field.
-- **F03 weekly-rollup netting** — `expectedWeeklyR` gross vs net: relabels a headline number and netting creates a false "fading" step vs prior gross VelocityHistory snapshots.
+- **F03/F44 weekly-rollup netting/labeling** — `expectedWeeklyR` gross vs net: relabels a headline number and netting creates a false "fading" step vs prior gross VelocityHistory snapshots (AUDIT §5 pairs F03 and F44 as one decision).
 Plus the standing honesty-floor rule: **any** ranking change needs empirical validation or owner sign-off — new gates get added here, never quietly bypassed.
 
 **2. Evidence gates — a step is done only when its verification OUTPUT is pasted.** Run the canonical commands, keep the log out of context, paste the verdict line AND the line proving the specific behavior fired:
@@ -53,7 +53,7 @@ Boundary pins must genuinely straddle the constant (F40's real fix pinned 1.5× 
 **COMPLIANT:** "BLOCKED: F08 needs the owner's pick between 'Conviction' and 'Signal strength' — sweep drafted for both, neither applied. RANKING #10 default untouched (opt-in stands). Proceeded with the non-gated F05 work; verification pasted: `Test case 'buildIdeasWhippyNoteLands' passed` + `#expect(ideas.count == 1)` fired on the WHIPPYEX fixture; `** TEST SUCCEEDED **`; `git diff --stat` matches the report (2 test files, 0 engine files)."
 
 ## Pre-"done" checklist (run all 5, every step)
-1. **Gate scan:** does this step touch RANKING #10 / F01-F02 / F08 / F10 / F03-netting, or need any answer I don't have? → `BLOCKED: <question>`, do only the remainder.
+1. **Gate scan:** does this step touch RANKING #10 / F01-F02 / F08 / F10 / F03-F44-netting, or need any answer I don't have? → `BLOCKED: <question>`, do only the remainder.
 2. **Output pasted:** verdict line + the specific line proving the new behavior fired (named test case / hard `#expect`), not "it passes".
 3. **Fixtures independent:** expected values hand-derived via standalone `swift` script; boundary fixtures genuinely straddle.
 4. **Diff = report:** `git diff` confirms every claim in the report and the DEVELOPMENT_LOG entry describes the final tree.

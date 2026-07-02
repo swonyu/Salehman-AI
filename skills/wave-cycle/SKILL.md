@@ -32,10 +32,9 @@ The cycle is a hard sequence. Do not reorder, merge, or skip steps.
 - **Convergence across independent lenses is the strongest accept signal.** Wave 11's #1
   item (pinned verdict CTA bar) was ranked #1-or-top-3 by all four lenses independently.
 - **Anything on the owner-gate registry is HELD, never implemented** — refused, not
-  flagged-and-done: RANKING #10 (`preferVelocity` default), F01/F02 (identity-calibration
-  engine options), F08 (Conviction↔Signal-strength term), F10 (decimal-comma locale),
-  weekly-rollup netting (F03/F44). Full registry + handling: `fact-discipline` and
-  `gated-scope` skills, `AUDIT_2026-07-02_ideas_board.md` "owner decision" rows.
+  flagged-and-done. The canonical registry lives ONLY in the `gated-scope` skill §1 —
+  link it from the spec, never restate it there; per-finding detail is in
+  `AUDIT_2026-07-02_ideas_board.md`'s "owner decision" rows.
 - **Write the accepted list to a spec file BEFORE implementing** (precedent:
   `wave11_accepted.md` in the session scratchpad). The spec names, per item: target files,
   approximate line anchors, the change class (below), known risks (e.g. "engine string
@@ -103,16 +102,16 @@ The cycle is a hard sequence. Do not reorder, merge, or skip steps.
 Follow the `shipping-changes` skill (`.claude/skills/shipping-changes/SKILL.md`) for the
 full procedure. The wave-specific must-dos: DEVELOPMENT_LOG entry appended **above the
 "Standing notes" anchor** describing the FINAL tree (write it after re-reading the hunks —
-the wave-12 log once claimed a spacer that the correction pass had deleted);
+the wave-11 log once claimed a spacer that the correction pass had deleted, incident-ledger IL-27);
 `bash tools/bundle_source.sh` after any code change; update the `MARKETS_TAB_MAP.md` entry
 for any mapped file that materially changed; `git add` by name, never `git add -A`
-(`tools/test_grok_bridge.py` stays untracked; `PROJECT_CONTEXT.md` may be dirty from
-another session — never touch it).
+(`PROJECT_CONTEXT.md` may be dirty from another session — never touch it;
+`tools/test_grok_bridge.py` is TRACKED since 713064e — treat it like any other tracked file).
 
 ## 8. VISUAL QA — after any UI wave, on LIVE data
 
 Builds and tests do not see pixels. The post-merge live-app QA of waves 11+12 (real
-210-name data) caught "Backtest 5 years" wrapping as "Backtes/t 5 years" and — after the
+live-board data) caught "Backtest 5 years" wrapping as "Backtes/t 5 years" and — after the
 first fix — the verdict chip truncating to "Proceed…", the one element whose legibility is
 the bar's whole point. Wave 6 was an entire wave of this for waves 1–5. Defer to the
 `visual-qa` skill (`.claude/skills/visual-qa/SKILL.md`); the screenshot mechanics are in
