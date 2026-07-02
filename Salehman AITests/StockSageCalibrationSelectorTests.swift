@@ -524,4 +524,73 @@ struct StockSageCalibrationSelectorTests {
         }
         Self.verifyUnitInterval(beta, label: "betaWinProbRange")
     }
+
+    // MARK: - 14. D-1 (2026-07-03): clamped drop-and-refit re-anchors at the honest base rate
+    //
+    // Fixture hand-derived via the standalone replica /tmp/derive_d1_beta.swift (imports NOTHING
+    // from the app; output pasted in the plan/dev-log). Routing proof: this exact sample runs the
+    // full fit to a quasi-separated a0<0 (dropA), the x2-only refit lands b1=-1.161951 → clamp —
+    // PRE-FIX the co-fitted intercept shipped a FLAT map σ(1.198654)=0.768285 vs base rate
+    // 23/40=0.575000 (+0.193 overstatement; the o1-review concrete failing input). POST-FIX the
+    // clamped drop branch refits the intercept alone (honest base-rate MLE σ(ln(23/17))=0.575000,
+    // labeled .interceptOnly). NB: the both-slopes-negative path would have produced 0.575 even
+    // pre-fix — the pre-fix RED value 0.768285 is what proves this fixture exercised dropA.
+    private static let clampedDropAFixture: [Outcome] = [
+        (conviction: 0.582699, won: true), (conviction: 0.385040, won: true),
+        (conviction: 0.622915, won: true), (conviction: 0.389157, won: true),
+        (conviction: 0.741439, won: false), (conviction: 0.919539, won: false),
+        (conviction: 0.669856, won: true), (conviction: 0.532131, won: false),
+        (conviction: 0.384320, won: true), (conviction: 0.181576, won: true),
+        (conviction: 0.257043, won: false), (conviction: 0.316745, won: true),
+        (conviction: 0.919362, won: false), (conviction: 0.856151, won: false),
+        (conviction: 0.249474, won: false), (conviction: 0.425918, won: true),
+        (conviction: 0.489555, won: true), (conviction: 0.098954, won: true),
+        (conviction: 0.520780, won: true), (conviction: 0.321039, won: true),
+        (conviction: 0.795625, won: true), (conviction: 0.771352, won: false),
+        (conviction: 0.107302, won: false), (conviction: 0.292784, won: false),
+        (conviction: 0.100518, won: false), (conviction: 0.585252, won: false),
+        (conviction: 0.515824, won: true), (conviction: 0.050360, won: true),
+        (conviction: 0.217092, won: false), (conviction: 0.144426, won: true),
+        (conviction: 0.227532, won: true), (conviction: 0.628424, won: true),
+        (conviction: 0.601865, won: true), (conviction: 0.613367, won: false),
+        (conviction: 0.480133, won: true), (conviction: 0.442983, won: true),
+        (conviction: 0.639978, won: false), (conviction: 0.285284, won: true),
+        (conviction: 0.852147, won: false), (conviction: 0.286969, won: false)
+    ]
+
+    @Test func betaClampedDropARefitAnchorsAtHonestBaseRate() {
+        guard let beta = Cal.fitBeta(Self.clampedDropAFixture) else {
+            Issue.record("fitBeta returned nil on the D-1 dropA fixture")
+            return
+        }
+        #expect(beta.activeFeatures == .interceptOnly,
+                "clamped dropA must re-anchor as interceptOnly, got \(beta.activeFeatures)")
+        for s in [0.05, 0.25, 0.5, 0.75, 0.95] {
+            let p = beta.winProb(s)
+            // derive_d1_beta.swift: POST-FIX honest intercept-only = 0.575000 (= base rate 23/40)
+            #expect(abs(p - 0.575) < 1e-6, "honest flat base rate at s=\(s), got \(p)")
+            // Honesty floor: NEVER overstate the sample base rate from a clamped fit.
+            #expect(p <= 0.575 + 1e-9, "overstates base rate at s=\(s): \(p)")
+        }
+    }
+
+    @Test func betaClampedDropBRefitAnchorsAtHonestBaseRate() {
+        // Exact mirror (s → 1−s, won → !won) of the dropA fixture — lands dropB with
+        // a1=-1.161951 clamped; PRE-FIX shipped σ(-1.198654)=0.231715 (an UNDERstated flat map —
+        // same single cause, opposite sign); POST-FIX honest base rate 17/40 = 0.425000.
+        let mirror: [Outcome] = Self.clampedDropAFixture.map {
+            (conviction: 1.0 - $0.conviction, won: !$0.won)
+        }
+        guard let beta = Cal.fitBeta(mirror) else {
+            Issue.record("fitBeta returned nil on the D-1 dropB mirror fixture")
+            return
+        }
+        #expect(beta.activeFeatures == .interceptOnly,
+                "clamped dropB must re-anchor as interceptOnly, got \(beta.activeFeatures)")
+        for s in [0.05, 0.25, 0.5, 0.75, 0.95] {
+            let p = beta.winProb(s)
+            // derive_d1_beta.swift: POST-FIX honest intercept-only = 0.425000 (= base rate 17/40)
+            #expect(abs(p - 0.425) < 1e-6, "honest flat base rate at s=\(s), got \(p)")
+        }
+    }
 }

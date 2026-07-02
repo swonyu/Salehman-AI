@@ -345,6 +345,12 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
         // Returns (c, a, b) where a==0 if !includeX1, b==0 if !includeX2.
         func irls(includeX1: Bool, includeX2: Bool) -> (c: Double, a: Double, b: Double) {
             // Init: intercept = ln((nNeg+1)/(nPos+1)), slopes = 1 (identity start).
+            // [D-1 nit 2026-07-03] Under THIS function's p = σ(+z) convention that intercept init
+            // is the smoothed LOSS-rate log-odds — a sign-flipped copy of fitPlatt's B-init (which
+            // lives in a p = σ(−z) convention). Harmless at convergence (IRLS is init-independent
+            // at the MLE; the intercept-only fit converges to ln(nPos/nNeg) regardless) and
+            // deliberately left unchanged; the non-converged quasi-separated cases it could worsen
+            // are covered by the clamped-slope re-anchor in the drop branches below.
             var c = Foundation.log((Double(nNeg) + 1.0) / (Double(nPos) + 1.0))
             var a = includeX1 ? 1.0 : 0.0
             var b = includeX2 ? 1.0 : 0.0
@@ -440,11 +446,30 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
         } else if aNeg {
             // Drop x1 (ln s), refit with x2 only.
             let (c1, _, b1) = irls(includeX1: false, includeX2: true)
-            return BetaCalibration(a: 0.0, b: Swift.max(0.0, b1), c: c1, activeFeatures: .dropA)
+            // [D-1 2026-07-03] If the surviving slope ALSO fails monotonicity (b1 ≤ 0) the map is
+            // flat — but c1 was co-fitted WITH that discarded negative slope and sits above the
+            // sample's base-rate log-odds (score equation: mean σ(c1 + b1·x2) = base rate; with
+            // b1 < 0 and x2 > 0 for all rows, σ(c1) > base rate strictly). Shipping σ(c1) would
+            // overstate win-prob for EVERY conviction band (honesty floor). Mirror the Platt
+            // A-clamp B-re-anchor above and the .interceptOnly sibling: refit the intercept
+            // alone → the honest base-rate MLE.
+            if b1 <= 0 {
+                let (c2, _, _) = irls(includeX1: false, includeX2: false)
+                return BetaCalibration(a: 0.0, b: 0.0, c: c2, activeFeatures: .interceptOnly)
+            }
+            return BetaCalibration(a: 0.0, b: b1, c: c1, activeFeatures: .dropA)
         } else {
             // Drop x2 (-ln(1-s)), refit with x1 only.
             let (c1, a1, _) = irls(includeX1: true, includeX2: false)
-            return BetaCalibration(a: Swift.max(0.0, a1), b: 0.0, c: c1, activeFeatures: .dropB)
+            // [D-1 2026-07-03] Symmetric guard. A CONVERGED clamped dropB understates (the score-
+            // equation sign flips), and a non-converged quasi-separated fit can land here
+            // overstating — same single cause (intercept co-fitted with a discarded slope),
+            // same re-anchor.
+            if a1 <= 0 {
+                let (c2, _, _) = irls(includeX1: false, includeX2: false)
+                return BetaCalibration(a: 0.0, b: 0.0, c: c2, activeFeatures: .interceptOnly)
+            }
+            return BetaCalibration(a: a1, b: 0.0, c: c1, activeFeatures: .dropB)
         }
     }
 
