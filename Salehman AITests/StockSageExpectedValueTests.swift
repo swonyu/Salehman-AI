@@ -775,6 +775,47 @@ struct StockSageExpectedValueTests {
         #expect(abs(ne.netExpectancyR! - grossEV.evR) < 1e-9)   // [AUDIT] cost 0 ⇒ net == gross
     }
 
+    // ── Week-horizon velocity research (RESEARCH_2026-07-02_week_horizon_velocity.md, roadmap
+    //    #2) — overnight borrow/margin cost charged into SHORT-side net EV, never into a cash long.
+    //
+    // Hand-verified via a standalone Swift snippet before writing this fixture (entry=100,
+    // stop=105, target=85 — a genuine SHORT per StockSageAdvisor.stopTarget's convention: stop
+    // ABOVE entry, target BELOW; risk=5, reward=15, R:R=3, conviction=0.9 → p=0.557):
+    //   no financing:   cost=$0.13 (US large-cap 13bps)     → netEVR ≈ 1.2020
+    //   with financing: cost=$0.13 + $0.0986 (3%/yr × 12d)  → netEVR ≈ 1.1823  (strictly less)
+    @Test func shortIdeaPaysOvernightFinancingButAMirroredLongPaysNone() {
+        let short = idea("SHORT", action: .sell, conviction: 0.9, stop: 105, target: 85)
+        let long = idea("LONG", action: .buy, conviction: 0.9, stop: 95, target: 115)   // mirrored distances
+        let shortNetEVR = EV.netEVR(for: short)
+        let longNetEVR = EV.netEVR(for: long)
+        #expect(shortNetEVR != nil && longNetEVR != nil)
+        guard let s = shortNetEVR, let l = longNetEVR else { return }
+        // The long (no financing) matches the hand-verified no-financing figure exactly.
+        #expect(abs(l - 1.202) < 1e-3)
+        // The short (financing charged) matches the hand-verified with-financing figure exactly,
+        // and is STRICTLY below its mirrored long — the only difference between the two ideas is
+        // which side of the trade they're on, so this isolates the financing effect precisely.
+        #expect(abs(s - 1.1822739726027394) < 1e-9)
+        #expect(s < l, "a short must net strictly less than an otherwise-identical long once financing is charged")
+    }
+
+    @Test func buyAndStrongBuyIdeasPayZeroFinancingByteIdenticalToBeforeThisExisted() {
+        // hold/reduce/avoid are irrelevant here (no stop/target path or non-actionable); the
+        // load-bearing check is buy-family, which funds real capital via StockSageCapitalAllocator
+        // and must never regress from a change that was scoped to short-side only.
+        let buy = idea("A", action: .buy, conviction: 0.9, stop: 90, target: 130)
+        let strongBuy = idea("B", action: .strongBuy, conviction: 0.9, stop: 90, target: 130)
+        let grossEV = EV.ev(conviction: 0.9, entry: 100, stop: 90, target: 130)!
+        let c = StockSageNetEdge.defaultCosts(forSymbol: "A")
+        let p = EV.winProbEstimate(conviction: 0.9)
+        let expected = StockSageNetEdge.evaluate(entry: 100, stop: 90, target: 130,
+                                                 spreadBps: c.spreadBps, slippageBps: c.slippageBps,
+                                                 takerFeeBps: c.takerFeeBps, winProb: p)!.netExpectancyR!
+        #expect(abs((EV.netEVR(for: buy) ?? -999) - expected) < 1e-9)
+        #expect(abs((EV.netEVR(for: strongBuy) ?? -999) - expected) < 1e-9)
+        #expect(grossEV.evR > expected)   // sanity: net is still below gross from spread/slippage alone
+    }
+
     // MARK: - HARDENING_BACKLOG #12: velocity-hold calibration note vs journal actuals
 
     private func closedTrade(_ symbol: String, holdDays: Double) -> TradeRecord {

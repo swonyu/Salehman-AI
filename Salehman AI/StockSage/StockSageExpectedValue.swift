@@ -172,6 +172,18 @@ enum StockSageExpectedValue {
         guard up > 0, down > 0 else { return 0 }
         return w * Foundation.log(up) + (1 - w) * Foundation.log(down)
     }
+    /// Overnight borrow/margin cost inputs for `StockSageNetEdge.evaluate`'s `annualFinancingRate`/
+    /// `holdDays` params. A cash LONG owns the shares outright and pays nothing (0, 0, byte-
+    /// identical to before this existed). A sell/reduce idea is a genuine SHORT-side plan
+    /// (`StockSageAdvisor.stopTarget`'s stop-above/target-below construction) and is definitionally
+    /// a margin transaction — it pays `defaultShortBorrowRate` for every day it's expected to be
+    /// held. Week-horizon research (RESEARCH_2026-07-02_week_horizon_velocity.md, roadmap #2):
+    /// "overnight borrow/margin costs charged into short-side... EV."
+    private nonisolated static func financingCostInputs(for idea: StockSageIdea) -> (rate: Double, days: Double) {
+        guard idea.advice.action == .sell || idea.advice.action == .reduce else { return (0, 0) }
+        return (StockSageNetEdge.defaultShortBorrowRate, expectedHoldDays(for: idea) ?? 0)
+    }
+
     /// Does the idea's conviction-mapped win prob clear its AFTER-COST break-even? A thin,
     /// high-cost flip can be positive-EV on paper yet net-negative once frictions are paid.
     /// No defined R (no stop/target) ⇒ treated as clearing (don't demote — unchanged).
@@ -179,9 +191,11 @@ enum StockSageExpectedValue {
                                                              calibration: StockSageConvictionCalibration? = nil) -> Bool {
         guard let stop = idea.advice.stopPrice, let target = idea.advice.targetPrice else { return true }
         let c = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
+        let (rate, days) = financingCostInputs(for: idea)
         guard let ne = StockSageNetEdge.evaluate(entry: idea.price, stop: stop, target: target,
                                                  spreadBps: c.spreadBps, slippageBps: c.slippageBps,
-                                                 takerFeeBps: c.takerFeeBps) else { return true }
+                                                 takerFeeBps: c.takerFeeBps,
+                                                 annualFinancingRate: rate, holdDays: days) else { return true }
         // Gate on the SAME win prob the EV/ranking uses (calibrated when fitted) — not the linear prior,
         // which would demote-for-cost on a different probability than the one shown.
         return ne.clearsCost(estWinProb: winProbEstimate(conviction: idea.advice.conviction, calibration: calibration))
@@ -217,9 +231,11 @@ enum StockSageExpectedValue {
         guard let stop = idea.advice.stopPrice, let target = idea.advice.targetPrice else { return nil }
         let c = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
         let p = winProbEstimate(conviction: idea.advice.conviction, calibration: calibration)
+        let (rate, days) = financingCostInputs(for: idea)
         return StockSageNetEdge.evaluate(entry: idea.price, stop: stop, target: target,
                                          spreadBps: c.spreadBps, slippageBps: c.slippageBps,
-                                         takerFeeBps: c.takerFeeBps, winProb: p)?.netExpectancyR
+                                         takerFeeBps: c.takerFeeBps,
+                                         annualFinancingRate: rate, holdDays: days, winProb: p)?.netExpectancyR
     }
 
     /// [AUDIT] NET EV/day = net-of-cost EV ÷ expected hold. The honest velocity rate after frictions.

@@ -105,18 +105,39 @@ enum StockSageNetEdge {
                         takerFeeBps: c.takerFeeBps, winProb: winProb)?.netRR
     }
 
+    /// Conservative retail-honest annualized borrow/margin-cost ESTIMATE for a general-collateral
+    /// short — a floor, not a promise (a genuinely hard-to-borrow name runs far higher). A cash
+    /// long owns the shares outright and pays nothing here; a short is definitionally a margin
+    /// transaction and pays this every day it's held, regardless of leverage. Chosen as a
+    /// middle ground between the narrow stock-loan fee alone (~0.3-1%/yr for easy-to-borrows,
+    /// too optimistic — ignores the margin-account requirement itself) and a full retail margin
+    /// rate (5-8%/yr, broker-specific). Evidence + magnitude check:
+    /// RESEARCH_2026-07-02_week_horizon_velocity.md ("overnight positions carry structurally
+    /// higher costs... margin requirements are higher overnight, and stock-borrow fees are
+    /// typically charged only on short positions held overnight").
+    nonisolated static let defaultShortBorrowRate = 0.03   // 3%/year
+
     /// Net reward:risk after round-trip frictions. Works for longs and shorts (uses absolute
     /// distances). `spreadBps`/`slippageBps` are round-trip, in bps of entry price;
-    /// `commissionPerShare` is absolute. nil if the gross setup is degenerate.
+    /// `commissionPerShare` is absolute. `annualFinancingRate`/`holdDays` (both default 0 — a
+    /// same-day/cash-long position pays nothing, byte-identical to prior behavior) add the
+    /// overnight borrow/margin leg `allInCost` already itemizes but this function never
+    /// incorporated — callers holding a SHORT position pass `defaultShortBorrowRate` and the
+    /// idea's expected hold days so the net figure honestly reflects the cost of holding it.
+    /// nil if the gross setup is degenerate.
     nonisolated static func evaluate(entry: Double, stop: Double, target: Double,
                                      spreadBps: Double = 0, slippageBps: Double = 0,
                                      commissionPerShare: Double = 0, takerFeeBps: Double = 0,
+                                     annualFinancingRate: Double = 0, holdDays: Double = 0,
                                      winProb: Double? = nil) -> NetEdge? {
         let grossReward = abs(target - entry)
         let grossRisk = abs(entry - stop)
         guard grossReward > 0, grossRisk > 0, entry > 0 else { return nil }
 
-        let cost = Swift.max(0, spreadBps + slippageBps + takerFeeBps) / 10_000 * entry + Swift.max(0, commissionPerShare)
+        // Same formula as allInCost's financing leg — one source of truth for the rate·days math.
+        let financingCost = entry * Swift.max(0, annualFinancingRate) * Swift.max(0, holdDays) / 365
+        let cost = Swift.max(0, spreadBps + slippageBps + takerFeeBps) / 10_000 * entry
+            + Swift.max(0, commissionPerShare) + financingCost
         let grossRR = grossReward / grossRisk
         // Net figures (netRR/netExpectancyR/breakEvenWinRate) are derived from the SAME 50:1
         // ceiling StockSageExpectedValue.ev() already applies to rewardR — a hair-thin stop

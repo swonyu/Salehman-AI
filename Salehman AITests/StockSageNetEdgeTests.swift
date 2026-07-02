@@ -100,6 +100,40 @@ struct StockSageNetEdgeTests {
         #expect(abs(e1.netExpectancyR! - 3.0) < 1e-9)
     }
 
+    @Test func financingCostShrinksNetFiguresAndDefaultsToZero() {
+        // entry 100, stop 90, target 130 (risk 10, reward 30, R:R 3), no spread/slippage/commission
+        // — isolates financing. rate 10%/yr over EXACTLY 365 days -> financingCost = entry*rate = 10
+        // (rate·days/365 collapses to rate). Hand-verified via a standalone Swift snippet before
+        // writing this fixture: no-financing netRR=3.0/netExpectancyR=1.0; with-financing
+        // netRR=1.0/netExpectancyR=0.0 (financing DOUBLES effective risk here: netRisk 10->20).
+        let noFinancing = NE.evaluate(entry: 100, stop: 90, target: 130, winProb: 0.5)!
+        #expect(abs(noFinancing.netRR - 3.0) < 1e-9)
+        #expect(abs(noFinancing.netExpectancyR! - 1.0) < 1e-9)
+
+        let withFinancing = NE.evaluate(entry: 100, stop: 90, target: 130,
+                                        annualFinancingRate: 0.10, holdDays: 365, winProb: 0.5)!
+        #expect(abs(withFinancing.netRR - 1.0) < 1e-9)
+        #expect(abs(withFinancing.netExpectancyR! - 0.0) < 1e-9)
+        #expect(withFinancing.costPerShare > noFinancing.costPerShare)
+
+        // Explicit rate/days: 0 (the default) must match omitting them entirely — same cost,
+        // same net figures (compared field-by-field with tolerance, not whole-struct `==`, since
+        // `verdict` is a formatted String and costPct/breakEven derive through several divisions).
+        let explicitZero = NE.evaluate(entry: 100, stop: 90, target: 130,
+                                       annualFinancingRate: 0, holdDays: 0, winProb: 0.5)!
+        #expect(abs(explicitZero.costPerShare - noFinancing.costPerShare) < 1e-9)
+        #expect(abs(explicitZero.netRR - noFinancing.netRR) < 1e-9)
+        #expect(abs(explicitZero.netExpectancyR! - noFinancing.netExpectancyR!) < 1e-9)
+
+        // A negative rate/days (caller bug) must not GENERATE a subsidy — clamped to 0, same as
+        // every other cost input in this function.
+        let negativeInputs = NE.evaluate(entry: 100, stop: 90, target: 130,
+                                         annualFinancingRate: -0.5, holdDays: -100, winProb: 0.5)!
+        #expect(abs(negativeInputs.costPerShare - noFinancing.costPerShare) < 1e-9)
+        #expect(abs(negativeInputs.netRR - noFinancing.netRR) < 1e-9)
+        #expect(abs(negativeInputs.netExpectancyR! - noFinancing.netExpectancyR!) < 1e-9)
+    }
+
     @Test func hairThinStopCapsNetFiguresAtTheSame50to1CeilingEvUses() {
         // entry 100, stop 99.99 (risk 0.01), target 110 (reward 10) → gross 1000:1, a degenerate
         // stop distance. netRR/netExpectancyR/breakEvenWinRate must be derived from the SAME 50:1
