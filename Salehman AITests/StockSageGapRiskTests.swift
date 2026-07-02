@@ -37,4 +37,26 @@ struct StockSageGapRiskTests {
         #expect(GR.scenario(side: .long, entry: 100, stop: 105, shares: 100, gapPct: 0.1, accountEquity: 10_000) == nil)
         #expect(GR.scenario(side: .short, entry: 100, stop: 95, shares: 100, gapPct: 0.1, accountEquity: 10_000) == nil)
     }
+
+    @Test func worstCaseSortsAnyCallerLadderAscending() {
+        // #7 — derive_gapladder: sorted [.05,.20,.35] → $975, $2400, $3825 ascending,
+        // regardless of the caller passing [0.20, 0.05, 0.35].
+        let wc = GR.worstCase(side: .long, entry: 100, stop: 95, shares: 100,
+                              accountEquity: 10_000, gaps: [0.20, 0.05, 0.35])
+        #expect(wc.count == 3)
+        #expect(wc.map(\.gapPct) == [0.05, 0.20, 0.35])
+        #expect(abs(wc[0].dollarsLost - 975) < 1e-9)
+        #expect(abs(wc[1].dollarsLost - 2400) < 1e-9)
+        #expect(abs(wc[2].dollarsLost - 3825) < 1e-9)
+    }
+
+    @Test func longGapBeyondFullWipeoutClampsFillAtZeroShortStaysUnclamped() {
+        // #10 — derive_gapladder: long gap 1.5 → fill max(0, −47.5) = 0, loss/sh = entry = 100
+        // (a total wipeout, not a negative price); the SHORT side must stay unclamped (262.5).
+        let long = GR.scenario(side: .long, entry: 100, stop: 95, shares: 100, gapPct: 1.5, accountEquity: 10_000)
+        #expect(long != nil && long!.gapFillPrice == 0)
+        #expect(long != nil && abs(long!.lossPerShare - 100) < 1e-9 && abs(long!.dollarsLost - 10_000) < 1e-9)
+        let short = GR.scenario(side: .short, entry: 100, stop: 105, shares: 100, gapPct: 1.5, accountEquity: 10_000)
+        #expect(short != nil && abs(short!.gapFillPrice - 262.5) < 1e-9 && abs(short!.lossPerShare - 162.5) < 1e-9)
+    }
 }
