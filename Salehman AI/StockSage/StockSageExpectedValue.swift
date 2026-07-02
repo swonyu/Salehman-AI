@@ -749,6 +749,42 @@ enum StockSageExpectedValue {
         return wkR * account * riskFraction   // finite inputs → never "+$inf/week"
     }
 
+    /// How many ROUND TRIPS the weekly projection implicitly assumes. `expectedWeeklyR`
+    /// multiplies each top-N idea's per-day velocity by `tradingDays` — i.e. it assumes each
+    /// slot stays deployed all week, re-entering as its setups resolve: tradingDays ÷
+    /// expectedHold re-cycles per slot (a 3-day crypto hold ⇒ ~1.7 round trips in a 5-day
+    /// week; a 12-day equity swing ⇒ ~0.4 — you pay its round trip roughly every 2.4 weeks).
+    /// Each re-cycle pays the full round-trip frictions the GROSS weekly figure excludes —
+    /// week-horizon research roadmap #1 (turnover awareness): turnover is the #1 documented
+    /// edge-killer at the 1–5d horizon. DISCLOSURE ONLY: consumed by display labels; nothing
+    /// in ranking/sizing reads it. nil when the fast lane is empty or no top idea has a hold
+    /// (mirrors expectedWeeklyR's own nil — never a fabricated cadence).
+    nonisolated static func assumedWeeklyRoundTrips(_ ideas: [StockSageIdea], maxConcurrent: Int = 3,
+                                                    tradingDays: Double = 5,
+                                                    holds: VelocityHoldDays = .defaults,
+                                                    calibration: StockSageConvictionCalibration? = nil) -> Double? {
+        let lane = fastLane(ideas, holds: holds, calibration: calibration).prefix(Swift.max(0, maxConcurrent))
+        let cycles = lane.compactMap { idea -> Double? in
+            guard let hold = expectedHoldDays(for: idea, holds: holds), hold > 0 else { return nil }
+            return tradingDays / hold
+        }
+        guard !cycles.isEmpty else { return nil }
+        return cycles.reduce(0, +)
+    }
+
+    /// F03/F44-SAFE disclosure line for the weekly-R display sites: names the re-cycle count
+    /// the gross figure assumes. LABEL ONLY — never alters the number itself (the gross→net
+    /// netting decision stays owner-held, F03/F44). nil when no cadence is estimable.
+    nonisolated static func weeklyTurnoverNote(_ ideas: [StockSageIdea], maxConcurrent: Int = 3,
+                                               tradingDays: Double = 5,
+                                               holds: VelocityHoldDays = .defaults,
+                                               calibration: StockSageConvictionCalibration? = nil) -> String? {
+        guard let trips = assumedWeeklyRoundTrips(ideas, maxConcurrent: maxConcurrent, tradingDays: tradingDays,
+                                                  holds: holds, calibration: calibration) else { return nil }
+        return String(format: "Assumes ≈%.1f round trips across the top %d this week — every re-entry pays the est. round-trip frictions this gross figure excludes (turnover is the #1 documented edge-killer at this horizon).",
+                      trips, Swift.max(0, maxConcurrent))
+    }
+
     /// Trading days per week for the fast lane. Equities trade ~5 days; crypto is 24/7 (~7).
     /// Blends by the crypto share of the fast lane: round(5 + 2·cryptoFraction) — all-crypto → 7,
     /// equity-only → 5 (so nothing shifts for the existing equity case), 1-of-3 crypto → 6.
