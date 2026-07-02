@@ -3958,12 +3958,14 @@ struct MarketsView: View {
                     ideaMetric("Trades", "\(s.totalTrades)")
                     // Break-even for the fixed 2:1 exit is 1/(1+2) ≈ 33%, not 50% — coloring danger
                     // below 50% would flag every profitable 35-49% win-rate system as a loser.
+                    // AUDIT_FINDINGS_2 #1: significance gates the COLOR (the verdict), not just
+                    // the caption — an insignificant sample renders these NEUTRAL.
                     ideaMetric("Win", String(format: "%.0f%%", s.blendedWinRate * 100),
-                               color: s.blendedWinRate >= 1.0 / 3 ? DS.Palette.successSoft : DS.Palette.danger)
+                               color: BacktestVerdict.metricColor(positive: s.blendedWinRate >= 1.0 / 3, significant: s.isSignificant))
                     ideaMetric("Avg R", String(format: "%+.2f", s.avgR),
-                               color: s.avgR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
+                               color: BacktestVerdict.metricColor(positive: s.avgR >= 0, significant: s.isSignificant))
                     ideaMetric("Total R", String(format: "%+.0f", s.totalR),
-                               color: s.totalR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
+                               color: BacktestVerdict.metricColor(positive: s.totalR >= 0, significant: s.isSignificant))
                     ideaMetric("Worst-name DD", String(format: "−%.0fR", s.worstDrawdownR), color: DS.Palette.danger)
                     ideaMetric("Pooled DD (eq-wt)", String(format: "−%.0fR", s.pooledDrawdownR), color: DS.Palette.danger)
                         .help("Equal-weight pooled proxy: all trades across all names, sorted chronologically, cumulative-R worst peak-to-trough. Ignores position sizing and concurrency — not a true sized-portfolio drawdown. Typically larger than worst single-name DD because losses across symbols stack in time.")
@@ -4075,12 +4077,13 @@ struct MarketsView: View {
                     HStack(spacing: DS.Space.sm) {
                         ideaMetric("Trades", "\(bt.trades)")
                         // Break-even for the fixed 2:1 exit is 1/(1+2) ≈ 33%, not 50%.
+                        // AUDIT_FINDINGS_2 #1: significance gates the COLOR — see BacktestVerdict.
                         ideaMetric("Win", String(format: "%.0f%%", bt.winRate * 100),
-                                   color: bt.winRate >= 1.0 / 3 ? DS.Palette.successSoft : DS.Palette.danger)
+                                   color: BacktestVerdict.metricColor(positive: bt.winRate >= 1.0 / 3, significant: bt.isSignificant))
                         ideaMetric("Avg R", String(format: "%+.2f", bt.avgR),
-                                   color: bt.avgR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
+                                   color: BacktestVerdict.metricColor(positive: bt.avgR >= 0, significant: bt.isSignificant))
                         ideaMetric("Total R", String(format: "%+.1f", bt.totalR),
-                                   color: bt.totalR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
+                                   color: BacktestVerdict.metricColor(positive: bt.totalR >= 0, significant: bt.isSignificant))
                         ideaMetric("Max DD", String(format: "−%.1fR", bt.maxDrawdownR), color: DS.Palette.danger)
                         // bt.sharpe is 0 when <2 trades or zero variance (engine sentinel, not a measurement).
                         ideaMetric("Sharpe", bt.trades >= 2 ? String(format: "%.2f", bt.sharpe) : "n/a")
@@ -5497,3 +5500,22 @@ struct BestOpportunityActionCard: View {
 
 
 // Concrete improvement: EV badge in ideaCard now has accessibilityLabel (a11y gap fixed, DS tokens used, no hardcoded colors) - line ~2610
+
+// MARK: - Backtest verdict color (significance-gated — AUDIT_FINDINGS_2 #1)
+
+/// The green/red on a backtest metric IS a verdict ("this worked" / "this lost") — painting it
+/// on a statistically meaningless sample over-claims. Below the significance bar every verdict
+/// metric renders NEUTRAL (the same textSecondary the house uses for "estimate, not a realized
+/// gain"), and the existing "treat as illustrative" caption carries the words. Top-level
+/// (internal, not nested private) so `Salehman AITests` reaches it via @testable import —
+/// the SheetCandidateNavigation testability pattern.
+enum BacktestVerdict {
+    // DISCLOSED mechanical fix vs the wave-2 plan text: the plan wrote `nonisolated`, but
+    // DS.Palette tokens are MainActor-isolated (SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor),
+    // so the opt-out cannot compile. MainActor (the file default) preserves every pinned
+    // behavior; the test target shares the same default isolation.
+    static func metricColor(positive: Bool, significant: Bool) -> Color {
+        guard significant else { return DS.Palette.textSecondary }
+        return positive ? DS.Palette.successSoft : DS.Palette.danger
+    }
+}
