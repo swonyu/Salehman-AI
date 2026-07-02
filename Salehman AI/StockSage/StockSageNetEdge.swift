@@ -176,3 +176,73 @@ enum StockSageNetEdge {
                        breakEvenWinRate: breakEven, verdict: verdict)
     }
 }
+
+// MARK: - Tier-aware crypto round-trip cost estimate (CRYPTO_RISK #1)
+//
+// The flat crypto default above (70bps) treats BTC and a microcap alt identically. This richer
+// estimate tiers by liquidity and itemizes the legs (half-spread crossed twice + slippage +
+// taker fee on BOTH fills — the advisor's stop/target are crossing events, not resting limits).
+// NEW ACCESSOR ONLY: `defaultCosts` is deliberately UNTOUCHED (byte-identical production
+// ranking/gating — re-pointing it is a future owner-reviewed change; see the wave-2 plan's
+// REJECTED register). Every band is a LABELED ESTIMATE midpoint, never a venue quote.
+extension StockSageNetEdge {
+    enum CryptoLiquidityTier: String, Sendable, CaseIterable {
+        case majorBTCETH, large, mid, thin
+    }
+
+    struct CryptoCostEstimate: Sendable, Equatable {
+        let tier: CryptoLiquidityTier
+        let halfSpreadBps: Double        // one crossing; paid twice per round trip
+        let slippageBps: Double          // round-trip
+        let takerFeeBpsPerSide: Double   // per fill; paid twice per round trip
+        let estimateLowBps: Double       // band edges — surfaced so no UI can show a false point
+        let estimateHighBps: Double
+        let assetClass: String           // always "crypto"
+        let isEstimate: Bool             // always true
+        nonisolated var roundTripBps: Double { 2 * halfSpreadBps + slippageBps + 2 * takerFeeBpsPerSide }
+        nonisolated var disclaimer: String { "ESTIMATE only — your venue/tier/size differ; not a quote and not a promise." }
+        /// Bridge into the existing `evaluate()` seam. CostAssumption's spread/slippage/taker are
+        /// ROUND-TRIP by convention (see `defaultCosts`' 70bps comment), so: spread = 2·half,
+        /// taker = 2·perSide.
+        nonisolated var asCostAssumption: CostAssumption {
+            CostAssumption(spreadBps: 2 * halfSpreadBps, slippageBps: slippageBps,
+                           assetClass: assetClass, takerFeeBps: 2 * takerFeeBpsPerSide)
+        }
+    }
+
+    /// Liquidity tier from the symbol + (optional) average daily dollar volume. Honesty floor:
+    /// an UNKNOWN alt (advDollar nil) is `.mid`, never assumed deep. Reuses the liquidity
+    /// engine's existing floors (thinBelow 2M / deepAbove 50M) — no new magic numbers.
+    nonisolated static func cryptoTier(forSymbol symbol: String, advDollar: Double?) -> CryptoLiquidityTier {
+        let s = symbol.uppercased()
+        if s == "BTC-USD" || s == "ETH-USD" { return .majorBTCETH }
+        guard let adv = advDollar else { return .mid }
+        if adv < StockSageLiquidity.thinBelow { return .thin }
+        if adv >= StockSageLiquidity.deepAbove { return .large }
+        return .mid
+    }
+
+    /// The tier's labeled estimate bands (midpoint anchors hand-derived in the wave-2 plan;
+    /// see /tmp/derive_cryptocost.swift): major 37.5bps RT (21–54), large 60 (34–86),
+    /// mid 125 (70–180), thin 300 (160–440).
+    nonisolated static func cryptoCosts(forSymbol symbol: String, advDollar: Double?) -> CryptoCostEstimate {
+        switch cryptoTier(forSymbol: symbol, advDollar: advDollar) {
+        case .majorBTCETH:
+            return CryptoCostEstimate(tier: .majorBTCETH, halfSpreadBps: 2, slippageBps: 5.5,
+                                      takerFeeBpsPerSide: 14, estimateLowBps: 21, estimateHighBps: 54,
+                                      assetClass: "crypto", isEstimate: true)
+        case .large:
+            return CryptoCostEstimate(tier: .large, halfSpreadBps: 5.5, slippageBps: 14,
+                                      takerFeeBpsPerSide: 17.5, estimateLowBps: 34, estimateHighBps: 86,
+                                      assetClass: "crypto", isEstimate: true)
+        case .mid:
+            return CryptoCostEstimate(tier: .mid, halfSpreadBps: 17.5, slippageBps: 40,
+                                      takerFeeBpsPerSide: 25, estimateLowBps: 70, estimateHighBps: 180,
+                                      assetClass: "crypto", isEstimate: true)
+        case .thin:
+            return CryptoCostEstimate(tier: .thin, halfSpreadBps: 55, slippageBps: 130,
+                                      takerFeeBpsPerSide: 30, estimateLowBps: 160, estimateHighBps: 440,
+                                      assetClass: "crypto", isEstimate: true)
+        }
+    }
+}
