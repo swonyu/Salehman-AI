@@ -128,7 +128,7 @@ enum StockSageCapitalAllocator {
 
         // Step 5: realized heat + deterministic order (desc risk, tie-break asc symbol).
         let totalHeat = positions.reduce(0) { $0 + $1.dollarsAtRisk } / account
-        let sorted = positions.sorted { $0.riskFraction != $1.riskFraction ? $0.riskFraction > $1.riskFraction : $0.symbol < $1.symbol }
+        let sorted = positions.sorted(by: positionOrder)
         var finalCaveat = caveat
         if deweightedForCorrelation { finalCaveat += " A correlated cluster was de-weighted to count as ~one bet, not several." }
         if let regime, abs(regime.sizingBias - 1) > 0.01 {
@@ -136,6 +136,20 @@ enum StockSageCapitalAllocator {
         }
         return CapitalAllocation(positions: sorted, totalHeat: totalHeat, requestedHeat: requestedHeat,
                                  scaleApplied: scaleApplied, account: account, maxHeat: cap, caveat: finalCaveat)
+    }
+
+    /// #8 (BUGHUNT_NEWENGINES): the position sort is a TOTAL order, not just (risk desc, symbol
+    /// asc). `Array.sorted(by:)` is not guaranteed stable, so two rows tying on BOTH keys
+    /// (duplicate symbols at equal half-Kelly — the allocator does not dedup symbols) previously
+    /// had unspecified relative order, defeating this file's "Pure + deterministic" contract.
+    /// Chain: riskFraction desc → symbol asc (raw `<`: "BTC" < "btc", case pairs never tie —
+    /// deliberate, keeps every pre-existing distinct-symbol order byte-identical) →
+    /// dollarsAtRisk desc → notional desc. Exposed (not private) so the test can pin the chain.
+    nonisolated static func positionOrder(_ a: AllocatedPosition, _ b: AllocatedPosition) -> Bool {
+        if a.riskFraction != b.riskFraction { return a.riskFraction > b.riskFraction }
+        if a.symbol != b.symbol { return a.symbol < b.symbol }
+        if a.dollarsAtRisk != b.dollarsAtRisk { return a.dollarsAtRisk > b.dollarsAtRisk }
+        return a.notional > b.notional
     }
 
     /// Marginal sizing for ONE new idea against the LIVE book — "I have an idea + an open

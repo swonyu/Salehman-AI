@@ -341,4 +341,25 @@ struct StockSageCapitalAllocatorTests {
         #expect(trade(r.plan, "CCC") != nil)
         #expect(r.excludedSymbols.isEmpty)   // de-weighted, not hard-excluded
     }
+
+    @Test func positionOrderIsATotalOrderOverTheDocumentedChain() {
+        func pos(_ symbol: String, risk: Double, dollars: Double, notional: Double) -> AllocatedPosition {
+            AllocatedPosition(symbol: symbol, riskFraction: risk, shares: 1,
+                              dollarsAtRisk: dollars, notional: notional, halfKelly: 0.1, evR: 1.0)
+        }
+        typealias CA = StockSageCapitalAllocator
+        // 1. riskFraction desc dominates everything.
+        #expect(CA.positionOrder(pos("ZZZ", risk: 0.03, dollars: 1, notional: 1), pos("AAA", risk: 0.02, dollars: 999, notional: 999)))
+        // 2. symbol asc breaks a risk tie ("BTC" < "btc" raw compare — case pairs don't tie).
+        #expect(CA.positionOrder(pos("AAA", risk: 0.02, dollars: 1, notional: 1), pos("BBB", risk: 0.02, dollars: 999, notional: 999)))
+        #expect(CA.positionOrder(pos("BTC", risk: 0.02, dollars: 1, notional: 1), pos("btc", risk: 0.02, dollars: 999, notional: 999)))
+        // 3. NEW: duplicate symbol + equal risk → dollarsAtRisk desc decides (was unspecified).
+        #expect(CA.positionOrder(pos("AAA", risk: 0.02, dollars: 995, notional: 9900), pos("AAA", risk: 0.02, dollars: 990, notional: 9950)))
+        #expect(!CA.positionOrder(pos("AAA", risk: 0.02, dollars: 990, notional: 9950), pos("AAA", risk: 0.02, dollars: 995, notional: 9900)))
+        // 4. NEW: …then notional desc.
+        #expect(CA.positionOrder(pos("AAA", risk: 0.02, dollars: 995, notional: 9950), pos("AAA", risk: 0.02, dollars: 995, notional: 9900)))
+        // 5. Strict-weak-ordering sanity: fully equal rows are incomparable in BOTH directions.
+        let x = pos("AAA", risk: 0.02, dollars: 995, notional: 9950)
+        #expect(!CA.positionOrder(x, x))
+    }
 }
