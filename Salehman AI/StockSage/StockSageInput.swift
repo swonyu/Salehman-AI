@@ -19,6 +19,13 @@ enum StockSageInput {
         return v
     }
 
+    /// A finite amount >= 0 (cost basis — 0 is legal for gifted/granted shares, but it must be
+    /// TYPED, never defaulted-in by a failed parse). nil on blank/unparseable/negative/non-finite.
+    nonisolated static func nonNegativeAmount(_ s: String) -> Double? {
+        guard let v = Double(clean(s)), v.isFinite, v >= 0 else { return nil }
+        return v
+    }
+
     /// A percent in (0, max]. nil otherwise (default cap 100). For Kelly / risk %.
     nonisolated static func percent(_ s: String, max: Double = 100) -> Double? {
         guard let v = Double(clean(s)), v.isFinite, v > 0, v <= max else { return nil }

@@ -12,7 +12,7 @@ struct LeverageRisk: Sendable, Equatable {
     let leverage: Double            // notional ÷ account (L×)
     let entry: Double
     let liquidationMovePct: Double  // % adverse move that wipes the posted equity = 100/L
-    let liquidationPrice: Double    // long: entry·(1 − 1/L); 0 for cash (no margin liquidation)
+    let liquidationPrice: Double    // long: entry·(1 − 1/L), 0 for cash; SHORT: entry·(1 + 1/L) — adverse is UP
     let drawdownMultiplier: Double  // every unleveraged loss scaled by L
     let canLoseMoreThanAccount: Bool
     let caveat: String
@@ -31,23 +31,32 @@ enum StockSageLeverage {
     nonisolated static let caveat = "Leverage and options are NOT free upside: they multiply your loss and your risk of ruin by the same factor they multiply gains. At L× a 100/L% adverse move wipes the position, and a gap, funding or slippage THROUGH that level — or any options/futures position — can lose MORE than the entire account, leaving you owing money. Fees, funding and maintenance margin only move liquidation CLOSER."
 
     /// Leverage risk from an explicit multiple. nil on non-positive leverage/entry.
+    /// `isShort` (default false, byte-identical for existing callers): a short's ADVERSE move is
+    /// UP, so its liquidation price is entry·(1 + 1/L) — ABOVE entry. Displaying the long-side
+    /// entry·(1 − 1/L) for a short would print a "wipe-out" price on the side where the short is
+    /// in PROFIT. A short's loss is also unbounded, so canLoseMoreThanAccount is always true.
     nonisolated static func assess(leverage L: Double, entry: Double,
-                                   instrumentCanLoseMoreThanAccount: Bool = false) -> LeverageRisk? {
+                                   instrumentCanLoseMoreThanAccount: Bool = false,
+                                   isShort: Bool = false) -> LeverageRisk? {
         guard L > 0, entry > 0 else { return nil }
         return LeverageRisk(leverage: L, entry: entry,
                             liquidationMovePct: 100 / L,
-                            liquidationPrice: Swift.max(0, entry * (1 - 1 / L)),   // ≤0 (cash) ⇒ no liquidation
+                            liquidationPrice: isShort
+                                ? entry * (1 + 1 / L)                       // short: wiped by an UP move
+                                : Swift.max(0, entry * (1 - 1 / L)),        // long: ≤0 (cash) ⇒ no liquidation
                             drawdownMultiplier: L,
-                            canLoseMoreThanAccount: L > 1 || instrumentCanLoseMoreThanAccount,
+                            canLoseMoreThanAccount: L > 1 || isShort || instrumentCanLoseMoreThanAccount,
                             caveat: caveat)
     }
 
     /// Leverage from a real book: L = notional ÷ account (the same ratio PositionSizer.pctOfAccount
     /// produces). nil on non-positive account/notional/entry.
     nonisolated static func assess(account: Double, notional: Double, entry: Double,
-                                   instrumentCanLoseMoreThanAccount: Bool = false) -> LeverageRisk? {
+                                   instrumentCanLoseMoreThanAccount: Bool = false,
+                                   isShort: Bool = false) -> LeverageRisk? {
         guard account > 0, notional > 0 else { return nil }
         return assess(leverage: notional / account, entry: entry,
-                      instrumentCanLoseMoreThanAccount: instrumentCanLoseMoreThanAccount)
+                      instrumentCanLoseMoreThanAccount: instrumentCanLoseMoreThanAccount,
+                      isShort: isShort)
     }
 }

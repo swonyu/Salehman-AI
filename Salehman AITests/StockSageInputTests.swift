@@ -29,6 +29,19 @@ struct StockSageInputTests {
         #expect(I.percent("nope") == nil)
     }
 
+    @Test func nonNegativeAmountAcceptsTypedZeroButNeverDefaultsOne() {
+        // Cost basis: 0 is legal (gifted/granted shares) but must be TYPED — blank/unparseable
+        // must be nil, never silently 0 (which fabricates a 100%-profit position).
+        #expect(I.nonNegativeAmount("0") == 0)
+        #expect(I.nonNegativeAmount("184.50") == 184.50)
+        #expect(I.nonNegativeAmount("1,234.56") == 1234.56)   // broker-pasted thousands separator
+        #expect(I.nonNegativeAmount("") == nil)               // blank ≠ free shares
+        #expect(I.nonNegativeAmount("abc") == nil)
+        #expect(I.nonNegativeAmount("-5") == nil)
+        #expect(I.nonNegativeAmount("inf") == nil)            // Double("inf") parses — must be rejected
+        #expect(I.nonNegativeAmount("nan") == nil)
+    }
+
     @Test func positiveIntRejectsDecimalsAndNonPositive() {
         #expect(I.positiveInt("5000000") == 5_000_000)
         #expect(I.positiveInt("1,000") == 1000)

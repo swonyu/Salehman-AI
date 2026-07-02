@@ -891,14 +891,22 @@ struct MarketsView: View {
             field($newShares, "Shares", width: 66, focus: .shares)
             field($newCost, "Cost/sh", width: 72, focus: .cost)
             Button {
-                portfolio.add(symbol: newSymbol, shares: Double(newShares) ?? 0, costBasis: Double(newCost) ?? 0)
+                // Validated parse — an unparseable cost ("1,234.56" pasted from a broker, a blank
+                // field) must never default to $0 basis: that renders the ENTIRE value as fake
+                // green profit and inflates the headline Total P&L. The disabled gate below makes
+                // this unreachable with invalid input; the guard is belt-and-suspenders.
+                guard let sh = StockSageInput.positiveAmount(newShares),
+                      let cost = StockSageInput.nonNegativeAmount(newCost) else { return }
+                portfolio.add(symbol: newSymbol, shares: sh, costBasis: cost)
                 newSymbol = ""; newShares = ""; newCost = ""
             } label: {
                 Image(systemName: "plus.circle.fill").font(.system(size: 20)).foregroundStyle(DS.Palette.accent)
             }
             .buttonStyle(LuxPressStyle())
             .help("Add holding").accessibilityLabel("Add holding")
-            .disabled(newSymbol.trimmingCharacters(in: .whitespaces).isEmpty || (Double(newShares) ?? 0) <= 0)
+            .disabled(newSymbol.trimmingCharacters(in: .whitespaces).isEmpty
+                      || StockSageInput.positiveAmount(newShares) == nil
+                      || StockSageInput.nonNegativeAmount(newCost) == nil)
             Spacer()
         }
     }
@@ -966,7 +974,10 @@ struct MarketsView: View {
     }
 
     private func numString(_ d: Double) -> String {
-        d == d.rounded() ? String(Int(d)) : String(format: "%.2f", d)
+        // %.0f, not String(Int(d)) — Int(Double) TRAPS past Int.max (~9.22e18), and a persisted
+        // pathological share count would then crash every Portfolio render (an in-app-unrecoverable
+        // crash loop, since positions live in UserDefaults).
+        d == d.rounded() ? String(format: "%.0f", d) : String(format: "%.2f", d)
     }
 
     // MARK: Risk parity
@@ -1017,15 +1028,65 @@ struct MarketsView: View {
                 // Convert each holding to USD BEFORE the plan (mirrors portfolioTotals) — summing
                 // GBP/SAR/JPY at 1:1 skewed the target weights AND mislabeled the trade sizes as "$".
                 // Untracked-FX holdings are excluded (no rate to convert), same as the headline total.
-                let rebalFX = fxRatesToUSD
-                let rebalHoldings = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
-                    guard let rate = rebalFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
-                    return (symbol: p.symbol,
-                            value: holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares) * rate)
+                //
+                // TWO SCOPING RULES (2026-07-02 adversarial-review fixes, both fabricated trades):
+                //  • The plan is computed over the INTERSECTION of FX-convertible holdings and the
+                //    symbols risk-parity actually SIZED — a holding dropped for missing vol has no
+                //    target, and plan()'s `norm[s] ?? 0` would otherwise render it as a concrete
+                //    "Sell $<everything>" liquidation the engine never issued; a target whose
+                //    holding has no tracked FX rate would conversely render a phantom "Buy" for a
+                //    name already owned (and skew every other trade via the excluded value).
+                //  • Targets are frozen at "Balance by risk" time while holdings are live — after
+                //    any portfolio add/remove the two sets describe DIFFERENT books, so the plan is
+                //    suppressed with a refresh notice instead of computing trades from mismatched sets.
+                let liveSymbols = Set(portfolio.positions.map { $0.symbol.uppercased() })
+                let sizedSymbols = Set(store.riskParity.map { $0.symbol.uppercased() })
+                    .union(store.riskParityDropped.map { $0.uppercased() })
+                if liveSymbols != sizedSymbols {
+                    Text("⚠︎ Holdings changed since the last risk sizing — tap “Balance by risk” again before trading on these targets.")
+                        .font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    rebalancePlanView
                 }
-                let rebalTargets = Dictionary(store.riskParity.map { ($0.symbol, $0.targetWeight) },
-                                              uniquingKeysWith: { a, _ in a })
-                if let plan = StockSageRebalance.plan(holdings: rebalHoldings, targets: rebalTargets) {
+            }
+        }
+        .padding(DS.Space.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Bezel.cardFill)
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+            .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+    }
+
+    /// The concrete rebalance-trades block, computed ONLY over symbols that are BOTH
+    /// FX-convertible AND actually sized by risk parity (see the scoping comment at the call
+    /// site). Split out so the set-intersection logic stays readable and independently checkable.
+    @ViewBuilder private var rebalancePlanView: some View {
+        let rebalFX = fxRatesToUSD
+        let targetSymbols = Set(store.riskParity.map { $0.symbol.uppercased() })
+        let rebalHoldings = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
+            guard targetSymbols.contains(p.symbol.uppercased()),
+                  let rate = rebalFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
+            return (symbol: p.symbol,
+                    value: holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares) * rate)
+        }
+        let holdingSymbols = Set(rebalHoldings.map { $0.symbol.uppercased() })
+        let rebalTargets = Dictionary(store.riskParity.filter { holdingSymbols.contains($0.symbol.uppercased()) }
+                                        .map { ($0.symbol, $0.targetWeight) },
+                                      uniquingKeysWith: { a, _ in a })
+        let fxExcluded = store.riskParity.map(\.symbol).filter { !holdingSymbols.contains($0.uppercased()) }
+        if !fxExcluded.isEmpty {
+            Text("⚠︎ \(fxExcluded.joined(separator: ", ")) excluded from the trade plan — no tracked FX rate to convert to USD.")
+                .font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if let plan = StockSageRebalance.plan(holdings: rebalHoldings, targets: rebalTargets) {
                     if plan.isBalanced {
                         Text("✓ Within 2% of target — no rebalance needed.")
                             .font(.caption2).foregroundStyle(DS.Palette.successSoft)
@@ -1041,19 +1102,6 @@ struct MarketsView: View {
                         }
                     }
                 }
-            }
-        }
-        .padding(DS.Space.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Bezel.cardFill)
-                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
-            }
-        )
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-            .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
     private func parityRow(_ t: RiskParityTarget) -> some View {
@@ -2718,14 +2766,20 @@ struct MarketsView: View {
                 }
                 if a.targetPrice != nil || a.stopPrice != nil {
                 Menu {
+                    // Direction derives from where the level sits vs the CURRENT price — a
+                    // sell/reduce (short) idea's target is BELOW and stop ABOVE, so hardcoding
+                    // .above/.below would create alerts that are already met (fire a meaningless
+                    // notification immediately, disarm) while the REAL level-cross never notifies.
                     if let t = a.targetPrice {
-                        Button { store.addPriceAlert(symbol: idea.symbol, target: t, direction: .above) } label: {
-                            Label("Alert ≥ \(adaptivePrice(t)) (target)", systemImage: "target")
+                        let dir: PriceAlert.Direction = t > idea.price ? .above : .below
+                        Button { store.addPriceAlert(symbol: idea.symbol, target: t, direction: dir) } label: {
+                            Label("Alert \(dir.symbol) \(adaptivePrice(t)) (target)", systemImage: "target")
                         }
                     }
                     if let s = a.stopPrice {
-                        Button { store.addPriceAlert(symbol: idea.symbol, target: s, direction: .below) } label: {
-                            Label("Alert ≤ \(adaptivePrice(s)) (stop)", systemImage: "shield.lefthalf.filled")
+                        let dir: PriceAlert.Direction = s > idea.price ? .above : .below
+                        Button { store.addPriceAlert(symbol: idea.symbol, target: s, direction: dir) } label: {
+                            Label("Alert \(dir.symbol) \(adaptivePrice(s)) (stop)", systemImage: "shield.lefthalf.filled")
                         }
                     }
                     // (no "alert at current price" — it would be already-met and fire immediately)
@@ -2819,8 +2873,10 @@ struct MarketsView: View {
         .accessibilityAction { selectedIdea = idea }
         .accessibilityAction(named: "Backtest") { Task { await store.runBacktest(symbol: idea.symbol) } }
         .accessibilityAction(named: "Set price alert") {
-            if let t = a.targetPrice { store.addPriceAlert(symbol: idea.symbol, target: t, direction: .above) }
-            else if let s = a.stopPrice { store.addPriceAlert(symbol: idea.symbol, target: s, direction: .below) }
+            // Same level-vs-price direction rule as the alert Menu — hardcoded .above/.below
+            // creates already-met (instantly dead) alerts on sell/reduce (short) ideas.
+            if let t = a.targetPrice { store.addPriceAlert(symbol: idea.symbol, target: t, direction: t > idea.price ? .above : .below) }
+            else if let s = a.stopPrice { store.addPriceAlert(symbol: idea.symbol, target: s, direction: s > idea.price ? .above : .below) }
         }
         .contentShape(Rectangle())
         .onTapGesture { selectedIdea = idea }
@@ -2834,14 +2890,17 @@ struct MarketsView: View {
             Button { copyIdeaPlan(idea) } label: { Label("Copy trade plan", systemImage: "doc.on.clipboard") }
             Button { selectedIdea = idea } label: { Label("Open details", systemImage: "info.circle") }
             if a.targetPrice != nil || a.stopPrice != nil { Divider() }
+            // Same level-vs-price direction rule as the alert Menu (see comment there).
             if let t = a.targetPrice {
-                Button { store.addPriceAlert(symbol: idea.symbol, target: t, direction: .above) } label: {
-                    Label("Alert ≥ target", systemImage: "target")
+                let dir: PriceAlert.Direction = t > idea.price ? .above : .below
+                Button { store.addPriceAlert(symbol: idea.symbol, target: t, direction: dir) } label: {
+                    Label("Alert \(dir.symbol) target", systemImage: "target")
                 }
             }
             if let s = a.stopPrice {
-                Button { store.addPriceAlert(symbol: idea.symbol, target: s, direction: .below) } label: {
-                    Label("Alert ≤ stop", systemImage: "shield.lefthalf.filled")
+                let dir: PriceAlert.Direction = s > idea.price ? .above : .below
+                Button { store.addPriceAlert(symbol: idea.symbol, target: s, direction: dir) } label: {
+                    Label("Alert \(dir.symbol) stop", systemImage: "shield.lefthalf.filled")
                 }
             }
         }
@@ -3736,8 +3795,15 @@ struct MarketsView: View {
                         Text("Risk %/account too small to fund even one share at this stop distance — raise the account or risk %, or tighten the stop. This is NOT a zero-risk trade.")
                             .font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                     }
+                    // One side derivation for BOTH risk lines below — a sell/reduce idea is a genuine
+                    // short-side plan (stop above entry), and both the leverage liquidation price and
+                    // the gap scenario are side-dependent.
+                    let isShortIdea = idea.advice.action == .sell || idea.advice.action == .reduce
                     // Leverage truth: liquidation distance + can-lose-more-than-account (replaces the static string).
-                    if leveraged, let lev = StockSageLeverage.assess(account: acct, notional: ps.notional, entry: entry) {
+                    // isShort matters: a short's wipe-out is entry·(1 + 1/L), ABOVE entry — the long
+                    // formula would print a "liquidation" price on the side where the short PROFITS.
+                    if leveraged, let lev = StockSageLeverage.assess(account: acct, notional: ps.notional, entry: entry,
+                                                                     isShort: isShortIdea) {
                         Text("⚠︎ " + lev.verdict)
                             .font(.system(size: mvFont9))
                             .foregroundStyle(lev.canLoseMoreThanAccount ? DS.Palette.danger : DS.Palette.warningSoft)
@@ -3746,7 +3812,7 @@ struct MarketsView: View {
                             .accessibilityLabel("Leverage warning. " + lev.verdict)
                     }
                     // Gap risk: a stop is a TRIGGER, not a fill — show the worst-case 20% gap-through loss.
-                    let gapSide: TradeSide = (idea.advice.action == .sell || idea.advice.action == .reduce) ? .short : .long
+                    let gapSide: TradeSide = isShortIdea ? .short : .long
                     if let gap = StockSageGapRisk.scenario(side: gapSide, entry: entry, stop: stop,
                                                            shares: Double(ps.shares), gapPct: 0.20, accountEquity: acct) {
                         Text("⚠︎ " + gap.verdict)

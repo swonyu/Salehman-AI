@@ -147,13 +147,25 @@ struct MarketsRiskAllocationSection: View {
                 // Convert each holding to USD BEFORE the plan (mirrors portfolioTotals) — summing
                 // GBP/SAR/JPY at 1:1 skewed the target weights AND mislabeled the trade sizes as "$".
                 // Untracked-FX holdings are excluded (no rate to convert), same as the headline total.
+                //
+                // 2026-07-02 adversarial-review fix (same defect as MarketsView.riskParityPanel):
+                // the plan is computed ONLY over the INTERSECTION of FX-convertible holdings and
+                // the symbols risk-parity actually sized. A holding dropped for missing vol has no
+                // target — plan()'s `norm[s] ?? 0` would render it as a fabricated "Sell $<all>"
+                // liquidation the engine never issued (exclusion means "couldn't risk-size", not
+                // "liquidate"); a target whose holding has no tracked FX rate would conversely
+                // render a phantom "Buy" for a name the user already owns.
                 let rebalFX = fxRatesToUSD
+                let targetSymbols = Set(store.riskParity.map { $0.symbol.uppercased() })
                 let rebalHoldings = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
-                    guard let rate = rebalFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
+                    guard targetSymbols.contains(p.symbol.uppercased()),
+                          let rate = rebalFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
                     return (symbol: p.symbol,
                             value: holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares) * rate)
                 }
-                let rebalTargets = Dictionary(store.riskParity.map { ($0.symbol, $0.targetWeight) },
+                let heldSymbols = Set(rebalHoldings.map { $0.symbol.uppercased() })
+                let rebalTargets = Dictionary(store.riskParity.filter { heldSymbols.contains($0.symbol.uppercased()) }
+                                                .map { ($0.symbol, $0.targetWeight) },
                                               uniquingKeysWith: { a, _ in a })
                 if let plan = StockSageRebalance.plan(holdings: rebalHoldings, targets: rebalTargets) {
                     if plan.isBalanced {
