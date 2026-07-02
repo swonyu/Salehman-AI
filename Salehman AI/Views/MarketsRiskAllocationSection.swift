@@ -30,11 +30,14 @@ struct MarketsRiskAllocationSection: View {
     @ObservedObject var store: StockSageStore = .shared
     @ObservedObject var portfolio: StockSagePortfolio = .shared
 
-    // Dynamic-Type-aware small fonts — mirror MarketsView's so the dense heatmap
-    // layout is byte-identical at the default text size but still scales up.
+    // Dynamic-Type-aware small fonts — mirror MarketsView's mvFont7…mvFont13 so the
+    // dense heatmap layout is byte-identical at the default text size but still scales up.
     @ScaledMetric(relativeTo: .caption2) private var mvFont7: CGFloat = 7
     @ScaledMetric(relativeTo: .caption2) private var mvFont8: CGFloat = 8
     @ScaledMetric(relativeTo: .caption2) private var mvFont9: CGFloat = 9
+    @ScaledMetric(relativeTo: .caption2) private var mvFont10: CGFloat = 10
+    @ScaledMetric(relativeTo: .caption2) private var mvFont11: CGFloat = 11
+    @ScaledMetric(relativeTo: .caption2) private var mvFont13: CGFloat = 13
 
     // Tasteful, non-data-bearing hover lift — the only added behavior. Pure polish.
     @State private var hoverParity = false
@@ -43,8 +46,10 @@ struct MarketsRiskAllocationSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
-            riskParityPanel
-            allocationPanel
+            // Mirror MarketsView.swift:817-818 — only show data panels when there is
+            // something to show; an empty portfolio produces dead-end "Add holdings" errors.
+            if !portfolio.positions.isEmpty { riskParityPanel }
+            if !portfolio.positions.isEmpty { allocationPanel }
             correlationHeatmapPanel
         }
     }
@@ -133,8 +138,35 @@ struct MarketsRiskAllocationSection: View {
             if let err = store.parityError {
                 Text(err).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
             }
+            // Mirror MarketsView.swift:1002-1005 — show which holdings were excluded for
+            // missing vol data so the parity table's apparent completeness is honest.
+            if !store.riskParityDropped.isEmpty {
+                Text("⚠︎ \(store.riskParityDropped.joined(separator: ", ")) excluded — no usable vol data; risk-parity covers only what was assessable.")
+                    .font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+            }
             if !store.riskParity.isEmpty {
-                VStack(spacing: 1) { ForEach(store.riskParity) { parityRow($0) } }
+                // Compute USD-converted current weights ONCE so the parityRow display and
+                // the rebalance trade lines share the same valuation basis.  The raw engine
+                // currentWeight uses price×shares with no FX/pence conversion; feeding both
+                // display paths from the same USD-normalised holdings eliminates the
+                // contradictory-weights defect (e.g. Tadawul ~3.75× off, London ~100× off).
+                let parityFX = fxRatesToUSD
+                let parityHoldings: [(symbol: String, value: Double)] = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
+                    guard let rate = parityFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
+                    return (symbol: p.symbol,
+                            value: holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares) * rate)
+                }
+                let parityTotal = parityHoldings.reduce(0.0) { $0 + $1.value }
+                // Symbol (uppercased) → USD weight; aggregate multi-lot positions with +.
+                let usdWeightMap: [String: Double] = parityTotal > 0
+                    ? Dictionary(parityHoldings.map { ($0.symbol.uppercased(), $0.value / parityTotal) },
+                                 uniquingKeysWith: { $0 + $1 })
+                    : [:]
+                VStack(spacing: 1) {
+                    ForEach(store.riskParity) { t in
+                        parityRow(t, usdCurrentWeight: usdWeightMap[t.symbol.uppercased()])
+                    }
+                }
                 if let vs = StockSageRiskParity.vsEqualWeight(store.riskParity) {
                     Text(vs.note).font(.caption2).foregroundStyle(DS.Palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -142,34 +174,27 @@ struct MarketsRiskAllocationSection: View {
                 Text("Equalizes risk, not a profit promise. Risk parity can suffer in correlation shocks — keep a cash sleeve.")
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
-                // Concrete rebalance: the actual $ trades to reach the risk-parity targets,
-                // with a 2% no-trade band so you don't churn on tiny drifts.
-                // Convert each holding to USD BEFORE the plan (mirrors portfolioTotals) — summing
-                // GBP/SAR/JPY at 1:1 skewed the target weights AND mislabeled the trade sizes as "$".
-                // Untracked-FX holdings are excluded (no rate to convert), same as the headline total.
+                // Concrete rebalance: the actual $ trades to reach the risk-parity targets.
+                // `band` is named and passed explicitly so the caption interpolates the same
+                // value the plan uses — prevents silent divergence if the engine default changes.
+                // Reuses parityHoldings (USD-converted) so all three of: the row display, the
+                // trade sizes, and the current-weight percentages in trade lines all share one
+                // valuation path (mirrors portfolioTotals; fixes hardcoded-2% and contradictory-
+                // weights defects in one pass).
                 //
-                // 2026-07-02 adversarial-review fix (same defect as MarketsView.riskParityPanel):
-                // the plan is computed ONLY over the INTERSECTION of FX-convertible holdings and
-                // the symbols risk-parity actually sized. A holding dropped for missing vol has no
-                // target — plan()'s `norm[s] ?? 0` would render it as a fabricated "Sell $<all>"
-                // liquidation the engine never issued (exclusion means "couldn't risk-size", not
-                // "liquidate"); a target whose holding has no tracked FX rate would conversely
-                // render a phantom "Buy" for a name the user already owns.
-                let rebalFX = fxRatesToUSD
+                // The plan is computed over the INTERSECTION of FX-convertible holdings and the
+                // symbols risk-parity actually sized — a holding dropped for missing vol has no
+                // target (plan's `norm[s] ?? 0` would fabricate a "Sell $<all>" liquidation).
+                let band = 0.02 // mirrors StockSageRebalance.plan default band: Double = 0.02
                 let targetSymbols = Set(store.riskParity.map { $0.symbol.uppercased() })
-                let rebalHoldings = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
-                    guard targetSymbols.contains(p.symbol.uppercased()),
-                          let rate = rebalFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
-                    return (symbol: p.symbol,
-                            value: holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares) * rate)
-                }
+                let rebalHoldings = parityHoldings.filter { targetSymbols.contains($0.symbol.uppercased()) }
                 let heldSymbols = Set(rebalHoldings.map { $0.symbol.uppercased() })
                 let rebalTargets = Dictionary(store.riskParity.filter { heldSymbols.contains($0.symbol.uppercased()) }
-                                                .map { ($0.symbol, $0.targetWeight) },
-                                              uniquingKeysWith: { a, _ in a })
-                if let plan = StockSageRebalance.plan(holdings: rebalHoldings, targets: rebalTargets) {
+                    .map { ($0.symbol, $0.targetWeight) },
+                    uniquingKeysWith: { a, _ in a })
+                if let plan = StockSageRebalance.plan(holdings: rebalHoldings, targets: rebalTargets, band: band) {
                     if plan.isBalanced {
-                        Text("✓ Within 2% of target — no rebalance needed.")
+                        Text("✓ Within \(Int(band * 100))% of target — no rebalance needed.")
                             .font(.caption2).foregroundStyle(DS.Palette.successSoft)
                     } else {
                         VStack(alignment: .leading, spacing: 2) {
@@ -192,24 +217,35 @@ struct MarketsRiskAllocationSection: View {
         .animation(DS.Motion.smooth, value: hoverParity)
     }
 
-    private func parityRow(_ t: RiskParityTarget) -> some View {
-        let up = t.deltaWeight >= 0
+    /// - Parameter usdCurrentWeight: when provided, replaces t.currentWeight so both the row
+    ///   display and the rebalance trade lines share one USD-normalised valuation basis.
+    private func parityRow(_ t: RiskParityTarget, usdCurrentWeight: Double? = nil) -> some View {
+        let displayCurrent = usdCurrentWeight ?? t.currentWeight
+        let displayDelta = t.targetWeight - displayCurrent
+        let up = displayDelta >= 0
+        // Use rounded() for Int labels so they match the %.0f visible text (avoids 1pp
+        // truncation-vs-rounding mismatch flagged by the a11y audit).
+        let currentPct = Int((displayCurrent * 100).rounded())
+        let targetPct = Int((t.targetWeight * 100).rounded())
+        let deltaPct = Int((abs(displayDelta) * 100).rounded())
         return HStack(spacing: 10) {
-            Text(t.symbol).font(.system(size: 13, weight: .bold, design: .rounded))
+            Text(t.symbol).font(.system(size: mvFont13, weight: .bold, design: .rounded))
                 .foregroundStyle(.white).frame(width: 70, alignment: .leading).lineLimit(1)
             Text(String(format: "vol %.0f%%", t.volatility * 100)).font(.caption2).foregroundStyle(.secondary)
             Spacer(minLength: 8)
-            Text(String(format: "%.0f%% → %.0f%%", t.currentWeight * 100, t.targetWeight * 100))
+            Text(String(format: "%.0f%% → %.0f%%", displayCurrent * 100, t.targetWeight * 100))
                 .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
                 .contentTransition(.numericText())
-            Text((up ? "+" : "") + String(format: "%.0f%%", t.deltaWeight * 100))
-                .font(.system(size: 11, weight: .bold))
+            Text((up ? "+" : "") + String(format: "%.0f%%", displayDelta * 100))
+                .font(.system(size: mvFont11, weight: .bold))
                 .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
                 .frame(width: 46, alignment: .trailing)
         }
         .padding(.horizontal, DS.Space.md).padding(.vertical, 7)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(t.symbol), target \(Int(t.targetWeight * 100)) percent")
+        // Full label: symbol + current + target + signed direction so VoiceOver conveys
+        // the add-vs-trim intent (previously only target was announced).
+        .accessibilityLabel("\(t.symbol), \(currentPct) percent now, target \(targetPct) percent, \(up ? "add" : "trim") \(deltaPct) points")
     }
 
     // MARK: - Allocation breakdown
@@ -259,16 +295,17 @@ struct MarketsRiskAllocationSection: View {
                 })
             if let cb = StockSageCurrency.breakdown(holdings: ccyHoldings, ratesToBase: fxRates, base: "USD"),
                cb.exposures.count > 1 || !cb.unpriced.isEmpty {
-                Text("Currency exposure (base USD)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                Text("Currency exposure (base USD)").font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.secondary)
                 ForEach(cb.exposures) { e in
                     HStack(spacing: 8) {
-                        Text(e.currency).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).frame(width: 46, alignment: .leading)
+                        Text(e.currency).font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white).frame(width: 46, alignment: .leading)
                         Text(String(format: "%.0f%%", e.weight * 100)).font(.caption2).foregroundStyle(.secondary)
                         Spacer()
                         Text(e.baseValue.formatted(.number.precision(.fractionLength(0)))).font(.caption2).foregroundStyle(.secondary)
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(e.currency): \(Int(e.weight * 100)) percent of the priced book")
+                    // rounded() matches the %.0f visible text (truncation would disagree at .5 boundaries)
+                    .accessibilityLabel("\(e.currency): \(Int((e.weight * 100).rounded())) percent of the priced book")
                 }
                 if let c = cb.concentration {
                     Text("⚠︎ \(Int(c.weight * 100))% in \(c.currency) — FX risk (currency moves swing your USD value).")
@@ -291,10 +328,10 @@ struct MarketsRiskAllocationSection: View {
 
     private func allocationGroup(_ title: String, _ slices: [AllocationBreakdown.Slice]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+            Text(title).font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.secondary)
             ForEach(slices) { s in
                 HStack(spacing: 8) {
-                    Text(s.label).font(.system(size: 11)).foregroundStyle(.white)
+                    Text(s.label).font(.system(size: mvFont11)).foregroundStyle(.white)
                         .frame(width: 92, alignment: .leading).lineLimit(1)
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
@@ -308,7 +345,8 @@ struct MarketsRiskAllocationSection: View {
                         .font(.caption2).foregroundStyle(.secondary).frame(width: 36, alignment: .trailing)
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(s.label) \(Int(s.fraction * 100)) percent")
+                // rounded() keeps parity with the %.0f visible text
+                .accessibilityLabel("\(s.label) \(Int((s.fraction * 100).rounded())) percent")
             }
         }
     }
@@ -363,6 +401,10 @@ struct MarketsRiskAllocationSection: View {
             .background(cardChrome(hovering: hoverCorr))
             .onHover { hoverCorr = $0 }
             .animation(DS.Motion.smooth, value: hoverCorr)
+            // .contain (not .combine) so the per-cell correlation labels above survive as
+            // children — mirrors MarketsView.swift:1291-1292.
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Correlation heatmap, \(c.symbols.count) symbols")
         }
     }
 

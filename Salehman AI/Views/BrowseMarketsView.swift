@@ -14,6 +14,13 @@ struct BrowseMarketsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var asset: AssetFilter = .all
+    /// The symbol currently being added (nil when idle). Drives the per-row spinner so
+    /// only the tapped row shows a ProgressView, not every untracked row simultaneously.
+    @State private var addingSymbol: String? = nil
+    /// Local copy of the add-symbol error, seeded only from adds performed in THIS sheet.
+    /// Prevents stale errors from the watchlist add box in MarketsView (which shares the
+    /// same store.addSymbolError) from appearing on sheet open (and vice versa on dismiss).
+    @State private var localAddError: String? = nil
 
     // Dynamic-Type-aware small fonts: each equals its base size at the default text
     // setting (bmFont13 == 13), so the dense layout is unchanged, but they scale up when
@@ -30,7 +37,14 @@ struct BrowseMarketsView: View {
         var id: String { rawValue }
     }
 
-    private var tracked: Set<String> { Set(store.symbols.map { $0.symbol.uppercased() }) }
+    /// The set the engine validates against in `addSymbol` (StockSageStore ~239-242):
+    /// store.symbols ∪ userSymbols ∪ worldwide. Using the SAME union here prevents showing
+    /// a '+' button for any symbol the engine would immediately refuse as "already tracked."
+    private var tracked: Set<String> {
+        Set(store.symbols.map { $0.symbol.uppercased() })
+            .union(store.userSymbols.map { $0.uppercased() })
+            .union(StockSageUniverse.worldwide.map { $0.symbol.uppercased() })
+    }
 
     private func matches(_ s: StockSageSymbol) -> Bool {
         let sym = s.symbol.uppercased()
@@ -88,7 +102,7 @@ struct BrowseMarketsView: View {
                 .pickerStyle(.segmented).labelsHidden()
             }
 
-            if let err = store.addSymbolError {
+            if let err = localAddError {
                 Text(err).font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
             }
 
@@ -113,10 +127,15 @@ struct BrowseMarketsView: View {
         .padding(DS.Space.lg)
         .frame(minWidth: 420, minHeight: 520)
         .background(DS.Palette.modalBG)
+        // localAddError is seeded only by adds performed inside this sheet (see row Task),
+        // so it never shows a stale error from the watchlist box in MarketsView.
+        // Reset on appear so reopening the sheet starts clean.
+        .onAppear { localAddError = nil }
     }
 
     @ViewBuilder private func row(_for s: StockSageSymbol) -> some View {
         let isTracked = tracked.contains(s.symbol.uppercased())
+        let isAdding = addingSymbol == s.symbol
         HStack(spacing: 10) {
             Text(s.symbol).font(.system(size: bmFont13, weight: .semibold)).foregroundStyle(.white)
                 .frame(width: 96, alignment: .leading).lineLimit(1)
@@ -125,15 +144,30 @@ struct BrowseMarketsView: View {
             if isTracked {
                 Image(systemName: "checkmark.circle.fill").font(.system(size: bmFont14)).foregroundStyle(DS.Palette.successSoft)
                     .accessibilityLabel("\(s.symbol) already tracked")
-            } else if store.isAddingSymbol {
+            } else if isAdding {
+                // Per-row spinner: only the symbol being added shows a ProgressView.
+                // Other untracked rows show a disabled '+' while an add is in flight, so
+                // tapping '+' on AAPL no longer spins hundreds of unrelated rows.
                 ProgressView().controlSize(.small)
+                    .accessibilityLabel("Adding \(s.symbol)")
             } else {
-                Button { Task { await store.addSymbol(s.symbol) } } label: {
+                Button {
+                    Task {
+                        localAddError = nil
+                        addingSymbol = s.symbol
+                        await store.addSymbol(s.symbol)
+                        addingSymbol = nil
+                        // Capture the error result locally so it's attributed to this sheet,
+                        // not shared with the watchlist add box in MarketsView.
+                        localAddError = store.addSymbolError
+                    }
+                } label: {
                     Image(systemName: "plus.circle.fill").font(.system(size: bmFont15)).foregroundStyle(DS.Palette.accent)
                 }
                 .buttonStyle(.plain)
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
+                .disabled(store.isAddingSymbol)   // disable other '+' buttons while one add is in flight
                 .accessibilityLabel("Add \(s.symbol), \(s.market)")
             }
         }

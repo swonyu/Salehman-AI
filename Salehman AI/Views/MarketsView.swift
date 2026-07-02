@@ -32,9 +32,9 @@ struct MarketsView: View {
     @State private var ideaSearch = ""
 
     /// Tunable hold-day assumptions feeding velocity (EV/day). Persisted; defaults match
-    /// the engine's (crypto 3d, equity 12d) so nothing shifts until the owner changes it.
-    @AppStorage("velocityCryptoHoldDays") private var cryptoHoldDays = 3.0
-    @AppStorage("velocityEquityHoldDays") private var equityHoldDays = 12.0
+    /// the engine's so nothing shifts until the owner changes it.
+    @AppStorage("velocityCryptoHoldDays") private var cryptoHoldDays = VelocityHoldDays.defaults.crypto
+    @AppStorage("velocityEquityHoldDays") private var equityHoldDays = VelocityHoldDays.defaults.equity
     private var velocityHolds: VelocityHoldDays { VelocityHoldDays(crypto: cryptoHoldDays, equity: equityHoldDays) }
     /// FASTMONEY_BACKLOG #7 — which fast-lane board(s) to show. Defaults to Both (the new
     /// split-board layout replaces the old single blended top-3 list, per the backlog's intent).
@@ -58,6 +58,7 @@ struct MarketsView: View {
     @ObservedObject private var portfolio = StockSagePortfolio.shared
     @ObservedObject private var journal = StockSageJournalStore.shared
     @State private var briefing = ""
+    @State private var briefingGeneratedAt: Date? = nil
     @State private var loadingBriefing = false
     @State private var newSymbol = ""
     @State private var newShares = ""
@@ -106,6 +107,9 @@ struct MarketsView: View {
     @State private var alertSignals: [StockSageSignal] = []
     @State private var checkingAlerts = false
     @State private var monitorError = ""
+    /// True once the user has tapped "Check now" at least once, so the empty-state copy is
+    /// honest ("no strong signals found") rather than pre-emptive ("no signals right now").
+    @State private var hasScanned = false
     // Hover states — one per interactive surface type.
     @State private var hoveredSignalID: UUID?
     @State private var hoveredPositionID: UUID?
@@ -170,7 +174,13 @@ struct MarketsView: View {
         }
         // Flat opaque working canvas (design language).
         .background(DS.Palette.codeSurface.ignoresSafeArea())
-        .onAppear { appeared = true }
+        .onAppear {
+            appeared = true
+            // Sync the toggle with the singleton: the monitor is a process-lifetime task that
+            // survives window close/reopen, so a freshly-built view must read the live state
+            // rather than defaulting to false (which would make the running monitor unstoppable).
+            monitoring = StockSageMonitor.shared.isRunning
+        }
         .task {
             // Auto-pull a live worldwide snapshot on open — skipped under the QA
             // snapshot harness so captures stay deterministic and offline.
@@ -224,7 +234,8 @@ struct MarketsView: View {
             if secs < 86_400 { return " (\(Int(secs / 3600))h old)" }
             return " (\(Int(secs / 86_400))d old)"
         }()
-        return "Last-good (cached) prices\(age) — NOT live. The feed was unreachable; tap refresh for live quotes."
+        let reason = store.feedError.map { " \($0)" } ?? " Refreshing live quotes…"
+        return "Last-good (cached) prices\(age) — NOT live.\(reason)"
     }
 
     private var liveBanner: some View {
@@ -240,13 +251,23 @@ struct MarketsView: View {
         let text = (stale && asOf != nil)
             ? "Prices are the last close as of \(asOf!.formatted(date: .abbreviated, time: .shortened)) — markets may be closed; NOT live. Educational, not financial advice."
             : "Live worldwide quotes across \(StockSageUniverse.marketCount) market groups (\(StockSageUniverse.worldwide.count) names). Prices may be delayed ~15 min — educational, not financial advice."
-        return HStack(spacing: DS.Space.sm) {
-            Circle().fill(tint).frame(width: 7, height: 7)
-                .shadow(color: stale ? .clear : tint.opacity(0.7), radius: 4)
-            Text(text)
-                .font(.caption).foregroundStyle(.white.opacity(0.85))
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer()
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: DS.Space.sm) {
+                Circle().fill(tint).frame(width: 7, height: 7)
+                    .shadow(color: stale ? .clear : tint.opacity(0.7), radius: 4)
+                Text(text)
+                    .font(.caption).foregroundStyle(.white.opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+            }
+            if let err = store.feedError {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9)).foregroundStyle(DS.Palette.warningSoft)
+                    Text(err).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         .padding(.horizontal, DS.Space.sm).padding(.vertical, DS.Space.sm)
         .background(tint.opacity(0.10),
@@ -290,10 +311,12 @@ struct MarketsView: View {
                     .background(DS.Palette.accent, in: Capsule())
                 }
                 .buttonStyle(LuxPressStyle()).disabled(store.isLoadingRegime)
-                .help("Gauge the market regime (S&P 500 trend, breadth, VIX)")
+                .help("Gauge the market regime (S&P 500 trend, momentum/RSI, breadth, VIX)")
             }
             if let r = store.regime {
                 convictionMeter((r.riskScore + 1) / 2, color: regimeColor(r.state))   // −1…+1 → 0…1
+                    .accessibilityLabel("Risk gauge")
+                    .accessibilityValue(String(format: "%@ %.0f percent", r.riskScore >= 0 ? "risk-on" : "risk-off", abs(r.riskScore) * 100))
                 ForEach(Array(r.signals.prefix(4).enumerated()), id: \.offset) { _, s in
                     Text("· \(s)").font(.caption2).foregroundStyle(DS.Palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -393,10 +416,17 @@ struct MarketsView: View {
     /// otherwise the educational tagline.
     private var headerSubtitle: String {
         if !store.isSampleData, let when = store.lastUpdated {
+            // Reuse the same staleness logic as liveBanner so the header and banner never contradict.
+            let asOf = store.closeableQuoteAsOf ?? store.quoteAsOf
+            let stale = asOf.map { Date().timeIntervalSince($0) > 3600 } ?? false
+            if stale, let asOf {
+                return "Last close · \(StockSageUniverse.marketCount) market groups · as of \(asOf.formatted(date: .abbreviated, time: .shortened))"
+            }
             return "Live · \(StockSageUniverse.marketCount) market groups · updated \(Self.timeFormatter.string(from: when))"
         }
         if store.loadedFromCache, let saved = store.cacheSavedAt {
-            return "Last-good (cached) as of \(Self.timeFormatter.string(from: saved)) · refresh for live"
+            // Use a date-aware format so a Friday cache opened Monday isn't shown as just "16:42".
+            return "Last-good (cached) as of \(saved.formatted(date: .abbreviated, time: .shortened)) · refresh for live"
         }
         if store.isSampleData {
             // Be unmistakable that these are NOT real prices — tap refresh for live data.
@@ -458,7 +488,8 @@ struct MarketsView: View {
 
     @ViewBuilder private var content: some View {
         switch section {
-        case .watchlist, .all: signalList
+        case .watchlist: signalListView(watchlistOnly: true)
+        case .all:       signalListView(watchlistOnly: false)
         case .ideas:           ideasSection
         case .heatmap:         heatmap
         case .portfolio:       portfolioSection
@@ -539,7 +570,9 @@ struct MarketsView: View {
                 .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
 
             if alertSignals.isEmpty {
-                Text("No strong signals right now — mostly Hold. Tap “Check now” to scan again.")
+                Text(hasScanned
+                     ? "No strong signals found — mostly Hold. Tap Check now to scan again."
+                     : "Not scanned yet — tap Check now to find strong signals.")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 16)
                     .transition(.opacity)
@@ -621,7 +654,10 @@ struct MarketsView: View {
     }
 
     private func priceAlertRow(_ a: PriceAlert) -> some View {
-        HStack(spacing: 10) {
+        // Whether this alert's symbol has no live price — only meaningful when we have live data
+        // (sample/cache state has incomplete prices by design, so we avoid false warnings there).
+        let noQuote = !store.isSampleData && !store.loadedFromCache && currentPrice(a.symbol) == nil
+        return HStack(spacing: 10) {
             Text(a.symbol).font(.system(size: mvFont13, weight: .bold, design: .rounded)).foregroundStyle(.white)
             Text("\(a.direction.symbol) \(a.target.formatted())").font(.caption).foregroundStyle(.secondary)
             Spacer()
@@ -630,6 +666,13 @@ struct MarketsView: View {
                 Button { store.resetPriceAlert(a.id) } label: {
                     Text("Re-arm").font(.caption2.weight(.semibold)).foregroundStyle(DS.Palette.accent)
                 }.buttonStyle(.plain).help("Re-arm this alert")
+            } else if noQuote {
+                // The monitor fetches quotes to check alerts; if this symbol returns nothing,
+                // the alert will never fire — show "no quote" rather than a false green "armed".
+                Text("no quote")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(DS.Palette.warningSoft)
+                    .help("No live price found for \(a.symbol) — alert cannot fire until a quote is available. Check the ticker spelling.")
             } else {
                 Text("armed").font(.caption2.weight(.semibold)).foregroundStyle(.green.opacity(0.85))
             }
@@ -645,6 +688,13 @@ struct MarketsView: View {
         guard !sym.isEmpty, !sym.contains(" "), sym.count <= 20 else { paError = "Enter a valid ticker."; return }
         let (price, err) = StockSagePriceAlertEngine.validateTarget(paTarget)
         guard let p = price else { paError = err ?? "Enter a price."; return }
+        // Detect a duplicate BEFORE calling the engine so the field contents are preserved and
+        // the user gets an honest error instead of a silent success (the engine guard returns
+        // without adding, but the view would clear the fields and show no feedback).
+        if store.priceAlerts.contains(where: { $0.isArmed && $0.symbol == sym && $0.target == p && $0.direction == paDirection }) {
+            paError = "Already armed — this alert is already active."
+            return
+        }
         store.addPriceAlert(symbol: sym, target: p, direction: paDirection)
         paSymbol = ""; paTarget = ""; paError = ""
     }
@@ -674,8 +724,17 @@ struct MarketsView: View {
     private func toggleMonitoring(_ on: Bool) {
         monitorError = ""
         if on {
-            do { try StockSageMonitor.shared.start(); monitoring = true }
-            catch { monitorError = error.localizedDescription; monitoring = false }
+            do {
+                try StockSageMonitor.shared.start()
+                monitoring = true
+            } catch StockSageMonitor.MonitorError.alreadyRunning {
+                // Monitor is already live (e.g. window was closed and reopened) — treat as
+                // success so the toggle reaches ON and stop() becomes reachable again.
+                monitoring = true
+            } catch {
+                monitorError = error.localizedDescription
+                monitoring = false
+            }
         } else {
             StockSageMonitor.shared.stop(); monitoring = false
         }
@@ -686,10 +745,17 @@ struct MarketsView: View {
         // Honour the watchlist-only scope here too, so "Check now" matches what the
         // background monitor actually evaluates.
         if watchlistOnly && !store.userSymbols.isEmpty {
+            // runWatchlistCycle fetches fresh quotes internally — no pre-refresh needed.
             alertSignals = await StockSageMonitor.shared.runWatchlistCycle(store.userSymbols, notify: false)
         } else {
+            // Mirror the monitor's full-core loop: pull a fresh snapshot BEFORE scoring so
+            // "Check now" never re-evaluates stale / sample-seeded prices. Without this
+            // the else-branch would re-score hours-old quotes (or the sample-seeded strong
+            // movers) and display them as current alerts with no caveat.
+            await store.refresh()
             alertSignals = await StockSageMonitor.shared.runCycle(notify: false)
         }
+        hasScanned = true
         checkingAlerts = false
     }
 
@@ -761,18 +827,42 @@ struct MarketsView: View {
             .sorted()
     }
 
+    /// For an FX pair symbol (ending "=X"), returns the QUOTE (trailing) currency, which is the
+    /// denomination of price×shares. When the quote leg is USD the position is already in USD and
+    /// needs no conversion (rate = 1). This differs from currencyForSymbol's EXPOSURE leg, which
+    /// is correct for risk semantics but wrong as a USD-conversion key for …USD=X pairs (using
+    /// the exposure leg there would multiply an already-USD amount by the rate again — rate²).
+    /// Non-=X symbols fall back to currencyForSymbol as before.
+    private func conversionCurrencyForSymbol(_ symbol: String, base: String = "USD") -> String {
+        let s = symbol.uppercased()
+        if s.hasSuffix("=X") {
+            let pair = String(s.dropLast(2))
+            guard pair.count == 6 else { return base }
+            // Quote leg = trailing 3 characters (e.g. EURUSD=X → "USD"; USDJPY=X → "JPY")
+            return String(pair.suffix(3))
+        }
+        return StockSageCurrency.currencyForSymbol(symbol, base: base)
+    }
+
     /// Portfolio cost & value in USD. Each holding's value AND cost go through holdingValue (so the
     /// .L-pence ÷100 is applied to BOTH — the P&L unit matches) then × its CCY→USD rate, so we never
     /// sum GBP + USD at 1:1. Holdings whose currency has no tracked rate are EXCLUDED (see
     /// untrackedFXCurrencies), not counted at par. (Cost uses today's FX, so P&L blends asset + FX.)
+    ///
+    /// FX-pair positions (…=X): price×shares is already denominated in the pair's QUOTE currency
+    /// (e.g. EURUSD=X price is in USD), so we convert by the quote leg, not the exposure leg that
+    /// currencyForSymbol returns. Using the exposure leg for …USD=X pairs would multiply an
+    /// already-USD amount by the EURUSD rate again → rate², inflating value ~8–27%.
     private var portfolioTotals: (cost: Double, value: Double) {
         var cost = 0.0, value = 0.0
         let rates = fxRatesToUSD
         for p in portfolio.positions {
             // Exclude untracked-FX AND unpriced holdings. Crucially, NO `?? costBasis` fallback for
             // value — substituting cost basis would fabricate value == cost ⇒ a fake green $0 P&L.
-            guard let rate = rates[StockSageCurrency.currencyForSymbol(p.symbol)],
-                  let px = currentPrice(p.symbol) else { continue }
+            // Use the quote-leg currency for =X pairs (already-USD when quote = "USD"),
+            // and the exposure-based currencyForSymbol for all other instruments.
+            let ccyKey = conversionCurrencyForSymbol(p.symbol)
+            guard let rate = rates[ccyKey], let px = currentPrice(p.symbol) else { continue }
             cost += holdingValue(p.symbol, perShare: p.costBasis, shares: p.shares) * rate
             value += holdingValue(p.symbol, perShare: px, shares: p.shares) * rate
         }
@@ -1015,7 +1105,37 @@ struct MarketsView: View {
                     .font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
             }
             if !store.riskParity.isEmpty {
-                VStack(spacing: 1) { ForEach(store.riskParity) { parityRow($0) } }
+                // Aggregate multi-lot books: the engine emits one RiskParityTarget per lot; same-symbol
+                // lots have identical IDs (symbol), causing undefined SwiftUI ForEach behavior, and
+                // the targets are additive (each lot's targetWeight is its share of the whole book's
+                // risk budget). Sum currentWeight/targetWeight and average volatility per symbol.
+                let aggregatedParity: [RiskParityTarget] = {
+                    var bySymbol: [String: RiskParityTarget] = [:]
+                    var lotCount: [String: Int] = [:]
+                    for t in store.riskParity {
+                        if let existing = bySymbol[t.symbol] {
+                            bySymbol[t.symbol] = RiskParityTarget(
+                                symbol: t.symbol,
+                                currentWeight: existing.currentWeight + t.currentWeight,
+                                targetWeight: existing.targetWeight + t.targetWeight,
+                                volatility: existing.volatility + t.volatility
+                            )
+                            lotCount[t.symbol, default: 1] += 1
+                        } else {
+                            bySymbol[t.symbol] = t
+                            lotCount[t.symbol] = 1
+                        }
+                    }
+                    // Average volatility across lots; preserve original ordering (first appearance wins).
+                    var seen = Set<String>()
+                    return store.riskParity.compactMap { t -> RiskParityTarget? in
+                        guard seen.insert(t.symbol).inserted, let agg = bySymbol[t.symbol] else { return nil }
+                        let n = Double(lotCount[t.symbol] ?? 1)
+                        return RiskParityTarget(symbol: agg.symbol, currentWeight: agg.currentWeight,
+                                               targetWeight: agg.targetWeight, volatility: agg.volatility / n)
+                    }
+                }()
+                VStack(spacing: 1) { ForEach(aggregatedParity) { parityRow($0) } }
                 if let vs = StockSageRiskParity.vsEqualWeight(store.riskParity) {
                     Text(vs.note).font(.caption2).foregroundStyle(DS.Palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1024,7 +1144,7 @@ struct MarketsView: View {
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
                 // Concrete rebalance: the actual $ trades to reach the risk-parity targets,
-                // with a 2% no-trade band so you don't churn on tiny drifts.
+                // with a no-trade band (see rebalancePlanView) so you don't churn on tiny drifts.
                 // Convert each holding to USD BEFORE the plan (mirrors portfolioTotals) — summing
                 // GBP/SAR/JPY at 1:1 skewed the target weights AND mislabeled the trade sizes as "$".
                 // Untracked-FX holdings are excluded (no rate to convert), same as the headline total.
@@ -1068,27 +1188,37 @@ struct MarketsView: View {
     /// FX-convertible AND actually sized by risk parity (see the scoping comment at the call
     /// site). Split out so the set-intersection logic stays readable and independently checkable.
     @ViewBuilder private var rebalancePlanView: some View {
+        // Named constant so the band value is passed explicitly to plan() AND interpolated
+        // into the copy — if the engine default ever changes, one edit keeps them in sync.
+        let rebalBand: Double = 0.02
         let rebalFX = fxRatesToUSD
         let targetSymbols = Set(store.riskParity.map { $0.symbol.uppercased() })
+        // Exclude unpriced holdings (no live quote) rather than falling back to cost basis:
+        // substituting cost basis fabricates a value that distorts every other weight and the
+        // trade sizes (mirrors portfolioTotals' explicit "substituting cost basis would fabricate
+        // value" exclusion). The unpricedHoldings list already names them at the headline total.
         let rebalHoldings = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
             guard targetSymbols.contains(p.symbol.uppercased()),
+                  let price = currentPrice(p.symbol),
                   let rate = rebalFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
             return (symbol: p.symbol,
-                    value: holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares) * rate)
+                    value: holdingValue(p.symbol, perShare: price, shares: p.shares) * rate)
         }
         let holdingSymbols = Set(rebalHoldings.map { $0.symbol.uppercased() })
+        // Sum target weights for multi-lot same-symbol entries (+ not first-wins) so a
+        // two-lot AAPL position gets its full combined target, not just the first lot's.
         let rebalTargets = Dictionary(store.riskParity.filter { holdingSymbols.contains($0.symbol.uppercased()) }
                                         .map { ($0.symbol, $0.targetWeight) },
-                                      uniquingKeysWith: { a, _ in a })
+                                      uniquingKeysWith: +)
         let fxExcluded = store.riskParity.map(\.symbol).filter { !holdingSymbols.contains($0.uppercased()) }
         if !fxExcluded.isEmpty {
             Text("⚠︎ \(fxExcluded.joined(separator: ", ")) excluded from the trade plan — no tracked FX rate to convert to USD.")
                 .font(.caption2).foregroundStyle(DS.Palette.warningSoft)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        if let plan = StockSageRebalance.plan(holdings: rebalHoldings, targets: rebalTargets) {
+        if let plan = StockSageRebalance.plan(holdings: rebalHoldings, targets: rebalTargets, band: rebalBand) {
                     if plan.isBalanced {
-                        Text("✓ Within 2% of target — no rebalance needed.")
+                        Text("✓ Within \(Int(rebalBand * 100))% of target — no rebalance needed.")
                             .font(.caption2).foregroundStyle(DS.Palette.successSoft)
                     } else {
                         VStack(alignment: .leading, spacing: 2) {
@@ -1105,23 +1235,24 @@ struct MarketsView: View {
     }
 
     private func parityRow(_ t: RiskParityTarget) -> some View {
-        let up = t.deltaWeight >= 0
+        // NOTE: t.currentWeight is the engine's RAW price×shares value (no FX conversion, no
+        // pence normalisation). The rebalance-trade plan below uses USD-converted values and
+        // can disagree for mixed-currency books. To avoid showing two contradictory "current"
+        // numbers on the same card, we display only the TARGET weight here and let the trade
+        // plan (which IS USD-correct) carry the current→target movement for each symbol.
+        let targetPct = String(format: "%.0f%%", t.targetWeight * 100)
         return HStack(spacing: 10) {
             Text(t.symbol).font(.system(size: mvFont13, weight: .bold, design: .rounded))
                 .foregroundStyle(.white).frame(width: 70, alignment: .leading).lineLimit(1)
             Text(String(format: "vol %.0f%%", t.volatility * 100)).font(.caption2).foregroundStyle(.secondary)
             Spacer(minLength: 8)
-            Text(String(format: "%.0f%% → %.0f%%", t.currentWeight * 100, t.targetWeight * 100))
+            Text("target \(targetPct)")
                 .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
                 .contentTransition(.numericText())
-            Text((up ? "+" : "") + String(format: "%.0f%%", t.deltaWeight * 100))
-                .font(.system(size: mvFont11, weight: .bold))
-                .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
-                .frame(width: 46, alignment: .trailing)
         }
         .padding(.horizontal, DS.Space.sm).padding(.vertical, 7)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(t.symbol), target \(Int(t.targetWeight * 100)) percent")
+        .accessibilityLabel("\(t.symbol), vol \(Int((t.volatility * 100).rounded())) percent, target \(Int((t.targetWeight * 100).rounded())) percent")
     }
 
     // MARK: Allocation breakdown
@@ -1130,10 +1261,14 @@ struct MarketsView: View {
         // Convert to USD before the breakdown (mirrors portfolioTotals/rebalance) — summing currencies
         // at 1:1 skews the asset-class / region slice percentages. Untracked-FX holdings are excluded.
         let allocFX = fxRatesToUSD
+        // Exclude unpriced holdings (no live quote) rather than falling back to cost basis —
+        // a possibly years-old basis price distorts every slice percentage with no caveat.
+        // These holdings are already named by unpricedHoldings at the headline total.
         let holdings = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
-            guard let rate = allocFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
+            guard let price = currentPrice(p.symbol),
+                  let rate = allocFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
             return (symbol: p.symbol,
-                    value: holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares) * rate)
+                    value: holdingValue(p.symbol, perShare: price, shares: p.shares) * rate)
         }
         let alloc = StockSageAllocation.breakdown(holdings)
         return VStack(alignment: .leading, spacing: DS.Space.sm) {
@@ -1155,8 +1290,11 @@ struct MarketsView: View {
             }
 
             // Currency exposure — only worth showing when there's an actual FX dimension.
-            let ccyHoldings = portfolio.positions.map { pos -> (value: Double, currency: String) in
-                let raw = (currentPrice(pos.symbol) ?? pos.costBasis) * pos.shares
+            // Exclude unpriced holdings (no live quote) rather than falling back to cost basis;
+            // a stale basis price would distort every currency-exposure slice with no caveat.
+            let ccyHoldings = portfolio.positions.compactMap { pos -> (value: Double, currency: String)? in
+                guard let price = currentPrice(pos.symbol) else { return nil }
+                let raw = price * pos.shares
                 // London .L is quoted in pence — normalize to pounds so GBP isn't inflated ~100×.
                 return (value: StockSageCurrency.majorUnitValue(symbol: pos.symbol, rawValue: raw),
                         currency: StockSageCurrency.currencyForSymbol(pos.symbol))
@@ -1169,8 +1307,11 @@ struct MarketsView: View {
                     if let inv = currentPrice("USD\(ccy)=X"), inv > 0 { return (ccy, 1.0 / inv) }
                     return nil
                 })
+            // Show the FX section whenever there is real FX risk, not just when the book spans
+            // multiple currencies: a 100%-GBP book has count == 1 but hasFXRisk is true and the
+            // concentration warning MUST fire (hiding it is the worst case — maximal exposure).
             if let cb = StockSageCurrency.breakdown(holdings: ccyHoldings, ratesToBase: fxRates, base: "USD"),
-               cb.exposures.count > 1 || !cb.unpriced.isEmpty {
+               cb.hasFXRisk || cb.exposures.count > 1 || !cb.unpriced.isEmpty {
                 Text("Currency exposure (base USD)").font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.secondary)
                 ForEach(cb.exposures) { e in
                     HStack(spacing: DS.Space.sm) {
@@ -1180,7 +1321,7 @@ struct MarketsView: View {
                         Text(e.baseValue.formatted(.number.precision(.fractionLength(0)))).font(.caption2).foregroundStyle(.secondary)
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(e.currency): \(Int(e.weight * 100)) percent of the priced book")
+                    .accessibilityLabel("\(e.currency): \(Int((e.weight * 100).rounded())) percent of the priced book")
                 }
                 if let c = cb.concentration {
                     Text("⚠︎ \(Int(c.weight * 100))% in \(c.currency) — FX risk (currency moves swing your USD value).")
@@ -1226,7 +1367,7 @@ struct MarketsView: View {
                         .font(.caption2).foregroundStyle(.secondary).frame(width: 36, alignment: .trailing)
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(s.label) \(Int(s.fraction * 100)) percent")
+                .accessibilityLabel("\(s.label) \(Int((s.fraction * 100).rounded())) percent")
             }
         }
     }
@@ -1371,7 +1512,9 @@ struct MarketsView: View {
                         ideaMetric("Avg loss", String(format: "−%.2fR", edge.avgLossR), color: DS.Palette.danger)
                         ideaMetric("Payoff", edge.payoffRatio > 0 ? String(format: "%.2f", edge.payoffRatio) : "—")
                         ideaMetric("PF", edge.profitFactor.map { String(format: "%.2f", $0) } ?? "—",
-                                   color: (edge.profitFactor ?? 0) >= 1 ? DS.Palette.successSoft : DS.Palette.danger)
+                                   // nil means no losing trades — the engine treats this as pfStrong (∞).
+                                   // ?? 0 was turning nil into 0 and falsely painting "—" danger red.
+                                   color: edge.profitFactor.map { $0 >= 1 } ?? true ? DS.Palette.successSoft : DS.Palette.danger)
                         Spacer(minLength: 0)
                     }
                     if let pf = edge.profitFactor {
@@ -1423,7 +1566,7 @@ struct MarketsView: View {
                     // 2–3%/trade was shown a drawdown understated ~2–3× with text falsely claiming "1%".
                     let riskFrac = Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil } ?? 0.01
                     if let dd = StockSageRiskOfRuin.scenario(losses: risk.maxConsecutiveLosses, fraction: riskFrac) {
-                        Text(String(format: "Stay in the game: %d 1R stops in a row at %.0f%%/trade ≈ −%.1f%% to the account — %@",
+                        Text(String(format: "Stay in the game: %d 1R stops in a row at %g%%/trade ≈ −%.1f%% to the account — %@",
                                     dd.losses, riskFrac * 100, dd.drawdownPct * 100,
                                     dd.isSteep ? "size down; surviving variance is how velocity compounds."
                                                : "survivable — staying in the game is what lets velocity pay off."))
@@ -1436,7 +1579,7 @@ struct MarketsView: View {
                     // simulated futures at your configured risk %, the complement to the single
                     // historical path above. nil under 20 R-defined trades (the engine self-gates).
                     if let mc = StockSageMonteCarloRuin.simulate(journal.trades, riskFraction: riskFrac) {
-                        Text(String(format: "Forward ruin risk (%d sims @ %.0f%%/trade): P(ruin) %.0f%% · P(>20%% drawdown) %.0f%% · max drawdown ~%.0f%% typical, %.0f%% 95th-pct — bootstrapped from your %d closed trades.",
+                        Text(String(format: "Forward ruin risk (%d sims @ %g%%/trade): P(ruin) %.1f%% · P(>20%% drawdown) %.0f%% · max drawdown ~%.0f%% typical, %.0f%% 95th-pct — bootstrapped from your %d closed trades.",
                                     mc.sims, riskFrac * 100, mc.pRuin * 100, mc.p20DrawdownProb * 100,
                                     mc.medianMaxDD * 100, mc.p95MaxDD * 100, mc.sampleSize))
                             .font(.caption2)
@@ -1575,9 +1718,24 @@ struct MarketsView: View {
                 if !journal.open.isEmpty {
                     // Portfolio heat: total open $-at-risk vs account — the exposure ten
                     // "1% risk" trades hide (they're 10% together).
+                    // Entry and stop must pass through majorUnitValue (÷100 for .L/.JO pence
+                    // quotes) and FX-convert to USD before the $-at-risk comparison against the
+                    // account. Trades whose currency has no tracked rate are excluded (mirroring
+                    // untrackedFXCurrencies) rather than summed 1:1 against the USD account.
                     if let acct = StockSageInput.positiveAmount(sizerAccount),
                        let heat = StockSagePortfolioHeat.compute(
-                            openTrades: journal.open.map { (shares: $0.shares, entry: $0.entry, stop: $0.stop) },
+                            openTrades: journal.open.compactMap { t -> (shares: Double, entry: Double, stop: Double)? in
+                                let ccy = StockSageCurrency.currencyForSymbol(t.symbol)
+                                var rate: Double = 1
+                                if ccy != "USD" {
+                                    if let r = currentPrice("\(ccy)USD=X"), r > 0 { rate = r }
+                                    else if let inv = currentPrice("USD\(ccy)=X"), inv > 0 { rate = 1 / inv }
+                                    else { return nil }   // no tracked rate — exclude rather than 1:1
+                                }
+                                let e = StockSageCurrency.majorUnitValue(symbol: t.symbol, rawValue: t.entry) * rate
+                                let s = StockSageCurrency.majorUnitValue(symbol: t.symbol, rawValue: t.stop) * rate
+                                return (shares: t.shares, entry: e, stop: s)
+                            },
                             accountSize: acct) {
                         let hc: Color = heat.level == .hot ? DS.Palette.danger
                             : (heat.level == .warm ? DS.Palette.warningSoft : DS.Palette.successSoft)
@@ -1675,13 +1833,16 @@ struct MarketsView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Stop trading. \(state.haltReason ?? ""). \(state.caveat)")
         case .warn:
+            // The warn trigger is the R gate (daily or weekly realized R approaching the limit),
+            // NOT the loss-run — the run gate at standDownLossRun=3 halts before it warns.
+            // Show the actual R reading so the trader knows how close they are to the limit.
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.warningSoft)
-                Text(String(format: "Approaching your loss limit \u{2014} %d-loss run. Ease off and size down.", state.lossRun))
+                Text(String(format: "Approaching your loss limit \u{2014} down %.1fR today (limit 3R). Ease off and size down.", -state.dailyRealizedR))
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             .padding(.vertical, 4)
-            .accessibilityLabel("Approaching loss limit. Loss run \(state.lossRun). Ease off and size down.")
+            .accessibilityLabel(String(format: "Approaching loss limit. Down %.1fR today. Ease off and size down.", -state.dailyRealizedR))
         }
     }
 
@@ -1707,7 +1868,7 @@ struct MarketsView: View {
                         .padding(.horizontal, 14).padding(.vertical, 6).background(DS.Palette.accent, in: Capsule())
                 }.buttonStyle(LuxPressStyle()).disabled(!draftIsValid)
                 if !draftIsValid {
-                    Text("Symbol, entry, stop, shares required — protective stop (below entry for Long, above for Short).")
+                    Text("Symbol, entry, stop, shares required — protective stop (below entry for Long, above for Short); optional target must be on the profit side.")
                         .font(.system(size: mvFont9)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
@@ -1726,19 +1887,31 @@ struct MarketsView: View {
     }
 
     private var draftIsValid: Bool {
+        // Parse via StockSageInput.positiveAmount: rejects non-finite (inf/"1e999"), negatives,
+        // and zero — the same discipline used by addPositionForm and the close-exit confirm button.
         guard !draftSymbol.trimmingCharacters(in: .whitespaces).isEmpty,
-              let e = Double(draftEntry), let st = Double(draftStop), let sh = Double(draftShares),
-              e > 0, st > 0, sh > 0, e != st,
+              let e = StockSageInput.positiveAmount(draftEntry),
+              let st = StockSageInput.positiveAmount(draftStop),
+              let sh = StockSageInput.positiveAmount(draftShares),
+              e != st,
               // Stop must be PROTECTIVE, else the recorded R is meaningless.
               (draftSide == .long ? st < e : st > e) else { return false }
+        // Target (optional) must be on the PROFIT side — a long with target below entry yields a
+        // false "TARGET HIT" alert on any price under entry (engine openActions isLong ? px >= tgt).
+        if let tgt = StockSageInput.positiveAmount(draftTarget) {
+            guard draftSide == .long ? tgt > e : tgt < e else { return false }
+        }
         return true
     }
 
     private func saveDraftTrade() {
-        guard draftIsValid, let e = Double(draftEntry), let st = Double(draftStop), let sh = Double(draftShares) else { return }
+        guard draftIsValid,
+              let e = StockSageInput.positiveAmount(draftEntry),
+              let st = StockSageInput.positiveAmount(draftStop),
+              let sh = StockSageInput.positiveAmount(draftShares) else { return }
         let trimmedNote = draftNote.trimmingCharacters(in: .whitespaces)
         let trade = TradeRecord(symbol: draftSymbol.trimmingCharacters(in: .whitespaces).uppercased(),
-                                side: draftSide, entry: e, stop: st, target: Double(draftTarget),
+                                side: draftSide, entry: e, stop: st, target: StockSageInput.positiveAmount(draftTarget),
                                 shares: sh, openedAt: Date(),
                                 note: trimmedNote.isEmpty ? nil : trimmedNote, conviction: draftConviction)
         journal.add(trade)
@@ -1806,7 +1979,7 @@ struct MarketsView: View {
                     Text("no live px").font(.caption2).foregroundStyle(.secondary)
                 }
                 Button {
-                    closeExitText = mark.map { String(format: "%.2f", $0) } ?? ""
+                    closeExitText = mark.map { adaptivePrice($0) } ?? ""
                     withAnimation(.easeOut(duration: 0.12)) { closingTradeID = (closingTradeID == trade.id) ? nil : trade.id }
                 } label: {
                     Text(closingTradeID == trade.id ? "Cancel" : "Close").font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.secondary)
@@ -1860,13 +2033,25 @@ struct MarketsView: View {
     }
 
     private func journalClosedRow(_ trade: TradeRecord) -> some View {
-        let pnl = trade.realizedProfit ?? 0
+        // Use adaptivePrice for entry/exit so sub-dollar symbols (micro-caps, coins) don't
+        // collapse to "0.00→0.00". realizedProfit is Optional by design — show "—" not "+0.00"
+        // when a record is missing it (e.g. decoded/edited data without exitPrice).
+        let exitStr = trade.exitPrice.map { adaptivePrice($0) } ?? "—"
+        let pnlText: String
+        let pnlColor: Color
+        if let pnl = trade.realizedProfit {
+            pnlText = String(format: "%+.2f", pnl)
+            pnlColor = pnl >= 0 ? DS.Palette.successSoft : DS.Palette.danger
+        } else {
+            pnlText = "—"
+            pnlColor = .secondary
+        }
         return HStack(spacing: DS.Space.sm) {
             Text(trade.symbol).font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white.opacity(0.85)).frame(width: 64, alignment: .leading).lineLimit(1)
-            Text(String(format: "%.2f→%.2f", trade.entry, trade.exitPrice ?? 0)).font(.caption2).foregroundStyle(.secondary)
+            Text("\(adaptivePrice(trade.entry))→\(exitStr)").font(.caption2).foregroundStyle(.secondary)
             Spacer()
-            Text(String(format: "%+.2f", pnl)).font(.system(size: mvFont11, weight: .semibold))
-                .foregroundStyle(pnl >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
+            Text(pnlText).font(.system(size: mvFont11, weight: .semibold))
+                .foregroundStyle(pnlColor)
             if let r = trade.realizedR {
                 Text(String(format: "%+.2fR", r)).font(.caption2).foregroundStyle(.secondary).frame(width: 48, alignment: .trailing)
             }
@@ -1877,7 +2062,7 @@ struct MarketsView: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(trade.symbol), \(String(format: "%.2f to %.2f", trade.entry, trade.exitPrice ?? 0)), realized \(String(format: "%+.2f", pnl))"
+        .accessibilityLabel("\(trade.symbol), \(adaptivePrice(trade.entry)) to \(exitStr), realized \(pnlText)"
             + (trade.realizedR.map { String(format: ", %+.2f R", $0) } ?? ""))
         .confirmationDialog("Delete this logged trade?",
                             isPresented: Binding(get: { pendingJournalDeleteID == trade.id },
@@ -1890,9 +2075,13 @@ struct MarketsView: View {
     // MARK: Kelly position sizer
 
     private var kellySizerPanel: some View {
+        // Sanitize free-text inputs: Double("inf") / Double("1e999") parse to +infinity and pass the
+        // > 0 check — guard .isFinite to avoid "Allocate $ inf" (matches StockSagePositionSizer guard).
+        let acct = Double(kellyAccount).flatMap { $0.isFinite ? $0 : nil } ?? 0
+        let payoff = Double(kellyPayoff).flatMap { $0.isFinite ? $0 : nil } ?? 0
         let k = StockSageKelly.compute(winRate: (Double(kellyWinRate) ?? 0) / 100,
-                                       payoffRatio: Double(kellyPayoff) ?? 0,
-                                       accountSize: Double(kellyAccount) ?? 0)
+                                       payoffRatio: payoff,
+                                       accountSize: acct)
         return VStack(alignment: .leading, spacing: DS.Space.sm) {
             HStack(spacing: DS.Space.sm) {
                 Image(systemName: "percent").font(.system(size: 16)).foregroundStyle(DS.Palette.accent)
@@ -1941,14 +2130,16 @@ struct MarketsView: View {
                 .help("Fill Win% and Payoff from your OWN logged trades (≥10 closed, with wins and losses) — your real edge, not a backtest.")
             }
             HStack(spacing: 18) {
-                ideaMetric("Full Kelly", String(format: "%.0f%%", k.fullKelly * 100))
-                ideaMetric("Half", String(format: "%.0f%%", k.halfKelly * 100), color: DS.Palette.successSoft)
-                ideaMetric("Suggested", String(format: "%.0f%%", k.suggestedFraction * 100), color: DS.Palette.accent)
+                ideaMetric("Full Kelly", String(format: "%.1f%%", k.fullKelly * 100))
+                ideaMetric("Half", String(format: "%.1f%%", k.halfKelly * 100), color: DS.Palette.successSoft)
+                ideaMetric("Suggested", String(format: "%.1f%%", k.suggestedFraction * 100), color: DS.Palette.accent)
                 ideaMetric("Allocate $", String(format: "%.0f", k.dollarsToAllocate))
                 Spacer(minLength: 0)
             }
             Text(k.note).font(.caption2)
-                .foregroundStyle(k.fullKelly > 0 ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                // Note color: success only when there is an edge AND half-Kelly fits under the cap.
+                // The "capped for safety" note has fullKelly > 0 but should render as a warning, not success.
+                .foregroundStyle((k.fullKelly > 0 && k.halfKelly < StockSageKelly.maxFraction) ? DS.Palette.successSoft : DS.Palette.warningSoft)
             Text(k.caveat).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(DS.Space.sm)
@@ -2008,6 +2199,12 @@ struct MarketsView: View {
                 Text(e).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
             }
             if let a = store.analytics {
+                // When an error is also present the numbers below are from a previous book — flag them.
+                if store.analyticsError != nil {
+                    Text("Showing previous analysis — re-run Analyze for updated numbers.")
+                        .font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 HStack(spacing: 18) {
                     ideaMetric("Ann. return", String(format: "%+.1f%%", a.annualizedReturn),
                                color: a.annualizedReturn >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
@@ -2039,7 +2236,9 @@ struct MarketsView: View {
                                     color: a.diversificationScore >= 60 ? DS.Palette.successSoft
                                          : (a.diversificationScore >= 30 ? DS.Palette.warningSoft : DS.Palette.danger))
                 }
-                Text("\(a.observations) days · \(a.holdingsAnalyzed) holdings · \(a.caveat)")
+                let totalPositions = StockSagePortfolio.shared.positions.count
+                let excludedCount = totalPositions - a.holdingsAnalyzed
+                Text("\(a.observations) days · \(a.holdingsAnalyzed) of \(totalPositions) holdings\(excludedCount > 0 ? " — \(excludedCount) had no history and are excluded" : "") · \(a.caveat)")
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -2137,11 +2336,24 @@ struct MarketsView: View {
 
     // MARK: Signals
 
-    private var signalList: some View {
-        VStack(spacing: DS.Space.sm) {
+    /// `watchlistOnly`: when true, scope the list to `store.userSymbols` (the owner's hand-picked
+    /// tickers); when false, show the full board. The two picker segments ("Watchlist" / "All")
+    /// now diverge here instead of both routing to the full-universe list.
+    private func signalListView(watchlistOnly: Bool) -> some View {
+        let userSet = Set(store.userSymbols.map { $0.uppercased() })
+        let displayed: [StockSageSymbol] = watchlistOnly
+            ? store.symbols.filter { userSet.contains($0.symbol.uppercased()) }
+            : store.symbols
+        return VStack(spacing: DS.Space.sm) {
             addSymbolBar
             if store.symbols.isEmpty {
                 emptyState
+                    .transition(.opacity)
+            } else if watchlistOnly && displayed.isEmpty {
+                Text("Your watchlist is empty — add a ticker above or in Browse.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, DS.Space.sm)
                     .transition(.opacity)
             } else {
                 HStack {
@@ -2159,12 +2371,12 @@ struct MarketsView: View {
                     .menuStyle(.borderlessButton).fixedSize()
                     .accessibilityLabel("Sort watchlist")
                 }
-                ForEach(sort.apply(store.symbols)) { signalCard($0)
+                ForEach(sort.apply(displayed)) { signalCard($0)
                     .transition(.opacity.combined(with: .move(edge: .leading)))
                 }
             }
         }
-        .animation(DS.Motion.smooth, value: store.symbols.count)
+        .animation(DS.Motion.smooth, value: displayed.count)
     }
 
     private var addSymbolBar: some View {
@@ -2230,7 +2442,7 @@ struct MarketsView: View {
                     .transition(.opacity)
             }
             Button { showBrowseMarkets = true } label: {
-                Label("Browse all \(StockSageUniverse.catalog.count) markets", systemImage: "square.grid.2x2")
+                Label("Browse all \(StockSageUniverse.catalog.count) tickers", systemImage: "square.grid.2x2")
                     .font(.system(size: mvFont11, weight: .medium)).foregroundStyle(DS.Palette.accent)
             }
             .buttonStyle(.plain)
@@ -2344,7 +2556,7 @@ struct MarketsView: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(sym.symbol), \(sym.market), \(String(format: "%.2f", sym.latest?.price ?? 0)), \(String(format: "%+.1f percent", change)), signal \(signal?.recommendation.rawValue ?? "none")")
+        .accessibilityLabel("\(sym.symbol), \(sym.market), \(sym.latest.map { adaptivePrice($0.price) } ?? "no price"), \(String(format: "%+.1f percent", change)), signal \(signal?.recommendation.rawValue ?? "none")\(stale ? ", stale quote — market likely closed" : "")")
     }
 
     private func recColor(_ r: StockSageRecommendation) -> Color {
@@ -2401,6 +2613,13 @@ struct MarketsView: View {
                 .textSelection(.enabled)
                 .contentTransition(.opacity)
                 .animation(DS.Motion.smooth, value: briefing.isEmpty)
+            if !briefing.isEmpty, let generatedAt = briefingGeneratedAt {
+                let stale = generatedAt < Date().addingTimeInterval(-4 * 3600)
+                Text((stale ? "⚠︎ Generated " : "Generated ")
+                     + generatedAt.formatted(.relative(presentation: .named)))
+                    .font(.caption2)
+                    .foregroundStyle(stale ? DS.Palette.warningSoft : Color.secondary)
+            }
         }
         .padding(DS.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2414,11 +2633,18 @@ struct MarketsView: View {
         )
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        // Reset a generated briefing when the watched symbol list changes so stale
+        // LLM text naming removed tickers is never presented as current.
+        .onChange(of: store.symbols.map(\.symbol).sorted().joined()) { _ in
+            briefing = ""
+            briefingGeneratedAt = nil
+        }
     }
 
     private func generateBriefing() async {
         loadingBriefing = true
         briefing = await StockSageBriefingService.generateBriefing(for: store.symbols)
+        briefingGeneratedAt = Date()
         loadingBriefing = false
     }
 
@@ -2598,7 +2824,7 @@ struct MarketsView: View {
                     if let cal = store.convictionCalibration {
                         Label("EV win-rates measured from \(cal.sampleSize) realized trades (your journal, else the backtest)", systemImage: "checkmark.seal.fill")
                             .font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
-                            .help("Conviction→win-probability is calibrated from realized backtest outcomes (conservative, monotonic).")
+                            .help("Conviction→win-probability is calibrated from realized outcomes — your journal when it has enough closed trades, else the sample backtest (conservative, monotonic).")
                     } else {
                         Label("EV win-rates are an assumed estimate — run the Strategy backtest to calibrate", systemImage: "exclamationmark.triangle.fill")
                             .font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
@@ -2745,7 +2971,7 @@ struct MarketsView: View {
                         .foregroundStyle(DS.Palette.warningSoft)
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background(DS.Palette.warningSoft.opacity(0.14), in: Capsule())
-                        .help("Net EV/day after frictions is under 0.005R/day — de-ranked on the velocity board. See the detail sheet for the full net-cost breakdown.")
+                        .help(String(format: "Net EV/day after frictions is under %.3fR/day — de-ranked on the velocity board. See the detail sheet for the full net-cost breakdown.", StockSageExpectedValue.minNetEVPerDayFloor))
                         .accessibilityLabel("Below net-cost floor — de-ranked on velocity board")
                 }
                 if a.timeframeAligned {
@@ -2800,7 +3026,9 @@ struct MarketsView: View {
                 .accessibilityLabel("Backtest \(idea.symbol)")
             }
             convictionMeter(a.conviction, color: actionColor(a.action))
-                .help("Conviction — a rules-based signal strength, not a probability. Estimated win-rate range ~35-58%, not a forecast.")
+                .help(store.convictionCalibration.map { cal in
+                    "Conviction — rules-based signal strength; win-rate mapped from \(cal.sampleSize) realized trades."
+                } ?? "Conviction — a rules-based signal strength, not a probability. Estimated win-rate range ~35-58%, not a forecast.")
             if idea.spark.count >= 2 {
                 Sparkline(values: idea.spark)
                     .stroke(sparkColor(idea.spark),
@@ -2987,11 +3215,22 @@ struct MarketsView: View {
         if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration) {
             let idea = best.idea, ev = best.ev
             // Spoken full order (precomputed OUTSIDE the ViewBuilder so the multi-clause concat does
-            // not tip the card body over the type-checker budget).
+            // not tip the card body over the type-checker budget). Earnings warning and over-size
+            // caveat are folded in here so VoiceOver hears them (the .accessibilityLabel below
+            // collapses the Button to one leaf, silencing the inner per-Text labels).
             let orderLabel: String = {
                 var s = "Best opportunity: \(idea.symbol), \(idea.advice.action.rawValue), estimated EV \(String(format: "%.2f", ev.evR)) R, entry \(adaptivePrice(idea.price))"
                 if let stop = idea.advice.stopPrice { s += ", stop \(adaptivePrice(stop))" }
                 if let target = idea.advice.targetPrice { s += ", target \(adaptivePrice(target))" }
+                if let ep = store.earnings[idea.symbol.uppercased()], ep.isWarning {
+                    s += ". Earnings risk: \(ep.note)"
+                }
+                if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
+                   let rp = StockSageInput.percent(sizerRiskPct),
+                   let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop),
+                   ps.pctOfAccount > 100 {
+                    s += ". Size warning: position exceeds account balance."
+                }
                 return s
             }()
             VStack(alignment: .leading, spacing: 6) {
@@ -3023,10 +3262,11 @@ struct MarketsView: View {
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "calendar.badge.exclamationmark").font(.system(size: 11))
                                 .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
-                            Text(ep.note).font(.caption2).accessibilityLabel("Earnings risk — see detail sheet")
+                            Text(ep.note).font(.caption2)
                                 .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
+                        .accessibilityHidden(true)  // folded into orderLabel above so VoiceOver reads it once
                     }
                     // The actual order levels, so the card is a placeable order, not just a verdict.
                     HStack(spacing: DS.Space.sm) {
@@ -3039,8 +3279,8 @@ struct MarketsView: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    if let stop = idea.advice.stopPrice, let acct = Double(sizerAccount), acct > 0,
-                       let rp = Double(sizerRiskPct), rp > 0,
+                    if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
+                       let rp = StockSageInput.percent(sizerRiskPct),
                        let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
                         Text("Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp))")
                             .font(.system(size: mvFont9, weight: .medium))
@@ -3061,8 +3301,8 @@ struct MarketsView: View {
                 Button {
                     let plan = StockSageTodayPlan.build(
                         idea: idea, ev: ev,
-                        account: Double(sizerAccount),
-                        riskFraction: Double(sizerRiskPct).map { $0 / 100 },
+                        account: StockSageInput.positiveAmount(sizerAccount),
+                        riskFraction: StockSageInput.percent(sizerRiskPct).map { $0 / 100 },
                         daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
                         isSample: store.isSampleData)
                     NSPasteboard.general.clearContents()
@@ -3085,7 +3325,7 @@ struct MarketsView: View {
         if let acct = StockSageInput.positiveAmount(sizerAccount) {
             let plan = StockSageCapitalAllocator.allocate(ideas: store.ideas, account: acct, calibration: store.convictionCalibration, regime: store.regime)
             if !plan.positions.isEmpty {
-                let heatColor: Color = plan.totalHeat > 0.06 ? DS.Palette.warningSoft : DS.Palette.successSoft
+                let heatColor: Color = plan.totalHeat > plan.maxHeat * 0.75 ? DS.Palette.warningSoft : DS.Palette.successSoft
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: DS.Space.sm) {
                         Image(systemName: "chart.pie.fill").font(.system(size: 13)).foregroundStyle(DS.Palette.accent)
@@ -3137,9 +3377,11 @@ struct MarketsView: View {
 
     // Money-velocity summary — one-glance header (best bet · fastest · est. weekly R),
     // visible across every section. Tappable to the best opportunity's plan.
-    // Honesty: the per-card Size% is the advisor's BASELINE (prior win-prob + 1% budget). The deployed
-    // "Deploy capital" plan is the one to act on — it layers the calibrated win-rate, regime, and vol.
-    private static let sizeMetricHelp = "Baseline size off the PRIOR win-prob and the 1% risk budget. The ‘Deploy capital’ plan is the one to size from — it applies the CALIBRATED win-rate, the market-regime bias, and volatility-targeting on top."
+    // Honesty: the per-card Size% already uses the calibrated win-prob (buildIdeas re-sizes on the
+    // fitted calibration when one exists, else the conservative linear prior). The "Deploy capital"
+    // plan layers on top: regime sizing bias, per-symbol vol-regime brake, correlation de-weighting,
+    // and the total-heat cap — those are the genuine additions the Deploy plan makes.
+    private static let sizeMetricHelp = "Size uses the calibrated win-prob when a journal or backtest calibration is fitted (the same win-rate shown in the EV chip), or the conservative ~35–58% prior otherwise. The ‘Deploy capital’ plan is the one to act on — it layers the market-regime bias, per-symbol vol-regime brake, correlation de-weighting, and the heat cap on top."
 
     // Honest "are these EV numbers measured or assumed?" chip — reused on every EV-headline surface.
     @ViewBuilder private var calibrationChip: some View {
@@ -3184,7 +3426,7 @@ struct MarketsView: View {
                         }
                         if let sym = s.fastestSymbol, let v = s.fastestVelocity {
                             VStack(alignment: .leading, spacing: 2) {
-                                summaryStat("Fastest", sym, String(format: "%+.2fR/day", v))
+                                summaryStat("Fastest", sym, String(format: "%+.2fR/day net", v))
                                 if let ep = store.earnings[sym.uppercased()], ep.isWarning {
                                     let badge = ep.severity == .imminent ? "⚠︎ earnings ~\(ep.daysUntil)d" : "earnings ~\(ep.daysUntil)d"
                                     Text(badge).font(.system(size: mvFont8))
@@ -3197,7 +3439,7 @@ struct MarketsView: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    if let acct = Double(sizerAccount), acct > 0, let rp = Double(sizerRiskPct), rp > 0,
+                    if let acct = StockSageInput.positiveAmount(sizerAccount), let rp = StockSageInput.percent(sizerRiskPct),
                        let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), holds: velocityHolds, calibration: store.convictionCalibration) {
                         Text(String(format: "≈ +$%.0f/week at $%.0f acct, %.1f%% risk — %@", usd, acct, rp, MoneyVelocityCopy.weeklyDollars))
                             .font(.system(size: mvFont9, weight: .medium))
@@ -3233,10 +3475,10 @@ struct MarketsView: View {
                         }
                     }
                     if let ddPct = s.worstRunDrawdownPct, let losses = s.worstRunLosses {
-                        Text(String(format: "⚠︎ Brake — your worst run (%d) at %d%%/trade ≈ −%.1f%% to the account. %@", losses, Int((s.riskFraction * 100).rounded()), ddPct * 100, MoneyVelocityCopy.drawdownBrake))
+                        Text(String(format: "⚠︎ Brake — your worst run (%d) at %.1g%%/trade ≈ −%.1f%% to the account. %@", losses, s.riskFraction * 100, ddPct * 100, MoneyVelocityCopy.drawdownBrake))
                             .font(.system(size: mvFont10, weight: .semibold))
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
-                            .accessibilityLabel(String(format: "Risk warning: worst losing run %d trades at %d percent risk is about %.1f percent drawdown. Size to survive variance.", losses, Int((s.riskFraction * 100).rounded()), ddPct * 100))
+                            .accessibilityLabel(String(format: "Risk warning: worst losing run %d trades at %.1g percent risk is about %.1f percent drawdown. Size to survive variance.", losses, s.riskFraction * 100, ddPct * 100))
                     }
                     if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), conc.isConcentrated {
                         Text("⚠︎ Fast lane is concentrated — your top \(conc.total) fastest are all \(conc.dominantClass); that's closer to one bet, not \(conc.total). Diversify or size them as one.")
@@ -3257,7 +3499,7 @@ struct MarketsView: View {
             .accessibilityLabel("Money velocity summary; tap for the best opportunity"
                 + ({ () -> String in
                     guard let ddPct = s.worstRunDrawdownPct, let losses = s.worstRunLosses else { return "" }
-                    return String(format: ". Risk warning: worst losing run %d trades at %d percent risk is about %.1f percent drawdown.", losses, Int((s.riskFraction * 100).rounded()), ddPct * 100)
+                    return String(format: ". Risk warning: worst losing run %d trades at %.1g percent risk is about %.1f percent drawdown.", losses, s.riskFraction * 100, ddPct * 100)
                 }())
                 + ({ () -> String in
                     guard let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), conc.isConcentrated else { return "" }
@@ -3294,8 +3536,8 @@ struct MarketsView: View {
             let isCrypto = idea.symbol.hasSuffix("-USD")
             let variance: Double? = isCrypto ? StockSageExpectedValue.dailyVariancePct(annualizedVol: idea.realizedVol) : nil
             let sizeInfo: (text: String, isWarning: Bool) = {
-                if let stop = idea.advice.stopPrice, let acct = Double(sizerAccount), acct > 0,
-                   let rp = Double(sizerRiskPct), rp > 0,
+                if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
+                   let rp = StockSageInput.percent(sizerRiskPct),
                    let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
                     return (StockSagePositionSizer.summaryLine(ps, riskPct: rp), ps.pctOfAccount > 100)
                 }
@@ -3367,10 +3609,10 @@ struct MarketsView: View {
                     .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
                 if fastLaneBoard != .equities {
-                    fastLaneBoardSection(title: "Crypto fast lane (~\(Int(cryptoHoldDays))d, 24/7)", ideas: split.crypto)
+                    fastLaneBoardSection(title: "Crypto fast lane (base ~\(Int(cryptoHoldDays))d, 24/7)", ideas: split.crypto)
                 }
                 if fastLaneBoard != .crypto {
-                    fastLaneBoardSection(title: "Equity swing lane (~\(Int(equityHoldDays))d)", ideas: split.equity)
+                    fastLaneBoardSection(title: "Equity swing lane (base ~\(Int(equityHoldDays))d)", ideas: split.equity)
                 }
 
                 if !split.crypto.isEmpty, !split.equity.isEmpty {
@@ -3398,7 +3640,7 @@ struct MarketsView: View {
                     Text(String(format: "≈ %+.1fR/week if you run the top %d — estimate, high variance, assumes you take and re-cycle these. Not a promise.", wk, Swift.min(3, lane.count)))
                         .font(.system(size: mvFont9, weight: .medium))
                         .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
-                    if let acct = Double(sizerAccount), acct > 0, let rp = Double(sizerRiskPct), rp > 0,
+                    if let acct = StockSageInput.positiveAmount(sizerAccount), let rp = StockSageInput.percent(sizerRiskPct),
                        let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), holds: velocityHolds, calibration: store.convictionCalibration) {
                         Text(String(format: "≈ +$%.0f/week at $%.0f account, %.1f%% risk — estimate, high variance, NOT income.", usd, acct, rp))
                             .font(.system(size: mvFont9, weight: .medium))
@@ -3422,7 +3664,7 @@ struct MarketsView: View {
                     }.frame(maxWidth: 132)
                     Spacer(minLength: 0)
                 }
-                .help("Typical days you hold each — velocity is EV ÷ hold, so a shorter hold raises EV/day. A rough assumption, not a measurement.")
+                .help("Anchor for each idea's estimated hold — the engine adjusts per setup (target distance ÷ typical daily move, clamped 0.4–3× this value). A shorter anchor biases the hold estimate down but the per-idea adjustment can override it.")
             }
             .padding(DS.Space.sm).frame(maxWidth: .infinity, alignment: .leading)
             .background(DS.Palette.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
@@ -3452,7 +3694,7 @@ struct MarketsView: View {
                 HStack(spacing: DS.Space.sm) {
                     Text(idea.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
                         .frame(width: 84, alignment: .leading)
-                    Text(String(format: "%+.3fR/day", v)).font(.system(size: mvFont11, design: .monospaced))
+                    Text(String(format: "%+.3fR/day gross", v)).font(.system(size: mvFont11, design: .monospaced))
                         .foregroundStyle(DS.Palette.successSoft)
                     if idea.symbol.hasSuffix("-USD") {
                         Text("24/7 · volatile").font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft)
@@ -3468,7 +3710,7 @@ struct MarketsView: View {
                     Image(systemName: "chevron.right").font(.system(size: mvFont8)).foregroundStyle(.secondary)
                 }.contentShape(Rectangle())
             }.buttonStyle(LuxPressStyle())
-            .accessibilityLabel("\(idea.symbol): \(String(format: "%+.3f", v)) R per day velocity\(idea.symbol.hasSuffix("-USD") ? ", 24/7 volatile" : "")\(!earnFlag.badge.isEmpty ? ", \(earnFlag.badge)" : "")\(floorFlag.isDeranked ? ", below net-cost floor" : ""). Tap for the plan.")
+            .accessibilityLabel("\(idea.symbol): \(String(format: "%+.3f", v)) R per day gross velocity\(idea.symbol.hasSuffix("-USD") ? ", 24/7 volatile" : "")\(!earnFlag.badge.isEmpty ? ", \(earnFlag.badge)" : "")\(floorFlag.isDeranked ? ", below net-cost floor" : ""). Tap for the plan.")
         }
     }
 
@@ -3479,8 +3721,8 @@ struct MarketsView: View {
     @ViewBuilder private var todaysActionsCard: some View {
         let plans = StockSageTodayPlan.rankedActions(
             store.ideas,
-            account: Double(sizerAccount),
-            riskFraction: Double(sizerRiskPct).map { $0 / 100 },
+            account: StockSageInput.positiveAmount(sizerAccount),
+            riskFraction: StockSageInput.percent(sizerRiskPct).map { $0 / 100 },
             holds: velocityHolds,
             calibration: store.convictionCalibration,
             earnings: store.earnings)
@@ -3522,8 +3764,10 @@ struct MarketsView: View {
             if let s = store.strategyBacktest {
                 HStack(spacing: DS.Space.sm) {
                     ideaMetric("Trades", "\(s.totalTrades)")
+                    // Break-even for the fixed 2:1 exit is 1/(1+2) ≈ 33%, not 50% — coloring danger
+                    // below 50% would flag every profitable 35-49% win-rate system as a loser.
                     ideaMetric("Win", String(format: "%.0f%%", s.blendedWinRate * 100),
-                               color: s.blendedWinRate >= 0.5 ? DS.Palette.successSoft : DS.Palette.danger)
+                               color: s.blendedWinRate >= 1.0 / 3 ? DS.Palette.successSoft : DS.Palette.danger)
                     ideaMetric("Avg R", String(format: "%+.2f", s.avgR),
                                color: s.avgR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                     ideaMetric("Total R", String(format: "%+.0f", s.totalR),
@@ -3551,6 +3795,26 @@ struct MarketsView: View {
                     .font(.caption2)
                     .foregroundStyle(pass ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .help("Harvey-Liu-Zhu (2016): with many strategy variants tried, the significance bar rises to t>3 (not 2.0). Necessary, not sufficient.")
+                }
+                // Deflated Sharpe: the honest "real edge" bar — PSR plus selection-bias haircut for
+                // ~estimatedStrategyTrials variants tried. DSR > 0.95 is the engine's own definition
+                // of "real edge" (StockSageDeflatedSharpe.Result.passes). The per-symbol panel shows
+                // PSR only (no selection-bias term); this panel shows both so the two read together.
+                if s.totalTrades > 0, let d = s.deflatedSharpe {
+                    let dpass = d.passes
+                    HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
+                        Image(systemName: dpass ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                            .font(.system(size: mvFont10))
+                        Text(String(format: "Deflated Sharpe (selection-bias haircut, ~%d variants tried): DSR %.0f%% — %@.",
+                                    d.trials, d.dsr * 100, dpass ? "PASS (honest bar >95%)" : "UNPROVEN (honest bar >95%)"))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(dpass ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(String(format: "Deflated Sharpe, selection bias haircut for %d variants. DSR %.0f percent. %@.",
+                                               d.trials, d.dsr * 100, dpass ? "Passes the honest bar" : "Unproven, below honest bar"))
+                    .help(StockSageDeflatedSharpe.caveat)
                 }
                 Text(s.caveat).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
@@ -3608,14 +3872,16 @@ struct MarketsView: View {
                 } else if let bt = store.backtest {
                     HStack(spacing: DS.Space.sm) {
                         ideaMetric("Trades", "\(bt.trades)")
+                        // Break-even for the fixed 2:1 exit is 1/(1+2) ≈ 33%, not 50%.
                         ideaMetric("Win", String(format: "%.0f%%", bt.winRate * 100),
-                                   color: bt.winRate >= 0.5 ? DS.Palette.successSoft : DS.Palette.danger)
+                                   color: bt.winRate >= 1.0 / 3 ? DS.Palette.successSoft : DS.Palette.danger)
                         ideaMetric("Avg R", String(format: "%+.2f", bt.avgR),
                                    color: bt.avgR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                         ideaMetric("Total R", String(format: "%+.1f", bt.totalR),
                                    color: bt.totalR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                         ideaMetric("Max DD", String(format: "−%.1fR", bt.maxDrawdownR), color: DS.Palette.danger)
-                        ideaMetric("Sharpe", String(format: "%.2f", bt.sharpe))
+                        // bt.sharpe is 0 when <2 trades or zero variance (engine sentinel, not a measurement).
+                        ideaMetric("Sharpe", bt.trades >= 2 ? String(format: "%.2f", bt.sharpe) : "n/a")
                         Spacer(minLength: 0)
                     }
                     if !bt.isSignificant && bt.trades > 0 {
@@ -3637,13 +3903,13 @@ struct MarketsView: View {
                         HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                             Image(systemName: pass ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                                 .font(.system(size: mvFont10))
-                            Text(String(format: "Real-edge confidence (PSR): %.0f%% — %@ (P(true Sharpe > 0) after a sample/skew/fat-tail haircut; >95%% is the honest bar).", psr * 100, pass ? "PASS" : "BELOW BAR"))
+                            Text(String(format: "Real-edge confidence (PSR): %.0f%% — %@ (P(true Sharpe > 0) after a sample/skew/fat-tail haircut; clears sample/skew bar but does NOT include the multi-name selection-bias haircut — see strategy backtest for DSR).", psr * 100, pass ? "PASS" : "BELOW BAR"))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .font(.caption2)
                         .foregroundStyle(pass ? DS.Palette.successSoft : DS.Palette.warningSoft)
                         .accessibilityElement(children: .combine)
-                        .accessibilityLabel(String(format: "Real edge confidence, probabilistic Sharpe ratio %.0f percent, %@ the 95 percent bar.", psr * 100, pass ? "passes" : "below"))
+                        .accessibilityLabel(String(format: "Real edge confidence, probabilistic Sharpe ratio %.0f percent, %@ the 95 percent sample/skew bar.", psr * 100, pass ? "passes" : "below"))
                         .accessibilityHint(StockSageDeflatedSharpe.caveat)
                         .help(StockSageDeflatedSharpe.caveat)
                     }
@@ -3661,31 +3927,46 @@ struct MarketsView: View {
                         .help("Harvey-Liu-Zhu (2016): once many strategy variants are tried, the significance bar rises to t>3 (not the textbook 2.0). This is necessary, not sufficient — it can't see how many variants you actually tested.")
                     }
                     if let d = bt.decay {
+                        // decayRatio is 0 when isAvgR ≤ 0 (engine sentinel: no in-sample edge to decay
+                        // from). Saying "kept 0% of the edge" in that case is nonsense — show the
+                        // raw transition instead so the user sees what actually happened.
                         let tail = d.isRedFlag ? " — RED FLAG: likely overfit; the edge collapsed out-of-sample."
                                                : (d.oosSignificant ? "." : " — OOS sample thin (<20), low confidence.")
                         HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                             if d.isRedFlag {
                                 Image(systemName: "exclamationmark.octagon.fill").font(.system(size: 10))
                             }
-                            Text(String(format: "Out-of-sample: kept %.0f%% of the edge (in-sample %+.2fR → out-of-sample %+.2fR)%@",
-                                        d.decayRatio * 100, d.isAvgR, d.oosAvgR, tail))
-                                .fixedSize(horizontal: false, vertical: true)
+                            if d.isAvgR <= 0 {
+                                Text(String(format: "No in-sample edge to decay from (in-sample %+.2fR → out-of-sample %+.2fR)%@",
+                                            d.isAvgR, d.oosAvgR, tail))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } else {
+                                Text(String(format: "Out-of-sample: kept %.0f%% of the edge (in-sample %+.2fR → out-of-sample %+.2fR)%@",
+                                            d.decayRatio * 100, d.isAvgR, d.oosAvgR, tail))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         .font(.caption2)
                         .foregroundStyle(d.isRedFlag ? DS.Palette.danger : .secondary)
                         .accessibilityElement(children: .combine)
-                        // Speak the in→out transition (the "→" glyph is dropped by VoiceOver).
-                        .accessibilityLabel(String(format: "Out of sample, kept %.0f percent of the edge. In sample %+.2f R falling to out of sample %+.2f R.%@",
-                                                    d.decayRatio * 100, d.isAvgR, d.oosAvgR, tail))
+                        .accessibilityLabel(d.isAvgR <= 0
+                            ? String(format: "No in-sample edge. In sample %+.2f R, out of sample %+.2f R.%@",
+                                     d.isAvgR, d.oosAvgR, tail)
+                            : String(format: "Out of sample, kept %.0f percent of the edge. In sample %+.2f R to out of sample %+.2f R.%@",
+                                     d.decayRatio * 100, d.isAvgR, d.oosAvgR, tail))
                     }
                     // Wide ATR trail vs the fixed 2:1 exit (research: a wide trail is drawdown
                     // control, usually not more return; tight trails lose to costs). Same entries.
                     if let trail = store.backtestTrail, bt.trades > 0, trail.trades > 0 {
                         let ddBetter = trail.maxDrawdownR < bt.maxDrawdownR - 0.05
                         let retBetter = trail.avgR > bt.avgR + 0.005
+                        // A tie is a tie — don't declare a winner when neither margin is cleared.
+                        let ddWorse = bt.maxDrawdownR < trail.maxDrawdownR - 0.05
+                        let retWorse = bt.avgR > trail.avgR + 0.005
                         let verdict = ddBetter
                             ? (retBetter ? "trail wins on both" : "trail cuts drawdown, gives up some return")
-                            : (retBetter ? "trail adds return at a deeper drawdown" : "fixed 2:1 holds up better here")
+                            : (retBetter ? "trail adds return at a deeper drawdown"
+                               : (!ddWorse && !retWorse ? "about a wash here" : "fixed 2:1 holds up better here"))
                         HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                             Image(systemName: "arrow.triangle.branch").font(.system(size: 10))
                             Text(String(format: "Wide ATR trail (3×ATR/22): avg %+.2fR, maxDD −%.1fR  vs  fixed 2:1: %+.2fR, −%.1fR — %@.",
@@ -3786,8 +4067,7 @@ struct MarketsView: View {
                         }
                         // % of account from the FLOORED dollars-at-risk (was the requested risk %, which
                         // overstates the loss it sits beside once shares round down).
-                        Text(String(format: "Sizes the LOSS: a stop-out at %.2f costs ~$%.0f (%.2f%% of the account). Not a profit promise.",
-                                    stop, ps.dollarsAtRisk, ps.dollarsAtRisk / acct * 100))
+                        Text("Sizes the LOSS: a stop-out at \(adaptivePrice(stop)) costs ~$\(String(format: "%.0f", ps.dollarsAtRisk)) (\(String(format: "%.2f", ps.dollarsAtRisk / acct * 100))% of the account). Not a profit promise.")
                             .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     } else {
                         // Floored to 0 shares: the budget cannot fund even one share at this stop. Saying
@@ -3917,7 +4197,9 @@ struct MarketsView: View {
                 }
 
                 convictionMeter(a.conviction, color: actionColor(a.action))
-                    .help("Conviction — a rules-based signal strength, not a probability. Estimated win-rate range ~35-58%, not a forecast.")
+                    .help(store.convictionCalibration.map { cal in
+                        "Conviction — rules-based signal strength; win-rate mapped from \(cal.sampleSize) realized trades."
+                    } ?? "Conviction — a rules-based signal strength, not a probability. Estimated win-rate range ~35-58%, not a forecast.")
                 Text("Conviction \(Int(a.conviction * 100))% · \(a.regime.rawValue)")
                     .font(.caption).foregroundStyle(.secondary)
 
@@ -3959,14 +4241,28 @@ struct MarketsView: View {
                               sp.count >= 2 else { return nil }
                         return (p.symbol, StockSagePortfolioAnalytics.dailyReturns(sp))
                     }
+                    let uncheckedCount = portfolio.positions.count - heldSeries.count
                     if let cc = StockSageClusterCheck.check(candidate: idea.symbol, candidateReturns: candReturns, holdings: heldSeries) {
                         // Show the verdict either way: a warning when it concentrates,
-                        // an affirmation when it genuinely diversifies the book.
+                        // an affirmation when it genuinely diversifies the checked subset.
+                        // Suppress the green affirmation when holdings were skipped (no series
+                        // on the board) — we can't claim diversification on data we didn't check.
                         let cColor = cc.isConcentrating ? DS.Palette.warningSoft : DS.Palette.textSecondary
                         let cIcon = cc.isConcentrating ? "exclamationmark.triangle.fill" : "checkmark.shield.fill"
-                        HStack(alignment: .top, spacing: 6) {
-                            Image(systemName: cIcon).font(.system(size: 11)).foregroundStyle(cColor)
-                            Text(cc.note).font(.caption2).foregroundStyle(cColor).fixedSize(horizontal: false, vertical: true)
+                        let note: String = {
+                            if !cc.isConcentrating && uncheckedCount > 0 {
+                                return cc.note + " (among \(heldSeries.count) holdings with history — \(uncheckedCount) had no series and were not checked)"
+                            }
+                            return cc.note
+                        }()
+                        if cc.isConcentrating || uncheckedCount == 0 {
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: cIcon).font(.system(size: 11)).foregroundStyle(cColor)
+                                Text(note).font(.caption2).foregroundStyle(cColor).fixedSize(horizontal: false, vertical: true)
+                            }
+                        } else {
+                            // Partial coverage — show without the green checkmark to avoid over-affirming.
+                            Text(note).font(.caption2).foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
@@ -4037,7 +4333,7 @@ struct MarketsView: View {
                 }
                 if let stop = a.stopPrice, let target = a.targetPrice,
                    let ladder = StockSagePartialLadder.levels(entry: idea.price, stop: stop, target: target, rungs: 3) {
-                    let rungs = ladder.rungs.map { String(format: "%.2f (+%.1fR)", $0.price, $0.rMultiple) }.joined(separator: ", ")
+                    let rungs = ladder.rungs.map { "\(adaptivePrice($0.price)) (+\(String(format: "%.1f", $0.rMultiple))R)" }.joined(separator: ", ")
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "stairs").font(.system(size: 11)).foregroundStyle(DS.Palette.textSecondary)
                         Text("Scale-out (⅓ each): \(rungs) — blended +\(String(format: "%.1f", ladder.blendedExitR))R. Banks gains + cuts variance vs all-at-target; assumes each level fills.")
@@ -4057,10 +4353,10 @@ struct MarketsView: View {
                     if vFloorFlag.isDeranked {
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "exclamationmark.circle").font(.system(size: 11)).foregroundStyle(DS.Palette.warningSoft)
-                            Text(vFloorFlag.badge + " — net EV/day after frictions is under 0.005R/day; de-ranked on the velocity board.")
+                            Text(vFloorFlag.badge + String(format: " — net EV/day after frictions is under %.3fR/day; de-ranked on the velocity board.", StockSageExpectedValue.minNetEVPerDayFloor))
                                 .font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                         }
-                        .help("Net EV/day after frictions is under 0.005R/day — de-ranked on the velocity board. See the net-cost breakdown above.")
+                        .help(String(format: "Net EV/day after frictions is under %.3fR/day — de-ranked on the velocity board. See the net-cost breakdown above.", StockSageExpectedValue.minNetEVPerDayFloor))
                     }
                 }
                 if a.suggestedWeight > 0, store.regime != nil {
@@ -4125,8 +4421,7 @@ struct MarketsView: View {
                 if let ts = store.trailingStop[idea.symbol.uppercased()] {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "arrow.up.forward.circle").font(.system(size: 11)).foregroundStyle(.secondary)
-                        Text(String(format: "Chandelier exit ~%.2f (highest high − %.0f×ATR, %.0f%% below) — a STARTING trailing level; move it up as new highs print, never down. An exit rule, not a target.",
-                                    ts.level, ts.multiple, ts.distancePct))
+                        Text("Chandelier exit ~\(adaptivePrice(ts.level)) (highest high − \(String(format: "%.0f", ts.multiple))×ATR, \(String(format: "%.0f", ts.distancePct))% below) — a STARTING trailing level; move it up as new highs print, never down. An exit rule, not a target.")
                             .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -4138,7 +4433,9 @@ struct MarketsView: View {
                     let sizedNotional: Double? = {
                         if let stop = a.stopPrice, let acct = Double(sizerAccount), let rp = Double(sizerRiskPct),
                            let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
-                            return ps.notional
+                            // Normalize pence-quoted symbols (.L/.JO) to major-unit value so
+                            // the what-if concentration check isn't ~100× overstated.
+                            return StockSageCurrency.majorUnitValue(symbol: idea.symbol, rawValue: ps.notional)
                         }
                         return nil
                     }()
@@ -4175,11 +4472,14 @@ struct MarketsView: View {
                         Spacer()
                     }
                     Text(mtf.note).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                } else {
+                } else if ToolPolicy.isExternalAllowed
+                           && !ProcessInfo.processInfo.arguments.contains("--qa") {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small).tint(DS.Palette.accent)
                         Text("Checking the weekly timeframe…").font(.caption2).foregroundStyle(.secondary)
                     }
+                } else {
+                    Text("Weekly timeframe unavailable.").font(.caption2).foregroundStyle(.secondary)
                 }
 
                 if !a.rationale.isEmpty {
@@ -4235,8 +4535,38 @@ struct MarketsView: View {
                             guard let acct = Double(sizerAccount), let rp = Double(sizerRiskPct) else { return nil }
                             return StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: s)
                         }
-                        let plan = StockSageTradePlan.text(symbol: idea.symbol, market: idea.market, price: idea.price,
+                        var plan = StockSageTradePlan.text(symbol: idea.symbol, market: idea.market, price: idea.price,
                                                            advice: a, rewardRisk: rr, size: size, flags: riskFlags)
+                        // Append the net R:R and the pre-trade gate verdict that the sheet
+                        // already displays — so the pasted broker plan can't disagree with
+                        // the on-screen go/no-go (mirrors the netRR wiring at lines ~4218-4232).
+                        if let stop = a.stopPrice, let target = a.targetPrice {
+                            let costs = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
+                            if let ne = StockSageNetEdge.evaluate(
+                                entry: idea.price, stop: stop, target: target,
+                                spreadBps: costs.spreadBps, slippageBps: costs.slippageBps, takerFeeBps: costs.takerFeeBps) {
+                                plan += String(format: "\nNet R:R (after ~%dbps %@ costs): %.1f:1 (gross %.1f:1)",
+                                               Int(costs.roundTripBps), costs.assetClass, ne.netRR, ne.grossRR)
+                                if let be = ne.breakEvenWinRate {
+                                    plan += String(format: " — needs >%.1f%% win-rate net", be * 100)
+                                }
+                            }
+                            let netRR: Double? = {
+                                let risk = abs(idea.price - stop)
+                                guard risk > 0 else { return nil }
+                                let gross = abs(target - idea.price) / risk
+                                return StockSageNetEdge.netRR(symbol: idea.symbol, entry: idea.price, stop: stop, target: target) ?? gross
+                            }()
+                            let rf = (Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil }) ?? 0.01
+                            let gate = StockSageTradeGate.evaluate(
+                                hasStop: true, rewardToRisk: netRR, riskFraction: rf,
+                                daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil)
+                            plan += "\nPre-trade gate: \(gate.decision.rawValue)"
+                            let failLabels = gate.checks.filter { $0.level == .fail }.map(\.label)
+                            let warnLabels = gate.checks.filter { $0.level == .warn }.map(\.label)
+                            if !failLabels.isEmpty { plan += "\n  FAIL: " + failLabels.joined(separator: "; ") }
+                            if !warnLabels.isEmpty { plan += "\n  WARN: " + warnLabels.joined(separator: "; ") }
+                        }
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(plan, forType: .string)
                     } label: {

@@ -22,6 +22,16 @@ struct MarketsTodayActionsCard: View {
     @ScaledMetric(relativeTo: .caption2) private var font8: CGFloat = 8
     @ScaledMetric(relativeTo: .caption2) private var font9: CGFloat = 9
 
+    /// Adaptive price formatter mirroring `MarketsView.adaptivePrice(_:)` — %.2f for ≥$1,
+    /// %.4f for sub-dollar, %.6f for sub-cent. Prevents entry/stop from collapsing to the same
+    /// 2dp string for sub-dollar crypto (DOGE-USD, ADA-USD) in the analyzed core.
+    private func adaptivePrice(_ v: Double) -> String {
+        let a = abs(v)
+        if a >= 1 || a == 0 { return String(format: "%.2f", v) }
+        if a >= 0.01 { return String(format: "%.4f", v) }
+        return String(format: "%.6f", v)
+    }
+
     var body: some View {
         // Matches fastLaneStrip's own "≥2 to be worth a board" threshold — a single ranked
         // action isn't a ranked LIST, and bestOpportunityCard already covers the lone-idea case.
@@ -29,10 +39,12 @@ struct MarketsTodayActionsCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Image(systemName: "list.number").font(.system(size: 11)).foregroundStyle(DS.Palette.accent)
-                    Text("Today's plan — ranked by velocity").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                    Text("Today's plan — ranked by growth rate").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
                     Spacer()
                 }
                 Text("Top \(plans.count) fastest-compounding setups, sized and gated — do #1 first, unless it's blocked.")
+                    .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text("Ranked by growth rate (log-growth at ½-Kelly) — a steady compounder can out-rank a higher-R/day but higher-variance setup. Shown R/day is raw EV, not the sort key.")
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
                 ForEach(Array(plans.enumerated()), id: \.element.id) { i, plan in
@@ -80,7 +92,7 @@ struct MarketsTodayActionsCard: View {
                     gateBadge(plan.gate)
                 }
                 HStack(spacing: DS.Space.sm) {
-                    Text(String(format: "Entry %.2f · Stop %.2f · Target %.2f", plan.entry, plan.stop, plan.target))
+                    Text("Entry \(adaptivePrice(plan.entry)) · Stop \(adaptivePrice(plan.stop)) · Target \(adaptivePrice(plan.target))")
                         .font(.system(size: font9)).foregroundStyle(.secondary)
                     if let sh = plan.shares, let dr = plan.dollarsAtRisk {
                         Text("· \(sh) sh (≈$\(Int(dr.rounded())) at risk)")
@@ -100,9 +112,18 @@ struct MarketsTodayActionsCard: View {
             .background(DS.Bezel.cardFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(LuxPressStyle())
-        .accessibilityLabel("\(plan.symbol): \(String(format: "%+.3f", plan.velocity)) R per day"
-            + (plan.isCrypto ? ", 24/7 crypto" : "") + ". \(plan.gate.decision.rawValue)."
-            + (blocked ? " Do not trade." : "") + " Tap for the plan.")
+        .accessibilityLabel({
+            var label = "Number \(rank): \(plan.symbol), \(String(format: "%+.3f", plan.velocity)) R per day"
+            if plan.isCrypto { label += ", 24/7 crypto" }
+            label += ". \(plan.gate.decision.rawValue)."
+            if blocked { label += " Do not trade." }
+            if plan.gate.decision == .caution,
+               let warn = plan.gate.checks.first(where: { $0.level == .warn }) {
+                label += " Caution: \(warn.label)."
+            }
+            label += " Tap for the plan."
+            return label
+        }())
     }
 
     @ViewBuilder
