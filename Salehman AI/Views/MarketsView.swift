@@ -4297,11 +4297,19 @@ struct MarketsView: View {
                     let gapSide: TradeSide = isShortIdea ? .short : .long
                     if let gap = StockSageGapRisk.scenario(side: gapSide, entry: entry, stop: stop,
                                                            shares: Double(ps.shares), gapPct: 0.20, accountEquity: acct) {
+                        // BUGHUNT_NEWENGINES #2 residual: the row keeps the single 20% headline;
+                        // the hover tooltip now carries the FULL what-if ladder (weekend 5% /
+                        // earnings 8% / crypto-flash 20% / halt-reopen 35%) — the "a stop is not
+                        // a fill" table, without adding card height. Illustrative magnitudes,
+                        // never probabilities (the caveat leads the tooltip and says so).
+                        let ladder = StockSageGapRisk.worstCase(side: gapSide, entry: entry, stop: stop,
+                                                                shares: Double(ps.shares), accountEquity: acct)
+                            .map { "• " + $0.verdict }.joined(separator: "\n")
                         Text("⚠︎ " + gap.verdict)
                             .font(.system(size: mvFont9))
                             .foregroundStyle(gap.exceedsAccount ? DS.Palette.danger : DS.Palette.warningSoft)
                             .fixedSize(horizontal: false, vertical: true)
-                            .help(StockSageGapRisk.caveat)
+                            .help(ladder.isEmpty ? StockSageGapRisk.caveat : StockSageGapRisk.caveat + "\n\n" + ladder)
                             .accessibilityLabel("Gap risk warning. " + gap.verdict)
                     }
                 } else {
