@@ -351,10 +351,8 @@ final class StockSageStore: ObservableObject {
         // Indices are DELIBERATELY skipped by buildIdeas (not buyable) — don't report them as fetch
         // failures, or ~17 healthy index tickers show a permanent "couldn't be fetched" with a retry
         // button that can never clear.
-        ideasMissing = universe.map(\.symbol).filter {
-            stillTracked.contains($0.uppercased()) &&                                   // dropped mid-fetch → not "missing"
-            !analyzed.contains($0.uppercased()) && StockSageAllocation.assetClass($0) != "Index"
-        }
+        ideasMissing = Self.missingAfterScan(universe: universe.map(\.symbol),
+                                             analyzed: analyzed, stillTracked: stillTracked)
         ideasUpdated = Date()
     }
 
@@ -372,7 +370,11 @@ final class StockSageStore: ObservableObject {
         let cal = convictionCalibration                           // read on the main actor before the await hop
         let journalTrades = StockSageJournalStore.shared.trades   // read on the main actor before the await hop
         let retrySet = Set(ideasMissing.map { $0.uppercased() })
-        let defs = trackedDefs().filter { retrySet.contains($0.symbol.uppercased()) }
+        // CONCURRENCY #3: ONE universe snapshot BEFORE the await — the missing-list below must
+        // be computed against the same set that was scanned, not a fresh post-await read that
+        // can contain a just-added (priced, on-board) ticker and falsely banner it as a failure.
+        let universe = trackedDefs()
+        let defs = universe.filter { retrySet.contains($0.symbol.uppercased()) }
         async let benchmarkTask = StockSageQuoteService.fetchHistory("^GSPC", range: "1y")
         let histories = await StockSageQuoteService.fetchHistories(for: defs.map(\.symbol))
         let benchmark = await benchmarkTask
@@ -391,10 +393,24 @@ final class StockSageStore: ObservableObject {
             .sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
         ideas = merged
         let analyzed = Set(merged.map { $0.symbol.uppercased() })
-        ideasMissing = trackedDefs().map(\.symbol).filter {
-            !analyzed.contains($0.uppercased()) && StockSageAllocation.assetClass($0) != "Index"
-        }
+        ideasMissing = Self.missingAfterScan(universe: universe.map(\.symbol),
+                                             analyzed: analyzed, stillTracked: stillTracked)
         ideasUpdated = Date()
+    }
+
+    /// CONCURRENCY #3: the "couldn't be fetched" list, derived from ONE pre-await `universe`
+    /// snapshot — shared by refreshIdeas AND retryFailedIdeas so the two paths cannot disagree.
+    /// A ticker ADDED during the await is absent from `universe` → never falsely bannered as a
+    /// fetch failure (the next full refresh scans it); a ticker REMOVED during the await is
+    /// dropped via `stillTracked`; indices are never "missing" (not buyable, no idea to build).
+    /// Pure + testable (StockSageIdeasMissingTests).
+    nonisolated static func missingAfterScan(universe: [String], analyzed: Set<String>,
+                                             stillTracked: Set<String>) -> [String] {
+        universe.filter {
+            stillTracked.contains($0.uppercased()) &&
+            !analyzed.contains($0.uppercased()) &&
+            StockSageAllocation.assetClass($0) != "Index"
+        }
     }
 
     /// Build ranked ideas off the main actor (the advisor runs every indicator over each
