@@ -96,13 +96,19 @@ enum StockSageNetEdge {
     /// Net reward:risk for a symbol using its asset-class default round-trip costs — ONE source of
     /// truth so the on-screen trade gate and the copied broker plan can't disagree on go/no-go. nil
     /// when the gross setup is degenerate (then callers fall back to gross). netRR is independent of
-    /// winProb, so callers needing only the ratio can omit it.
+    /// winProb, so callers needing only the ratio can omit it. `annualFinancingRate`/`holdDays`
+    /// default to 0 (byte-identical to before they existed) — a short-side caller should pass
+    /// `StockSageExpectedValue.financingCostInputs(for:)`'s output so this convenience wrapper
+    /// can't disagree with the ranking-driving `netEVR`/`netVelocity` figures for the same idea.
     nonisolated static func netRR(symbol: String, entry: Double, stop: Double, target: Double,
+                                  annualFinancingRate: Double = 0, holdDays: Double = 0,
                                   winProb: Double? = nil) -> Double? {
         let c = defaultCosts(forSymbol: symbol)
         return evaluate(entry: entry, stop: stop, target: target,
                         spreadBps: c.spreadBps, slippageBps: c.slippageBps,
-                        takerFeeBps: c.takerFeeBps, winProb: winProb)?.netRR
+                        takerFeeBps: c.takerFeeBps,
+                        annualFinancingRate: annualFinancingRate, holdDays: holdDays,
+                        winProb: winProb)?.netRR
     }
 
     /// Conservative retail-honest annualized borrow/margin-cost ESTIMATE for a general-collateral

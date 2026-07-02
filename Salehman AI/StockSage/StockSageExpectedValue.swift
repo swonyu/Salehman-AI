@@ -178,8 +178,10 @@ enum StockSageExpectedValue {
     /// (`StockSageAdvisor.stopTarget`'s stop-above/target-below construction) and is definitionally
     /// a margin transaction — it pays `defaultShortBorrowRate` for every day it's expected to be
     /// held. Week-horizon research (RESEARCH_2026-07-02_week_horizon_velocity.md, roadmap #2):
-    /// "overnight borrow/margin costs charged into short-side... EV."
-    private nonisolated static func financingCostInputs(for idea: StockSageIdea) -> (rate: Double, days: Double) {
+    /// "overnight borrow/margin costs charged into short-side... EV." Not private: MarketsView's
+    /// own net-cost displays (detail sheet, "Copy plan") reuse this so they can never show a
+    /// different net figure than the one actually driving the idea's rank/velocity.
+    nonisolated static func financingCostInputs(for idea: StockSageIdea) -> (rate: Double, days: Double) {
         guard idea.advice.action == .sell || idea.advice.action == .reduce else { return (0, 0) }
         return (StockSageNetEdge.defaultShortBorrowRate, expectedHoldDays(for: idea) ?? 0)
     }

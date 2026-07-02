@@ -4302,19 +4302,25 @@ struct MarketsView: View {
                 }
                 if let stop = a.stopPrice, let target = a.targetPrice {
                     let costs = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
+                    // Same financing inputs netEVR/netVelocity/netCostFloorFlag already use — this
+                    // line and the "why" it drives can never show a different net figure than what's
+                    // actually driving the idea's rank elsewhere on the board (2026-07-02).
+                    let (finRate, finDays) = StockSageExpectedValue.financingCostInputs(for: idea)
                     if let ne = StockSageNetEdge.evaluate(
                         entry: idea.price, stop: stop, target: target,
                         spreadBps: costs.spreadBps, slippageBps: costs.slippageBps, takerFeeBps: costs.takerFeeBps,
+                        annualFinancingRate: finRate, holdDays: finDays,
                         winProb: StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target, calibration: store.convictionCalibration)?.winProbEstimate) {
                         let c = ne.costErodesEdge ? DS.Palette.warningSoft : DS.Palette.textSecondary
-                        let pre = "After ~\(Int(costs.roundTripBps))bps est. \(costs.assetClass) costs: "
+                        let financingNote = finRate > 0 ? String(format: " + ~%.0fbps/yr short financing", finRate * 10_000) : ""
+                        let pre = "After ~\(Int(costs.roundTripBps))bps est. \(costs.assetClass) costs\(financingNote): "
                         let body = ne.netRR > 0
                             ? pre + String(format: "net R:R %.1f:1 (gross %.1f:1). %@", ne.netRR, ne.grossRR, ne.verdict)
                             : pre + ne.verdict
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "scissors").font(.system(size: 11)).foregroundStyle(c)
                             Text(body).font(.caption2).foregroundStyle(c).fixedSize(horizontal: false, vertical: true)
-                                .help("Nets an asset-class round-trip spread+slippage estimate out of the reward:risk (crypto widest, FX/large-cap tightest). Your real costs differ — wide-margin trades barely notice; thin scalps can lose the whole edge.")
+                                .help("Nets an asset-class round-trip spread+slippage estimate (crypto widest, FX/large-cap tightest) — and, for a short, the overnight borrow/margin cost of holding the expected duration — out of the reward:risk. Your real costs differ — wide-margin trades barely notice; thin scalps can lose the whole edge.")
                         }
                     }
                 }
@@ -4542,11 +4548,16 @@ struct MarketsView: View {
                         // the on-screen go/no-go (mirrors the netRR wiring at lines ~4218-4232).
                         if let stop = a.stopPrice, let target = a.targetPrice {
                             let costs = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
+                            // Same financing inputs the on-screen net-cost line and the ranking use —
+                            // the pasted plan can't disagree with either (2026-07-02).
+                            let (finRate, finDays) = StockSageExpectedValue.financingCostInputs(for: idea)
                             if let ne = StockSageNetEdge.evaluate(
                                 entry: idea.price, stop: stop, target: target,
-                                spreadBps: costs.spreadBps, slippageBps: costs.slippageBps, takerFeeBps: costs.takerFeeBps) {
-                                plan += String(format: "\nNet R:R (after ~%dbps %@ costs): %.1f:1 (gross %.1f:1)",
-                                               Int(costs.roundTripBps), costs.assetClass, ne.netRR, ne.grossRR)
+                                spreadBps: costs.spreadBps, slippageBps: costs.slippageBps, takerFeeBps: costs.takerFeeBps,
+                                annualFinancingRate: finRate, holdDays: finDays) {
+                                let financingNote = finRate > 0 ? String(format: " + ~%.0fbps/yr short financing", finRate * 10_000) : ""
+                                plan += String(format: "\nNet R:R (after ~%dbps %@ costs%@): %.1f:1 (gross %.1f:1)",
+                                               Int(costs.roundTripBps), costs.assetClass, financingNote, ne.netRR, ne.grossRR)
                                 if let be = ne.breakEvenWinRate {
                                     plan += String(format: " — needs >%.1f%% win-rate net", be * 100)
                                 }
@@ -4555,7 +4566,8 @@ struct MarketsView: View {
                                 let risk = abs(idea.price - stop)
                                 guard risk > 0 else { return nil }
                                 let gross = abs(target - idea.price) / risk
-                                return StockSageNetEdge.netRR(symbol: idea.symbol, entry: idea.price, stop: stop, target: target) ?? gross
+                                return StockSageNetEdge.netRR(symbol: idea.symbol, entry: idea.price, stop: stop, target: target,
+                                                              annualFinancingRate: finRate, holdDays: finDays) ?? gross
                             }()
                             let rf = (Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil }) ?? 0.01
                             let gate = StockSageTradeGate.evaluate(

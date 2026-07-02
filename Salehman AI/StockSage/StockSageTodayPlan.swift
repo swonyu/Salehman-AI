@@ -24,6 +24,8 @@ enum StockSageTodayPlan {
             let gross = abs(t - entry) / risk
             // Gate on NET reward:risk (after asset-class round-trip costs) — same source of truth as
             // the on-screen gate, so the copied plan can't disagree. Falls back to gross.
+            // (No financing threading here: `idea` reaching `build` always came from
+            // `bestOpportunity`, which is buy-family only — financing would always be 0.)
             return StockSageNetEdge.netRR(symbol: idea.symbol, entry: entry, stop: s, target: t) ?? gross
         }()
         let gate = StockSageTradeGate.evaluate(hasStop: a.stopPrice != nil, rewardToRisk: rr,
@@ -97,6 +99,8 @@ enum StockSageTodayPlan {
                 let gross = abs(target - entry) / risk
                 // Same NET reward:risk source of truth `build` uses, so a plan in this list can't
                 // clear the gate here and then block in the single-idea copy, or vice versa.
+                // (No financing threading here: `fastLane()` is buy-family only via
+                // `velocityRankKey`'s explicit guard — financing would always be 0.)
                 return StockSageNetEdge.netRR(symbol: idea.symbol, entry: entry, stop: stop, target: target) ?? gross
             }()
             let gate = StockSageTradeGate.evaluate(hasStop: true, rewardToRisk: rr, riskFraction: gateRiskFraction,

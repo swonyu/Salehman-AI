@@ -85,6 +85,44 @@ struct StockSageTodayPlanRankedTests {
         }
     }
 
+    // Week-horizon research (RESEARCH_2026-07-02_week_horizon_velocity.md, roadmap #2): a short
+    // idea's gate/net-R:R must reflect overnight financing, matching StockSageExpectedValue's own
+    // netEVR/netVelocity — the plan can't disagree with the ranking that put it here. Hand-verified
+    // via a standalone Swift snippet before writing this fixture (entry=100, stop=105, target=85 —
+    // a genuine short per StockSageAdvisor.stopTarget's convention: stop above, target below):
+    //   netRR without financing ≈ 2.8986 ; netRR WITH financing (3%/yr × 12d) ≈ 2.8251 (strictly less)
+    @Test func financingInputsAreNonZeroForAShortIdeaWithAHoldEstimate() {
+        let short = idea("SHORT", action: .sell, conviction: 0.9, price: 100, stop: 105, target: 85)
+        let (finRate, finDays) = StockSageExpectedValue.financingCostInputs(for: short)
+        #expect(finRate > 0 && finDays > 0)
+    }
+
+    @Test func netRRWithFinancingMatchesHandVerifiedValueAndIsBelowNoFinancing() {
+        let netRRWithFinancing = StockSageNetEdge.netRR(symbol: "SHORT", entry: 100, stop: 105, target: 85,
+                                                         annualFinancingRate: 0.03, holdDays: 12)
+        #expect(netRRWithFinancing != nil)
+        if let nr = netRRWithFinancing {
+            #expect(abs(nr - 2.8250936623961853) < 1e-9)
+        }
+        let netRRNoFinancing = StockSageNetEdge.netRR(symbol: "SHORT", entry: 100, stop: 105, target: 85)
+        #expect(netRRNoFinancing != nil)
+        if let nr = netRRNoFinancing {
+            #expect(abs(nr - 2.898635477582846) < 1e-9)
+        }
+        if let w = netRRWithFinancing, let n = netRRNoFinancing { #expect(w < n) }
+    }
+
+    // `rankedActions` is buy-family only BY DESIGN — `fastLane()`'s `velocityRankKey` explicitly
+    // guards `case .buyFamily = side(idea)` ("a short does not compound the same way... Fixes a
+    // short topping the Fast Lane while it is correctly barred from the best-opportunity card").
+    // A short idea's financing cost is therefore never reachable through this composer — pinned
+    // here explicitly so a future change doesn't silently start showing shorts without financing.
+    @Test func rankedActionsNeverIncludesAShortIdeaSoFinancingIsStructurallyUnreachableHere() {
+        let short = idea("SHORT", action: .sell, conviction: 0.9, price: 100, stop: 105, target: 85)
+        let plans = StockSageTodayPlan.rankedActions([short], account: nil, riskFraction: nil, max: 1)
+        #expect(plans.isEmpty)
+    }
+
     @Test func caveatSweepContainsEstimateAndPerTradeRiskCap() {
         let ideas = [clearIdea("A"), clearIdea("B", conviction: 0.9, riskAbs: 3, rewardAbs: 15)]
         let plans = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: nil)
