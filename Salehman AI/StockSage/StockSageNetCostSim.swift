@@ -10,11 +10,13 @@ import Foundation
 // GATES any activation behind a real net-of-cost simulation, "same rigor as the 2026-07-02
 // confluence/RS ablation" (walk-forward, no look-ahead, purge/embargo).
 //
-// This harness IS that gate. It is deterministic, pure, and consumes only public APIs
-// (`StockSageDeflatedSharpe` for the verdict, `StockSageNetEdge` for the cost model — see
-// `simulate(_:costModelSymbol:)`). It edits nothing. It does NOT fetch data: the caller
-// supplies an aligned return panel, so the same machinery runs on a synthetic fixture (tests)
-// or a real backtest panel (a future Fable pass) without look-ahead risk from a live feed.
+// This harness IS that gate. It is deterministic, pure, and consumes only public APIs:
+// `StockSageDeflatedSharpe` for the verdict, and a caller-supplied `roundTripBps` for the cost
+// model (`StockSageNetEdge.defaultCosts(forSymbol:).roundTripBps` is the intended source). It
+// edits nothing. It does NOT fetch data: the caller supplies an aligned return panel, so the same
+// machinery runs on a synthetic fixture (tests) or a real backtest panel (a future Fable pass)
+// without look-ahead risk from a live feed. A verdict on a SYNTHETIC panel validates the
+// machinery only — it says NOTHING about the live edge until a real panel is run through it.
 //
 // HONESTY FLOOR. The point of the gate is falsification, not confirmation. If the overlay's
 // NET Deflated Sharpe does not clear the DSR>0.95 bar, `clearsNetOfCost == false` — and that
@@ -30,7 +32,7 @@ enum StockSageNetCostSim {
     /// (all symbols share one date axis). `industry[s]` groups symbols for the industry-relative
     /// demeaning. `earningsExcludedAt[t]` = the symbol indices to EXCLUDE from the signal at a
     /// rebalance that STARTS in period `t` (the earnings-window exclusion; default: none).
-    struct Panel: Sendable, Equatable {
+    nonisolated struct Panel: Sendable, Equatable {
         let returns: [[Double]]
         let industry: [Int]
         let earningsExcludedAt: [Int: Set<Int>]
@@ -47,7 +49,7 @@ enum StockSageNetCostSim {
 
     // MARK: Walk-forward folds (purge + embargo)
 
-    struct Fold: Sendable, Equatable {
+    nonisolated struct Fold: Sendable, Equatable {
         let train: Range<Int>
         let test: Range<Int>
     }
@@ -58,7 +60,7 @@ enum StockSageNetCostSim {
     /// whose forward-return label window would overlap the test block; `embargo` adds a further
     /// serial-correlation gap (López de Prado). A fold is yielded only when its training window
     /// is non-empty, so the first block (no usable past) is skipped.
-    static func walkForwardFolds(n: Int, folds: Int, labelSpan: Int, embargo: Int) -> [Fold] {
+    nonisolated static func walkForwardFolds(n: Int, folds: Int, labelSpan: Int, embargo: Int) -> [Fold] {
         guard n > 0, folds > 0 else { return [] }
         var out: [Fold] = []
         for k in 0..<folds {
@@ -82,7 +84,7 @@ enum StockSageNetCostSim {
     ///   raw[s]    = −score[s]                                                     (REVERSAL: long losers)
     ///   w[s]      = normalize(demean(raw over included)) so Σ|w| = 1;  excluded → 0
     /// The demeaning makes the book dollar-neutral; the L1 normalization fixes gross exposure at 1.
-    static func irrxWeights(_ panel: Panel, at t: Int, lookback: Int, excluded: Set<Int> = []) -> [Double] {
+    nonisolated static func irrxWeights(_ panel: Panel, at t: Int, lookback: Int, excluded: Set<Int> = []) -> [Double] {
         let s = panel.symbolCount
         guard s > 0, lookback > 0, t >= lookback, t <= panel.periodCount else {
             return [Double](repeating: 0, count: max(0, s))
@@ -120,22 +122,32 @@ enum StockSageNetCostSim {
     // MARK: Causal rebalance series
 
     /// One non-overlapping rebalance: weights formed at `t` from the past, held over `[t, t+hold)`.
-    struct Rebalance: Sendable, Equatable {
+    nonisolated struct Rebalance: Sendable, Equatable {
         let t: Int
         let grossReturn: Double   // Σ w·(forward return over the hold)
         let turnover: Double      // Σ|w − prevWeights|  (full turnover on the first rebalance)
-        let netReturn: Double     // grossReturn − turnover·(roundTripBps/10_000)
+        let netReturn: Double     // grossReturn − turnover·(roundTripBps/2/10_000) — per-side, see below
     }
 
     /// Build the causal, non-overlapping rebalance series. Rebalances start at
     /// `t = lookback, lookback+hold, …` while `t+hold ≤ periodCount`. `roundTripBps` is the
-    /// round-trip cost per unit of weight traded (see `StockSageNetEdge.defaultCosts` /
-    /// `CostAssumption.roundTripBps` for asset-class defaults).
-    static func rebalanceSeries(_ panel: Panel, lookback: Int, hold: Int, roundTripBps: Double) -> [Rebalance] {
+    /// ROUND-TRIP (both fills) cost for one unit of notional (see `StockSageNetEdge.defaultCosts`
+    /// / `CostAssumption.roundTripBps` for asset-class defaults).
+    ///
+    /// COST ACCOUNTING. `turnover` = Σ|Δw| counts each ONE-WAY trade, and a full round trip on one
+    /// unit of notional is 2 units of turnover (buy 1, later sell 1) — so the per-unit-turnover
+    /// charge is `roundTripBps/2` (per side). Charging the full round trip per unit traded would
+    /// double-count costs ~2× and bias the gate toward refusing a genuinely-passing edge; the
+    /// research net figures this gate is compared against use standard one-way accounting.
+    /// Known simplifications, both second-order at this series length: (a) the final book is never
+    /// liquidated, understating total cost by one exit (≤ gross-exposure·roundTripBps/2 once);
+    /// (b) `prevWeights` ignores intra-hold drift, so turnover is measured against the weights as
+    /// set, not as drifted.
+    nonisolated static func rebalanceSeries(_ panel: Panel, lookback: Int, hold: Int, roundTripBps: Double) -> [Rebalance] {
         let s = panel.symbolCount
         let T = panel.periodCount
         guard s > 0, lookback > 0, hold > 0, T >= lookback + hold else { return [] }
-        let rtCost = max(0, roundTripBps) / 10_000.0
+        let perSideCost = max(0, roundTripBps) / 2 / 10_000.0
         var out: [Rebalance] = []
         var prevW = [Double](repeating: 0, count: s)
         var t = lookback
@@ -150,7 +162,7 @@ enum StockSageNetCostSim {
             }
             var turnover = 0.0
             for sym in 0..<s { turnover += abs(w[sym] - prevW[sym]) }
-            let net = gross - turnover * rtCost
+            let net = gross - turnover * perSideCost
             out.append(Rebalance(t: t, grossReturn: gross, turnover: turnover, netReturn: net))
             prevW = w
             t += hold
@@ -163,7 +175,7 @@ enum StockSageNetCostSim {
     /// A Deflated-Sharpe verdict on a return series. `sharpe = mean / sampleStdDev(n−1)`, fed to
     /// `StockSageDeflatedSharpe` with the sample's own skew/kurtosis. nil if < 4 points or zero
     /// variance (the honest-unknown contract: too thin to judge).
-    static func verdict(_ series: [Double], trials: Int = 1, varTrialSharpe: Double = 0) -> StockSageDeflatedSharpe.Result? {
+    nonisolated static func verdict(_ series: [Double], trials: Int = 1, varTrialSharpe: Double = 0) -> StockSageDeflatedSharpe.Result? {
         let n = series.count
         guard n >= 4 else { return nil }
         let mean = series.reduce(0, +) / Double(n)
@@ -178,7 +190,7 @@ enum StockSageNetCostSim {
 
     /// Pool the out-of-sample (test-block) values of a rebalance series under a walk-forward split.
     /// The label span for non-overlapping holds is 1 rebalance; `embargo` gaps the boundary.
-    static func oosPooled(_ series: [Double], folds: Int, embargo: Int) -> [Double] {
+    nonisolated static func oosPooled(_ series: [Double], folds: Int, embargo: Int) -> [Double] {
         let folded = walkForwardFolds(n: series.count, folds: folds, labelSpan: 1, embargo: embargo)
         var out: [Double] = []
         for f in folded { out.append(contentsOf: series[f.test]) }
@@ -187,7 +199,7 @@ enum StockSageNetCostSim {
 
     // MARK: End-to-end simulation
 
-    struct SimResult: Sendable, Equatable {
+    nonisolated struct SimResult: Sendable, Equatable {
         let rebalances: [Rebalance]
         let grossReturns: [Double]
         let netReturns: [Double]
@@ -204,11 +216,12 @@ enum StockSageNetCostSim {
     }
 
     /// Run the full net-of-cost gate for the IRRX overlay on a supplied panel.
-    /// `roundTripBps` is the round-trip cost per unit weight (pass
-    /// `StockSageNetEdge.defaultCosts(forSymbol:).roundTripBps` for an asset-class estimate).
+    /// `roundTripBps` is the ROUND-TRIP (both fills) cost, charged at half per unit of one-way
+    /// turnover — see `rebalanceSeries` COST ACCOUNTING. (Pass
+    /// `StockSageNetEdge.defaultCosts(forSymbol:).roundTripBps` for an asset-class estimate.)
     /// `trials`/`varTrialSharpe` deflate for how many parameterizations were scanned (1 ⇒ no
     /// selection haircut). Returns nil if the panel is too thin to build ≥4 rebalances.
-    static func simulate(_ panel: Panel, lookback: Int, hold: Int, roundTripBps: Double,
+    nonisolated static func simulate(_ panel: Panel, lookback: Int, hold: Int, roundTripBps: Double,
                          folds: Int = 3, embargo: Int = 1,
                          trials: Int = 1, varTrialSharpe: Double = 0) -> SimResult? {
         let rebs = rebalanceSeries(panel, lookback: lookback, hold: hold, roundTripBps: roundTripBps)

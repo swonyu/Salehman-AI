@@ -3,8 +3,11 @@ import Foundation
 @testable import Salehman_AI
 
 // MARK: - Net-of-cost simulation harness for the IRRX reversal overlay (roadmap-item-3 gate).
-// Every expected value is HAND-DERIVED in the standalone /tmp/derive_netcostsim.swift (which does
-// NOT import the app), per skills/testing-discipline. The headline test proves the harness kills a
+// Every expected value is HAND-DERIVED in standalone derive scripts that do NOT import the app
+// (derive_netcostsim.swift; net/cost columns re-derived in derive_netcostsim_v2.swift after the
+// per-side cost fix — turnover counts one-way trades, so the charge is roundTripBps/2 per unit),
+// per skills/testing-discipline. Key arithmetic is pasted inline so the literals stay auditable
+// after the throwaway scripts are gone. The headline test proves the harness kills a
 // gross-passing edge once costs are charged — the reason the gate exists.
 
 struct StockSageNetCostSimTests {
@@ -42,8 +45,14 @@ struct StockSageNetCostSimTests {
         #expect(abs(w[3] + 0.5) < 1e-12)
     }
 
-    // F8 — rebalance series gross/turnover/net (covers gross=Σw·fwd, net=gross−turnover·cost, and the
-    // exclusion-driven turnover at t=3). Values from the derive oracle.
+    // F8 — rebalance series gross/turnover/net (covers gross=Σw·fwd, net=gross−turnover·perSide,
+    // and the exclusion-driven turnover at t=3). Values from derive_netcostsim_v2.swift.
+    // perSide = 50/2/10_000 = 0.0025 per unit turnover. Arithmetic:
+    //   t=2: w=[−¼,¼,¼,−¼] (F2); gross=−¼·0.04+¼·(−0.05)=−0.025; turn=Σ|w−0|=1; net=−0.025−0.0025
+    //   t=3: excl s0 → w=[0,0,½,−½]; gross=½·(−0.05)=−0.025; turn=4·0.25=1;     net=−0.025−0.0025
+    //   t=4: w back to [−¼,¼,¼,−¼]; gross=−¼·0.04+¼·(−0.05)=−0.0225; turn=1;    net=−0.0225−0.0025
+    //   t=5: past=[0.09,0,−0.10,0] → raw=[−.045,.045,.05,−.05]/0.19; gross=−0.0273684…;
+    //        turn=4·(0.26316−0.25)=0.0526316; net=−0.0273684−0.0526316·0.0025=−0.0275
     @Test func rebalanceSeriesGrossTurnoverNet() {
         let panel = NC.Panel(
             returns: [[0.06,0.04,0.05,0.05,0.04,0.06],[0,0,0,0,0,0],
@@ -52,10 +61,10 @@ struct StockSageNetCostSimTests {
         let rs = NC.rebalanceSeries(panel, lookback: 2, hold: 1, roundTripBps: 50)
         #expect(rs.count == 4)
         let exp: [(Int, Double, Double, Double)] = [
-            (2, -0.025,                1.0,                 -0.030000000000000002),
-            (3, -0.025,                1.0,                 -0.030000000000000002),
-            (4, -0.0225,               1.0,                 -0.0275),
-            (5, -0.027368421052631577, 0.05263157894736842, -0.02763157894736842),
+            (2, -0.025,                1.0,                 -0.0275),
+            (3, -0.025,                1.0,                 -0.0275),
+            (4, -0.0225,               1.0,                 -0.025),
+            (5, -0.027368421052631577, 0.05263157894736842, -0.0275),
         ]
         for (i, e) in exp.enumerated() {
             #expect(rs[i].t == e.0)
@@ -74,6 +83,9 @@ struct StockSageNetCostSimTests {
     }
 
     // F7 — THE HEADLINE: charging cost flips a gross verdict that CLEARS DSR>0.95 into one that fails.
+    // net = gross − 0.028 (constant shift: same variance/skew/kurt, only the mean — hence SR — moves).
+    // Cross-derived twice, independently (derive_netcostsim.swift + a Python erf re-derivation,
+    // 2026-07-03 review): gross DSR = 0.99999999997741, net DSR = 0.10204033468237.
     @Test func costsFlipGrossPassToNetFail() {
         let gross = [0.030,0.025,0.028,0.022,0.031,0.027,0.029,0.024,0.026,0.030,0.023,0.028]
         let net = gross.map { $0 - 0.028 }
@@ -89,7 +101,8 @@ struct StockSageNetCostSimTests {
         #expect(abs(vn!.dsr - 0.10204033468237034) < 1e-9)
     }
 
-    // F8 end-to-end — the honest gate answers "does NOT clear net-of-cost".
+    // F9 (end-to-end on the F8 panel) — the honest gate answers "does NOT clear net-of-cost".
+    // meanNet = (−0.0275 − 0.0275 − 0.025 − 0.0275)/4 = −0.026875 (derive_netcostsim_v2.swift).
     @Test func simulateHonestVerdictDoesNotClear() {
         let panel = NC.Panel(
             returns: [[0.06,0.04,0.05,0.05,0.04,0.06],[0,0,0,0,0,0],
@@ -100,7 +113,7 @@ struct StockSageNetCostSimTests {
         #expect(sim!.clearsNetOfCost == false)
         #expect(sim!.grossVerdictFull?.passes == false)
         #expect(sim!.netVerdictFull?.passes == false)
-        #expect(abs(sim!.meanNet - (-0.028782894736842108)) < 1e-12)
+        #expect(abs(sim!.meanNet - (-0.026875)) < 1e-12)
         #expect(sim!.grossReturns.count == 4)
     }
 
