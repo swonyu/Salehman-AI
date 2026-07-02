@@ -593,4 +593,55 @@ struct StockSageCalibrationSelectorTests {
             #expect(abs(p - 0.425) < 1e-6, "honest flat base rate at s=\(s), got \(p)")
         }
     }
+
+    // MARK: - 15. D-1b (2026-07-03): the re-anchor itself must not diverge at extreme base rates
+    //
+    // Residual honesty-floor breach found AFTER the D-1 fix (derived standalone via
+    // scratchpad derive_d1b_witness.swift + verify_d1_enum.py exact enumeration): the
+    // intercept-only refit's legacy init ln((nNeg+1)/(nPos+1)) is the LOSS-rate log-odds under
+    // fitBeta's p = σ(+z) convention, and the undamped 1-D Newton started there oscillates past
+    // the MLE and diverges under the 25-iter cap for 12,948/44,850 (n,nPos) pairs, 2 ≤ n ≤ 300
+    // (6,474 OVERSTATE; the intercept-only refit depends ONLY on the counts). This 31-row
+    // witness (base 28/31 = 0.903226) routes full-fit a0=+1029.9 / b0=−333.6 (quasi-separated)
+    // → dropB → x1-refit a1=−9.07e7 ≤ 0 → intercept-only re-anchor; PRE-FIX the divergent
+    // Newton shipped c=6.60e8 → flat winProb 1.000000 (+0.096774 overstatement THROUGH the D-1
+    // guard). POST-FIX the intercept-only path inits at the exact MLE ln(nPos/nNeg) = ln(28/3)
+    // → σ = 28/31 to full double precision (all values printed by the derive script, not the
+    // app). The mid-band fixtures above sit in the convergent band and are byte-identical
+    // pre/post this init fix (measured).
+    private static let extremeBaseRateWitness: [Outcome] = [
+        (conviction: 0.776242, won: true), (conviction: 0.906762, won: true),
+        (conviction: 0.308668, won: true), (conviction: 0.887846, won: true),
+        (conviction: 0.776766, won: true), (conviction: 0.317633, won: true),
+        (conviction: 0.573295, won: true), (conviction: 0.786991, won: true),
+        (conviction: 0.181034, won: true), (conviction: 0.021712, won: true),
+        (conviction: 0.012537, won: true), (conviction: 0.553954, won: true),
+        (conviction: 0.871791, won: true), (conviction: 0.578940, won: true),
+        (conviction: 0.970805, won: true), (conviction: 0.334388, won: true),
+        (conviction: 0.552873, won: false), (conviction: 0.493216, won: true),
+        (conviction: 0.012319, won: true), (conviction: 0.889939, won: false),
+        (conviction: 0.933322, won: false), (conviction: 0.384393, won: true),
+        (conviction: 0.201472, won: true), (conviction: 0.086514, won: true),
+        (conviction: 0.007540, won: true), (conviction: 0.068483, won: true),
+        (conviction: 0.091542, won: true), (conviction: 0.214991, won: true),
+        (conviction: 0.216679, won: true), (conviction: 0.123498, won: true),
+        (conviction: 0.792265, won: true)
+    ]
+
+    @Test func betaExtremeBaseRateReanchorAnchorsAtHonestBaseRate() {
+        guard let beta = Cal.fitBeta(Self.extremeBaseRateWitness) else {
+            Issue.record("fitBeta returned nil on the D-1b extreme-base-rate witness")
+            return
+        }
+        #expect(beta.activeFeatures == .interceptOnly,
+                "clamped dropB must re-anchor as interceptOnly, got \(beta.activeFeatures)")
+        let base = 28.0 / 31.0  // 0.903226 — the honest sample base rate
+        for s in [0.05, 0.25, 0.5, 0.75, 0.95] {
+            let p = beta.winProb(s)
+            #expect(abs(p - base) < 1e-6,
+                    "honest flat base rate 0.903226 at s=\(s), got \(p)")
+            // Honesty floor: the re-anchor must NEVER overstate the sample base rate.
+            #expect(p <= base + 1e-9, "overstates base rate at s=\(s): \(p)")
+        }
+    }
 }

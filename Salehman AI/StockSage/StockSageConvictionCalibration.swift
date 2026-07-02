@@ -344,14 +344,28 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
         // includeX1 = use x1 (ln s); includeX2 = use x2 (-ln(1-s)).
         // Returns (c, a, b) where a==0 if !includeX1, b==0 if !includeX2.
         func irls(includeX1: Bool, includeX2: Bool) -> (c: Double, a: Double, b: Double) {
-            // Init: intercept = ln((nNeg+1)/(nPos+1)), slopes = 1 (identity start).
-            // [D-1 nit 2026-07-03] Under THIS function's p = σ(+z) convention that intercept init
-            // is the smoothed LOSS-rate log-odds — a sign-flipped copy of fitPlatt's B-init (which
-            // lives in a p = σ(−z) convention). Harmless at convergence (IRLS is init-independent
-            // at the MLE; the intercept-only fit converges to ln(nPos/nNeg) regardless) and
-            // deliberately left unchanged; the non-converged quasi-separated cases it could worsen
-            // are covered by the clamped-slope re-anchor in the drop branches below.
-            var c = Foundation.log((Double(nNeg) + 1.0) / (Double(nPos) + 1.0))
+            // Init: slopes = 1 (identity start); the intercept init depends on the path.
+            // [D-1b 2026-07-03] The legacy intercept init ln((nNeg+1)/(nPos+1)) is a sign-flipped
+            // copy of fitPlatt's B-init: under THIS function's p = σ(+z) convention it is the
+            // smoothed LOSS-rate log-odds. An earlier comment here called that "harmless at
+            // convergence … the intercept-only fit converges to ln(nPos/nNeg) regardless" —
+            // FALSIFIED by exact enumeration (the intercept-only refit depends only on the counts;
+            // scratchpad verify_d1_enum.py / derive_d1b_witness.swift): started on the wrong side,
+            // the undamped 1-D Newton oscillates past the MLE and diverges under the 25-iter cap
+            // for 12,948/44,850 (n,nPos) pairs, 2 ≤ n ≤ 300 — half of them OVERSTATING (worst:
+            // base 0.0435 shipped as flat 1.0), so the D-1 clamped-slope re-anchor itself could
+            // breach the honesty floor at extreme base rates. Fix: the intercept-only path inits
+            // at the exact MLE ln(nPos/nNeg) (the score nPos − n·σ(c) is 0 there; Newton converges
+            // immediately — enumeration-proven exact on all 44,850 pairs, worst |dev| 3e-16).
+            // The full/2-param paths keep the legacy init: their converged fits are
+            // init-independent, existing fixtures pin their non-converged landings, and any
+            // divergent fit they emit now terminates in this fixed re-anchor.
+            var c: Double
+            if includeX1 || includeX2 {
+                c = Foundation.log((Double(nNeg) + 1.0) / (Double(nPos) + 1.0))
+            } else {
+                c = Foundation.log(Double(nPos) / Double(nNeg))  // exact intercept-only MLE (nPos, nNeg > 0 guarded above)
+            }
             var a = includeX1 ? 1.0 : 0.0
             var b = includeX2 ? 1.0 : 0.0
 
