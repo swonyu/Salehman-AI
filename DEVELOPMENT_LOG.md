@@ -10502,3 +10502,24 @@ Then implemented the session-timing note: `StockSageExecutionTiming.sessionNote(
 2. **Dot .help under-disclosed short histories** — copy amended to "short histories may use fewer than 3 signals" (a 21-34-bar name shows a dot computed from fewer signals than the tooltip implied).
 3. **"Find ideas" button silently shrank 0.5pt** — the Dynamic Type sweep had rounded its 11.5pt into mvFont11; added a dedicated `mvFont11_5` @ScaledMetric token so the button keeps its exact pre-sweep visible size at default text setting while still scaling.
 **Result:** ✅ ** BUILD SUCCEEDED **, ✅ ** TEST SUCCEEDED ** (1444 tests, 0 failures; 1 new).
+
+## 2026-07-02 — Ideas-card wave 4: 17 display-only improvements (4-lens triage — trader-workflow, honesty-clarity, badge-density, board-scan)
+**Files:** `Salehman AI/Views/MarketsView.swift` only.
+**What & why:** 17 triaged improvements from a 4-lens adversarial design critique (trader-workflow / honesty-clarity / badge-density / board-scan). All display-layer; no engine, no store changes.
+- trader-workflow #1 (Vol-adj size): when `idea.volRegime?.sizingMultiplier < 0.85`, shows a "Vol-adj N.N%" metric after "Base size"; label is "Vol-adj" not "Effective" per honesty constraint; nil volRegime → nothing shown.
+- trader-workflow #2 (floor badge rename): "↓ floor" → "costs > edge" — states the economic reason directly.
+- trader-workflow #3 (rationale reorder): rationale bullets first, regime token last in the strip; regime context is after the most-actionable signal.
+- trader-workflow #4 (stop distance %): appends "(N.N%)" parenthetically to the Stop metric value — visible risk distance without opening the detail sheet.
+- trader-workflow #5 Part A (momentum dot on main card): momentum dot copied from fastLaneRow into ideaCard metrics row after R:R; same nil-guard and tooltip.
+- trader-workflow #5 Part B (remove per-row "24/7 · volatile"): removed from fastLaneRow — section header already says "24/7"; kept in a11y label for VoiceOver users.
+- honesty-clarity #1 (EV chip gross label): format string changed from "%+.2fR EV" to "%+.2fR EV (gross)"; tooltip updated to match; consistent with fast-lane row.
+- honesty-clarity #3 (per-card staleness): `boardIsStale` dims card to 0.75 opacity and adds a clock badge in the top chip row — mirrors watchlist signalCard pattern.
+- honesty-clarity #4 ("Base size" rename): "Size" → "Base size" in ideaCard AND bestOpportunityCard; tooltip unchanged.
+- honesty-clarity #5 / badge-density #2 / board-scan #4 (near-close chip removal, implemented ONCE): removed the `⏱ near close` chip block (~8 lines); timing note stays in rationale and detail sheet; a11y label line also removed. StockSageExecutionTiming and buildIdeas wiring untouched.
+- badge-density #1 (badge ordering): reordered HStack — risk warnings (earnings, floor) BEFORE opportunity signals (EV, confluence); action chip stays as identity anchor.
+- badge-density #4 (near-close accent recolor): MOOT — subsumed by removal.
+- badge-density #5 (momentum dot first in fastLaneRow): momentum dot moved immediately after velocity number, before earnings and floor badges; a11y label order updated to match.
+- board-scan #1 (active-sort metric first): when `ideaSort == .velocity`, prepends a "Vel." metric as the first item in ideaCard's metrics HStack.
+- board-scan #2 (fixed-width alignment): action badge gets `minWidth: 74`, EV chip gets `minWidth: 72, alignment: .trailing` and `.monospacedDigit()` — enables column-scanning across cards.
+- board-scan #3 (sort-mode chip in summary strip): added a non-interactive "↕ N sort" summaryChip to ideasSummaryStrip, always visible as the board scrolls.
+**Result:** ✅ ** BUILD SUCCEEDED **, ✅ ** TEST SUCCEEDED **.

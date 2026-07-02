@@ -2795,6 +2795,9 @@ struct MarketsView: View {
             if sells > 0 { summaryChip("\(sells)", "sells", DS.Palette.warningSoft) { ideaFilter = .sells } }
             summaryChip("\(Int((avgConv * 100).rounded()))%", "avg conv")
             if avgRR > 0 { summaryChip(String(format: "%.1f", avgRR), "avg R:R") }
+            // board-scan #3: non-interactive sort-mode chip so the user always knows why
+            // the board is ordered as it is, even after scrolling past the sort/filter strip.
+            summaryChip("↕", ideaSort.rawValue.lowercased() + " sort")
             Spacer(minLength: 0)
         }
     }
@@ -2983,6 +2986,9 @@ struct MarketsView: View {
         // to learn why an idea is de-ranked on the velocity board.
         let floorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
         let hovered = hoveredIdeaID == idea.id
+        // honesty-clarity #3: per-card staleness — mirrors watchlist signalCard which dims to 0.55
+        // and adds a clock badge when sym.isStale(). Only the ideas board was missing this.
+        let boardIsStale = store.ideasIsStale
         return VStack(alignment: .leading, spacing: DS.Space.sm) {
             HStack(spacing: DS.Space.sm) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -2990,18 +2996,22 @@ struct MarketsView: View {
                     Text(idea.market).font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
+                // Badge row order (wave-4): risk warnings FIRST (earnings/floor), then
+                // opportunity signals (EV/confluence). Action chip is always the identity anchor.
+                // board-scan #2: action badge has minWidth so EV chip aligns across cards.
                 Text(a.action.rawValue)
                     .font(.system(size: mvFont11, weight: .bold)).foregroundStyle(actionTextColor(a.action))
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(actionColor(a.action), in: Capsule())
-                if let ev = StockSageExpectedValue.ev(for: idea, calibration: store.convictionCalibration) {
-                    Text(String(format: "%+.2fR EV", ev.evR))
-                        .font(.system(size: mvFont10, weight: .bold))
-                        .foregroundStyle(ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft)
-                        .padding(.horizontal, 7).padding(.vertical, 3)
-                        .background((ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft).opacity(0.14), in: Capsule())
-                        .help("Estimated expected value per trade (conviction→win-prob estimate × reward:risk). An estimate, not a forecast.")
+                    .frame(minWidth: 74, alignment: .center)
+                // honesty-clarity #3: staleness badge — mirrors watchlist card pattern.
+                if boardIsStale {
+                    Image(systemName: "clock.badge.exclamationmark")
+                        .font(.system(size: mvFont10)).foregroundStyle(DS.Palette.warningSoft)
+                        .help("Board is over 4h old — tap Refresh for current ideas")
+                        .accessibilityLabel("Board data is stale — over 4 hours old")
                 }
+                // Risk warnings first (badge-density #1): earnings and floor before EV.
                 if !earnFlag.badge.isEmpty {
                     Text(earnFlag.badge)
                         .font(.system(size: mvFont10, weight: .bold))
@@ -3011,13 +3021,25 @@ struct MarketsView: View {
                         .help(store.earnings[idea.symbol.uppercased()]?.note ?? "Upcoming earnings — binary event risk; a protective stop may gap through it.")
                 }
                 if floorFlag.isDeranked {
-                    Text("↓ floor")
+                    Text("costs > edge")
                         .font(.system(size: mvFont10, weight: .bold))
                         .foregroundStyle(DS.Palette.warningSoft)
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background(DS.Palette.warningSoft.opacity(0.14), in: Capsule())
                         .help(String(format: "Net EV/day after frictions is under %.3fR/day — de-ranked on the velocity board. See the detail sheet for the full net-cost breakdown.", StockSageExpectedValue.minNetEVPerDayFloor))
-                        .accessibilityLabel("Below net-cost floor — de-ranked on velocity board")
+                        .accessibilityLabel("Below net-cost floor — costs exceed edge; de-ranked on velocity board")
+                }
+                // Opportunity signals after warnings.
+                // honesty-clarity #1: "(gross)" label — consistent with fast-lane row.
+                // board-scan #2: monospacedDigit + minWidth so EV aligns across cards.
+                if let ev = StockSageExpectedValue.ev(for: idea, calibration: store.convictionCalibration) {
+                    Text(String(format: "%+.2fR EV (gross)", ev.evR))
+                        .font(.system(size: mvFont10, weight: .bold).monospacedDigit())
+                        .foregroundStyle(ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background((ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft).opacity(0.14), in: Capsule())
+                        .frame(minWidth: 72, alignment: .trailing)
+                        .help("Gross EV — before round-trip frictions. Net EV and velocity are shown in the fast lane and detail sheet. Conviction→win-prob estimate × reward:risk. An estimate, not a forecast.")
                 }
                 if a.timeframeAligned {
                     // RANKING_BACKLOG #12 (reframed, pure observer) — display-only badge, never a
@@ -3035,19 +3057,11 @@ struct MarketsView: View {
                         .help(a.confluenceNote ?? "1-month, daily, and 1-year trends all agree — a breadth read, not a probability of profit.")
                         .accessibilityLabel(a.confluenceNote ?? "Three-timeframe confluence")
                 }
-                // Execution-timing chip: display-only. StockSageExecutionTiming.sessionNote
-                // gates to trending buy/sell in bullTrend/bearTrend regimes only (nil for
-                // range/hold/avoid — those never show this chip). Evidence: Lou-Polk-Skouras
-                // (JFE): momentum premia accrue almost entirely OVERNIGHT → enter near close.
-                if let timingNote = StockSageExecutionTiming.sessionNote(action: a.action, regime: a.regime) {
-                    Text("⏱ near close")
-                        .font(.system(size: mvFont10, weight: .bold))
-                        .foregroundStyle(DS.Palette.accent)
-                        .padding(.horizontal, 7).padding(.vertical, 3)
-                        .background(DS.Palette.accent.opacity(0.14), in: Capsule())
-                        .help(timingNote)
-                        .accessibilityLabel("Execution timing: \(timingNote)")
-                }
+                // Execution-timing note: surfaced in the rationale strip (first two bullets via
+                // StockSageStore.buildIdeas) and in the detail sheet "Why". The inline badge was
+                // removed (wave-4): it fired on ~60-80% of buy cards in trending regimes, making
+                // it near-zero differential information while crowding the badge row. Information
+                // is NOT dropped — StockSageExecutionTiming and buildIdeas wiring are unchanged.
                 if a.targetPrice != nil || a.stopPrice != nil {
                 Menu {
                     // Direction derives from where the level sits vs the CURRENT price — a
@@ -3096,29 +3110,62 @@ struct MarketsView: View {
                     .accessibilityHidden(true)
             }
             HStack(spacing: DS.Space.sm) {
+                // board-scan #1: when sorted by velocity, show the sort key first so the
+                // user can compare #3 vs #5 without opening the detail sheet.
+                if ideaSort == .velocity,
+                   let vel = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
+                    ideaMetric("Vel.", String(format: "%+.3fR/d", vel), color: DS.Palette.successSoft)
+                }
                 ideaMetric("Price", adaptivePrice(idea.price))
                 if let stop = a.stopPrice {
-                    ideaMetric("Stop", adaptivePrice(stop), color: DS.Palette.danger)
+                    // trader-workflow #4: stop distance % in parentheses — glanceable risk without opening sheet.
+                    let stopPct = abs(idea.price - stop) / idea.price * 100
+                    ideaMetric("Stop", "\(adaptivePrice(stop)) (\(String(format: "%.1f%%", stopPct)))", color: DS.Palette.danger)
                 }
                 if let target = a.targetPrice {
                     ideaMetric("Target", adaptivePrice(target), color: DS.Palette.successSoft)
                 }
                 if a.suggestedWeight > 0 {
-                    ideaMetric("Size", String(format: "%.1f%%", a.suggestedWeight * 100), color: DS.Palette.accent)
+                    // honesty-clarity #4: "Base size" — the raw half-Kelly before regime/vol adjustments.
+                    ideaMetric("Base size", String(format: "%.1f%%", a.suggestedWeight * 100), color: DS.Palette.accent)
                         .help(Self.sizeMetricHelp)
+                    // trader-workflow #1: Vol-adj size when the brake materially cuts size (>15% cut).
+                    // Label is "Vol-adj" — NOT "Effective" or "Final"; the Deploy plan still layers
+                    // regime bias and correlation cuts on top, so this remains an intermediate step.
+                    // nil volRegime → show nothing (honesty floor: no fabricated multiplier).
+                    if let vr = idea.volRegime, vr.sizingMultiplier < 0.85 {
+                        ideaMetric("Vol-adj", String(format: "%.1f%%", a.suggestedWeight * vr.sizingMultiplier * 100), color: DS.Palette.warningSoft)
+                    }
                 }
                 let rr = rewardRisk(idea)
                 if rr > 0 {
                     ideaMetric("R:R", String(format: "%.1f", rr))
                 }
+                // trader-workflow #5 Part A: momentum dot on the main card, same logic as fastLaneRow.
+                // nil momentumQuality → show nothing (honesty floor preserved).
+                if let mq = idea.momentumQuality {
+                    let mqHot   = mq >= 2.0 / 3.0
+                    let mqMixed = mq >= 1.0 / 3.0
+                    let mqColor = mqHot ? DS.Palette.successSoft : mqMixed ? DS.Palette.warningSoft : DS.Palette.danger
+                    let mqLabel = mqHot ? "hot" : mqMixed ? "mixed" : "cold"
+                    HStack(spacing: 3) {
+                        Circle().fill(mqColor).frame(width: 5, height: 5)
+                        Text(mqLabel).font(.system(size: mvFont8)).foregroundStyle(mqColor)
+                    }
+                    .help("Momentum read: ER trend + MACD histogram + 21-day return — short histories may use fewer than 3 signals. A 1-day blip is not a 3-12d win. Descriptive, not predictive.")
+                }
                 Spacer(minLength: 0)
             }
-            Text("\(a.regime.rawValue) · " + a.rationale.prefix(2).joined(separator: " · "))
+            // trader-workflow #3: rationale first, regime token last — regime provides context
+            // but action badge already carries the directional signal; the first rationale bullet
+            // is the most actionable skip/open signal and deserves the first fixation.
+            Text(a.rationale.prefix(2).joined(separator: " · ") + " · " + a.regime.rawValue)
                 .font(.caption).foregroundStyle(.secondary)
                 .lineLimit(2).fixedSize(horizontal: false, vertical: true)
         }
         .padding(DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(boardIsStale ? 0.75 : 1.0)   // honesty-clarity #3: dim stale cards
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
@@ -3153,9 +3200,6 @@ struct MarketsView: View {
             case .demoted(let d):     label += ", earnings imminent in about \(d) days — demoted in the rank"
             case .approaching(let d): label += ", earnings approaching in about \(d) days"
             case .clear, .unknown:    break
-            }
-            if StockSageExecutionTiming.sessionNote(action: a.action, regime: a.regime) != nil {
-                label += ", enter near close for trend momentum edge"
             }
             return label
         }())
@@ -3313,7 +3357,8 @@ struct MarketsView: View {
                         ideaMetric("R:R", String(format: "%.1f:1", ev.rewardR))
                         ideaMetric("Win est.", String(format: "~%.0f%%", ev.winProbEstimate * 100))
                         if idea.advice.suggestedWeight > 0 {
-                            ideaMetric("Size", String(format: "%.1f%%", idea.advice.suggestedWeight * 100))
+                            // honesty-clarity #4: "Base size" — raw half-Kelly before regime/vol adjustments.
+                            ideaMetric("Base size", String(format: "%.1f%%", idea.advice.suggestedWeight * 100))
                                 .help(Self.sizeMetricHelp)
                         }
                         Spacer(minLength: 0)
@@ -3761,16 +3806,9 @@ struct MarketsView: View {
                         .frame(width: 84, alignment: .leading)
                     Text(String(format: "%+.3fR/day gross", v)).font(.system(size: mvFont11, design: .monospaced))
                         .foregroundStyle(DS.Palette.successSoft)
-                    if idea.symbol.hasSuffix("-USD") {
-                        Text("24/7 · volatile").font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft)
-                    }
-                    if !earnFlag.badge.isEmpty {
-                        Text(earnFlag.badge).font(.system(size: mvFont8))
-                            .foregroundStyle(earnFlag.isDemoted ? DS.Palette.warningSoft : .secondary)
-                    }
-                    if floorFlag.isDeranked {
-                        Text("below net-cost floor").font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft)
-                    }
+                    // badge-density #5: momentum dot FIRST (highest-differential signal), then
+                    // earnings and floor badges. "24/7 · volatile" removed per trader-workflow #5
+                    // Part B — the section header already says "24/7" for all crypto rows.
                     // FASTMONEY #5 — momentum quality dot: colored indicator when the field is
                     // non-nil (nil → show NOTHING, per honesty-floor: no fabricated neutral).
                     // Natural values are 0, 1/3, 2/3, 1 (3 binary signals averaged).
@@ -3785,19 +3823,27 @@ struct MarketsView: View {
                         }
                         .help("Momentum read: ER trend + MACD histogram + 21-day return — short histories may use fewer than 3 signals. A 1-day blip is not a 3-12d win. Descriptive, not predictive.")
                     }
+                    if !earnFlag.badge.isEmpty {
+                        Text(earnFlag.badge).font(.system(size: mvFont8))
+                            .foregroundStyle(earnFlag.isDemoted ? DS.Palette.warningSoft : .secondary)
+                    }
+                    if floorFlag.isDeranked {
+                        Text("below net-cost floor").font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft)
+                    }
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right").font(.system(size: mvFont8)).foregroundStyle(.secondary)
                 }.contentShape(Rectangle())
             }.buttonStyle(LuxPressStyle())
             .accessibilityLabel({
                 var label = "\(idea.symbol): \(String(format: "%+.3f", v)) R per day gross velocity"
-                if idea.symbol.hasSuffix("-USD") { label += ", 24/7 volatile" }
-                if !earnFlag.badge.isEmpty { label += ", \(earnFlag.badge)" }
-                if floorFlag.isDeranked { label += ", below net-cost floor" }
+                // a11y: momentum first (matches new visual order), 24/7 retained for VoiceOver users
                 if let mq = idea.momentumQuality {
                     let mqLabel = mq >= 2.0/3.0 ? "hot" : mq >= 1.0/3.0 ? "mixed" : "cold"
                     label += ", momentum \(mqLabel)"
                 }
+                if idea.symbol.hasSuffix("-USD") { label += ", 24/7 volatile" }
+                if !earnFlag.badge.isEmpty { label += ", \(earnFlag.badge)" }
+                if floorFlag.isDeranked { label += ", below net-cost floor" }
                 label += ". Tap for the plan."
                 return label
             }())
