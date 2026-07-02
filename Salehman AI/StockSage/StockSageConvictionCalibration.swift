@@ -34,8 +34,24 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
         let winProb: Double   // calibrated P(win) for this band (monotonic non-decreasing in `upper`)
         let n: Int            // realized trades in the band (transparency)
     }
+    /// HOW this calibration's winProb map was produced (F01/F02 provenance — display honesty).
+    /// The UI keys its "measured / fitted / assumed" wording on THIS, never on `calibration != nil`:
+    ///   • isotonicWilson — Wilson-LCB binned + isotonic (PAV): measured from realized outcomes AND
+    ///     genuinely conservative (each band is a one-sided lower confidence bound).
+    ///   • beta — Beta-3param (Kull 2017), selected only after beating the identity floor
+    ///     out-of-sample, then refit on all data: measured from realized outcomes and OOS-validated,
+    ///     but a CENTRAL fit — NOT a lower bound.
+    ///   • platt — Platt sigmoid (legacy non-selector small-N path): a central MLE estimate,
+    ///     NOT conservative (no sampling-uncertainty haircut).
+    ///   • identity — the selector's floor: winProb(c) ≈ c. Conviction is used AS the win
+    ///     probability — an ASSUMPTION measured from ZERO outcomes. Rendering this as
+    ///     "measured" was the F01/F02 CRITICAL; it must always render as "assumed".
+    enum Method: String, Sendable, Equatable {
+        case isotonicWilson, beta, platt, identity
+    }
     let bins: [Bin]           // ascending by `upper`, equal-width over [0,1]
     let sampleSize: Int       // total trades the fit was built from
+    let method: Method        // provenance of the winProb map (F01/F02) — metadata only, no numeric effect
 
     /// Calibrated win probability for a conviction in [0,1]: the band it falls into. Uses the SAME
     /// half-open index math as `fit()`'s bucketing, so a conviction on an exact internal edge is
@@ -58,13 +74,17 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
     /// iter7 OOS candidate-selector ({identity, Beta-3param, isotonic}, OOS-Brier-picked).
     /// ACTIVE (owner-activated 2026-06-27 after OOS review). When true, fit(...) routes through the
     /// leak-free chronological-split selector: candidates are fit on TRAIN, scored on TEST by OOS
-    /// Brier, and the winner refit on ALL data — with IDENTITY as the conservative floor (selected
-    /// unless a candidate beats it by >1e-9 OOS, and the only option when the sample is too thin to
-    /// split honestly). This is strictly MORE conservative than the old Platt small-N path: Platt is
-    /// a central MLE with no sampling-uncertainty haircut, whereas small-N here returns identity
-    /// (no-calibration). Preservation-safe by construction (identity floor); the nil-calibration
-    /// 0.35+0.23·c prior in winProbEstimate is untouched. Set false to restore the byte-identical
-    /// pre-iter7 Platt/isotonic seam (regression-locked by flagOffIsByteIdenticalToCurrent).
+    /// Brier, and the winner refit on ALL data — with IDENTITY as the floor (selected unless a
+    /// candidate beats it by >1e-9 OOS, and the only option when the sample is too thin to split
+    /// honestly). HONESTY NOTE (F01/F43 2026-07-02): identity is a floor only in the OOS-Brier
+    /// selection sense — it is NOT conservative relative to the nil-calibration 0.35+0.23·c prior:
+    /// identity's winProb(c) ≈ c EXCEEDS that prior for conviction ≳ 0.45, so the earlier
+    /// "strictly more conservative" claim here was inverted in that range. Whether the thin branch
+    /// should instead return nil / clamp to the prior is an OWNER-HELD decision (see
+    /// AUDIT_2026-07-02_ideas_board.md F01); until then the `method` provenance field makes every
+    /// display render identity as "assumed", never "measured". The nil-calibration prior in
+    /// winProbEstimate is untouched. Set false to restore the byte-identical pre-iter7
+    /// Platt/isotonic seam (regression-locked by flagOffIsByteIdenticalToCurrent).
     nonisolated(unsafe) static var candidateSelectorEnabled = true
 
     /// Fit from realized outcomes. Returns nil when too few samples to calibrate honestly.
@@ -128,7 +148,7 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
         let bins = (0..<nBins).map { k in
             Bin(upper: Double(k + 1) * width, winProb: smoothed[k], n: total[k])
         }
-        return StockSageConvictionCalibration(bins: bins, sampleSize: outcomes.count)
+        return StockSageConvictionCalibration(bins: bins, sampleSize: outcomes.count, method: .isotonicWilson)
     }
 
     /// [AUDIT] Platt scaling: P(win | s) = 1 / (1 + exp(A·s + B)) fit by MLE on (conviction s,
@@ -167,7 +187,7 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
             let bins = (0..<nBins).map { k in
                 Bin(upper: Double(k + 1) * width, winProb: Swift.max(0, Swift.min(1, prior)), n: total[k])
             }
-            return StockSageConvictionCalibration(bins: bins, sampleSize: n)
+            return StockSageConvictionCalibration(bins: bins, sampleSize: n, method: .platt)
         }
 
         // [AUDIT] Platt target smoothing (Platt 1999; Lin–Lin–Weng 2007). GLOBAL counts:
@@ -226,7 +246,7 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
             return Bin(upper: Double(k + 1) * width,
                        winProb: Swift.max(0, Swift.min(1, p)), n: total[k])
         }
-        return StockSageConvictionCalibration(bins: bins, sampleSize: n)
+        return StockSageConvictionCalibration(bins: bins, sampleSize: n, method: .platt)
     }
 
     /// Wilson score interval LOWER bound for a binomial proportion — well-behaved for small n
@@ -508,7 +528,7 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
         if let beta = fitBeta(train) {
             let bins = materializeBins(mapFn: { beta.winProb($0) },
                                        nBins: nBinsAll, bandCounts: bandCountsAll)
-            betaTrainCal = StockSageConvictionCalibration(bins: bins, sampleSize: n)
+            betaTrainCal = StockSageConvictionCalibration(bins: bins, sampleSize: n, method: .beta)
         }
 
         // --- CANDIDATE 3: ISOTONIC (fit on TRAIN only) ---
@@ -551,7 +571,7 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
                 return Bin(upper: Double(k + 1) / Double(nBinsAll),
                            winProb: Swift.max(0, Swift.min(1, smoothed[isoIdx])), n: bandCountsAll[k])
             }
-            isoTrainCal = StockSageConvictionCalibration(bins: isoTrainBins, sampleSize: n)
+            isoTrainCal = StockSageConvictionCalibration(bins: isoTrainBins, sampleSize: n, method: .isotonicWilson)
         }
 
         // --- SCORE OOS and SELECT ---
@@ -583,7 +603,7 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
             }
             let bins = materializeBins(mapFn: { beta.winProb($0) },
                                        nBins: nBinsAll, bandCounts: bandCountsAll)
-            return StockSageConvictionCalibration(bins: bins, sampleSize: n)
+            return StockSageConvictionCalibration(bins: bins, sampleSize: n, method: .beta)
         case "isotonic":
             return fitIsotonic(outcomes, binCount: binCount, minPerBin: minPerBin, z: z, prior: prior)
         default: // "identity"
@@ -607,7 +627,47 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
             bandCounts[idx] += 1
         }
         let bins = materializeBins(mapFn: { $0 }, nBins: nBins, bandCounts: bandCounts)
-        return StockSageConvictionCalibration(bins: bins, sampleSize: n)
+        // F01/F02: identity MUST carry .identity — the UI renders it "assumed", never "measured".
+        return StockSageConvictionCalibration(bins: bins, sampleSize: n, method: .identity)
+    }
+}
+
+// MARK: - Display provenance (F01/F02 — single source for the UI's measured/fitted/assumed wording)
+extension StockSageConvictionCalibration {
+    /// True when winProb genuinely comes from realized outcomes (isotonic Wilson-LCB or the
+    /// OOS-validated Beta refit). False for identity (assumed) — Platt counts as fitted-from-
+    /// outcomes but is surfaced as "fitted", not "measured", because it carries no
+    /// conservatism haircut and no OOS validation.
+    nonisolated var isMeasuredFromOutcomes: Bool {
+        switch method {
+        case .isotonicWilson, .beta: return true
+        case .platt, .identity:      return false
+        }
+    }
+
+    /// The compact provenance chip title (MarketsView's calibrationChip + test pins).
+    /// INVARIANT (F02): NEVER contains "measured" for an identity calibration.
+    nonisolated var chipTitle: String {
+        switch method {
+        case .isotonicWilson: return "win% measured · n=\(sampleSize) (conservative)"
+        case .beta:           return "win% measured · n=\(sampleSize) (OOS-validated)"
+        case .platt:          return "win% fitted · n=\(sampleSize)"
+        case .identity:       return "win% assumed (identity)"
+        }
+    }
+
+    /// The chip/label tooltip, honest per fit path (F02/F43).
+    nonisolated var chipHelp: String {
+        switch method {
+        case .isotonicWilson:
+            return "Win-rate measured from \(sampleSize) realized trades (your journal when it has enough, else the backtest) via Wilson lower-bound bins + isotonic smoothing — conservative and monotonic."
+        case .beta:
+            return "Win-rate fit from \(sampleSize) realized trades with a Beta-3param map that beat the identity floor out-of-sample. Measured and OOS-validated, but a CENTRAL estimate — not a conservative lower bound."
+        case .platt:
+            return "Win-rate fit from \(sampleSize) realized trades with Platt scaling — a central MLE estimate, NOT conservative (no sampling-uncertainty haircut)."
+        case .identity:
+            return "No fitted map beat the honesty floor out-of-sample, so conviction is used AS the win probability (identity map) — an ASSUMPTION, not a rate measured from your \(sampleSize) outcomes. More closed trades let a real fit earn 'measured'."
+        }
     }
 }
 

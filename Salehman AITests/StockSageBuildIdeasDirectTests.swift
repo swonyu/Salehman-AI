@@ -62,7 +62,8 @@ struct StockSageBuildIdeasDirectTests {
                 .init(upper: 0.5, winProb: 0.30, n: 200),
                 .init(upper: 1.0, winProb: 0.30, n: 200),
             ],
-            sampleSize: 400)
+            sampleSize: 400,
+            method: .isotonicWilson)   // fixture poses as a measured 400-trade fit (method is display metadata only)
     }
 
     // MARK: - F05(a): momentumQuality is nil when history is too short (≤20 closes)

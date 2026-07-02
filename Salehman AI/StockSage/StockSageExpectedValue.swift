@@ -64,10 +64,15 @@ enum StockSageExpectedValue {
     // Every display site that previously hardcoded "35-58%" or "35–58%" now interpolates this.
     nonisolated static let assumedWinBandLabel = "35–58%"
 
-    /// Conviction (0–1) → an estimated win probability. With a fitted `calibration` (learned from
-    /// realized outcomes) it returns the MEASURED, conservative win rate for that conviction band;
-    /// without one it falls back to the conservative linear prior (0 → 35%, 1 → 58%). conviction is
-    /// a signal-strength ordinal, NOT inherently a probability — the calibration is what earns the
+    /// Conviction (0–1) → an estimated win probability. With a `calibration` it returns that
+    /// calibration's band value — HOW honest that number is depends on `calibration.method`
+    /// (F43 2026-07-02: the old "MEASURED, conservative" claim here was false for two paths):
+    ///   .isotonicWilson → measured from realized outcomes AND conservative (Wilson-LCB bins);
+    ///   .beta           → measured + OOS-validated, but a CENTRAL fit, not a lower bound;
+    ///   .platt          → a central MLE fit, NOT conservative;
+    ///   .identity       → ASSUMED (winProb ≈ conviction, measured from zero outcomes).
+    /// Without one it falls back to the conservative linear prior (0 → 35%, 1 → 58%). conviction
+    /// is a signal-strength ordinal, NOT inherently a probability — only a real fit earns the
     /// right to treat it as one.
     nonisolated static func winProbEstimate(conviction: Double,
                                             calibration: StockSageConvictionCalibration? = nil) -> Double {
@@ -432,14 +437,24 @@ enum StockSageExpectedValue {
                 $0 - earningsRankPenalty(for: idea, earnings: earnings) - liquidityRankPenalty(for: idea, liquidity: liquidity)
             }
         }
-        return ideas.enumerated().sorted { a, b in
-            switch (key(a.element), key(b.element)) {
+        // F12: decorate-sort-undecorate — key() (a full EV + NetEdge evaluation) is computed ONCE
+        // per idea instead of twice per comparison. key() is pure & deterministic and the comparator
+        // logic (incl. the offset tie-break, a strict weak ordering) is unchanged → order identical.
+        // (Explicitly-typed statements, not one chained tuple expression — type-checker budget.)
+        var decorated: [(offset: Int, idea: StockSageIdea, key: Double?)] = []
+        decorated.reserveCapacity(ideas.count)
+        for (offset, idea) in ideas.enumerated() {
+            decorated.append((offset: offset, idea: idea, key: key(idea)))
+        }
+        decorated.sort { a, b in
+            switch (a.key, b.key) {
             case let (x?, y?): return x == y ? a.offset < b.offset : x > y
             case (_?, nil): return true
             case (nil, _?): return false
             case (nil, nil): return a.offset < b.offset
             }
-        }.map(\.element)
+        }
+        return decorated.map(\.idea)
     }
 
     /// EV for a ranked idea, or nil when it lacks a stop/target (no defined R:R).
@@ -489,14 +504,23 @@ enum StockSageExpectedValue {
                 $0 - earningsRankPenalty(for: idea, earnings: earnings) - liquidityRankPenalty(for: idea, liquidity: liquidity)
             }
         }
-        return ideas.enumerated().sorted { a, b in
-            switch (key(a.element), key(b.element)) {
+        // F12: decorate-sort-undecorate — same rationale as rankByVelocity (key computed once per
+        // idea, comparator + tie-breaks unchanged → behavior-identical order).
+        // (Explicitly-typed statements, not one chained tuple expression — type-checker budget.)
+        var decorated: [(offset: Int, idea: StockSageIdea, key: Double?)] = []
+        decorated.reserveCapacity(ideas.count)
+        for (offset, idea) in ideas.enumerated() {
+            decorated.append((offset: offset, idea: idea, key: key(idea)))
+        }
+        decorated.sort { a, b in
+            switch (a.key, b.key) {
             case let (x?, y?): return x == y ? a.offset < b.offset : x > y
             case (_?, nil): return true
             case (nil, _?): return false
             case (nil, nil): return a.offset < b.offset
             }
-        }.map(\.element)
+        }
+        return decorated.map(\.idea)
     }
 
     /// The single best BET right now: the buy-family idea with the highest POSITIVE
@@ -677,16 +701,29 @@ enum StockSageExpectedValue {
             guard !series.isEmpty else { return key }   // no history for THIS symbol → unweighted (×1)
             return key * momentumQuality(for: idea, closes: series)
         }
-        return lane.enumerated().sorted { a, b in
-            let x = weightedVelocity(a.element), y = weightedVelocity(b.element)
-            return x == y ? a.offset < b.offset : x > y
-        }.map(\.element)
+        // F12: decorate-sort-undecorate — weightedVelocity (EV + NetEdge + momentumQuality) computed
+        // once per idea, not per comparison; comparator + offset tie-break unchanged → identical order.
+        // (Split into explicitly-typed statements: the single chained tuple expression exceeded the
+        // type-checker budget — "unable to type-check this expression in reasonable time".)
+        var decorated: [(offset: Int, idea: StockSageIdea, key: Double)] = []
+        decorated.reserveCapacity(lane.count)
+        for (offset, idea) in lane.enumerated() {
+            decorated.append((offset: offset, idea: idea, key: weightedVelocity(idea)))
+        }
+        decorated.sort { a, b in
+            a.key == b.key ? a.offset < b.offset : a.key > b.key
+        }
+        return decorated.map(\.idea)
     }
 
     /// A heavily-caveated estimate of weekly R IF you actually run AND re-cycle the
-    /// top `maxConcurrent` fast-lane setups: sum of their velocities (EV/day) × trading
-    /// days. nil if the fast lane is empty. NOT a promise — it assumes you take these,
-    /// each carries variance, and it ignores fills/slippage/correlation.
+    /// top `maxConcurrent` fast-lane setups: sum of their GROSS velocities (EV/day, BEFORE
+    /// round-trip costs) × trading days. nil if the fast lane is empty. NOT a promise — it
+    /// assumes you take these, each carries variance, and it ignores fills/slippage/correlation.
+    /// F03/F44 (2026-07-02, label-only — the gross→net NETTING decision is owner-held): every
+    /// display site must label this "gross, before costs", and note that the sum can include
+    /// ideas the net-cost floor DEMOTES on the velocity board (fastLane demotes, never excludes)
+    /// while the same summary's "Fastest" pick excludes them.
     nonisolated static func expectedWeeklyR(_ ideas: [StockSageIdea], maxConcurrent: Int = 3, tradingDays: Double = 5,
                                             holds: VelocityHoldDays = .defaults,
                                             calibration: StockSageConvictionCalibration? = nil) -> Double? {
@@ -835,11 +872,14 @@ enum StockSageExpectedValue {
             n += 1
         }
         if let sym = s.fastestSymbol, let v = s.fastestVelocity {
-            lines.append("\(n). Fastest compounding: \(sym) — est. \(String(format: "%+.2f", v))R/day (faster turnover, more variance).")
+            // F03: summary() feeds netVelocity here — label it "net" so the copyable artifact
+            // can't silently mix an unlabeled net figure next to the gross lines around it.
+            lines.append("\(n). Fastest compounding: \(sym) — est. \(String(format: "%+.2f", v))R/day net (faster turnover, more variance).")
             n += 1
         }
         if let wk = s.weeklyR {
-            lines.append("\(n). Run the top setups: ~\(String(format: "%+.1f", wk))R/week — an estimate assuming you take and re-cycle them, not income.")
+            // F03/F44: weeklyR sums GROSS velocities — say so in the copyable artifact.
+            lines.append("\(n). Run the top setups: ~\(String(format: "%+.1f", wk))R/week gross, before costs — an estimate assuming you take and re-cycle them, not income.")
             n += 1
         }
         if let losses = s.worstRunLosses, let dd = s.worstRunDrawdownPct {

@@ -31,7 +31,7 @@ enum MoneyVelocityCopy {
         "Faster turnover = more compounding cycles, but also more chances to be wrong. Estimated EV/day, not a forecast."
     nonisolated static let summary =
         "Estimates from conviction & a rough hold — ranks SPEED of payoff, doesn't predict it. Risk control > speed; always size with a stop."
-    nonisolated static let weeklyDollars = "estimate, high variance, NOT income."
+    nonisolated static let weeklyDollars = "gross, before costs — estimate, high variance, NOT income."
     /// FASTMONEY_BACKLOG #7 — the honest tail on the crypto-vs-equity rotation-gap warning.
     nonisolated static let cannotHedgeOvernight =
         "You can't hedge 24/7 crypto with 9:30–4 equity hours — overnight risk moves while those positions are simply not tradeable; size down if you can't watch it."
@@ -59,9 +59,9 @@ enum StockSageGlossary {
         case .fastLane:
             return "The positive-EV setups that have a defined velocity (crypto/equity), ranked by EV/day. Faster turnover means more compounding cycles AND more chances to be wrong."
         case .weeklyR:
-            return "Sum of the top few fast-lane velocities × ~5 trading days — an estimate of weekly R IF you take and re-cycle those setups. High variance; not a promise."
+            return "Sum of the top few fast-lane GROSS velocities (before round-trip costs) × ~5 trading days — an estimate of weekly R IF you take and re-cycle those setups. It can include ideas the net-cost floor demotes on the boards (the 'Fastest' pick excludes them). High variance; not a promise."
         case .weeklyDollars:
-            return "Weekly R × the dollar value of 1R (account × risk %). An estimate that assumes you take the top setups — NOT income."
+            return "Weekly R × the dollar value of 1R (account × risk %). Gross, before costs. An estimate that assumes you take the top setups — NOT income."
         case .compounding:
             return "Your OWN closed-trade R compounded at a fixed risk % per trade, ×(1 + f·R) each. The PAST path of your trades, not a projection of future returns."
         case .drawdownSurvival:

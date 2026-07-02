@@ -1,6 +1,8 @@
 # PLAN 2026-07-02 — In-sheet prev/next candidate navigation (ideas detail sheet)
 
-- **Written against:** HEAD `1bbf35c` (`git rev-parse --short HEAD`, 2026-07-02).
+- **Written against:** `1bbf35c`; **re-pinned to `0171621` after the 2026-07-02 dry run**
+  (tree moved 5 commits; `git diff --stat 1bbf35c 0171621 -- "Salehman AI/Views/MarketsView.swift"`
+  is EMPTY — the target file is byte-identical, all anchors re-verified verbatim at `0171621`).
   `Salehman AI/Views/MarketsView.swift` is **5,399 lines** at this SHA and has **no
   uncommitted edits** (`git status --short -- "Salehman AI/Views/MarketsView.swift"` → empty).
   All line numbers below were grepped at this SHA and are orientation only — **every edit
@@ -79,7 +81,11 @@ cd "$(git rev-parse --show-toplevel)"   # repo root = dir holding "Salehman AI.x
 
 # PF-1 — tree identity
 git rev-parse --short HEAD
-# EXPECTED: 1bbf35c    (different SHA → re-verify PF-2..PF-7 anchors; ANY anchor off → STOP)
+# EXPECTED: 0171621    (the 2026-07-02 re-pin; the ORIGINAL 1bbf35c also passes — MarketsView
+#                       is byte-identical between them. A NEWER SHA is acceptable ONLY if the
+#                       next command is empty AND PF-2..PF-7 match verbatim; else STOP.)
+git diff --stat 0171621 HEAD -- "Salehman AI/Views/MarketsView.swift"
+# EXPECTED: (empty — the target file has not moved since the re-pin)
 git status --short -- "Salehman AI/Views/MarketsView.swift"
 # EXPECTED: (empty)
 
@@ -136,8 +142,9 @@ xcodebuild -scheme "Salehman AI" -destination 'platform=macOS' -configuration De
 
 # PF-9 — baseline test-function count
 grep -ch '@Test' "Salehman AITests"/*.swift | awk '{s+=$1} END {print s}'
-# EXPECTED: 1490    (at 1bbf35c; if your baseline differs, record YOUR number B — the
-#                    full-suite gate then expects B + 8)
+# EXPECTED: 1494    (measured at the 0171621 re-pin — 2026-07-02 dry-run verified; 1490 was
+#                    the 1bbf35c number. If your baseline differs, record YOUR number B —
+#                    the full-suite gate then expects B + 8)
 ```
 
 ## 6. Steps
@@ -197,11 +204,12 @@ xcodebuild -scheme "Salehman AI" -destination 'platform=macOS' -configuration De
 ```
 **EXPECTED OUTPUT:**
 ```
-5413:enum SheetCandidateNavigation {
+5412:enum SheetCandidateNavigation {
 ...
 ** BUILD SUCCEEDED **
 ```
-(grep line ±2 acceptable; the build token is not negotiable.)
+(grep line ±2 acceptable — 5412 is the dry-run-measured value; the build token is not
+negotiable.)
 
 **HASTY-MODEL TRAP:** creating a new file for this (violates §4 "NO other file"), or nesting
 the enum `private` inside `MarketsView` "for locality" — then Step 2's tests cannot see it,
@@ -494,22 +502,28 @@ Edit — **OLD (exact, 4416–4435):**
 grep -n 'sheetNavControls(idea)\|id("sheetTopAnchor")' "Salehman AI/Views/MarketsView.swift"
 xcodebuild -scheme "Salehman AI" -destination 'platform=macOS' -configuration Debug CODE_SIGNING_ALLOWED=NO build 2>&1 | tee /tmp/salehman_build.log | tail -5
 ```
-**EXPECTED OUTPUT (shape):**
+**EXPECTED OUTPUT (shape — dry-run measured 4432 / 4441):**
 ```
 44xx:                    sheetNavControls(idea)
 44xx:                .id("sheetTopAnchor")
-51xx:    @ViewBuilder private func sheetNavControls(_ idea: StockSageIdea) -> some View {
 ...
 ** BUILD SUCCEEDED **
 ```
-(3 grep hits: the call, the anchor, and Step 3's definition.)
+(EXACTLY 2 grep hits: the call and the anchor. The definition line can NEVER match this
+pattern — its literal source text is `sheetNavControls(_ idea:`, not `sheetNavControls(idea)`.
+The definition's existence was already proven by Step 3's own verify; a THIRD hit here would
+mean an unexpected extra call site → mismatch → STOP.)
 
 **HASTY-MODEL TRAP:** "improving" the header while in there — reordering the badge/X, adding
 a divider, tweaking fonts. This plan's diff for the header is exactly: one comment word
 change, two inserted lines (comment + `sheetNavControls(idea)`), and the trailing
 `.id("sheetTopAnchor")` + its comment. Anything else in the diff of this block = scope
 violation (§4). The Wave-11 lesson applies at report time: describe this step from
-`git diff`, not from what you meant to do.
+`git diff`, not from what you meant to do. Second trap (dry-run caught — the plan itself
+originally fell for it): expecting the grep to hit the DEFINITION and "reconciling" a 2-hit
+result toward 3 — renaming the definition's parameter so `sheetNavControls(idea)` matches it,
+widening the pattern mid-run and accepting whatever count appears, or adding a duplicate call
+site. A grep for a call-site literal cannot see a `(_ idea:` definition; 2 hits IS the pass.
 
 ---
 
@@ -614,10 +628,13 @@ xcodebuild -scheme "Salehman AI" -destination 'platform=macOS' -configuration De
 ```
 **EXPECTED OUTPUT (shape):**
 ```
-222:            if oldVal?.id != newVal?.id { planCopied = false }
+223:            if oldVal?.id != newVal?.id { planCopied = false }
 ...
 ** BUILD SUCCEEDED **
 ```
+(223, not 222 — the NEW block's comment is one line longer than the OLD's and the onChange
+body is split across lines; count the NEW block yourself: the guard is its 6th line from
+`.sheet`. Dry-run measured 223.)
 
 **HASTY-MODEL TRAP:** skipping this step as "not in the feature" — it IS in the feature:
 stepping created a state transition (idea→different idea) that didn't exist when line 221
@@ -751,7 +768,8 @@ grep -E "Test case '.*' failed" /tmp/salehman_build.log | sed -E "s/.*'([^']+)'.
 grep -ch '@Test' "Salehman AITests"/*.swift | awk '{s+=$1} END {print s}'
 ```
 **EXPECTED:** tail contains `** TEST SUCCEEDED **`; `@Test` count = **PF-9 baseline + 8**
-(at `1bbf35c`: 1490 + 8 = **1498**); and the log still contains the 8
+(at the `0171621` re-pin: 1494 + 8 = **1502**, dry-run verified; the stale `1bbf35c`
+numbers were 1490 + 8 = 1498); and the log still contains the 8
 `SheetCandidateNavigationTests/...` cases (re-grep as in 2c — a green suite in which the new
 tests never RAN proves nothing; WHIPPYX rule). Paste the tail, the count, and the 8 names.
 
@@ -773,19 +791,30 @@ claim below must match the diff before you append it (the dev-log once claimed a
 that had been deleted and "fixtures: None" after +3 test files — logs describe the FINAL tree).
 
 **9a — `DEVELOPMENT_LOG.md`:** insert ABOVE the line `## Standing notes / known issues`
-(line 9106 at `1bbf35c`; find it with `grep -n 'Standing notes' DEVELOPMENT_LOG.md`):
+(line 9106 at `1bbf35c`, still 9106 at `0171621` — dry-run verified; find it with
+`grep -n 'Standing notes' DEVELOPMENT_LOG.md`):
 
 ```markdown
 ## 2026-07-02 · Ideas detail sheet: in-sheet prev/next candidate navigation (⌘↑/⌘↓)
 **Files:** Salehman AI/Views/MarketsView.swift · Salehman AITests/SheetCandidateNavigationTests.swift (new, 8 tests) · MARKETS_TAB_MAP.md · SOURCE_BUNDLE.md (regenerated)
 **What & why:** The deferred board-triage ergonomics item — stepping between ideas required close→scan→reopen. Added chevron prev/next + "N of M" label in the sheet header next to X (⌘↑/⌘↓ — ⌘-modified because the sheet hosts live sizer TextFields; bare arrows would steal cursor keys). Steps through displayedIdeas (the board's post-sort/filter order); index re-resolved by idea.id AT PRESS TIME in stepSheet(_:from:) because the board mutates under background refresh; clamped (disabled chevrons) at the ends, no wrap. Pure math extracted to top-level `SheetCandidateNavigation` (tested; fixtures hand-derived in /tmp/derive_sheetnav.swift, falsifiability-probed red-then-green). Item-bound sheet updates in place, so: scroll snaps back to "sheetTopAnchor" on step; planCopied now resets on ANY idea change (was: close only — "Copied" would have described the previous idea's plan); the six-refresh .task(id:) got a 300ms debounce sleep + Task.isCancelled guards between every refresh (extends the F31 pattern) so rapid stepping fires ZERO fetches for skipped symbols and stops the old symbol's chain mid-flight. "N of M" renders only when the idea resolves on the current board (honesty floor: no fabricated position when opened from bestOpportunityCTA under an excluding filter). No ranking/numeric change; owner gates untouched (RANKING #10 / F01-F02 / F08 / F10 / F03-F44 scanned — verdict NOT GATED).
-**Result:** build + full suite green (`** TEST SUCCEEDED **`, @Test 1490 → 1498); falsifiability probe pasted in the execution report.
+**Result:** build + full suite green (`** TEST SUCCEEDED **`, @Test 1494 → 1502); falsifiability probe pasted in the execution report.
 ```
 (If execution deviated from this plan in ANY step, rewrite the entry from the diff — do not
-paste this text over a different reality.)
+paste this text over a different reality. The two @Test numbers are the `0171621` values
+(PF-9 B = 1494 → gate B + 8 = 1502); if YOUR PF-9 recorded a different B, substitute your
+measured B → B+8 from your own pasted outputs before appending.)
+
+**HASTY-MODEL TRAP (dry-run caught — the plan itself originally shipped this bug):** pasting
+the 9a template verbatim while its counts disagree with YOUR pasted PF-9/full-suite outputs.
+The template is a shape, not evidence; the two @Test numbers MUST equal the baseline and
+gate counts you actually measured (they are 1494/1502 only at `0171621`). Logging a count
+you did not measure is a false claim in an honesty-floor repo — the exact failure the
+Wave-11 "describe from the diff" rule exists to prevent.
 
 **9b — `MARKETS_TAB_MAP.md`:** extend the Ideas entry's **Gotchas** paragraph (§
-"MarketsView.swift — MARK: Ideas", line 662; anchor text verified unique at `1bbf35c`).
+"MarketsView.swift — MARK: Ideas", line 668 at `0171621` — was 662 at `1bbf35c`; line
+numbers orientation-only, the anchor TEXT below is the contract and is verified unique).
 Edit — OLD: `now points to sheet's Evidence net-cost line).` → NEW: `now points to sheet's
 Evidence net-cost line). wave-13 (2026-07-02): in-sheet prev/next candidate navigation —
 sheetNavControls(idea) chevrons + "N of M" label in the sheet header (⌘↑/⌘↓; ⌘-modified
@@ -822,3 +851,45 @@ git status --short SOURCE_BUNDLE.md
       no ranking/numeric change anywhere in the diff (honesty floor).
 - [ ] Docs step done LAST: dev-log entry (rewritten if reality deviated), map entry, bundle
       regenerated — each confirmed by `git status --short`.
+
+## Dry-run record
+
+- **Date:** 2026-07-02 — plan executed LITERALLY in a scratch worktree at `0171621`
+  (isolated `-derivedDataPath` + worktree-local tee-log path instead of the shared
+  `/tmp/salehman_build.log`; worktree paths — all harness-mandated environment adaptations,
+  not plan deviations; worktree removed and verified gone afterwards).
+- **Executor verdict:** "The plan as-written reaches green with ZERO product-code
+  improvisation." Every pre-flight (PF-1..PF-9) matched at `0171621`; Steps 1–7 each applied
+  on their exact anchor and produced `** BUILD SUCCEEDED **`; Step 2a derivation output
+  matched verbatim; 2c ran all 8 named cases to `** TEST SUCCEEDED **`; the 2d falsifiability
+  probe went red (`** TEST FAILED **` naming exactly `nextFromMiddleStepsDown()`) then green
+  on restore; Step 8 skipped per plan; full-suite gate `** TEST SUCCEEDED **` with @Test
+  1502 = B + 8 (B = 1494) and all 8 `SheetCandidateNavigationTests/...` names in the log;
+  §9 docs applied (9a above `## Standing notes` at 9106, 9b anchor unique at 668,
+  9c ` M SOURCE_BUNDLE.md`); final diff = exactly the §4 files + the untracked test file;
+  owner gates re-scanned — nothing gated touched.
+- **Bugs found (2 — both in plan verification/doc TEXT, zero in code blocks) → fixed in this
+  revision:**
+  1. **Step 4 EXPECTED output was unattainable.** It claimed 3 grep hits including the
+     `sheetNavControls` definition line, but the pattern `sheetNavControls(idea)` can never
+     match the definition's literal text `sheetNavControls(_ idea:`. Real output = exactly
+     2 hits (4432 call, 4441 anchor); the edit/build/wiring were all correct. **Fix:** the
+     EXPECTED block now requires exactly 2 hits, explains why the definition cannot match,
+     and notes a third hit would signal an unexpected extra call site; a new HASTY-MODEL
+     TRAP covers "reconciling" a 2-hit result toward 3.
+  2. **§9a dev-log template hard-coded stale test counts** (`@Test 1490 → 1498`, the
+     `1bbf35c` numbers) despite PF-9's record-YOUR-B clause; reality at the plan's own
+     `0171621` pin is 1494 → 1502. The executor caught it via the plan's rewrite-from-diff
+     escape hatch. **Fix:** the template now carries the pin-correct 1494 → 1502 with an
+     explicit substitute-your-measured-B instruction; PF-9 and the §7 gate now state
+     1494 / 1502 for `0171621` (the B / B + 8 clause is unchanged); a new §9 HASTY-MODEL
+     TRAP forbids pasting counts you did not measure.
+- **Within-tolerance shape corrections also made exact** (all were inside declared ±/
+  orientation-only tolerances; tightened so a fresh executor needs zero interpretation):
+  Step 1 expected enum line 5413 → **5412** (dry-run measured); Step 6 expected line
+  222 → **223** (the plan's own NEW block counts to 223); §9b anchor line 662 → **668**
+  at `0171621`.
+- **Confirmed-correct as written (no change):** all PF greps, Step 2a/2b/2c/2d in full,
+  Step 3/5/7 expected outputs (5192/5206 ⌘-shortcut order, scrollTo at 5139, isCancelled
+  count 6, sleep at 5168), §8 rollback, §10 done-means. With the two text bugs fixed above,
+  a real-tree run is fully mechanical.

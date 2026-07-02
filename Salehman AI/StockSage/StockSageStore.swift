@@ -638,21 +638,49 @@ final class StockSageStore: ObservableObject {
     /// a backtest has run with enough trades.
     @Published private(set) var backtestConvictionCalibration: StockSageConvictionCalibration?
 
+    /// F12 (2026-07-02): memoization for the journal calibration fit + OOS check. The fit
+    /// (chronological split + IRLS + PAV + OOS selector) used to re-run on EVERY read of
+    /// `convictionCalibration` — 33 read sites per MarketsView body render, on the MainActor.
+    /// Keyed by VALUE equality of the journal's trades array, so ANY journal mutation
+    /// (add/close/remove — current AND future mutators alike, no per-func invalidation hooks to
+    /// forget) invalidates on the very next read: a just-closed trade still affects the very next
+    /// render. Behavior identical, work amortized. `fitCount` exists purely so tests can pin the
+    /// memoization contract (compute-once on repeat reads, recompute-on-change).
+    struct JournalCalibrationCache {
+        private var key: [TradeRecord]?
+        private var cachedFit: StockSageConvictionCalibration?
+        private var cachedOOS: StockSageConvictionCalibration.OOSCalibrationCheck?
+        private(set) var fitCount = 0
+
+        nonisolated mutating func value(for trades: [TradeRecord])
+            -> (fit: StockSageConvictionCalibration?, oos: StockSageConvictionCalibration.OOSCalibrationCheck?) {
+            if key != trades {
+                cachedFit = StockSageConvictionCalibration.fit(fromJournal: trades)
+                cachedOOS = StockSageConvictionCalibration.validateOutOfSample(trades)
+                key = trades
+                fitCount += 1
+            }
+            return (cachedFit, cachedOOS)
+        }
+    }
+    private var calibrationFitCache = JournalCalibrationCache()
+
     /// EFFECTIVE conviction calibration the whole app sizes/ranks on: the owner's OWN realized edge
     /// (their journal) when it has enough closed conviction-trades, ELSE the sample-backtest fit, ELSE
     /// nil (callers fall back to the conservative linear prior). The journal beats a generic backtest —
-    /// it captures the owner's real fills, slippage, and discipline. Same Wilson-LCB conservatism in
-    /// both. Recomputed on read (the journal is small; the view observes it, so it refreshes live).
+    /// it captures the owner's real fills, slippage, and discipline. Check `.method` for provenance
+    /// (isotonicWilson/beta/platt/identity) — conservatism depends on the fit path, NOT on non-nil.
+    /// Cached per journal state (F12); any journal change is picked up on the very next read.
     var convictionCalibration: StockSageConvictionCalibration? {
-        StockSageConvictionCalibration.fit(fromJournal: StockSageJournalStore.shared.trades) ?? backtestConvictionCalibration
+        calibrationFitCache.value(for: StockSageJournalStore.shared.trades).fit ?? backtestConvictionCalibration
     }
 
     /// OUT-OF-SAMPLE honesty check of the conviction→win-prob map on the owner's journal: fit on their
     /// earlier trades, score on later held-out ones (purged/embargoed split) vs a no-skill base-rate
     /// predictor. nil until the journal has enough closed trades to split + fit — so it shows only once
-    /// there's a real OOS verdict to give (small-sample-noisy by nature).
+    /// there's a real OOS verdict to give (small-sample-noisy by nature). Cached with the fit (F12).
     var calibrationOOS: StockSageConvictionCalibration.OOSCalibrationCheck? {
-        StockSageConvictionCalibration.validateOutOfSample(StockSageJournalStore.shared.trades)
+        calibrationFitCache.value(for: StockSageJournalStore.shared.trades).oos
     }
 
     /// Fetch ~5y for a bounded equity sample, walk-forward each off-main, and
@@ -800,6 +828,15 @@ final class StockSageStore: ObservableObject {
     /// cache RECOMPUTES when the book changes (add/remove a holding) instead of
     /// serving a stale concentration verdict.
     private var precheckFingerprint: [String: String] = [:]
+    /// F14 (2026-07-02): date-tagged daily returns for every symbol refreshPrecheck fetched
+    /// (candidate + holdings) — the detail-sheet cluster check correlates on THESE, calendar-
+    /// aligned via `StockSagePortfolioAnalytics.alignByDate`, instead of pairing ~2-day
+    /// down-sampled sparks positionally (which biases cross-calendar pairs — Tadawul/US,
+    /// crypto/equity — toward 0 and could show a false-green "adds diversification" while the
+    /// sibling precheck row, built on real daily closes, disagreed in the same sheet). Reuses
+    /// the precheck's OWN fetch — no extra network call. An absent symbol ⇒ unknown: the
+    /// cluster check renders nothing rather than a fabricated coefficient.
+    @Published private(set) var precheckDatedReturns: [String: [(date: Date, ret: Double)]] = [:]
 
     /// Compute (and cache) how adding `symbol` would correlate with the current
     /// holdings. Cached per (symbol + holdings fingerprint); no-op when access is off.
@@ -819,6 +856,11 @@ final class StockSageStore: ObservableObject {
         var symbols = Set(positions.map { $0.symbol.uppercased() })
         symbols.insert(up)
         let hists = await StockSageQuoteService.fetchHistories(for: Array(symbols))
+        // F14: stash every fetched symbol's DATE-TAGGED returns for the cluster check — even when
+        // the candidate itself failed to fetch, a holding's series can serve a later candidate.
+        for (sym, h) in hists {
+            precheckDatedReturns[sym] = StockSagePortfolioAnalytics.datedReturns(dates: h.dates, closes: h.closes)
+        }
         guard let cand = hists[up] else { return }
         let candReturns = StockSagePortfolioAnalytics.dailyReturns(cand.closes)
         let holdReturns: [(symbol: String, returns: [Double])] = positions.compactMap { p in

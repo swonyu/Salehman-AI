@@ -362,7 +362,140 @@ struct StockSageCalibrationSelectorTests {
         #expect(cal1 == cal2, "Selector must be deterministic")
     }
 
-    // MARK: - 9. fitBeta returns nil on one-sided sample
+    // MARK: - 9. F01/F02 provenance: identity carries .identity and renders "assumed", never "measured"
+
+    @Test func identityProvenanceRendersAssumedNeverMeasured() {
+        let saved = Cal.candidateSelectorEnabled; defer { Cal.candidateSelectorEnabled = saved }
+        Cal.candidateSelectorEnabled = true
+
+        // Small-N (n=43 → split too thin) → the selector's identity floor. Same fixture as the
+        // selector-floor test above, which pins the NUMERIC behavior; this pins the PROVENANCE.
+        var tiny: [Outcome] = []
+        for i in 0..<43 { tiny.append((conviction: (Double(i) + 0.5) / 43.0, won: i % 2 == 0)) }
+        guard let cal = Cal.fit(tiny, minSamples: 30) else {
+            Issue.record("small-N fixture must produce an identity calibration, not nil")
+            return
+        }
+        #expect(cal.method == .identity, "the thin-split floor must carry .identity provenance")
+        #expect(cal.isMeasuredFromOutcomes == false)
+        #expect(cal.chipTitle.contains("assumed"), "identity must render as 'win% assumed'")
+        #expect(!cal.chipTitle.localizedCaseInsensitiveContains("measured"),
+                "F02: the chip must NEVER say 'measured' for an identity calibration")
+        #expect(cal.chipHelp.contains("ASSUMPTION"), "identity tooltip must say it is an assumption")
+
+        // The production journal path (fit(fromJournal:)) inherits the same provenance: 40 closed
+        // conviction-trades pass the outer minSamples but split too thin → identity.
+        var trades: [TradeRecord] = []
+        for i in 0..<40 {
+            let opened = Date(timeIntervalSince1970: 1_600_000_000 + Double(i) * 86_400)
+            trades.append(TradeRecord(symbol: "T\(i)", side: .long, entry: 100, stop: 95, target: 110,
+                                      shares: 10, openedAt: opened,
+                                      exitPrice: i % 2 == 0 ? 110 : 96,
+                                      closedAt: opened.addingTimeInterval(3_600),
+                                      conviction: (Double(i) + 0.5) / 40.0))
+        }
+        guard let jcal = Cal.fit(fromJournal: trades) else {
+            Issue.record("40-closed-trade journal must produce an identity calibration, not nil")
+            return
+        }
+        #expect(jcal.method == .identity, "journal thin-split path must carry .identity too")
+        #expect(jcal.chipTitle.contains("assumed"))
+        #expect(!jcal.chipTitle.localizedCaseInsensitiveContains("measured"))
+    }
+
+    // MARK: - 10. F01/F02 provenance: real fits carry their method; chip honesty invariant
+
+    @Test func realFitsCarryTheirMethodProvenance() {
+        let saved = Cal.candidateSelectorEnabled; defer { Cal.candidateSelectorEnabled = saved }
+        Cal.candidateSelectorEnabled = false
+
+        // Platt path (flag off, n=40 < isotonicMinSamples): a central MLE → "fitted", not "measured".
+        var outcomes: [Outcome] = []
+        for i in 0..<20 { outcomes.append((conviction: 0.1, won: i < 4)) }
+        for i in 0..<20 { outcomes.append((conviction: 0.9, won: i < 16)) }
+        guard let platt = Cal.fit(outcomes, minSamples: 30) else {
+            Issue.record("40-trade flag-off fixture must fit via Platt, not nil")
+            return
+        }
+        #expect(platt.method == .platt, "flag-off small-N path must carry .platt")
+        #expect(platt.chipTitle == "win% fitted · n=40")
+        #expect(!platt.chipTitle.contains("measured"), "Platt is a central MLE — never 'measured'")
+        #expect(platt.isMeasuredFromOutcomes == false)
+        #expect(platt.chipHelp.contains("NOT conservative"),
+                "Platt tooltip must disclose central-MLE / no conservatism haircut")
+
+        // Isotonic Wilson-LCB path (flag off, n ≥ isotonicMinSamples=1000): genuinely measured
+        // AND conservative — the only paths allowed to say so.
+        var big: [Outcome] = []
+        for i in 0..<1200 { big.append((conviction: (Double(i) + 0.5) / 1200.0, won: i % 2 == 0)) }
+        guard let iso = Cal.fit(big, minSamples: 30) else {
+            Issue.record("1200-trade flag-off fixture must fit via isotonic, not nil")
+            return
+        }
+        #expect(iso.method == .isotonicWilson, "flag-off large-N path must carry .isotonicWilson")
+        #expect(iso.chipTitle == "win% measured · n=1200 (conservative)")
+        #expect(iso.isMeasuredFromOutcomes)
+    }
+
+    @Test func chipTitleSaysMeasuredIffProvenanceIsMeasured() {
+        // Direct-construction invariant across ALL four methods: the chip title claims "measured"
+        // exactly when the provenance is genuinely measured-from-outcomes (F02 honesty floor).
+        let bins = [Cal.Bin(upper: 0.5, winProb: 0.4, n: 10), Cal.Bin(upper: 1.0, winProb: 0.6, n: 10)]
+        for m in [Cal.Method.isotonicWilson, .beta, .platt, .identity] {
+            let cal = Cal(bins: bins, sampleSize: 20, method: m)
+            #expect(cal.chipTitle.contains("measured") == cal.isMeasuredFromOutcomes,
+                    "chipTitle must say 'measured' iff isMeasuredFromOutcomes (\(m))")
+        }
+        #expect(Cal(bins: bins, sampleSize: 20, method: .identity).chipTitle.contains("assumed"))
+        #expect(Cal(bins: bins, sampleSize: 20, method: .platt).chipTitle.contains("fitted"))
+        #expect(Cal(bins: bins, sampleSize: 20, method: .beta).chipTitle.contains("measured"))
+    }
+
+    // MARK: - 11. F12: journal calibration-fit cache — memoized on repeat reads, invalidated by ANY mutation
+
+    @Test @MainActor func journalCalibrationCacheMemoizesAndInvalidates() {
+        let saved = Cal.candidateSelectorEnabled; defer { Cal.candidateSelectorEnabled = saved }
+        Cal.candidateSelectorEnabled = true
+
+        func trade(_ i: Int, conviction: Double, win: Bool) -> TradeRecord {
+            let opened = Date(timeIntervalSince1970: 1_600_000_000 + Double(i) * 86_400)
+            return TradeRecord(symbol: "T\(i)", side: .long, entry: 100, stop: 95, target: 110,
+                               shares: 10, openedAt: opened,
+                               exitPrice: win ? 110 : 96, closedAt: opened.addingTimeInterval(3_600),
+                               conviction: conviction)
+        }
+        var trades: [TradeRecord] = []
+        for i in 0..<40 { trades.append(trade(i, conviction: (Double(i) + 0.5) / 40.0, win: i % 2 == 0)) }
+
+        var cache = StockSageStore.JournalCalibrationCache()
+        let direct = (fit: Cal.fit(fromJournal: trades), oos: Cal.validateOutOfSample(trades))
+
+        // First read computes once; result identical to the uncached direct computation.
+        let r1 = cache.value(for: trades)
+        #expect(cache.fitCount == 1)
+        #expect(r1.fit == direct.fit, "cached fit must be identical to the direct (pre-caching) fit")
+        #expect(r1.oos == direct.oos, "cached OOS check must be identical to the direct computation")
+
+        // Repeat reads with an unchanged journal never recompute and serve the same result.
+        let r2 = cache.value(for: trades)
+        let r3 = cache.value(for: trades)
+        #expect(cache.fitCount == 1, "unchanged journal → no recompute")
+        #expect(r2.fit == r1.fit && r3.fit == r1.fit)
+        #expect(r2.oos == r1.oos && r3.oos == r1.oos)
+
+        // ANY journal mutation (here: one more closed trade) invalidates on the very next read,
+        // and the served result changes with it (sampleSize tracks the mutated journal).
+        var mutated = trades
+        mutated.append(trade(40, conviction: 0.5, win: true))
+        let r4 = cache.value(for: mutated)
+        #expect(cache.fitCount == 2, "journal mutation → recompute on next read")
+        #expect(r4.fit == Cal.fit(fromJournal: mutated), "post-mutation result equals the direct fit")
+        #expect(r4.fit?.sampleSize == 41)
+        #expect(r1.fit?.sampleSize == 40)
+        #expect(r4.fit != r1.fit, "a journal mutation must change the served fit")
+    }
+
+    // MARK: - 12. fitBeta returns nil on one-sided sample
 
     @Test func fitBetaReturnsNilOnOneSidedSample() {
         var allWin: [Outcome] = []
@@ -377,7 +510,7 @@ struct StockSageCalibrationSelectorTests {
         #expect(Cal.fitBeta(empty) == nil, "fitBeta must return nil on empty input")
     }
 
-    // MARK: - 10. Beta winProb is in (0,1) across full conviction range
+    // MARK: - 13. Beta winProb is in (0,1) across full conviction range
 
     @Test func betaWinProbAlwaysInUnitInterval() {
         var outcomes: [Outcome] = []

@@ -2873,12 +2873,19 @@ struct MarketsView: View {
                     Text("Trade ideas").font(.system(size: mvFont15, weight: .semibold)).foregroundStyle(.white)
                     Text("Rules-based what / when / how-much across the \(StockSageUniverse.worldwide.count)-name analyzed core, on 1-year history.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    // Honesty: say plainly whether the EV/win numbers below are MEASURED from
-                    // backtested outcomes or an assumed linear prior — right where they're read.
+                    // Honesty: say plainly whether the EV/win numbers below are measured, fitted, or
+                    // assumed — right where they're read. F01/F02: keyed on the calibration METHOD,
+                    // not on non-nil (an identity calibration is an assumption, not a measurement).
                     if let cal = store.convictionCalibration {
-                        Label("EV win-rates measured from \(cal.sampleSize) realized trades (your journal, else the backtest)", systemImage: "checkmark.seal.fill")
-                            .font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
-                            .help("Conviction→win-probability is calibrated from realized outcomes — your journal when it has enough closed trades, else the sample backtest (conservative, monotonic).")
+                        if cal.method == .identity {
+                            Label("EV win-rates are assumed (identity floor) — conviction used as win% until a fit beats it out-of-sample", systemImage: "exclamationmark.triangle.fill")
+                                .font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
+                                .help(cal.chipHelp)
+                        } else {
+                            Label("EV win-rates \(cal.method == .platt ? "fitted" : "measured") from \(cal.sampleSize) realized trades (your journal, else the backtest)", systemImage: "checkmark.seal.fill")
+                                .font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
+                                .help(cal.chipHelp)
+                        }
                     } else {
                         Label("EV win-rates are an assumed estimate — run the Strategy backtest to calibrate", systemImage: "exclamationmark.triangle.fill")
                             .font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
@@ -3104,8 +3111,11 @@ struct MarketsView: View {
                 .accessibilityLabel("Backtest \(idea.symbol)")
             }
             convictionMeter(a.conviction, color: actionColor(a.action))
+                // F01/F02: wording keyed on the calibration METHOD — identity must read "assumed".
                 .help(store.convictionCalibration.map { cal in
-                    "Conviction — a rules-based score; win-rate mapped from \(cal.sampleSize) realized trades."
+                    cal.method == .identity
+                    ? "Conviction — a rules-based score; win-rate currently ASSUMED equal to conviction (identity floor), not measured from outcomes."
+                    : "Conviction — a rules-based score; win-rate \(cal.method == .platt ? "fitted" : "measured") from \(cal.sampleSize) realized trades."
                 } ?? "Conviction — a rules-based signal strength, not a probability. Estimated win-rate range ~\(StockSageExpectedValue.assumedWinBandLabel), not a forecast.")
             if idea.spark.count >= 2 {
                 Sparkline(values: idea.spark)
@@ -3501,14 +3511,19 @@ struct MarketsView: View {
     // and the total-heat cap — those are the genuine additions the Deploy plan makes.
     private static let sizeMetricHelp = "Size uses the calibrated win-prob when a journal or backtest calibration is fitted (the same win-rate shown in the EV chip), or the conservative ~\(StockSageExpectedValue.assumedWinBandLabel) prior otherwise. The ‘Deploy capital’ plan is the one to act on — it applies: vol-targeting shrink for high-vol names → per-symbol vol-regime brake → correlation de-weighting → heat cap on top."
 
-    // Honest "are these EV numbers measured or assumed?" chip — reused on every EV-headline surface.
-    // "win% assumed" / "win% measured · n=X": the explicit "win%" prefix tells the reader what
-    // quantity is assumed or measured, so the chip is self-explanatory without a tooltip.
+    // Honest "are these EV numbers measured, fitted, or assumed?" chip — reused on every EV-headline
+    // surface. F01/F02 (2026-07-02): keys on the calibration's METHOD, never on `calibration != nil`
+    // — an identity calibration (winProb ≈ conviction, measured from ZERO outcomes) renders
+    // "win% assumed", a Platt fit "win% fitted" (central MLE, not conservative), and only the
+    // Wilson-LCB isotonic / OOS-validated Beta paths earn "win% measured". Title/tooltip come from
+    // StockSageConvictionCalibration.chipTitle/chipHelp (single source, test-pinned).
     @ViewBuilder private var calibrationChip: some View {
         if let cal = store.convictionCalibration {
-            Label("win% measured · n=\(cal.sampleSize)", systemImage: "checkmark.seal.fill")
-                .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
-                .help("Win-rate calibrated from \(cal.sampleSize) realized trades — your journal when it has enough, else the backtest (conservative, monotonic).")
+            let assumed = cal.method == .identity
+            Label(cal.chipTitle, systemImage: assumed ? "exclamationmark.triangle.fill" : "checkmark.seal.fill")
+                .font(.system(size: mvFont9, weight: .semibold))
+                .foregroundStyle(assumed ? DS.Palette.warningSoft : DS.Palette.successSoft)
+                .help(cal.chipHelp)
         } else {
             Label("win% assumed", systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
@@ -3555,7 +3570,10 @@ struct MarketsView: View {
                             }
                         }
                         if let wk = s.weeklyR {
-                            summaryStat("Est./week", String(format: "%+.1fR", wk), "if you run top 3", subColor: .secondary)
+                            // F03/F44: weeklyR sums GROSS velocities — label it, and caveat that the
+                            // sum can include floor-demoted ideas the "Fastest" pick excludes.
+                            summaryStat("Est./week", String(format: "%+.1fR", wk), "gross, if you run top 3", subColor: .secondary)
+                                .help("Gross, before costs — sums the top fast-lane GROSS velocities. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income.")
                         }
                         Spacer(minLength: 0)
                     }
@@ -3564,6 +3582,7 @@ struct MarketsView: View {
                         Text(String(format: "≈ +$%.0f/week at $%.0f acct, %.1f%% risk — %@", usd, acct, rp, MoneyVelocityCopy.weeklyDollars))
                             .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)   // neutral: an estimate, not a realized gain
+                            .help("Gross, before costs — weekly R × the dollar value of 1R. Can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. NOT income.")
                     }
                     if let d = velocityHistory.lastDelta, abs(d) >= 0.05 {
                         Text(String(format: "Since last session: weekly-R %@ %.1fR — %@", d >= 0 ? "↑" : "↓", abs(d), MoneyVelocityCopy.ownHistory))
@@ -3761,14 +3780,18 @@ struct MarketsView: View {
                     }
                 }
                 if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), holds: velocityHolds, calibration: store.convictionCalibration) {
-                    Text(String(format: "≈ %+.1fR/week if you run the top %d — estimate, high variance, assumes you take and re-cycle these. Not a promise.", wk, Swift.min(3, lane.count)))
+                    // F03/F44: gross label + floor-demotion caveat (the weekly sum never excludes
+                    // floor-demoted ideas; the per-row floor badges below DO mark them).
+                    Text(String(format: "≈ %+.1fR/week gross, before costs, if you run the top %d — estimate, high variance, assumes you take and re-cycle these. Not a promise.", wk, Swift.min(3, lane.count)))
                         .font(.system(size: mvFont9, weight: .medium))
                         .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
+                        .help("Gross, before costs — sums the top fast-lane GROSS velocities. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income.")
                     if let acct = StockSageInput.positiveAmount(sizerAccount), let rp = StockSageInput.percent(sizerRiskPct),
                        let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), holds: velocityHolds, calibration: store.convictionCalibration) {
-                        Text(String(format: "≈ +$%.0f/week at $%.0f account, %.1f%% risk — estimate, high variance, NOT income.", usd, acct, rp))
+                        Text(String(format: "≈ +$%.0f/week at $%.0f account, %.1f%% risk — gross, before costs; estimate, high variance, NOT income.", usd, acct, rp))
                             .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)   // neutral: estimate, not a realized gain
+                            .help("Gross, before costs — weekly R × the dollar value of 1R. Can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. NOT income.")
                     }
                 }
                 if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), conc.isConcentrated {
@@ -3968,15 +3991,25 @@ struct MarketsView: View {
                 }
                 Text(s.caveat).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            // Calibration status: when the backtest yielded enough trades, EV win-probabilities are
-            // now MEASURED from outcomes (conservative) instead of the hand-picked linear prior.
+            // Calibration status — F01/F02: keyed on the fit METHOD, not on non-nil. Only the
+            // Wilson-LCB isotonic / OOS-validated Beta paths may claim "measured"; a Platt fit is
+            // a central estimate ("fitted"); an identity calibration is an assumption and says so.
             if let cal = store.convictionCalibration {
+                let assumed = cal.method == .identity
                 HStack(spacing: 6) {
-                    Image(systemName: "checkmark.seal.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.successSoft)
-                    Text("EV calibrated from \(cal.sampleSize) realized trades (your journal when rich enough, else the backtest) — measured, not assumed.")
-                        .font(.caption2).foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
+                    Image(systemName: assumed ? "exclamationmark.triangle.fill" : "checkmark.seal.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(assumed ? DS.Palette.warningSoft : DS.Palette.successSoft)
+                    Text(assumed
+                         ? "EV win-prob is currently the identity floor — conviction used as win%, assumed, not measured; more closed trades let a real fit earn 'measured'."
+                         : (cal.method == .platt
+                            ? "EV fitted from \(cal.sampleSize) realized trades (your journal when rich enough, else the backtest) — a central fit, not a conservative bound."
+                            : "EV calibrated from \(cal.sampleSize) realized trades (your journal when rich enough, else the backtest) — measured, not assumed."))
+                        .font(.caption2)
+                        .foregroundStyle(assumed ? DS.Palette.warningSoft : DS.Palette.successSoft)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .help("Conviction→win-probability is fitted from realized backtest outcomes (conservative lower bound, monotonic). Until then EV uses a cautious linear estimate.")
+                .help(cal.chipHelp)
             }
             // Out-of-sample honesty check: does the conviction map hold on trades it was NOT fit on?
             if let oos = store.calibrationOOS {
@@ -4446,8 +4479,11 @@ struct MarketsView: View {
 
                 // Conviction meter + honesty caption (hc#2)
                 convictionMeter(a.conviction, color: actionColor(a.action))
+                    // F01/F02: wording keyed on the calibration METHOD — identity must read "assumed".
                     .help(store.convictionCalibration.map { cal in
-                        "Signal strength — a rules-based score; win-rate mapped from \(cal.sampleSize) realized trades."
+                        cal.method == .identity
+                        ? "Signal strength — a rules-based score; win-rate currently ASSUMED equal to conviction (identity floor), not measured from outcomes."
+                        : "Signal strength — a rules-based score; win-rate \(cal.method == .platt ? "fitted" : "measured") from \(cal.sampleSize) realized trades."
                     } ?? "Signal strength — a rules-based score, not a probability. Estimated win-rate range ~\(StockSageExpectedValue.assumedWinBandLabel), not a forecast.")
                 Text("Signal strength \(Int(a.conviction * 100))/100 · \(a.regime.rawValue)")
                     .font(.caption).foregroundStyle(.secondary)
@@ -4671,8 +4707,8 @@ struct MarketsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .help(StockSageExpectedValue.caveat)
                     }
-                    // hc#1: always-visible measured/assumed tag directly under the EV line.
-                    // "measured" only when store.convictionCalibration != nil; nil-safe.
+                    // hc#1: always-visible measured/fitted/assumed tag directly under the EV line.
+                    // F01/F02: the chip keys on the calibration METHOD (identity → "assumed"); nil-safe.
                     HStack(spacing: 6) {
                         calibrationChip
                     }
@@ -4920,24 +4956,35 @@ struct MarketsView: View {
                 }
 
                 // Cluster check (concentration-in-disguise check — moved from buy-block to Context).
+                // F14 (2026-07-02): correlates DATE-ALIGNED real daily returns cached by
+                // refreshPrecheck (the same fetch the sibling precheck row above uses — no extra
+                // network), NOT positional ~2-day down-sampled sparks. Positional pairing across
+                // calendars (Tadawul/US, 24/7 crypto vs 5-day equity) compares returns from
+                // DIFFERENT days, biasing toward 0 — this sheet could show a false-green "adds
+                // diversification" while the precheck row disagreed. A pair with <5 overlapping
+                // days is UNKNOWN and skipped; with no scorable pair nothing renders (honest
+                // unknown — never a fabricated coefficient).
                 if a.action == .buy || a.action == .strongBuy {
-                    let candReturns = StockSagePortfolioAnalytics.dailyReturns(idea.spark)
-                    let heldSeries = portfolio.positions.compactMap { p -> (symbol: String, returns: [Double])? in
-                        guard let sp = store.ideas.first(where: { $0.symbol.uppercased() == p.symbol.uppercased() })?.spark,
-                              sp.count >= 2 else { return nil }
-                        return (p.symbol, StockSagePortfolioAnalytics.dailyReturns(sp))
+                    let candDated = store.precheckDatedReturns[idea.symbol.uppercased()] ?? []
+                    let heldDated = portfolio.positions.compactMap { p -> (symbol: String, returns: [(date: Date, ret: Double)])? in
+                        guard let dr = store.precheckDatedReturns[p.symbol.uppercased()], !dr.isEmpty else { return nil }
+                        return (p.symbol, dr)
                     }
-                    let uncheckedCount = portfolio.positions.count - heldSeries.count
-                    if let cc = StockSageClusterCheck.check(candidate: idea.symbol, candidateReturns: candReturns, holdings: heldSeries) {
+                    let missingSeries = portfolio.positions.count - heldDated.count
+                    if let (cc, overlapSkipped) = StockSageClusterCheck.checkDated(
+                        candidate: idea.symbol, candidateReturns: candDated, holdings: heldDated) {
                         // Show the verdict either way: a warning when it concentrates,
                         // an affirmation when it genuinely diversifies the checked subset.
-                        // Suppress the green affirmation when holdings were skipped (no series
-                        // on the board) — we can't claim diversification on data we didn't check.
+                        // Suppress the green affirmation when holdings were skipped (no fetched
+                        // series, or too few overlapping days) — we can't claim diversification
+                        // on data we didn't check.
+                        let uncheckedCount = missingSeries + overlapSkipped
+                        let checkedCount = heldDated.count - overlapSkipped
                         let cColor = cc.isConcentrating ? DS.Palette.warningSoft : DS.Palette.textSecondary
                         let cIcon = cc.isConcentrating ? "exclamationmark.triangle.fill" : "checkmark.shield.fill"
                         let note: String = {
                             if !cc.isConcentrating && uncheckedCount > 0 {
-                                return cc.note + " (among \(heldSeries.count) holdings with history — \(uncheckedCount) had no series and were not checked)"
+                                return cc.note + " (among \(checkedCount) holdings with overlapping daily history — \(uncheckedCount) could not be checked)"
                             }
                             return cc.note
                         }()
