@@ -48,7 +48,10 @@ enum StockSageGapRisk {
         }
         let gapFill: Double, lossPerShare: Double
         switch side {
-        case .long:  gapFill = stop * (1 - gapPct); lossPerShare = entry - gapFill   // gaps below the stop
+        // #10: a gap of ≥100% cannot fill below $0 — clamp the long fill at zero (a total
+        // wipeout of the position, the honest physical maximum), never a negative price.
+        // Shorts have no analogous ceiling (loss above entry is unbounded — deliberately unclamped).
+        case .long:  gapFill = Swift.max(0, stop * (1 - gapPct)); lossPerShare = entry - gapFill   // gaps below the stop
         case .short: gapFill = stop * (1 + gapPct); lossPerShare = gapFill - entry    // gaps above the stop
         }
         let dollarsLost = shares * lossPerShare
@@ -62,12 +65,14 @@ enum StockSageGapRisk {
 
     /// A ladder of canonical adverse gaps (weekend 5%, earnings 8%, crypto-flash 20%,
     /// halt-reopen 35% by default), each a separate scenario — the "a stop is not a fill" table.
-    /// Magnitudes are illustrative, NOT predicted probabilities.
+    /// Magnitudes are illustrative, NOT predicted probabilities. #7: `gaps` is SORTED ascending
+    /// before mapping, so the documented ascending-in-loss ladder holds for ANY caller order
+    /// (loss is monotonic in gapPct; non-strictly once a long gap ≥ 100% plateaus at the $0 fill).
     nonisolated static func worstCase(side: TradeSide, entry: Double, stop: Double, shares: Double,
                                       accountEquity: Double,
                                       gaps: [Double] = [0.05, 0.08, 0.20, 0.35]) -> [GapRiskScenario] {
-        gaps.compactMap { scenario(side: side, entry: entry, stop: stop, shares: shares, gapPct: $0,
-                                   accountEquity: accountEquity) }
+        gaps.sorted().compactMap { scenario(side: side, entry: entry, stop: stop, shares: shares, gapPct: $0,
+                                            accountEquity: accountEquity) }
     }
 
     /// Bridge from a sized position. `PositionSize` carries no side — pass it explicitly.
