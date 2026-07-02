@@ -15,6 +15,8 @@
 > `bash tools/bundle_source.sh` before any handoff.
 >
 > Companion docs: [`ARCHITECTURE.md`](ARCHITECTURE.md) (deep data-flow),
+> [`MARKETS_TAB_MAP.md`](MARKETS_TAB_MAP.md) (per-file knowledge map of every
+> StockSage engine module + Markets view: purpose, consumers, invariants, gotchas),
 > [`COORDINATION.md`](COORDINATION.md) (how two parallel Claude sessions split
 > the work), [`DEVELOPMENT_LOG.md`](DEVELOPMENT_LOG.md) (running change journal),
 > [`SOURCE_BUNDLE.md`](SOURCE_BUNDLE.md) (all source in one file).
