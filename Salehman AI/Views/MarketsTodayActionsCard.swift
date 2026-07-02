@@ -88,6 +88,15 @@ struct MarketsTodayActionsCard: View {
                     }
                     Text(String(format: "%+.3fR/day", plan.velocity)).font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(DS.Palette.successSoft)
+                    // Same de-rank flags the main ideas/velocity boards already show — fastLane()
+                    // demotes but does not EXCLUDE below-floor/low-conviction ideas, so a row here
+                    // can legitimately be one; never hide the reason it ranked where it did.
+                    if plan.netCostFloorFlag.isDeranked {
+                        Text("below net-cost floor").font(.system(size: font8)).foregroundStyle(DS.Palette.warningSoft)
+                    }
+                    if plan.isLowConviction {
+                        Text("low conviction").font(.system(size: font8)).foregroundStyle(DS.Palette.warningSoft)
+                    }
                     Spacer(minLength: 0)
                     gateBadge(plan.gate)
                 }
@@ -115,6 +124,8 @@ struct MarketsTodayActionsCard: View {
         .accessibilityLabel({
             var label = "Number \(rank): \(plan.symbol), \(String(format: "%+.3f", plan.velocity)) R per day"
             if plan.isCrypto { label += ", 24/7 crypto" }
+            if plan.netCostFloorFlag.isDeranked { label += ", below net-cost floor" }
+            if plan.isLowConviction { label += ", low conviction" }
             label += ". \(plan.gate.decision.rawValue)."
             if blocked { label += " Do not trade." }
             if plan.gate.decision == .caution,

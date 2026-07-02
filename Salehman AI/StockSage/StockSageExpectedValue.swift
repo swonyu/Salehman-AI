@@ -143,6 +143,14 @@ enum StockSageExpectedValue {
     private nonisolated static func qualityWeight(_ conviction: Double) -> Double {
         0.4 + 0.6 * Swift.max(0, Swift.min(1, conviction))
     }
+
+    /// Named, testable mirror of the exact `idea.advice.conviction < minConvictionToRank`
+    /// comparison every rank-key function above already applies internally — so a caller OUTSIDE
+    /// the ranking math (e.g. `StockSageTodayPlan.TodayActionPlan`) can check the same demotion
+    /// condition without duplicating the threshold or risking it drifting out of sync.
+    nonisolated static func isLowConviction(_ idea: StockSageIdea) -> Bool {
+        idea.advice.conviction < minConvictionToRank
+    }
     /// Quality-adjusted EV — the ranking key (the raw `ev` is still shown to the user).
     nonisolated static func qualityAdjustedEVR(for idea: StockSageIdea,
                                                calibration: StockSageConvictionCalibration? = nil) -> Double? {

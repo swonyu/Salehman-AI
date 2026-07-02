@@ -107,9 +107,17 @@ enum StockSageTodayPlan {
                let ps = StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: entry, stop: stop) {
                 shares = ps.shares; dollarsAtRisk = ps.dollarsAtRisk
             }
+            // fastLane() ranks by a demotion-adjusted key (velocityRankKey) but does NOT filter
+            // out below-floor/low-conviction ideas — they just sink in the ordering. So a row in
+            // this top-N list CAN still be one of them; surface the SAME flags the main ideas
+            // board already shows (netCostFloorFlag/isLowConviction) so the reason a plan ranked
+            // where it did — or a caution about trusting it — is never hidden here.
+            let floorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: holds, calibration: calibration)
+            let lowConviction = StockSageExpectedValue.isLowConviction(idea)
             out.append(TodayActionPlan(symbol: idea.symbol, velocity: v, entry: entry, stop: stop, target: target,
                                        shares: shares, dollarsAtRisk: dollarsAtRisk, gate: gate,
-                                       isCrypto: idea.symbol.uppercased().hasSuffix("-USD")))
+                                       isCrypto: idea.symbol.uppercased().hasSuffix("-USD"),
+                                       netCostFloorFlag: floorFlag, isLowConviction: lowConviction))
         }
         return out
     }
@@ -130,6 +138,8 @@ enum StockSageTodayPlan {
                 line += " | \(sh) sh (≈$\(Int(dr.rounded())) at risk)"
             }
             line += " | \(p.gate.decision.rawValue)" + (p.gate.decision == .blocked ? " — DO NOT TRADE" : "")
+            if p.netCostFloorFlag.isDeranked { line += " | ⚠ below net-cost floor" }
+            if p.isLowConviction { line += " | ⚠ low conviction" }
             lines.append(line)
         }
         lines.append("Rule: risk small per trade, always a stop, never chase. A blocked gate means don't take it, however good the velocity looks.")
@@ -153,5 +163,13 @@ struct TodayActionPlan: Sendable, Equatable, Identifiable {
     let dollarsAtRisk: Double?
     let gate: TradeGateVerdict
     let isCrypto: Bool     // symbol.hasSuffix("-USD") — the existing crypto predicate, shown upfront
+    /// Same de-rank flag the main ideas/velocity boards already show (`StockSageExpectedValue.
+    /// netCostFloorFlag`) — `fastLane()` demotes but does NOT exclude below-floor ideas from its
+    /// ordering, so a plan in this list can legitimately be one. Defaulted `.clears` so any other
+    /// construction site (tests) stays valid without threading it through.
+    var netCostFloorFlag: StockSageExpectedValue.NetCostFloorFlag = .clears
+    /// Same low-conviction demotion the rank-key math already applies internally
+    /// (`StockSageExpectedValue.isLowConviction`) — again demoted, not excluded, from `fastLane()`.
+    var isLowConviction: Bool = false
     nonisolated var id: String { symbol }
 }

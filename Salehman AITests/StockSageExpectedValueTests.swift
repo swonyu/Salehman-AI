@@ -41,6 +41,17 @@ struct StockSageExpectedValueTests {
                       spark: [])
     }
 
+    @Test func isLowConvictionMirrorsTheExactRankKeyThreshold() {
+        // Named, testable mirror of `idea.advice.conviction < minConvictionToRank` — must agree
+        // with every rank-key function's internal comparison at the boundary itself.
+        #expect(EV.isLowConviction(idea("A", conviction: 0.39, stop: 90, target: 110)))
+        #expect(!EV.isLowConviction(idea("A", conviction: 0.40, stop: 90, target: 110)))   // AT floor → not low
+        #expect(!EV.isLowConviction(idea("A", conviction: 0.41, stop: 90, target: 110)))
+        #expect(EV.isLowConviction(idea("A", conviction: 0.0, stop: 90, target: 110)))
+        #expect(!EV.isLowConviction(idea("A", conviction: 1.0, stop: 90, target: 110)))
+        #expect(EV.minConvictionToRank == 0.40)   // pins the threshold this test targets
+    }
+
     @Test func rankingAndBestOpportunityUseTheCalibrationNotJustTheDisplay() {
         // [iter7] Pins the flag OFF for determinism: this test asserts a calibration-driven RANK FLIP
         // and shares the global candidateSelectorEnabled with the (now default-ON) selector suite. The
