@@ -41,7 +41,10 @@ enum StockSageTradePlan {
         if let s = advice.stopPrice { lines.append("Stop: \(adaptivePrice(s))") }
         if let t = advice.targetPrice { lines.append("Target: \(adaptivePrice(t))") }
         if let rr = rewardRisk {
-            lines.append(String(format: "R:R: %.1f (%@) — needs a >%.1f%% win-rate to break even",
+            // "gross" label (wave-11/F28): this R:R is before round-trip costs; the net figure
+            // is appended separately by the MarketsView call site — label both so they can never
+            // appear to say the same thing with different values (matches RewardRisk.note wording).
+            lines.append(String(format: "R:R: %.1f gross (%@) — needs a >%.1f%% win-rate to break even",
                                 rr.ratio, rr.quality.rawValue, rr.breakevenWinRate * 100))
         }
         // aa#4: scale-out ladder rungs — prices use adaptivePrice so sub-dollar names

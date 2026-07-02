@@ -3250,18 +3250,14 @@ struct MarketsView: View {
         .help("Tap for full advice + backtest · right-click to copy the plan or set an alert")
     }
 
-    /// Copy a one-line trade plan for an idea to the clipboard.
+    /// Copy the full honest trade plan for an idea to the clipboard.
+    /// wave-11 honesty-floor fix: replaces the former hand-rolled one-liner that omitted
+    /// the caveat, the net R:R, the pre-trade gate verdict, risk flags, and the "not a
+    /// win probability" disclaimer. Now routes through the same fullPlanText(for:) helper
+    /// the sheet's Copy-plan button uses — the card export can never disagree with the sheet.
     private func copyIdeaPlan(_ idea: StockSageIdea) {
-        let a = idea.advice
-        var parts = ["\(idea.symbol) — \(a.action.rawValue) @ \(adaptivePrice(idea.price))"]
-        if let s = a.stopPrice { parts.append("stop \(adaptivePrice(s))") }
-        if let t = a.targetPrice { parts.append("target \(adaptivePrice(t))") }
-        if a.suggestedWeight > 0 { parts.append(String(format: "size %.1f%%", a.suggestedWeight * 100)) }
-        let rr = rewardRisk(idea)
-        if rr > 0 { parts.append(String(format: "R:R %.1f", rr)) }
-        parts.append("conviction \(Int((a.conviction * 100).rounded()))%")
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(parts.joined(separator: " · "), forType: .string)
+        NSPasteboard.general.setString(fullPlanText(for: idea), forType: .string)
     }
 
     // Signal alerts — opt-in event log of flips / stop / target crossings.
@@ -3500,15 +3496,17 @@ struct MarketsView: View {
     private static let sizeMetricHelp = "Size uses the calibrated win-prob when a journal or backtest calibration is fitted (the same win-rate shown in the EV chip), or the conservative ~35–58% prior otherwise. The ‘Deploy capital’ plan is the one to act on — it applies: vol-targeting shrink for high-vol names → per-symbol vol-regime brake → correlation de-weighting → heat cap on top."
 
     // Honest "are these EV numbers measured or assumed?" chip — reused on every EV-headline surface.
+    // "win% assumed" / "win% measured · n=X": the explicit "win%" prefix tells the reader what
+    // quantity is assumed or measured, so the chip is self-explanatory without a tooltip.
     @ViewBuilder private var calibrationChip: some View {
         if let cal = store.convictionCalibration {
-            Label("measured · n=\(cal.sampleSize)", systemImage: "checkmark.seal.fill")
+            Label("win% measured · n=\(cal.sampleSize)", systemImage: "checkmark.seal.fill")
                 .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(DS.Palette.successSoft)
-                .help("EV win-rates calibrated from \(cal.sampleSize) realized trades — your journal when it has enough, else the backtest (conservative, monotonic).")
+                .help("Win-rate calibrated from \(cal.sampleSize) realized trades — your journal when it has enough, else the backtest (conservative, monotonic).")
         } else {
-            Label("assumed", systemImage: "exclamationmark.triangle.fill")
+            Label("win% assumed", systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
-                .help("EV win-rates use a cautious hand-set band (35–58%), not measured rates — run the Strategy backtest to calibrate.")
+                .help("Win-rate uses a cautious hand-set band (35–58%), not measured rates — run the Strategy backtest to calibrate.")
         }
     }
 
@@ -4309,9 +4307,100 @@ struct MarketsView: View {
         .accessibilityLabel("Pre-trade gate: \(v.decision.rawValue). \(v.fails) failed, \(v.warns) warnings, \(v.passes) passed.")
     }
 
+    // MARK: - Full plan text helper (item 4 — honesty-floor breach fix)
+    // Extracts the sheet's "Copy plan" text into a private helper so both the
+    // sheet button AND the card context-menu "Copy trade plan" produce the same
+    // honest, full plan (with caveats, gate verdict, and net R:R) rather than
+    // the card's former hand-rolled one-liner that omitted all of those.
+    private func fullPlanText(for idea: StockSageIdea) -> String {
+        let a = idea.advice
+        let riskFlags = StockSageRiskFlags.flags(
+            action: a.action, conviction: a.conviction, symbol: idea.symbol,
+            earnings: store.earnings[idea.symbol.uppercased()],
+            precheck: store.precheck[idea.symbol.uppercased()],
+            regimeIsStale: store.regimeIsStale, hasRegime: store.regime != nil,
+            liquidityTier: store.liquidity[idea.symbol.uppercased()]?.tier)
+        let rr = a.stopPrice.flatMap { s in
+            a.targetPrice.flatMap { t in StockSageRewardRisk.assess(entry: idea.price, stop: s, target: t) }
+        }
+        let size: PositionSize? = a.stopPrice.flatMap { s in
+            guard let acct = Double(sizerAccount), let rp = Double(sizerRiskPct) else { return nil }
+            return StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: s)
+        }
+        let planLadder: PartialLadder? = {
+            guard let stop = a.stopPrice, let target = a.targetPrice else { return nil }
+            return StockSagePartialLadder.levels(entry: idea.price, stop: stop, target: target, rungs: 3)
+        }()
+        let planChandelier: Double? = store.trailingStop[idea.symbol.uppercased()]?.level
+        var plan = StockSageTradePlan.text(symbol: idea.symbol, market: idea.market, price: idea.price,
+                                           advice: a, rewardRisk: rr, size: size, flags: riskFlags,
+                                           ladder: planLadder, chandelierLevel: planChandelier)
+        // WV3/F15: Net R:R line only when stop+target both exist (need both prices for the ratio).
+        // Gate is emitted for buy-family ONLY — same condition as the on-screen gate chip.
+        // For a stop-less buy, hasStop=false → "Don't take this trade" appears in the export.
+        // Sell/reduce never gets a gate line (screen gates buy-family only).
+        let (finRate, finDays) = StockSageExpectedValue.financingCostInputs(for: idea)
+        if let stop = a.stopPrice, let target = a.targetPrice {
+            let costs = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
+            if let ne = StockSageNetEdge.evaluate(
+                entry: idea.price, stop: stop, target: target,
+                spreadBps: costs.spreadBps, slippageBps: costs.slippageBps, takerFeeBps: costs.takerFeeBps,
+                annualFinancingRate: finRate, holdDays: finDays) {
+                let financingNote = finRate > 0 ? String(format: " + ~%.0fbps/yr short financing", finRate * 10_000) : ""
+                // WV6: "est." added to match sheet's "After ~13bps est. … costs" wording.
+                plan += String(format: "\nNet R:R (after ~%dbps est. %@ costs%@): %.1f:1 (gross %.1f:1)",
+                               Int(costs.roundTripBps), costs.assetClass, financingNote, ne.netRR, ne.grossRR)
+                if let be = ne.breakEvenWinRate {
+                    plan += String(format: " — needs >%.1f%% win-rate net", be * 100)
+                }
+            }
+        }
+        // Gate: buy-family only, matching the on-screen gate chip (sell/reduce gets no gate line).
+        if a.action == .buy || a.action == .strongBuy {
+            // Compute netRR — nil when target missing (rewardToRisk=nil → gate warns "No target").
+            // hasStop mirrors the on-screen check: a stop-less buy shows "Don't take this trade".
+            let resolvedNetRR: Double? = {
+                guard let stop = a.stopPrice, let target = a.targetPrice else { return nil }
+                return StockSageNetEdge.netRR(symbol: idea.symbol, entry: idea.price, stop: stop, target: target,
+                                              annualFinancingRate: finRate, holdDays: finDays)
+            }()
+            let netRR: Double? = {
+                guard let stop = a.stopPrice, let target = a.targetPrice else { return nil }
+                let risk = abs(idea.price - stop)
+                guard risk > 0 else { return nil }
+                let gross = abs(target - idea.price) / risk
+                return resolvedNetRR ?? gross
+            }()
+            let rf = (Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil }) ?? 0.01
+            let gate = StockSageTradeGate.evaluate(
+                hasStop: a.stopPrice != nil, rewardToRisk: netRR, riskFraction: rf,
+                daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
+                rrIsNet: resolvedNetRR != nil)
+            plan += "\nPre-trade gate: \(gate.decision.rawValue)"
+            let failLabels = gate.checks.filter { $0.level == .fail }.map(\.label)
+            let warnLabels = gate.checks.filter { $0.level == .warn }.map(\.label)
+            if !failLabels.isEmpty { plan += "\n  FAIL: " + failLabels.joined(separator: "; ") }
+            if !warnLabels.isEmpty { plan += "\n  WARN: " + warnLabels.joined(separator: "; ") }
+        }
+        return plan
+    }
+
     private func ideaDetailSheet(_ idea: StockSageIdea) -> some View {
         let a = idea.advice
-        return ScrollView {
+        // Hoist riskFlags for the chips row and CTA bar (WV7): shared in ideaDetailSheet only.
+        // fullPlanText(for:) recomputes its own riskFlags from the same store inputs so the
+        // card context-menu "Copy trade plan" path works with no sheet alive.
+        let riskFlags = StockSageRiskFlags.flags(
+            action: a.action, conviction: a.conviction, symbol: idea.symbol,
+            earnings: store.earnings[idea.symbol.uppercased()],
+            precheck: store.precheck[idea.symbol.uppercased()],
+            regimeIsStale: store.regimeIsStale, hasRegime: store.regime != nil,
+            liquidityTier: store.liquidity[idea.symbol.uppercased()]?.tier)
+        // House pattern (WV2): ScrollViewReader is the outer view; ScrollView is its content.
+        // This matches ContentView and CodeView usage throughout the repo and ensures the
+        // proxy is available to modifiers (.onChange) placed on the ScrollView itself.
+        return ScrollViewReader { proxy in
+            ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.sm) {
 
                 // ── 1. Header (symbol / market / action badge) ──────────────────────
@@ -4331,7 +4420,8 @@ struct MarketsView: View {
                     Button { selectedIdea = nil } label: {
                         Image(systemName: "xmark.circle.fill").font(.system(size: 18)).foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain).help("Close").accessibilityLabel("Close")
+                    .buttonStyle(.plain).help("Close (Esc)").accessibilityLabel("Close")
+                    .keyboardShortcut(.cancelAction)
                 }
 
                 // Sparkline
@@ -4358,12 +4448,7 @@ struct MarketsView: View {
                     .font(.system(size: mvFont9)).foregroundStyle(.secondary)
 
                 // ── 2. Risk-flag chips row ───────────────────────────────────────────
-                let riskFlags = StockSageRiskFlags.flags(
-                    action: a.action, conviction: a.conviction, symbol: idea.symbol,
-                    earnings: store.earnings[idea.symbol.uppercased()],
-                    precheck: store.precheck[idea.symbol.uppercased()],
-                    regimeIsStale: store.regimeIsStale, hasRegime: store.regime != nil,
-                    liquidityTier: store.liquidity[idea.symbol.uppercased()]?.tier)
+                // riskFlags is hoisted for the chips row and the CTA bar (see comment above).
                 if !riskFlags.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) { ForEach(riskFlags) { riskChip($0) } }
@@ -4384,6 +4469,15 @@ struct MarketsView: View {
                         }
                     }
 
+                    // Item 6: track whether netRR actually resolved (non-nil from StockSageNetEdge.netRR)
+                    // so we can label the gate check "Net reward:risk (after est. costs)" accurately —
+                    // the ?? gross fallback must NOT be labeled "net". Mirrors fullPlanText(for:).
+                    let resolvedNetRR: Double? = {
+                        guard let stop = a.stopPrice, let tgt = a.targetPrice else { return nil }
+                        let (finRate, finDays) = StockSageExpectedValue.financingCostInputs(for: idea)
+                        return StockSageNetEdge.netRR(symbol: idea.symbol, entry: idea.price, stop: stop, target: tgt,
+                                                      annualFinancingRate: finRate, holdDays: finDays)
+                    }()
                     let rr: Double? = {
                         guard let stop = a.stopPrice, let tgt = a.targetPrice else { return nil }
                         let risk = abs(idea.price - stop)
@@ -4391,14 +4485,15 @@ struct MarketsView: View {
                         let gross = abs(tgt - idea.price) / risk
                         // Gate on NET reward:risk (after asset-class round-trip costs) so high-cost
                         // churn that fails break-even can't read "Clear to trade". Falls back to gross.
-                        return StockSageNetEdge.netRR(symbol: idea.symbol, entry: idea.price, stop: stop, target: tgt) ?? gross
+                        return resolvedNetRR ?? gross
                     }()
                     // Floor 0/negative risk to 1% (matches TodayPlan.build + the velocity sibling at
                     // 2491) so the on-screen gate and the COPIED broker plan can't disagree on go/no-go.
                     let rf = (Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil }) ?? 0.01
                     let gate = StockSageTradeGate.evaluate(
                         hasStop: a.stopPrice != nil, rewardToRisk: rr, riskFraction: rf,
-                        daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil)
+                        daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
+                        rrIsNet: resolvedNetRR != nil)
                     tradeGateView(gate)
 
                     // ── 5. Position sizer (df#3: moved above evidence; gate reads sizerRiskPct
@@ -4563,6 +4658,9 @@ struct MarketsView: View {
                 }
 
                 // Backtest panel (aa#5/hc#5: moved above action buttons so evidence precedes commitment).
+                // WV8: anchor for auto-scroll — fires when the run STARTS (backtestSymbol set synchronously).
+                // Negative top-padding cancels the ~10px phantom VStack gap (cosmetic).
+                Color.clear.frame(height: 0).id("backtestAnchor").padding(.top, -DS.Space.sm)
                 if store.backtestSymbol == idea.symbol { backtestPanel }
 
                 // ── 9. "Exit plan" labeled section (sd#4) ───────────────────────────────
@@ -4815,112 +4913,131 @@ struct MarketsView: View {
                     }
                 }
 
-                // ── 11. CTA buttons LAST ─────────────────────────────────────────────────
-                HStack(spacing: DS.Space.sm) {
-                    if isLoggableIdea(a.action) {
-                        Button { prefillTradeFromIdea(idea) } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "square.and.pencil").font(.system(size: 11, weight: .semibold))
-                                Text("Log this trade").font(.system(size: 11.5, weight: .semibold))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 11).padding(.vertical, 6)
-                            .background(DS.Palette.accent.opacity(0.9), in: Capsule())
-                        }
-                        .buttonStyle(LuxPressStyle())
-                        .help("Prefill the trade journal with this idea's direction, entry, stop and target")
-                    }
-
-                    Button {
-                        let rr = a.stopPrice.flatMap { s in
-                            a.targetPrice.flatMap { t in StockSageRewardRisk.assess(entry: idea.price, stop: s, target: t) }
-                        }
-                        let size: PositionSize? = a.stopPrice.flatMap { s in
-                            guard let acct = Double(sizerAccount), let rp = Double(sizerRiskPct) else { return nil }
-                            return StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: s)
-                        }
-                        // aa#4: compute ladder + chandelier for copy plan inclusion.
-                        let planLadder: PartialLadder? = {
-                            guard let stop = a.stopPrice, let target = a.targetPrice else { return nil }
-                            return StockSagePartialLadder.levels(entry: idea.price, stop: stop, target: target, rungs: 3)
-                        }()
-                        let planChandelier: Double? = store.trailingStop[idea.symbol.uppercased()]?.level
-                        var plan = StockSageTradePlan.text(symbol: idea.symbol, market: idea.market, price: idea.price,
-                                                           advice: a, rewardRisk: rr, size: size, flags: riskFlags,
-                                                           ladder: planLadder, chandelierLevel: planChandelier)
-                        // Append the net R:R and the pre-trade gate verdict that the sheet
-                        // already displays — so the pasted broker plan can't disagree with
-                        // the on-screen go/no-go (mirrors the netRR wiring at lines ~4218-4232).
-                        if let stop = a.stopPrice, let target = a.targetPrice {
-                            let costs = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
-                            // Same financing inputs the on-screen net-cost line and the ranking use —
-                            // the pasted plan can't disagree with either (2026-07-02).
-                            let (finRate, finDays) = StockSageExpectedValue.financingCostInputs(for: idea)
-                            if let ne = StockSageNetEdge.evaluate(
-                                entry: idea.price, stop: stop, target: target,
-                                spreadBps: costs.spreadBps, slippageBps: costs.slippageBps, takerFeeBps: costs.takerFeeBps,
-                                annualFinancingRate: finRate, holdDays: finDays) {
-                                let financingNote = finRate > 0 ? String(format: " + ~%.0fbps/yr short financing", finRate * 10_000) : ""
-                                plan += String(format: "\nNet R:R (after ~%dbps %@ costs%@): %.1f:1 (gross %.1f:1)",
-                                               Int(costs.roundTripBps), costs.assetClass, financingNote, ne.netRR, ne.grossRR)
-                                if let be = ne.breakEvenWinRate {
-                                    plan += String(format: " — needs >%.1f%% win-rate net", be * 100)
-                                }
-                            }
-                            let netRR: Double? = {
-                                let risk = abs(idea.price - stop)
-                                guard risk > 0 else { return nil }
-                                let gross = abs(target - idea.price) / risk
-                                return StockSageNetEdge.netRR(symbol: idea.symbol, entry: idea.price, stop: stop, target: target,
-                                                              annualFinancingRate: finRate, holdDays: finDays) ?? gross
-                            }()
-                            let rf = (Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil }) ?? 0.01
-                            let gate = StockSageTradeGate.evaluate(
-                                hasStop: true, rewardToRisk: netRR, riskFraction: rf,
-                                daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil)
-                            plan += "\nPre-trade gate: \(gate.decision.rawValue)"
-                            let failLabels = gate.checks.filter { $0.level == .fail }.map(\.label)
-                            let warnLabels = gate.checks.filter { $0.level == .warn }.map(\.label)
-                            if !failLabels.isEmpty { plan += "\n  FAIL: " + failLabels.joined(separator: "; ") }
-                            if !warnLabels.isEmpty { plan += "\n  WARN: " + warnLabels.joined(separator: "; ") }
-                        }
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(plan, forType: .string)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "doc.on.clipboard").font(.system(size: 11, weight: .semibold))
-                            Text("Copy plan").font(.system(size: 11.5, weight: .semibold))
-                        }
-                        .foregroundStyle(.white).padding(.horizontal, 11).padding(.vertical, 6)
-                        .background(Color.white.opacity(0.10), in: Capsule())
-                        .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
-                    }
-                    .buttonStyle(LuxPressStyle())
-                    .help("Copy a clean text trade plan (entry/stop/target/R:R/size/flags/scale-out) to the clipboard")
-
-                    // aa#5: Backtest trigger moved out of primary button row — it is evidence,
-                    // not a commit action. Placed last so the two commit buttons (Log / Copy) are
-                    // clearly the primary actions.
-                    Button { Task { await store.runBacktest(symbol: idea.symbol) } } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "clock.arrow.circlepath").font(.system(size: 11, weight: .semibold))
-                            Text("Backtest 5 years").font(.system(size: 11.5, weight: .semibold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 11).padding(.vertical, 6)
-                        .background(Color.white.opacity(0.10), in: Capsule())
-                        .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
-                    }
-                    .buttonStyle(LuxPressStyle()).disabled(store.isBacktesting)
-                }
-
-                Text(a.caveat).font(.caption2).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                // Bottom gap — .safeAreaInset(edge:.bottom) already insets the ScrollView
+                // content on macOS 26.5, so the old 72px spacer was adding ~96px dead band.
+                // A small gap is enough to visually separate content from the inset bar.
+                Color.clear.frame(height: DS.Space.sm)
             }
             .padding(DS.Space.xl)
             .frame(maxWidth: 680, alignment: .leading)   // cap content for readability
             .frame(maxWidth: .infinity)                  // …centered on wide windows
+            } // end VStack / ScrollView content
+            // ── Item 1: Pinned verdict-bearing CTA bar ──────────────────────────────
+            // Floats above the scroll, always reachable. Verdict chip is CONDITIONAL:
+            // only buy-family ideas have a gate; Hold/Avoid show buttons only.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                Divider()   // top hairline so content scrolls cleanly under the bar
+                VStack(spacing: 6) {
+                    // ── Button row ──
+                    HStack(spacing: DS.Space.sm) {
+                        if isLoggableIdea(a.action) {
+                            Button { prefillTradeFromIdea(idea) } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "square.and.pencil").font(.system(size: 11, weight: .semibold))
+                                    Text("Log this trade").font(.system(size: 11.5, weight: .semibold))
+                                }
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 11).padding(.vertical, 6)
+                                .background(DS.Palette.accent.opacity(0.9), in: Capsule())
+                            }
+                            .buttonStyle(LuxPressStyle())
+                            .help("Prefill the trade journal with this idea's direction, entry, stop and target")
+                        }
+
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(fullPlanText(for: idea), forType: .string)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "doc.on.clipboard").font(.system(size: 11, weight: .semibold))
+                                Text("Copy plan").font(.system(size: 11.5, weight: .semibold))
+                            }
+                            .foregroundStyle(.white).padding(.horizontal, 11).padding(.vertical, 6)
+                            .background(Color.white.opacity(0.10), in: Capsule())
+                            .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                        }
+                        .buttonStyle(LuxPressStyle())
+                        .help("Copy a clean text trade plan (entry/stop/target/R:R/size/flags/scale-out) to the clipboard")
+
+                        Button { Task { await store.runBacktest(symbol: idea.symbol) } } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "clock.arrow.circlepath").font(.system(size: 11, weight: .semibold))
+                                Text("Backtest 5 years").font(.system(size: 11.5, weight: .semibold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 11).padding(.vertical, 6)
+                            .background(Color.white.opacity(0.10), in: Capsule())
+                            .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                        }
+                        .buttonStyle(LuxPressStyle()).disabled(store.isBacktesting)
+
+                        Spacer(minLength: 0)
+
+                        // ── Verdict chip — buy-family only (gate doesn't exist for Hold/Avoid) ──
+                        if a.action == .buy || a.action == .strongBuy {
+                            // Recomputed with the same inputs as the in-sheet gate section
+                            // (resolvedNetRR guard, rrIsNet, rf, daysToEarnings) so the chip
+                            // verdict never detaches from the full-sheet gate display.
+                            let chipNetRR: Double? = {
+                                guard let stop = a.stopPrice, let tgt = a.targetPrice else { return nil }
+                                let (finRate, finDays) = StockSageExpectedValue.financingCostInputs(for: idea)
+                                return StockSageNetEdge.netRR(symbol: idea.symbol, entry: idea.price, stop: stop, target: tgt,
+                                                              annualFinancingRate: finRate, holdDays: finDays)
+                            }()
+                            let chipRR: Double? = {
+                                guard let stop = a.stopPrice, let tgt = a.targetPrice else { return nil }
+                                let risk = abs(idea.price - stop)
+                                guard risk > 0 else { return nil }
+                                return chipNetRR ?? (abs(tgt - idea.price) / risk)
+                            }()
+                            let rf = (Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil }) ?? 0.01
+                            let chipGate = StockSageTradeGate.evaluate(
+                                hasStop: a.stopPrice != nil, rewardToRisk: chipRR, riskFraction: rf,
+                                daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
+                                rrIsNet: chipNetRR != nil)
+                            let chipColor: Color = chipGate.decision == .clear ? DS.Palette.successSoft
+                                : (chipGate.decision == .caution ? DS.Palette.warningSoft : DS.Palette.danger)
+                            let chipIcon = chipGate.decision == .clear ? "checkmark.shield.fill"
+                                : (chipGate.decision == .caution ? "exclamationmark.triangle.fill" : "xmark.shield.fill")
+                            // WV5: accessibilityLabel so "Clear to trade" reads in context for VoiceOver;
+                            // layoutPriority(1) + lineLimit(1) so "Don't take this trade" never truncates.
+                            Label(chipGate.decision.rawValue, systemImage: chipIcon)
+                                .font(.system(size: mvFont9, weight: .semibold))
+                                .foregroundStyle(chipColor)
+                                .lineLimit(1)
+                                .layoutPriority(1)
+                                .help(chipGate.caveat)
+                                .accessibilityLabel("Pre-trade gate: \(chipGate.decision.rawValue)")
+                        }
+                    }
+                    // ── Caveat (always visible — stronger than hiding it below the fold) ──
+                    Text(a.caveat).font(.system(size: mvFont9)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, DS.Space.xl)
+                .padding(.vertical, DS.Space.sm)
+                .frame(maxWidth: 680)
+                .frame(maxWidth: .infinity)
+                .background(
+                    ZStack {
+                        DS.Palette.codeSurface
+                        DS.Bezel.shellFill
+                    }
+                )
+            }
+        } // end safeAreaInset closure
+        // WV4: onChange fires when the run STARTS (Store sets backtestSymbol
+        // synchronously at runBacktest entry) — scroll to the backtest anchor
+        // at start so the user sees the spinner appear in place.
+        .onChange(of: store.backtestSymbol) { _, sym in
+            guard sym == idea.symbol else { return }
+            withAnimation(.easeOut(duration: 0.35)) {
+                proxy.scrollTo("backtestAnchor", anchor: .top)
+            }
         }
+        } // end ScrollViewReader (house pattern — proxy stays in scope for .onChange)
         .frame(minWidth: 440, maxWidth: 680, minHeight: 480)
         .background(
             ZStack {

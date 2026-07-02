@@ -43,4 +43,24 @@ struct StockSageRewardRiskTests {
         #expect(RR.assess(entry: 100, stop: 100, target: 120) == nil)   // risk 0
         #expect(RR.assess(entry: 100, stop: 90, target: 100) == nil)    // reward 0
     }
+
+    // MARK: - wave-11 "gross" note tests (F18) — hand-derived via derive_wave11f.swift
+
+    // note for ratio=3.0 (Strong): "R:R 3.0 gross — Strong; needs a >25.0% win-rate just to break even."
+    // note for ratio=2.0 (Fair):  "R:R 2.0 gross — Fair; needs a >33.3% win-rate just to break even."
+    @Test func noteContainsGrossLabelForStrongSetup() {
+        // entry=100, stop=90, target=130 → ratio=3.0, breakevenWinRate=0.25 → "25.0%"
+        let r = RR.assess(entry: 100, stop: 90, target: 130)!
+        #expect(r.note.contains("gross"))
+        // breakeven decimal: %.1f of 0.25*100 = "25.0"
+        #expect(r.note.contains("25.0"))
+    }
+
+    @Test func noteContainsGrossLabelAndDecimalForFairSetup() {
+        // entry=100, stop=90, target=120 → ratio=2.0, breakevenWinRate=1/3 → "33.3%"
+        let r = RR.assess(entry: 100, stop: 90, target: 120)!
+        #expect(r.note.contains("gross"))
+        // breakeven decimal: %.1f of (1/3)*100 = "33.3"
+        #expect(r.note.contains("33.3"))
+    }
 }

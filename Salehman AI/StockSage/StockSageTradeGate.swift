@@ -37,13 +37,20 @@ enum StockSageTradeGate {
     /// Evaluate a proposed trade. Inputs are already-computed primitives so the gate is
     /// a pure decision over them (the caller supplies risk %, R:R, correlation, earnings).
     /// `rewardToRisk`/`maxCorrelation`/`daysToEarnings` are nil when unknown/not applicable.
+    /// `rrIsNet` is display-only: when true the R:R check label reads "Net reward:risk
+    /// (after est. costs)" instead of "Reward:risk". Default false → byte-identical verdict
+    /// and decision for all existing callers. Pass true ONLY when rewardToRisk is already
+    /// a net-of-costs figure (i.e. StockSageNetEdge.netRR resolved non-nil — NOT the `?? gross`
+    /// fallback, which must stay labeled gross to avoid mislabeling).
     nonisolated static func evaluate(hasStop: Bool,
                                      rewardToRisk: Double?,
                                      riskFraction: Double,
                                      maxRiskFraction: Double = 0.02,
                                      maxCorrelation: Double? = nil,
-                                     daysToEarnings: Int? = nil) -> TradeGateVerdict {
+                                     daysToEarnings: Int? = nil,
+                                     rrIsNet: Bool = false) -> TradeGateVerdict {
         var checks: [TradeGateCheck] = []
+        let rrPrefix = rrIsNet ? "Net reward:risk (after est. costs)" : "Reward:risk"
 
         // 1. A defined stop — without it, risk is undefined and sizing is meaningless.
         checks.append(hasStop
@@ -61,12 +68,12 @@ enum StockSageTradeGate {
 
         // 3. Reward:risk skew.
         if let rr = rewardToRisk {
-            if rr >= 2 { checks.append(TradeGateCheck(level: .pass, label: String(format: "Reward:risk %.1f:1 — positive skew", rr))) }
-            else if rr >= 1 { checks.append(TradeGateCheck(level: .warn, label: String(format: "Reward:risk %.1f:1 — thin; below 2:1", rr))) }
+            if rr >= 2 { checks.append(TradeGateCheck(level: .pass, label: String(format: "%@ %.1f:1 — positive skew", rrPrefix, rr))) }
+            else if rr >= 1 { checks.append(TradeGateCheck(level: .warn, label: String(format: "%@ %.1f:1 — thin; below 2:1", rrPrefix, rr))) }
             // rr can arrive NET of costs, so a negative value means costs exceed the reward — say
             // that, rather than blaming the target (which may sit well above 1R on the gross plan).
-            else if rr >= 0 { checks.append(TradeGateCheck(level: .fail, label: String(format: "Reward:risk %.1f:1 — sub-1R; reward below the risk", rr))) }
-            else { checks.append(TradeGateCheck(level: .fail, label: String(format: "Reward:risk %.1f:1 — costs exceed the reward (net-negative)", rr))) }
+            else if rr >= 0 { checks.append(TradeGateCheck(level: .fail, label: String(format: "%@ %.1f:1 — sub-1R; reward below the risk", rrPrefix, rr))) }
+            else { checks.append(TradeGateCheck(level: .fail, label: String(format: "%@ %.1f:1 — costs exceed the reward (net-negative)", rrPrefix, rr))) }
         } else {
             checks.append(TradeGateCheck(level: .warn, label: "No target set — define one to judge skew"))
         }

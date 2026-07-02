@@ -17,6 +17,13 @@ enum StockSageTodayPlan {
         let a = idea.advice
         let entry = idea.price
         let rf = Swift.max(0, riskFraction ?? 0)
+        // Capture resolvedNetRR BEFORE the ?? gross collapse so rrIsNet can be set accurately:
+        // pass true ONLY when netRR actually resolved (non-nil), never for the ?? gross fallback
+        // which must stay labeled gross to avoid mislabeling a gross value as "Net reward:risk".
+        let resolvedNetRR: Double? = {
+            guard let s = a.stopPrice, let t = a.targetPrice else { return nil }
+            return StockSageNetEdge.netRR(symbol: idea.symbol, entry: entry, stop: s, target: t)
+        }()
         let rr: Double? = {
             guard let s = a.stopPrice, let t = a.targetPrice else { return nil }
             let risk = abs(entry - s)
@@ -26,10 +33,11 @@ enum StockSageTodayPlan {
             // the on-screen gate, so the copied plan can't disagree. Falls back to gross.
             // (No financing threading here: `idea` reaching `build` always came from
             // `bestOpportunity`, which is buy-family only — financing would always be 0.)
-            return StockSageNetEdge.netRR(symbol: idea.symbol, entry: entry, stop: s, target: t) ?? gross
+            return resolvedNetRR ?? gross
         }()
         let gate = StockSageTradeGate.evaluate(hasStop: a.stopPrice != nil, rewardToRisk: rr,
-                                               riskFraction: rf > 0 ? rf : 0.01, daysToEarnings: daysToEarnings)
+                                               riskFraction: rf > 0 ? rf : 0.01, daysToEarnings: daysToEarnings,
+                                               rrIsNet: resolvedNetRR != nil)
 
         var lines = ["Today's plan — estimates, not advice. Size with a stop; risk control > signal."]
         // The copied plan is the one artifact pasted into a broker — it MUST carry the
@@ -93,6 +101,10 @@ enum StockSageTodayPlan {
                   let v = StockSageExpectedValue.velocity(for: idea, holds: holds, calibration: calibration)
             else { continue }
             let entry = idea.price
+            // Capture resolvedNetRR BEFORE the ?? gross collapse so rrIsNet is accurate —
+            // true only when netRR resolved non-nil. The ?? gross fallback must never be
+            // labeled "Net reward:risk" to avoid mislabeling a gross value as net.
+            let resolvedNetRR: Double? = StockSageNetEdge.netRR(symbol: idea.symbol, entry: entry, stop: stop, target: target)
             let rr: Double? = {
                 let risk = abs(entry - stop)
                 guard risk > 0 else { return nil }
@@ -101,10 +113,11 @@ enum StockSageTodayPlan {
                 // clear the gate here and then block in the single-idea copy, or vice versa.
                 // (No financing threading here: `fastLane()` is buy-family only via
                 // `velocityRankKey`'s explicit guard — financing would always be 0.)
-                return StockSageNetEdge.netRR(symbol: idea.symbol, entry: entry, stop: stop, target: target) ?? gross
+                return resolvedNetRR ?? gross
             }()
             let gate = StockSageTradeGate.evaluate(hasStop: true, rewardToRisk: rr, riskFraction: gateRiskFraction,
-                                                   daysToEarnings: earnings[idea.symbol.uppercased()]?.daysUntil)
+                                                   daysToEarnings: earnings[idea.symbol.uppercased()]?.daysUntil,
+                                                   rrIsNet: resolvedNetRR != nil)
             var shares: Int? = nil
             var dollarsAtRisk: Double? = nil
             if let acct = account, acct > 0, rf > 0,

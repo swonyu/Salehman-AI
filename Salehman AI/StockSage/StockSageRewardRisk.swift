@@ -21,7 +21,10 @@ struct RewardRisk: Sendable, Equatable {
     nonisolated var note: String {
         // %.1f (not %.0f): a 2:1 setup breaks even at 33.3%, so ">33%" would wrongly
         // imply 33% suffices. Keep the decimal so the threshold isn't understated.
-        String(format: "R:R %.1f — %@; needs a >%.1f%% win-rate just to break even.",
+        // "gross" suffix (wave-11): this ratio is before round-trip costs; the net figure
+        // is computed separately by StockSageNetEdge and shown on the scissors line and
+        // the gate — the two must never appear to say the same thing with different values.
+        String(format: "R:R %.1f gross — %@; needs a >%.1f%% win-rate just to break even.",
                ratio, quality.rawValue, breakevenWinRate * 100)
     }
 }

@@ -46,4 +46,49 @@ struct StockSageTradeGateTests {
         #expect(v.decision == .blocked)
         #expect(v.fails >= 1 && v.warns >= 1)
     }
+
+    // MARK: - wave-11 rrIsNet label tests (F16) — hand-derived via derive_wave11f.swift
+
+    // (a) rrIsNet:true → check label reads "Net reward:risk (after est. costs) 2.5:1"
+    // Derived: "Net reward:risk (after est. costs) 2.5:1 — positive skew"
+    @Test func rrIsNetTrueLabelsNetCostCheck() {
+        let v = G.evaluate(hasStop: true, rewardToRisk: 2.5, riskFraction: 0.01, rrIsNet: true)
+        #expect(v.decision == .clear)
+        let rrCheck = v.checks.first { $0.label.contains("reward:risk") }
+        #expect(rrCheck != nil)
+        if let c = rrCheck {
+            // Label must contain the net prefix (not the bare "Reward:risk" prefix)
+            #expect(c.label.contains("Net reward:risk (after est. costs) 2.5:1"))
+        }
+    }
+
+    // (b) rrIsNet:false (default) → label is byte-identical to the old "Reward:risk 2.5:1 — positive skew"
+    // Derived: "Reward:risk 2.5:1 — positive skew"
+    // Note: "Reward:risk" has a capital R (gross label); search case-insensitively to find it.
+    @Test func rrIsNetFalseDefaultLabelIsGrossPrefix() {
+        let v = G.evaluate(hasStop: true, rewardToRisk: 2.5, riskFraction: 0.01, rrIsNet: false)
+        #expect(v.decision == .clear)
+        let rrCheck = v.checks.first { $0.label.lowercased().contains("reward:risk") }
+        #expect(rrCheck != nil)
+        if let c = rrCheck {
+            // Must NOT contain "Net" prefix (that would indicate rrIsNet=true leaked through)
+            #expect(!c.label.hasPrefix("Net"))
+            #expect(c.label == "Reward:risk 2.5:1 \u{2014} positive skew")
+        }
+    }
+
+    // (c) net-negative rr (-0.3) → blocked + "costs exceed the reward (net-negative)" fail label
+    // Derived: "Net reward:risk (after est. costs) -0.3:1 — costs exceed the reward (net-negative)"
+    @Test func netNegativeRRBlocksWithCostExceedFailLabel() {
+        let v = G.evaluate(hasStop: true, rewardToRisk: -0.3, riskFraction: 0.01, rrIsNet: true)
+        #expect(v.decision == .blocked)
+        let rrCheck = v.checks.first { $0.label.contains("reward:risk") }
+        #expect(rrCheck != nil)
+        if let c = rrCheck {
+            #expect(c.level == .fail)
+            #expect(c.label.contains("costs exceed the reward (net-negative)"))
+            // Must use the net prefix (rrIsNet:true)
+            #expect(c.label.contains("Net reward:risk (after est. costs)"))
+        }
+    }
 }

@@ -48,13 +48,19 @@ struct StockSageTodayPlanRankedTests {
         for p in plans { #expect(p.stop > 0 && p.target > 0 && p.entry > 0) }
     }
 
+    // wave-11/F09: rankedActions now passes rrIsNet:true when StockSageNetEdge.netRR resolves non-nil
+    // (i.e. for all clearIdea fixtures with valid entry/stop/target). The expected gate must match.
+    // Hand-derived via derive_wave11f.swift: US large-cap costs=13bps; clearIdea A (riskAbs=5,
+    // rewardAbs=20) netRR≈3.87; clearIdea B (riskAbs=3, rewardAbs=15) netRR≈4.75 — both non-nil.
     @Test func gateVerdictMatchesTradeGateEvaluateOnTheSameInputs() {
         let ideas = [clearIdea("A"), clearIdea("B", conviction: 0.9, riskAbs: 3, rewardAbs: 15)]
         let plans = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: 0.01)
         for p in plans {
-            let rr = StockSageNetEdge.netRR(symbol: p.symbol, entry: p.entry, stop: p.stop, target: p.target)
-                ?? abs(p.target - p.entry) / abs(p.entry - p.stop)
-            let expected = StockSageTradeGate.evaluate(hasStop: true, rewardToRisk: rr, riskFraction: 0.01)
+            let resolvedNetRR = StockSageNetEdge.netRR(symbol: p.symbol, entry: p.entry, stop: p.stop, target: p.target)
+            let rr = resolvedNetRR ?? abs(p.target - p.entry) / abs(p.entry - p.stop)
+            // rrIsNet:true iff netRR resolved (non-nil) — mirrors rankedActions' own logic post-wave-11
+            let expected = StockSageTradeGate.evaluate(hasStop: true, rewardToRisk: rr, riskFraction: 0.01,
+                                                       rrIsNet: resolvedNetRR != nil)
             #expect(p.gate == expected)
         }
     }
