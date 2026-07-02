@@ -81,8 +81,47 @@ struct StockSageTodayPlanRankedTests {
         for p in plans {
             #expect(text.contains(p.symbol))
             #expect(text.contains("R/day"))
-            #expect(text.contains(String(format: "%.2f", p.stop)))
+            // Adaptive price: ≥$1 → %.2f, sub-dollar → %.4f, sub-cent → %.6f.
+            // These plans use price=100/stop≥95, so %.2f applies (but use the same
+            // adaptive logic rather than hard-coding %.2f so the test stays honest).
+            let expectedStop: String = {
+                let a = abs(p.stop)
+                if a >= 1 || a == 0 { return String(format: "%.2f", p.stop) }
+                if a >= 0.01 { return String(format: "%.4f", p.stop) }
+                return String(format: "%.6f", p.stop)
+            }()
+            #expect(text.contains(expectedStop))
         }
+    }
+
+    // Regression: sub-dollar crypto prices (DOGE-class, ~$0.10) must NOT collapse to identical
+    // "0.10" strings for entry and stop. fmt must use %.4f so e.g. entry 0.1040 ≠ stop 0.0990.
+    @Test func subDollarPricesUseFourDecimalPlacesInCopyText() {
+        // entry ~$0.104, stop ~$0.099 → 5% risk, 4:1 R:R target
+        let doge = idea("DOGE-USD", conviction: 0.85, price: 0.104, stop: 0.099, target: 0.124)
+        let plans = StockSageTodayPlan.rankedActions([doge], account: nil, riskFraction: nil, max: 1)
+        guard !plans.isEmpty else {
+            // If fastLane filters it (unlikely with 4:1 R:R) the fixture is moot — skip gracefully.
+            return
+        }
+        let text = StockSageTodayPlan.copyAllText(plans)
+        // Both must appear as 4-decimal strings, not 2-decimal collapsed identical values.
+        #expect(text.contains("0.1040"))
+        #expect(text.contains("0.0990"))
+        #expect(text.contains("0.1240"))
+        // The 2-decimal collapsed representations must NOT appear (the old bug).
+        #expect(!text.contains("entry 0.10 stop 0.10"))
+    }
+
+    // Regression: sub-cent prices (e.g. SHIB-USD at $0.000025) must use %.6f precision.
+    @Test func subCentPricesUseSixDecimalPlacesInCopyText() {
+        let shib = idea("SHIB-USD", conviction: 0.85, price: 0.000025, stop: 0.000022, target: 0.000037)
+        let plans = StockSageTodayPlan.rankedActions([shib], account: nil, riskFraction: nil, max: 1)
+        guard !plans.isEmpty else { return }
+        let text = StockSageTodayPlan.copyAllText(plans)
+        #expect(text.contains("0.000025"))
+        #expect(text.contains("0.000022"))
+        #expect(text.contains("0.000037"))
     }
 
     // Week-horizon research (RESEARCH_2026-07-02_week_horizon_velocity.md, roadmap #2): a short

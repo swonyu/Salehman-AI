@@ -65,6 +65,11 @@ struct MarketsView: View {
     @State private var newCost = ""
     /// Watchlist add-symbol field (track any global ticker beyond the universe).
     @State private var newWatchSymbol = ""
+    /// Local error for the watchlist add box only. Populated from store.addSymbolError after
+    /// addWatchSymbol() completes, then displayed here — NOT from store.addSymbolError directly,
+    /// so browse-sheet add failures (which also set store.addSymbolError) never bleed into
+    /// this box. Cleared when the browse sheet opens/closes.
+    @State private var watchlistAddError: String? = nil
     /// Tapped idea → per-symbol detail sheet (full advice + larger sparkline + backtest).
     @State private var selectedIdea: StockSageIdea?
     @State private var ideasCopied = false
@@ -119,6 +124,11 @@ struct MarketsView: View {
     /// Staggered entrance. Pre-set under `--qa` so the offscreen snapshot
     /// (onAppear never fires) captures the settled layout, not the pre-entrance pose.
     @State private var appeared = ProcessInfo.processInfo.arguments.contains("--qa")
+    /// Tracks symbols whose multi-timeframe fetch task has completed (success OR failure).
+    /// Used to bound the weekly-timeframe spinner: once the task finishes, if the store
+    /// still has no data for the symbol the fetch failed and we show "unavailable" instead
+    /// of leaving a permanent ProgressView.
+    @State private var mtfFetchCompleted: Set<String> = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// `qaSection` lets the QA harness capture a specific sub-section (e.g. the
@@ -1833,16 +1843,27 @@ struct MarketsView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Stop trading. \(state.haltReason ?? ""). \(state.caveat)")
         case .warn:
-            // The warn trigger is the R gate (daily or weekly realized R approaching the limit),
-            // NOT the loss-run — the run gate at standDownLossRun=3 halts before it warns.
-            // Show the actual R reading so the trader knows how close they are to the limit.
+            // The warn trigger can come from either the daily-R gate OR the weekly-R gate (or
+            // both). LossLimitState exposes dailyRealizedR but not weeklyRealizedR, so we cannot
+            // reliably attribute the warning to one gate — show both readings so the copy is
+            // honest regardless of which gate fired. Daily R is the precise engine value; weekly
+            // loss is shown in dollars (the only weekly figure the state exposes) so the trader
+            // can see the actual weekly exposure even when daily R is near-zero.
+            let dailyDown  = -state.dailyRealizedR
+            let weeklyDown = -state.weeklyRealized      // dollars (negative = loss)
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.warningSoft)
-                Text(String(format: "Approaching your loss limit \u{2014} down %.1fR today (limit 3R). Ease off and size down.", -state.dailyRealizedR))
-                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Approaching your loss limit \u{2014} ease off and size down.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Text(String(format: "Today: \u{2212}%.1fR (daily limit 3R) \u{B7} This week: \u{2212}$%.0f (weekly limit varies by account).",
+                                dailyDown, weeklyDown))
+                        .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(.vertical, 4)
-            .accessibilityLabel(String(format: "Approaching loss limit. Down %.1fR today. Ease off and size down.", -state.dailyRealizedR))
+            .accessibilityLabel(String(format: "Approaching loss limit. Down %.1fR today and $%.0f this week. Ease off and size down.",
+                                       dailyDown, weeklyDown))
         }
     }
 
@@ -2236,10 +2257,19 @@ struct MarketsView: View {
                                     color: a.diversificationScore >= 60 ? DS.Palette.successSoft
                                          : (a.diversificationScore >= 30 ? DS.Palette.warningSoft : DS.Palette.danger))
                 }
-                let totalPositions = StockSagePortfolio.shared.positions.count
-                let excludedCount = totalPositions - a.holdingsAnalyzed
-                Text("\(a.observations) days · \(a.holdingsAnalyzed) of \(totalPositions) holdings\(excludedCount > 0 ? " — \(excludedCount) had no history and are excluded" : "") · \(a.caveat)")
-                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                // When analyticsError != nil the snapshot may be from a previous (larger/smaller)
+                // book; comparing a.holdingsAnalyzed against the CURRENT portfolio count can
+                // produce nonsensical "5 of 2 holdings" copy. Show the snapshot's own counts
+                // without referencing the live count in the stale-error case.
+                if store.analyticsError != nil {
+                    Text("\(a.observations) days · \(a.holdingsAnalyzed) holdings (previous analysis) · \(a.caveat)")
+                        .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    let totalPositions = StockSagePortfolio.shared.positions.count
+                    let excludedCount = max(0, totalPositions - a.holdingsAnalyzed)
+                    Text("\(a.observations) days · \(a.holdingsAnalyzed) of \(totalPositions) holdings\(excludedCount > 0 ? " — \(excludedCount) had no history and are excluded" : "") · \(a.caveat)")
+                        .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .padding(DS.Space.sm)
@@ -2436,7 +2466,8 @@ struct MarketsView: View {
                 .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
                     .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
             }
-            if let err = store.addSymbolError {
+            if let err = watchlistAddError {
+                // Local error — set only by addWatchSymbol(), never by browse-sheet adds.
                 Text(err).font(.caption2).foregroundStyle(DS.Palette.warningSoft)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
@@ -2448,12 +2479,19 @@ struct MarketsView: View {
             .buttonStyle(.plain)
             .help("Browse the full searchable directory by region & asset class; tap + to track any (fetches one quote).")
         }
-        .animation(DS.Motion.smooth, value: store.addSymbolError)
+        .animation(DS.Motion.smooth, value: watchlistAddError)
+        // Clear the watchlist error when the browse sheet opens or closes so errors from one
+        // surface never bleed into the other (fixes direction (b): browse-sheet fail → watchlist).
+        .onChange(of: showBrowseMarkets) { watchlistAddError = nil }
         .sheet(isPresented: $showBrowseMarkets) { BrowseMarketsView(store: store) }
     }
 
     private func addWatchSymbol() async {
+        watchlistAddError = nil
         await store.addSymbol(newWatchSymbol)
+        // Capture the error locally; the store's addSymbolError is shared with the browse sheet
+        // so we never read it directly in the watchlist box display (see watchlistAddError).
+        watchlistAddError = store.addSymbolError
         if store.addSymbolError == nil { newWatchSymbol = "" }
     }
 
@@ -3565,10 +3603,13 @@ struct MarketsView: View {
                 accessibilityText: accessibilityText,
                 onTap: { selectedIdea = idea },
                 onCopy: {
+                    // Use StockSageInput.positiveAmount/percent (comma-aware) to match the
+                    // sizeInfo computation above and the bestOpportunityCard onCopy at line ~3304.
+                    // Double("10,000") == nil; StockSageInput.positiveAmount("10,000") == 10000.
                     let plan = StockSageTodayPlan.build(
                         idea: idea, ev: ev,
-                        account: Double(sizerAccount),
-                        riskFraction: Double(sizerRiskPct).map { $0 / 100 },
+                        account: StockSageInput.positiveAmount(sizerAccount),
+                        riskFraction: StockSageInput.percent(sizerRiskPct).map { $0 / 100 },
                         daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
                         isSample: store.isSampleData)
                     NSPasteboard.general.clearContents()
@@ -4479,12 +4520,18 @@ struct MarketsView: View {
                     }
                     Text(mtf.note).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 } else if ToolPolicy.isExternalAllowed
-                           && !ProcessInfo.processInfo.arguments.contains("--qa") {
+                           && !ProcessInfo.processInfo.arguments.contains("--qa")
+                           && !mtfFetchCompleted.contains(idea.symbol.uppercased()) {
+                    // Fetch is in progress — show spinner. Once the .task marks the symbol in
+                    // mtfFetchCompleted the spinner is replaced by the unavailable fallback below,
+                    // preventing a permanent spinner on network fetch failure.
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small).tint(DS.Palette.accent)
                         Text("Checking the weekly timeframe…").font(.caption2).foregroundStyle(.secondary)
                     }
                 } else {
+                    // Either external access is off, --qa is set, OR the fetch completed without
+                    // writing data (network failure / no history). All three paths land here.
                     Text("Weekly timeframe unavailable.").font(.caption2).foregroundStyle(.secondary)
                 }
 
@@ -4620,6 +4667,9 @@ struct MarketsView: View {
         .task(id: idea.symbol) {
             guard !ProcessInfo.processInfo.arguments.contains("--qa") else { return }
             await store.refreshMultiTimeframe(symbol: idea.symbol)
+            // Mark MTF fetch complete (success or failure) so the view can replace the
+            // permanent ProgressView with "unavailable" when the fetch returns no data.
+            mtfFetchCompleted.insert(idea.symbol.uppercased())
             await store.refreshPrecheck(symbol: idea.symbol)
             await store.refreshEarnings(symbol: idea.symbol)
             await store.refreshSeasonality(symbol: idea.symbol)

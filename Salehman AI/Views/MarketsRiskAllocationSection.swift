@@ -151,10 +151,13 @@ struct MarketsRiskAllocationSection: View {
                 // display paths from the same USD-normalised holdings eliminates the
                 // contradictory-weights defect (e.g. Tadawul ~3.75× off, London ~100× off).
                 let parityFX = fxRatesToUSD
+                // Exclude unpriced holdings (no live quote) rather than falling back to cost basis —
+                // a possibly years-old basis price distorts every weight and trade size with no caveat.
                 let parityHoldings: [(symbol: String, value: Double)] = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
-                    guard let rate = parityFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
+                    guard let price = currentPrice(p.symbol),
+                          let rate = parityFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
                     return (symbol: p.symbol,
-                            value: holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares) * rate)
+                            value: holdingValue(p.symbol, perShare: price, shares: p.shares) * rate)
                 }
                 let parityTotal = parityHoldings.reduce(0.0) { $0 + $1.value }
                 // Symbol (uppercased) → USD weight; aggregate multi-lot positions with +.
@@ -186,24 +189,39 @@ struct MarketsRiskAllocationSection: View {
                 // symbols risk-parity actually sized — a holding dropped for missing vol has no
                 // target (plan's `norm[s] ?? 0` would fabricate a "Sell $<all>" liquidation).
                 let band = 0.02 // mirrors StockSageRebalance.plan default band: Double = 0.02
-                let targetSymbols = Set(store.riskParity.map { $0.symbol.uppercased() })
-                let rebalHoldings = parityHoldings.filter { targetSymbols.contains($0.symbol.uppercased()) }
-                let heldSymbols = Set(rebalHoldings.map { $0.symbol.uppercased() })
-                let rebalTargets = Dictionary(store.riskParity.filter { heldSymbols.contains($0.symbol.uppercased()) }
-                    .map { ($0.symbol, $0.targetWeight) },
-                    uniquingKeysWith: { a, _ in a })
-                if let plan = StockSageRebalance.plan(holdings: rebalHoldings, targets: rebalTargets, band: band) {
-                    if plan.isBalanced {
-                        Text("✓ Within \(Int(band * 100))% of target — no rebalance needed.")
-                            .font(.caption2).foregroundStyle(DS.Palette.successSoft)
-                    } else {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("To rebalance (≈$ trades, ignores costs/taxes):")
-                                .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(.secondary)
-                            ForEach(plan.trades) { t in
-                                Text("\(t.action) \(String(format: "$%.0f", abs(t.deltaValue))) of \(t.symbol)  (\(String(format: "%.0f%%→%.0f%%", t.currentWeight * 100, t.targetWeight * 100)))")
-                                    .font(.system(size: mvFont9, design: .monospaced))
-                                    .foregroundStyle(t.deltaValue > 0 ? DS.Palette.successSoft : DS.Palette.danger)
+                // Stale-parity guard: targets are frozen at "Balance by risk" time; if the live
+                // portfolio differs from the sized snapshot (add/remove), suppress the plan with a
+                // refresh notice rather than computing trades from mismatched sets.
+                // Mirrors MarketsView.swift's riskParityPanel guard (lines 1162-1170).
+                let liveSymbols = Set(portfolio.positions.map { $0.symbol.uppercased() })
+                let sizedSymbols = Set(store.riskParity.map { $0.symbol.uppercased() })
+                    .union(store.riskParityDropped.map { $0.uppercased() })
+                if liveSymbols != sizedSymbols {
+                    Text("⚠︎ Holdings changed since the last risk sizing — tap “Balance by risk” again before trading on these targets.")
+                        .font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    let targetSymbols = Set(store.riskParity.map { $0.symbol.uppercased() })
+                    let rebalHoldings = parityHoldings.filter { targetSymbols.contains($0.symbol.uppercased()) }
+                    let heldSymbols = Set(rebalHoldings.map { $0.symbol.uppercased() })
+                    // Sum target weights for multi-lot same-symbol entries (+ not first-wins) so a
+                    // two-lot AAPL position gets its full combined target, not just the first lot's.
+                    let rebalTargets = Dictionary(store.riskParity.filter { heldSymbols.contains($0.symbol.uppercased()) }
+                        .map { ($0.symbol, $0.targetWeight) },
+                        uniquingKeysWith: +)
+                    if let plan = StockSageRebalance.plan(holdings: rebalHoldings, targets: rebalTargets, band: band) {
+                        if plan.isBalanced {
+                            Text("✓ Within \(Int(band * 100))% of target — no rebalance needed.")
+                                .font(.caption2).foregroundStyle(DS.Palette.successSoft)
+                        } else {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("To rebalance (≈$ trades, ignores costs/taxes):")
+                                    .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(.secondary)
+                                ForEach(plan.trades) { t in
+                                    Text("\(t.action) \(String(format: "$%.0f", abs(t.deltaValue))) of \(t.symbol)  (\(String(format: "%.0f%%→%.0f%%", t.currentWeight * 100, t.targetWeight * 100)))")
+                                        .font(.system(size: mvFont9, design: .monospaced))
+                                        .foregroundStyle(t.deltaValue > 0 ? DS.Palette.successSoft : DS.Palette.danger)
+                                }
                             }
                         }
                     }
@@ -254,10 +272,13 @@ struct MarketsRiskAllocationSection: View {
         // Convert to USD before the breakdown (mirrors portfolioTotals/rebalance) — summing currencies
         // at 1:1 skews the asset-class / region slice percentages. Untracked-FX holdings are excluded.
         let allocFX = fxRatesToUSD
+        // Exclude unpriced holdings (no live quote) rather than falling back to cost basis —
+        // a possibly years-old basis price distorts every slice percentage with no caveat.
         let holdings = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
-            guard let rate = allocFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
+            guard let price = currentPrice(p.symbol),
+                  let rate = allocFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
             return (symbol: p.symbol,
-                    value: holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares) * rate)
+                    value: holdingValue(p.symbol, perShare: price, shares: p.shares) * rate)
         }
         let alloc = StockSageAllocation.breakdown(holdings)
         return VStack(alignment: .leading, spacing: DS.Space.sm) {
@@ -279,8 +300,11 @@ struct MarketsRiskAllocationSection: View {
             }
 
             // Currency exposure — only worth showing when there's an actual FX dimension.
-            let ccyHoldings = portfolio.positions.map { pos -> (value: Double, currency: String) in
-                let raw = (currentPrice(pos.symbol) ?? pos.costBasis) * pos.shares
+            // Exclude unpriced holdings (no live quote) rather than falling back to cost basis;
+            // a stale basis price would distort every currency-exposure slice with no caveat.
+            let ccyHoldings = portfolio.positions.compactMap { pos -> (value: Double, currency: String)? in
+                guard let price = currentPrice(pos.symbol) else { return nil }
+                let raw = price * pos.shares
                 // London .L is quoted in pence — normalize to pounds so GBP isn't inflated ~100×.
                 return (value: StockSageCurrency.majorUnitValue(symbol: pos.symbol, rawValue: raw),
                         currency: StockSageCurrency.currencyForSymbol(pos.symbol))
@@ -293,8 +317,11 @@ struct MarketsRiskAllocationSection: View {
                     if let inv = currentPrice("USD\(ccy)=X"), inv > 0 { return (ccy, 1.0 / inv) }
                     return nil
                 })
+            // Show the FX section whenever there is real FX risk, not just when the book spans
+            // multiple currencies: a 100%-GBP book has count == 1 but hasFXRisk is true and the
+            // concentration warning MUST fire (hiding it is the worst case — maximal exposure).
             if let cb = StockSageCurrency.breakdown(holdings: ccyHoldings, ratesToBase: fxRates, base: "USD"),
-               cb.exposures.count > 1 || !cb.unpriced.isEmpty {
+               cb.hasFXRisk || cb.exposures.count > 1 || !cb.unpriced.isEmpty {
                 Text("Currency exposure (base USD)").font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.secondary)
                 ForEach(cb.exposures) { e in
                     HStack(spacing: 8) {
