@@ -123,7 +123,8 @@ enum StockSageAdvisor {
         let rsi    = StockSageIndicators.rsi(closes) ?? 50
         let macd   = StockSageIndicators.macd(closes)
         let er     = StockSageIndicators.efficiencyRatio(closes) ?? 0
-        let mom    = StockSageIndicators.returnOverPeriod(closes, period: min(closes.count - 1, 126)) ?? 0
+        let momPeriod = min(closes.count - 1, 126)
+        let mom    = StockSageIndicators.returnOverPeriod(closes, period: momPeriod) ?? 0
         var atr: Double? = nil
         if let highs, let lows { atr = StockSageIndicators.atr(highs: highs, lows: lows, closes: closes) }
 
@@ -141,9 +142,13 @@ enum StockSageAdvisor {
             if price > s50 { score += 0.20; rationale.append("Above the 50DMA (uptrend, <200 bars history)") }
             else { score -= 0.20; rationale.append("Below the 50DMA (downtrend, <200 bars history)") }
         }
-        // Momentum (~6-month).
-        if mom > 0 { score += 0.15; rationale.append(String(format: "+%.0f%% 6-month momentum", mom)) }
-        else if mom < 0 { score -= 0.15; rationale.append(String(format: "%.0f%% 6-month momentum", mom)) }
+        // Momentum (~6-month when the full 126-bar lookback is available; for shorter histories
+        // (closes.count between the 30-bar minimum and 126) `momPeriod` is the true, shorter
+        // window actually used above — the rationale must say so honestly rather than always
+        // claiming "6-month" (same honesty treatment as the degraded-SMA branch above).
+        let momWindowLabel = momPeriod >= 100 ? "6-month momentum" : "momentum (\(momPeriod)-day window)"
+        if mom > 0 { score += 0.15; rationale.append(String(format: "+%.0f%% \(momWindowLabel)", mom)) }
+        else if mom < 0 { score -= 0.15; rationale.append(String(format: "%.0f%% \(momWindowLabel)", mom)) }
         // MACD trend confirmation — weighted LIGHTER than independent momentum
         // (±0.10 vs ±0.15): the research calls it a confirmation signal that
         // "over-signals alone" and it's the most redundant with the 0.40 trend term,
@@ -435,7 +440,10 @@ enum StockSageAdvisor {
     /// (2.5×) so ordinary daily noise doesn't whipsaw it out; a calm name can run a tighter
     /// 1.5×. nil vol → the documented 2.0× default (so existing callers are unchanged).
     nonisolated static func stopMultiple(forVol realizedVol: Double?) -> Double {
-        guard let v = realizedVol else { return 2.0 }
+        // .isFinite guard (not just nil): NaN fails BOTH ">=" comparisons below (NaN comparisons
+        // are always false), which would otherwise fall through to the tightest 1.5× "calm" stop —
+        // the opposite of the honest neutral default. Mirrors the same guard on `varianceScalar`.
+        guard let v = realizedVol, v.isFinite else { return 2.0 }
         if v >= 0.70 { return 2.5 } else if v >= 0.40 { return 2.0 } else { return 1.5 }
     }
 

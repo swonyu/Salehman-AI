@@ -50,4 +50,22 @@ struct StockSageAllocationTests {
         #expect(b.byClass.count == 1)
         #expect(abs(b.topClassConcentration - 1.0) < 1e-9)
     }
+
+    // Exact-fraction tie (50/50 Equity vs Crypto): pre-fix, the winner depended on
+    // Dictionary.map's randomized iteration order, so `.first` (topClassConcentration's
+    // label) could differ across runs for byte-identical input. The sort must break ties
+    // deterministically (alphabetically by label) so the order is stable every run.
+    @Test func exactFractionTieBreaksDeterministicallyByLabel() {
+        let holdings: [(symbol: String, value: Double)] = [("AAPL", 100), ("BTC-USD", 100)]
+        for _ in 0..<20 {
+            let b = AL.breakdown(holdings)
+            #expect(b.byClass.count == 2)
+            #expect(abs((b.byClass[0].fraction) - 0.5) < 1e-9)
+            #expect(abs((b.byClass[1].fraction) - 0.5) < 1e-9)
+            // "Crypto" < "Equity" alphabetically — must always win the tie.
+            #expect(b.byClass[0].label == "Crypto")
+            #expect(b.byClass[1].label == "Equity")
+            #expect(b.topClassConcentration == b.byClass[0].fraction)
+        }
+    }
 }

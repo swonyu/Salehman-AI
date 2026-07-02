@@ -30,6 +30,24 @@ struct StockSageTrailingStopTests {
         #expect(TS.recompute(highs: upH, lows: upL, closes: upC, entryIndex: 100) == nil)
     }
 
+    @Test func recomputeSurvivesEarlyEntryWhereATRIsNotYetComputable() {
+        // Entered at bar 2 — WAY too early for ATR (needs > 14 bars of history) to be computable
+        // on the first post-entry bar (b=3: only 4 bars exist). The ratchet loop must SKIP those
+        // early bars (not abort the whole computation) and pick up once ATR becomes computable
+        // later in the window, producing the same usable, positive, below-price level a later
+        // entryIndex would (this is the exact regression: pre-fix this returned nil).
+        let upH = (0..<40).map { 100.0 + Double($0) }
+        let upL = upH.map { $0 - 2 }, upC = upH.map { $0 - 0.5 }
+        let early = TS.recompute(highs: upH, lows: upL, closes: upC, entryIndex: 2)
+        #expect(early != nil)
+        if let e = early { #expect(e.level > 0 && e.level < upC.last!) }
+        // Same final level a later (already-past-ATR-warmup) entryIndex on the same series would
+        // ratchet to — anchorHigh(b) is identical for both once b passes the later entryIndex on
+        // this monotonic uptrend, so early entry shouldn't change the FINAL ratcheted level.
+        let later = TS.recompute(highs: upH, lows: upL, closes: upC, entryIndex: 15)
+        if let e = early, let l = later { #expect(abs(e.level - l.level) < 1e-9) }
+    }
+
     @Test func longTrailingStopIsHighestHighMinusKAtr() {
         // 20 bars, each high 101 / low 99 / close 100 → every TR = 2 → ATR = 2,
         // highest high = 101 → Chandelier level = 101 − 3×2 = 95.

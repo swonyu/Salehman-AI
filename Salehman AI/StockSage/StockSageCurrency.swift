@@ -44,7 +44,7 @@ enum StockSageCurrency {
 
         let exposures = byCcy
             .map { CurrencyExposure(currency: $0.key, baseValue: $0.value, weight: $0.value / total) }
-            .sorted { $0.baseValue > $1.baseValue }
+            .sorted { $0.baseValue != $1.baseValue ? $0.baseValue > $1.baseValue : $0.currency < $1.currency }
         let concentration = exposures.first { $0.currency != base && $0.weight > concentrationThreshold }
         return CurrencyBreakdown(base: base, totalBase: total, exposures: exposures,
                                  concentration: concentration, unpriced: unpriced.sorted())
@@ -86,6 +86,6 @@ enum StockSageCurrency {
         "SR": "SAR", "L": "GBP", "DE": "EUR", "PA": "EUR", "T": "JPY", "HK": "HKD",
         "SS": "CNY", "KS": "KRW", "NS": "INR", "AX": "AUD", "SA": "BRL", "TO": "CAD",
         "SW": "CHF", "AS": "EUR", "MC": "EUR", "MI": "EUR", "ST": "SEK", "AD": "AED",
-        "DU": "AED", "QA": "QAR", "CA": "EGP", "JO": "ZAR", "TW": "TWD", "SI": "SGD", "MX": "MXN",
+        "DU": "AED", "AE": "AED", "QA": "QAR", "CA": "EGP", "JO": "ZAR", "TW": "TWD", "SI": "SGD", "MX": "MXN",
     ]
 }

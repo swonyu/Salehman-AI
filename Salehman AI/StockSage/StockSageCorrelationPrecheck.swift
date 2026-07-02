@@ -60,7 +60,9 @@ enum StockSageCorrelationPrecheck {
         for h in holdings {
             let n = Swift.min(candidate.count, h.returns.count)
             guard n >= minOverlap else { continue }
-            let c = StockSagePortfolioAnalytics.correlation(Array(candidate.suffix(n)), Array(h.returns.suffix(n)))
+            // A zero-variance holding's correlation is UNDEFINED (0/0), not an "uncorrelated" 0 —
+            // excluded from the average rather than silently counted as diversifying.
+            guard let c = StockSagePortfolioAnalytics.correlation(Array(candidate.suffix(n)), Array(h.returns.suffix(n))) else { continue }
             corrs.append((h.symbol, c))
         }
         guard !corrs.isEmpty else {

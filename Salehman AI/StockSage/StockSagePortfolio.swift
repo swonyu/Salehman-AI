@@ -39,7 +39,7 @@ final class StockSagePortfolio: ObservableObject {
     /// fat-fingered form submit can't store garbage.
     func add(symbol: String, shares: Double, costBasis: Double) {
         let s = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard !s.isEmpty, shares > 0, costBasis >= 0 else { return }
+        guard !s.isEmpty, shares > 0, shares.isFinite, costBasis >= 0, costBasis.isFinite else { return }
         positions.append(PortfolioPosition(symbol: s, shares: shares, costBasis: costBasis))
         save()
     }

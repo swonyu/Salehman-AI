@@ -45,6 +45,24 @@ struct StockSageWhatIfTests {
         #expect(!i.crossesConcentration)   // equity → 22k/40k = 55%, below 60%
     }
 
+    @Test func noteReportsBothLeadersWhenTopClassFlips() {
+        // Before: Forex 40%, Equity 35%, Crypto 25% (top = Forex ~40%, not Crypto).
+        // Add 50 more crypto → Crypto 75/150 = 50% (new top), below the 60% concentration
+        // line. The note must NOT claim Crypto "rises from ~40%" — that 40% belonged to
+        // Forex, not Crypto (candidate's own before-share was 25%). It should instead name
+        // both distinct leaders with their own correct percentages.
+        let holdings = [(symbol: "EURUSD=X", value: 40.0), (symbol: "AAPL", value: 35.0), (symbol: "BTC-USD", value: 25.0)]
+        let i = WI.addingHolding(symbol: "ETH-USD", addedValue: 50, to: holdings)
+        #expect(i.candidateClass == "Crypto")
+        #expect(i.beforeTopClass == "Forex")
+        #expect(i.afterTopClass == "Crypto")
+        #expect(i.afterTopFraction == 0.5)
+        #expect(!i.crossesConcentration)
+        #expect(!i.note.contains("raises Crypto"))
+        #expect(!i.note.contains("from ~40%"))
+        #expect(i.note == "Top class shifts from Forex (~40%) to Crypto (~50%).")
+    }
+
     @Test func alreadyConcentratedDoesNotReCross() {
         // Before already 100% Equity → adding more equity stays concentrated but
         // does NOT newly "cross" (the flag is for entering, not staying).

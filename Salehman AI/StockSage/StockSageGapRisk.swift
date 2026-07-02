@@ -42,6 +42,10 @@ enum StockSageGapRisk {
                                      gapPct: Double, accountEquity: Double) -> GapRiskScenario? {
         let riskPerShare = abs(entry - stop)
         guard riskPerShare > 0, shares > 0, accountEquity > 0, gapPct >= 0, entry > 0, stop > 0 else { return nil }
+        switch side {
+        case .long:  guard stop < entry else { return nil }   // a long's stop sits BELOW entry
+        case .short: guard stop > entry else { return nil }   // a short's stop sits ABOVE entry
+        }
         let gapFill: Double, lossPerShare: Double
         switch side {
         case .long:  gapFill = stop * (1 - gapPct); lossPerShare = entry - gapFill   // gaps below the stop

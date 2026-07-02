@@ -14,16 +14,33 @@ nonisolated struct StockSageQuoteCache: Codable, Sendable, Equatable {
         let price: Double
         let previousClose: Double
         let time: Date
+        /// True when this quote was a brand-new listing (no real previousClose) when the cache
+        /// was saved — threaded through from `LiveQuote.isNewListing` (Finding 4 fix) so a
+        /// relaunch's cached row doesn't silently misread the flat placeholder as a genuine
+        /// 0%-move "hold". A cache file written before this field existed simply won't decode
+        /// (same fallback as no cache today — `load()` returns nil) rather than guess the flag.
+        let isNewListing: Bool
+
+        init(symbol: String, price: Double, previousClose: Double, time: Date, isNewListing: Bool = false) {
+            self.symbol = symbol
+            self.price = price
+            self.previousClose = previousClose
+            self.time = time
+            self.isNewListing = isNewListing
+        }
     }
     var entries: [Entry]
     var savedAt: Date
 
     /// Extract a cache from live symbol rows (the last quote per symbol). Touches the
-    /// MainActor-isolated quote models, so it runs on the main actor.
-    @MainActor static func from(symbols: [StockSageSymbol], savedAt: Date) -> StockSageQuoteCache {
+    /// MainActor-isolated quote models, so it runs on the main actor. `newListings` is the
+    /// store's per-refresh set of brand-new-listing symbols (uppercased) — threaded through so
+    /// the flag survives a relaunch instead of it being dropped entirely (Finding 4 fix).
+    @MainActor static func from(symbols: [StockSageSymbol], savedAt: Date, newListings: Set<String> = []) -> StockSageQuoteCache {
         let entries = symbols.compactMap { s -> Entry? in
             guard let q = s.latest else { return nil }
-            return Entry(symbol: s.symbol, price: q.price, previousClose: q.previousPrice, time: q.time)
+            return Entry(symbol: s.symbol, price: q.price, previousClose: q.previousPrice, time: q.time,
+                        isNewListing: newListings.contains(s.symbol.uppercased()))
         }
         return StockSageQuoteCache(entries: entries, savedAt: savedAt)
     }

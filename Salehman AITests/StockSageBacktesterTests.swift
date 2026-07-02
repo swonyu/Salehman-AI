@@ -136,6 +136,32 @@ struct StockSageBacktesterTests {
         #expect(StockSageBacktester.trailLevels(highs: highs, lows: lows, closes: closes, entryIndex: 60) == nil)
     }
 
+    @Test func trailLevelsSurvivesEarlyEntryWhereATRIsNotYetComputable() {
+        // Same latent bug as StockSageTrailingStop.recompute, just masked in production by the
+        // 200-bar warmup: entered at bar 2, WAY too early for ATR (needs > 14 bars) to be
+        // computable on the first post-entry bar. The loop must SKIP those bars (not abort with
+        // nil) and pick the ratchet up once ATR becomes computable, still emitting one level per
+        // post-entry bar (so simulateExit's index alignment holds).
+        let closes = (1...60).map(Double.init)            // clean monotonic uptrend
+        let highs  = closes.map { $0 + 0.5 }
+        let lows   = closes.map { $0 - 0.5 }
+        let levels = StockSageBacktester.trailLevels(highs: highs, lows: lows, closes: closes,
+                                                     entryIndex: 2, atrMult: 3, period: 14)
+        #expect(levels != nil)
+        guard let levels else { return }
+        #expect(levels.count == 57)                       // entryIndex+1 … last = 3…59
+        // Up-only ratchet holds even across the early sentinel-then-real-value transition.
+        #expect(zip(levels, levels.dropFirst()).allSatisfy { $0 <= $1 })
+        // Final element still matches the static Chandelier engine (entry timing shouldn't
+        // change the FINAL ratcheted level on a clean monotonic uptrend).
+        let s = StockSageTrailingStop.suggest(highs: highs, lows: lows, closes: closes, multiple: 3, period: 14)!
+        #expect(abs(levels.last! - s.level) < 1e-9)
+        // …and matches the later-entryIndex trail's final level too (both fully warmed up by bar 59).
+        let laterLevels = StockSageBacktester.trailLevels(highs: highs, lows: lows, closes: closes,
+                                                          entryIndex: 20, atrMult: 3, period: 14)!
+        #expect(abs(levels.last! - laterLevels.last!) < 1e-9)
+    }
+
     @Test func exitModeAllAtTargetIsGoldenMaster() {
         // The seam must not change anything: default run == explicit .allAtTarget, on real-ish series.
         let up = history((0..<260).map { 100.0 + Double($0) })

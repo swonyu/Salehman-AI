@@ -349,9 +349,14 @@ enum StockSageBacktester {
     /// ratcheted so it can only RISE — the up-only discipline `StockSageTrailingStop.suggest`
     /// deliberately omits, and the single behavior that most removes blow-ups. Each level uses
     /// only data through its own bar (no look-ahead). Returns one level per post-entry bar
-    /// (entryIndex+1 … last); empty when entry IS the last bar; nil on misaligned arrays, a
-    /// bad index, or when ATR can't be computed for some bar. On a clean uptrend the final
-    /// element equals `suggest(...).level` on the same window (consistency with the static engine).
+    /// (entryIndex+1 … last); empty when entry IS the last bar; nil on misaligned arrays, a bad
+    /// index, or when ATR is NEVER computable for the whole post-entry range. ATR needs > period
+    /// bars of history, so if entryIndex is early in the supplied window it may not be computable
+    /// yet on the first few post-entry bars — those bars simply carry the sentinel (no ratchet
+    /// yet, so `Swift.max(stop, level)` downstream falls back to the fixed stop) rather than
+    /// aborting the whole trail; the ratchet picks up once ATR becomes computable. On a clean
+    /// uptrend the final element equals `suggest(...).level` on the same window (consistency
+    /// with the static engine).
     nonisolated static func trailLevels(highs: [Double], lows: [Double], closes: [Double],
                                         entryIndex: Int, atrMult: Double = 3, period: Int = 14) -> [Double]? {
         let n = closes.count
@@ -361,14 +366,17 @@ enum StockSageBacktester {
         var levels: [Double] = []
         var anchorHigh = highs[entryIndex]              // highest high since entry (monotonic ↑)
         var ratchet = -Double.greatestFiniteMagnitude
+        var atrEverComputed = false
         for b in (entryIndex + 1)..<n {
             anchorHigh = Swift.max(anchorHigh, highs[b])
-            guard let atr = StockSageIndicators.atr(highs: Array(highs[0...b]), lows: Array(lows[0...b]),
-                                                    closes: Array(closes[0...b]), period: period) else { return nil }
-            ratchet = Swift.max(ratchet, anchorHigh - atrMult * atr)   // up-only
-            levels.append(ratchet)
+            if let atr = StockSageIndicators.atr(highs: Array(highs[0...b]), lows: Array(lows[0...b]),
+                                                 closes: Array(closes[0...b]), period: period) {
+                ratchet = Swift.max(ratchet, anchorHigh - atrMult * atr)   // up-only
+                atrEverComputed = true
+            }
+            levels.append(ratchet)   // one entry per bar, even before ATR is computable (see above)
         }
-        return levels
+        return atrEverComputed ? levels : nil
     }
 
     /// Contiguous, NON-overlapping test windows that tile the post-warmup region [warmup, n).

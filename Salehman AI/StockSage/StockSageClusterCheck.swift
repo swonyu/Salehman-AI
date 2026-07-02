@@ -43,9 +43,13 @@ enum StockSageClusterCheck {
         let others = holdings.filter { $0.symbol.uppercased() != candidate.uppercased() && $0.returns.count >= 2 }
         guard !others.isEmpty else { return nil }
 
-        let matches = others.map {
-            ClusterMatch(symbol: $0.symbol,
-                         correlation: StockSagePortfolioAnalytics.correlation(candidateReturns, $0.returns))
+        // A zero-variance holding (flat/halted/newly-listed/illiquid) has an UNDEFINED
+        // correlation with the candidate (0/0), not an "uncorrelated" 0 — excluded here via
+        // compactMap rather than let through as a fake diversifying match.
+        let matches = others.compactMap { h -> ClusterMatch? in
+            StockSagePortfolioAnalytics.correlation(candidateReturns, h.returns).map {
+                ClusterMatch(symbol: h.symbol, correlation: $0)
+            }
         }
         let nearest = matches.max { $0.correlation < $1.correlation }
         let hot = matches.filter { $0.correlation >= threshold }.sorted { $0.correlation > $1.correlation }

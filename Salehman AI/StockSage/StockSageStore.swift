@@ -205,6 +205,10 @@ final class StockSageStore: ObservableObject {
         isSampleData = false
         loadedFromCache = true
         cacheSavedAt = cache.savedAt
+        // Restore the brand-new-listing flag from the reloaded cache entries — without this a
+        // cached placeholder-flat row (real previousClose unknown) silently reads as a genuine
+        // 0%-move "hold" after relaunch, before any live refresh has re-derived it.
+        newListings = Set(cache.entries.filter(\.isNewListing).map { $0.symbol.uppercased() })
     }
 
     /// Every tracked instrument definition: the curated universe + the user's
@@ -477,7 +481,8 @@ final class StockSageStore: ObservableObject {
 
     // Risk-parity — inverse-vol target weights across the owner's holdings.
     @Published private(set) var riskParity: [RiskParityTarget] = []
-    /// Holdings excluded from the risk-parity calculation (vol ≤ 0 or negative value — too sparse to size).
+    /// Holdings excluded from the risk-parity calculation — no fetchable price history, or
+    /// non-positive volatility — too sparse to size.
     @Published private(set) var riskParityDropped: [String] = []
     @Published private(set) var isComputingParity = false
     @Published private(set) var parityError: String?
@@ -502,19 +507,35 @@ final class StockSageStore: ObservableObject {
         let histories = await StockSageQuoteService.fetchHistories(for: positions.map(\.symbol))
         isComputingParity = false
 
-        var holdings: [RiskParityHolding] = []
-        for p in positions {
-            guard let history = histories[p.symbol.uppercased()],
-                  let vol = StockSageIndicators.annualizedVolatility(history.closes), vol > 0,
-                  let price = history.latestClose else { continue }
-            holdings.append(RiskParityHolding(symbol: p.symbol, currentValue: price * p.shares, volatility: vol))
-        }
+        let (holdings, dropped) = Self.splitRiskParityHoldings(positions: positions, histories: histories)
         guard !holdings.isEmpty else {
             parityError = "Couldn't get enough history to risk-size the portfolio."
             return
         }
-        riskParityDropped = holdings.filter { $0.volatility <= 0 || $0.currentValue < 0 }.map(\.symbol)
+        riskParityDropped = dropped
         riskParity = StockSageRiskParity.targets(holdings)
+    }
+
+    /// Pure split of positions into risk-sizeable holdings vs the ones excluded (no fetchable
+    /// history, non-positive volatility, or no price) — the exclusion is recorded AT THE POINT
+    /// each position fails, not re-derived afterward by filtering the already-filtered
+    /// `holdings` array (that predicate could never be true, since everything appended there
+    /// already satisfies volatility > 0 by construction). Pure + testable without a network fetch.
+    nonisolated static func splitRiskParityHoldings(positions: [PortfolioPosition],
+                                                     histories: [String: StockSagePriceHistory])
+        -> (holdings: [RiskParityHolding], dropped: [String]) {
+        var holdings: [RiskParityHolding] = []
+        var dropped: [String] = []
+        for p in positions {
+            guard let history = histories[p.symbol.uppercased()],
+                  let vol = StockSageIndicators.annualizedVolatility(history.closes), vol > 0,
+                  let price = history.latestClose else {
+                dropped.append(p.symbol)
+                continue
+            }
+            holdings.append(RiskParityHolding(symbol: p.symbol, currentValue: price * p.shares, volatility: vol))
+        }
+        return (holdings, dropped)
     }
 
     // Market regime — the risk-on/off meta-gauge.
@@ -818,16 +839,31 @@ final class StockSageStore: ObservableObject {
     // when it's actually "unevaluated." Refreshed each `refresh()` cycle alongside `quotes`.
     @Published private(set) var newListings: Set<String> = []
 
-    // Earnings proximity — overnight-gap event risk for an equity. Cached per
-    // symbol (earnings dates don't shift within a session).
-    @Published private(set) var earnings: [String: EarningsProximity] = [:]
+    // Earnings proximity — overnight-gap event risk for an equity. Only the RAW earnings DATE
+    // is cached per symbol (it doesn't shift within a session); the derived daysUntil/severity
+    // is recomputed FRESH on every read (see `earnings` below) so a long-running session's
+    // imminent-earnings ranking demotion never goes stale relative to whenever the date happened
+    // to be fetched.
+    @Published private(set) var earningsDates: [String: Date] = [:]
+
+    /// Pure derivation: raw earnings dates → proximity, evaluated at `now`. A free function (not
+    /// baked into a cached dict) so it's directly testable with an injected `now` — the SAME
+    /// cached raw date must yield a DIFFERENT severity as real time passes, unlike the frozen
+    /// fetch-time value the pre-fix code cached.
+    nonisolated static func deriveEarningsProximity(_ dates: [String: Date], now: Date = Date()) -> [String: EarningsProximity] {
+        dates.mapValues { StockSageEarnings.proximity(now: now, earnings: $0) }
+    }
+
+    /// Earnings proximity — overnight-gap event risk for an equity. Recomputed fresh from
+    /// `earningsDates` on every access; never cached as a stale derived value.
+    var earnings: [String: EarningsProximity] { Self.deriveEarningsProximity(earningsDates) }
 
     func refreshEarnings(symbol: String) async {
         let up = symbol.uppercased()
-        guard earnings[up] == nil else { return }
+        guard earningsDates[up] == nil else { return }
         guard let date = await StockSageEarnings.fetchNextEarnings(for: symbol),
               date.timeIntervalSinceNow > -86_400 else { return }   // ignore a stale past date
-        earnings[up] = StockSageEarnings.proximity(now: Date(), earnings: date)
+        earningsDates[up] = date
     }
 
     /// Feed earnings for the TOP-ranked ideas (bounded) so the imminent-earnings DEMOTION + warnings
@@ -953,6 +989,15 @@ final class StockSageStore: ObservableObject {
 
     // MARK: - Live worldwide feed
 
+    /// Pure: should a refresh bail on a low-coverage response and keep whatever's already on
+    /// screen rather than committing a partial board? True whenever coverage collapsed below 50%
+    /// and there's an existing snapshot worth protecting — including the very first live refresh
+    /// (the store always has at least the sample seed, so this isn't isSampleData-gated).
+    /// Testable without a network fetch.
+    nonisolated static func coverageGuardShouldBail(coverage: Double, hasExistingSymbols: Bool) -> Bool {
+        coverage < 0.5 && hasExistingSymbols
+    }
+
     /// Pull live quotes for the worldwide universe and swap them in, flipping the
     /// store off "sample". A no-op-with-reason when external access is disabled,
     /// and a non-destructive no-op when the feed is unreachable — the existing
@@ -987,11 +1032,12 @@ final class StockSageStore: ObservableObject {
             feedError = "Couldn't reach the market feed — showing the last data."
             return
         }
-        // Don't let a partial outage replace a full live board with a handful of
-        // rows: if coverage collapsed and we already have live data, keep the
-        // last-good snapshot instead of blanking most of it.
+        // Don't let a partial outage replace a full board with a handful of rows: if coverage
+        // collapsed and there's an existing snapshot on screen (sample, cached, OR already-live —
+        // deliberately NOT gated on `!isSampleData`, so a low-coverage FIRST-EVER refresh also
+        // bails instead of silently truncating the board with feedError left nil), keep it.
         let coverage = Double(live.count) / Double(max(universe.count, 1))
-        if coverage < 0.5, !isSampleData, !symbols.isEmpty {
+        if Self.coverageGuardShouldBail(coverage: coverage, hasExistingSymbols: !symbols.isEmpty) {
             feedError = "Partial market data this refresh — keeping the last full snapshot."
             return
         }
@@ -1020,7 +1066,7 @@ final class StockSageStore: ObservableObject {
         // cycle) — caching only `live` dropped them, so a tracked ticker vanished from the offline /
         // last-good board on next launch.
         loadedFromCache = false
-        StockSageQuoteCache.from(symbols: committed, savedAt: lastUpdated ?? Date()).save()
+        StockSageQuoteCache.from(symbols: committed, savedAt: lastUpdated ?? Date(), newListings: newListings).save()
     }
 
     func fetchAllSymbols() -> [StockSageSymbol] {

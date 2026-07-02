@@ -882,7 +882,12 @@ enum StockSageExpectedValue {
         guard !cryptoReturns.isEmpty, !equityReturns.isEmpty else { return nil }
         var sum = 0.0, pairs = 0
         for c in cryptoReturns {
-            for e in equityReturns { sum += StockSagePortfolioAnalytics.correlation(c, e); pairs += 1 }
+            for e in equityReturns {
+                // A zero-variance leg (flat/halted/illiquid) has an UNDEFINED correlation (0/0) —
+                // excluded from the average rather than counted as an "uncorrelated" 0.
+                guard let corr = StockSagePortfolioAnalytics.correlation(c, e) else { continue }
+                sum += corr; pairs += 1
+            }
         }
         return pairs > 0 ? sum / Double(pairs) : nil
     }

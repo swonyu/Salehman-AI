@@ -22,13 +22,40 @@ struct StockSagePortfolioAnalyticsTests {
     }
 
     @Test func correlationExtremes() {
-        #expect(abs(PA.correlation([0.1, 0.2, 0.3], [0.1, 0.2, 0.3]) - 1) < 1e-9)
-        #expect(abs(PA.correlation([0.1, -0.1, 0.1, -0.1], [-0.1, 0.1, -0.1, 0.1]) + 1) < 1e-9)
+        #expect(abs((PA.correlation([0.1, 0.2, 0.3], [0.1, 0.2, 0.3]) ?? 0) - 1) < 1e-9)
+        #expect(abs((PA.correlation([0.1, -0.1, 0.1, -0.1], [-0.1, 0.1, -0.1, 0.1]) ?? 0) + 1) < 1e-9)
+    }
+
+    @Test func correlationIsNilNotZeroForAZeroVarianceSeries() {
+        // A flat/halted/illiquid series has ZERO variance — its correlation with anything is
+        // mathematically 0/0 (UNDEFINED), not a real "uncorrelated" 0. Must be nil so callers
+        // EXCLUDE it, not silently treat a flat holding as maximally diversifying.
+        let flat = [100.0, 100.0, 100.0, 100.0]
+        let moving: [Double] = [0.01, -0.02, 0.03, -0.01]
+        #expect(PA.correlation(flat, moving) == nil)
+        #expect(PA.correlation(moving, flat) == nil)
+        #expect(PA.correlation(flat, flat) == nil)   // both flat → still undefined, not "perfectly correlated"
     }
 
     @Test func averageCorrelationOfSingleHoldingIsOne() {
         #expect(PA.averageCorrelation([[0.1, 0.2, 0.3]]) == 1)          // concentrated
         #expect(abs(PA.averageCorrelation([[0.1, 0.2], [0.1, 0.2]]) - 1) < 1e-9)
+    }
+
+    @Test func averageCorrelationExcludesAZeroVarianceHoldingRatherThanTreatingItAsUncorrelated() {
+        // Three holdings: two genuinely +1-correlated, one FLAT (zero variance, undefined vs
+        // both). If the flat holding were treated as a fake 0, the average would be dragged down
+        // (falsely reading as more diversified). Excluded, the average must equal exactly the
+        // one real, defined pair (+1) — not a blend that includes a phantom "uncorrelated" 0.
+        let a: [Double] = [0.1, 0.2, 0.3, 0.1]
+        let identicalToA = a
+        let flat: [Double] = [100, 100, 100, 100]
+        let avg = PA.averageCorrelation([a, identicalToA, flat])
+        #expect(abs(avg - 1) < 1e-9)   // only the (a, identicalToA) pair is defined, and it's +1
+
+        // All-flat (every pair undefined) → no defined pairs → falls back to the existing
+        // "no data → assume fully concentrated" convention (1), not a fake 0.
+        #expect(PA.averageCorrelation([flat, flat]) == 1)
     }
 
     @Test func percentileNearestRank() {
@@ -116,6 +143,30 @@ struct StockSagePortfolioAnalyticsTests {
         #expect(abs(m[0][1] - m[1][0]) < 1e-12)         // symmetric
         #expect(abs(m[0][1] + 1) < 1e-9)                // a vs b = −1
         #expect(PA.correlationMatrix([[0.1, 0.2]]) == [[1.0]])   // single series → identity
+    }
+
+    @Test func correlationMatrixShowsAZeroFallbackForAnUndefinedZeroVariancePairForDisplayOnly() {
+        // The matrix cell for an undefined (zero-variance) pair falls back to 0 for the heatmap's
+        // display purposes — the matrix type can't hold nil — but this must NOT leak into
+        // averageCorrelation, which recomputes and correctly excludes it (see the test above).
+        let a: [Double] = [0.1, 0.2, 0.3]
+        let flat: [Double] = [100, 100, 100]
+        let m = PA.correlationMatrix([a, flat])
+        #expect(m[0][1] == 0)
+        #expect(m[1][0] == 0)
+    }
+
+    @Test func computeDoesNotTreatAFlatHoldingAsMaximallyDiversifying() {
+        // A flat (zero-variance) holding paired with a real one used to make avgCorrelation()
+        // silently read as 0 ("perfectly diversifying") — the worst possible mis-read, since a
+        // flat/halted/illiquid name tells you NOTHING about diversification. With the fix, the
+        // undefined pair is excluded, so avgCorrelation falls back to the "no defined pairs → 1"
+        // (fully concentrated) convention instead of a falsely-reassuring 0.
+        let flat = Array(repeating: 100.0, count: 12)
+        let moving = (0..<12).map { 100.0 + Double($0 % 3) - 1 }   // some real up/down movement
+        let a = PA.compute(holdings: [(1000, flat), (1000, moving)])
+        #expect(a != nil)
+        #expect(a?.avgCorrelation == 1)   // NOT 0 — the pair is undefined, not "uncorrelated"
     }
 
     @Test func antiCorrelatedHoldingsScoreWellDiversified() {

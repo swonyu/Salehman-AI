@@ -37,4 +37,22 @@ struct StockSageClusterCheckTests {
         #expect(CK.check(candidate: "NEW", candidateReturns: cand, holdings: []) == nil)
         #expect(CK.check(candidate: "NEW", candidateReturns: [0.01], holdings: [("A", identical)]) == nil)  // too short
     }
+
+    @Test func excludesAZeroVarianceHoldingRatherThanTreatingItAsDiversifying() {
+        // A flat (zero-variance) holding's correlation with the candidate is UNDEFINED (0/0), not
+        // a genuine "uncorrelated" 0 — it must be excluded from nearest/highlyCorrelated, not let
+        // through as a fake diversifying match.
+        let flat: [Double] = [0.0, 0.0, 0.0, 0.0]
+        let r = CK.check(candidate: "NEW", candidateReturns: cand,
+                         holdings: [("A", identical), ("FLAT", flat)])!
+        #expect(r.highlyCorrelated.map(\.symbol) == ["A"])   // FLAT never appears
+        #expect(r.nearest?.symbol == "A")                    // FLAT never becomes "nearest"
+
+        // When the ONLY holding is flat, there's nothing usable to compare against — nearest is
+        // nil and nothing is flagged, rather than a flat holding masquerading as "diversifying".
+        let onlyFlat = CK.check(candidate: "NEW", candidateReturns: cand, holdings: [("FLAT", flat)])!
+        #expect(onlyFlat.nearest == nil)
+        #expect(onlyFlat.highlyCorrelated.isEmpty)
+        #expect(!onlyFlat.isConcentrating)
+    }
 }

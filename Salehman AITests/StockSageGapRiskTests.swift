@@ -32,5 +32,9 @@ struct StockSageGapRiskTests {
         #expect(GR.scenario(side: .long, entry: 100, stop: 100, shares: 100, gapPct: 0.1, accountEquity: 10_000) == nil)
         #expect(GR.scenario(side: .long, entry: 100, stop: 95, shares: 0, gapPct: 0.1, accountEquity: 10_000) == nil)
         #expect(GR.scenario(side: .long, entry: 100, stop: 95, shares: 100, gapPct: -0.1, accountEquity: 10_000) == nil)
+        // Guard: stop must be on the correct side of entry for the given side, else nil
+        // (a long's stop above entry, or a short's stop below entry, is not a valid risk scenario).
+        #expect(GR.scenario(side: .long, entry: 100, stop: 105, shares: 100, gapPct: 0.1, accountEquity: 10_000) == nil)
+        #expect(GR.scenario(side: .short, entry: 100, stop: 95, shares: 100, gapPct: 0.1, accountEquity: 10_000) == nil)
     }
 }

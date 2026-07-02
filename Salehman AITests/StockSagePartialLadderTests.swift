@@ -46,4 +46,16 @@ struct StockSagePartialLadderTests {
         #expect(l.rungs.allSatisfy { abs($0.fraction - 0.1) < 1e-9 })
         #expect(abs(l.blendedExitR - 2.75) < 1e-9)
     }
+
+    @Test func guardsNonFiniteInputsRatherThanProducingNaN() {
+        // Before the fix: Double.infinity > 0 is true, so these passed the old positivity-only
+        // guard and targetR = reward / risk became Infinity/Infinity = NaN, poisoning every
+        // rung's price/rMultiple.
+        #expect(L.levels(entry: .infinity, stop: 90, target: 130, rungs: 3) == nil)
+        #expect(L.levels(entry: 100, stop: .infinity, target: 130, rungs: 3) == nil)
+        #expect(L.levels(entry: 100, stop: 90, target: .infinity, rungs: 3) == nil)
+        #expect(L.levels(entry: .nan, stop: 90, target: 130, rungs: 3) == nil)
+        #expect(L.levels(entry: 100, stop: .nan, target: 130, rungs: 3) == nil)
+        #expect(L.levels(entry: 100, stop: 90, target: .nan, rungs: 3) == nil)
+    }
 }

@@ -37,9 +37,11 @@ enum StockSageTrailingStop {
     /// "Where your stop SHOULD be today" for a LONG held since `entryIndex` — the ratcheting
     /// Chandelier the backtester scores (StockSageBacktester.trailLevels), lifted to an owner-facing
     /// call. Anchors the highest high SINCE ENTRY and lets the stop only RISE (a pullback never
-    /// surrenders banked profit). Returns the FINAL ratcheted level. nil if entryIndex is out of
-    /// range, ATR can't be computed, or the level isn't usable (≤0, or ≥ last close → already hit:
-    /// price has pulled back THROUGH the trail, so you should already be out, not "set a stop here").
+    /// surrenders banked profit). Returns the FINAL ratcheted level. Bars too close to the start of
+    /// the supplied window for ATR to be computable yet are simply skipped (not fatal) — only
+    /// entryIndex being out of range, ATR NEVER becoming computable, or the final level not being
+    /// usable (≤0, or ≥ last close → already hit: price has pulled back THROUGH the trail, so you
+    /// should already be out, not "set a stop here") produce nil.
     /// Advisory only — the app places NO orders; you move the GTC stop at the broker.
     nonisolated static func recompute(highs: [Double], lows: [Double], closes: [Double],
                                       entryIndex: Int, multiple: Double = 3, period: Int = 14) -> TrailingStop? {
@@ -52,13 +54,16 @@ enum StockSageTrailingStop {
         var lastATR = 0.0
         for b in (entryIndex + 1)..<n {
             anchorHigh = Swift.max(anchorHigh, highs[b])
+            // ATR needs > period bars of history; if entryIndex is early in the supplied window it may
+            // not be computable yet at THIS bar — skip it (don't abort the whole computation) and pick
+            // the ratchet up once enough bars have accumulated. Only the FINAL level needs to be usable.
             guard let atr = StockSageIndicators.atr(highs: Array(highs[0...b]), lows: Array(lows[0...b]),
                                                     closes: Array(closes[0...b]), period: period),
-                  atr > 0 else { return nil }
+                  atr > 0 else { continue }
             ratchet = Swift.max(ratchet, anchorHigh - multiple * atr)   // up-only, same as the backtester
             lastATR = atr
         }
-        guard ratchet > 0, ratchet < last else { return nil }
+        guard lastATR > 0, ratchet > 0, ratchet < last else { return nil }
         return TrailingStop(level: ratchet, atr: lastATR, multiple: multiple,
                             distancePct: (last - ratchet) / last * 100)
     }

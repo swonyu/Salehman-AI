@@ -13,7 +13,10 @@ struct DrawdownScenario: Sendable, Equatable {
     let fraction: Double           // risk per trade (e.g. 0.01 = 1%)
     let survivalMultiple: Double   // (1 − fraction)^losses
 
-    /// Fraction of the account lost after the streak (0–1).
+    /// Fraction of the account lost after the streak, scaled 0–1 (e.g. 0.049 = 4.9%
+    /// down) — NOT already ×100, unlike the sibling `UnderwaterCurve.maxDrawdown`
+    /// (StockSageDrawdown.swift), which IS a 0–100 percentage. Callers must multiply
+    /// by 100 before displaying this as a percent (see MarketsView's two call sites).
     nonisolated var drawdownPct: Double { 1 - survivalMultiple }
     /// A streak that costs ≥20% of the account is "steep" — worth a survival warning.
     nonisolated var isSteep: Bool { drawdownPct >= 0.20 }

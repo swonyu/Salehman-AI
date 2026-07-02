@@ -70,7 +70,7 @@ enum StockSageLossLimit {
         // P&L (a closed loser with stop==entry has a real negative profit but a NIL R — using R
         // alone would make it invisible and mis-link the streak); fall back to R when P&L is absent.
         let recent = closed.compactMap { t -> (Date, Double)? in
-            guard let c = t.closedAt else { return nil }
+            guard let c = t.closedAt, c <= now else { return nil }
             if let p = t.realizedProfit { return (c, p) }
             if let rr = t.realizedR { return (c, rr) }
             return nil

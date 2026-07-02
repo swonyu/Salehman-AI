@@ -175,6 +175,20 @@ struct StockSageIndicatorsTests {
         #expect(StockSageIndicators.annualizedVolatility([100.0, 100.0, 110.0]) != nil)
     }
 
+    @Test func annualizedVolatilitySkipsInteriorBadTickInsteadOfNaN() {
+        // Regression: an interior bad tick used to poison the log-return series into NaN
+        // instead of nil, because the loop only guarded the DENOMINATOR (closes[i-1] > 0)
+        // and never the numerator (closes[i]). A zero/negative interior close must make
+        // BOTH the return into it and the return out of it invalid, not just the former.
+        let v = StockSageIndicators.annualizedVolatility([100.0, 100.0, 0.0, 100.0])
+        #expect(v == nil)
+        if let v { #expect(!v.isNaN) }   // belt-and-suspenders: never NaN even if nil-check regresses
+
+        let vNegative = StockSageIndicators.annualizedVolatility([100.0, 100.0, -50.0, 100.0])
+        #expect(vNegative == nil)
+        if let vNegative { #expect(!vNegative.isNaN) }
+    }
+
     // MARK: - RANKING_BACKLOG #12 (reframed, pure observer): timeframeConfluence
 
     private func up300() -> [Double] { (0..<300).map { 50.0 + 0.0153 * pow(Double($0), 2) } }

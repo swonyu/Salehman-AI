@@ -118,7 +118,7 @@ enum StockSageIndicators {
     nonisolated static func annualizedVolatility(_ closes: [Double], periodsPerYear: Double = 252) -> Double? {
         guard closes.count >= 3 else { return nil }
         var rets: [Double] = []
-        for i in 1..<closes.count where closes[i - 1] > 0 {
+        for i in 1..<closes.count where closes[i - 1] > 0 && closes[i] > 0 {
             rets.append(log(closes[i] / closes[i - 1]))
         }
         guard rets.count >= 2 else { return nil }

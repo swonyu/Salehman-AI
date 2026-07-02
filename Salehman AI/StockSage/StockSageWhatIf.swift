@@ -25,6 +25,13 @@ struct WhatIfImpact: Sendable, Equatable {
         if crossesConcentration {
             return "Adding this pushes \(afterTopClass) to ~\(after)% of the book — crossing into CONCENTRATED (>60%). Size smaller or pick a different class."
         }
+        // beforeTopFraction belongs to beforeTopClass, NOT afterTopClass — these can be
+        // different asset classes when the top flips. Only phrase it as "raises X (from Y%)"
+        // when it's the SAME class before and after; otherwise report both distinct leaders
+        // so the percentages line up with the class names they actually describe.
+        if afterTopClass != beforeTopClass {
+            return "Top class shifts from \(beforeTopClass) (~\(before)%) to \(afterTopClass) (~\(after)%)."
+        }
         if afterTopFraction > beforeTopFraction + 0.005 {
             return "Adding this raises \(afterTopClass) to ~\(after)% of the book (from ~\(before)%)."
         }

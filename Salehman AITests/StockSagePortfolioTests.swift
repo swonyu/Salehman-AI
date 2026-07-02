@@ -36,6 +36,16 @@ struct StockSagePortfolioTests {
         #expect(p.positions.isEmpty)
     }
 
+    @Test func addRejectsNonFiniteSharesAndCostBasis() {
+        let p = freshStore("nonfinite")
+        p.add(symbol: "X", shares: .infinity, costBasis: 100)
+        p.add(symbol: "Y", shares: -.infinity, costBasis: 100)
+        p.add(symbol: "Z", shares: .nan, costBasis: 100)
+        p.add(symbol: "W", shares: 10, costBasis: .infinity)
+        p.add(symbol: "V", shares: 10, costBasis: .nan)
+        #expect(p.positions.isEmpty)
+    }
+
     @Test func addAllowsZeroCostBasis() {
         let p = freshStore("zerocost")            // a gifted/vested lot can be free
         p.add(symbol: "GIFT", shares: 5, costBasis: 0)

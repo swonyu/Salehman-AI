@@ -141,8 +141,14 @@ enum StockSagePortfolioAnalytics {
         return sorted[idx]
     }
 
-    /// Pearson correlation of two return series (aligned on their common tail).
-    nonisolated static func correlation(_ a: [Double], _ b: [Double]) -> Double {
+    /// Pearson correlation of two return series (aligned on their common tail). nil when either
+    /// series has ZERO VARIANCE (flat/halted/newly-listed/illiquid) — correlation with a
+    /// constant series is mathematically 0/0, UNDEFINED, not a "diversifying" 0. Callers MUST
+    /// exclude a nil pair from any average/matrix use, never treat it as an uncorrelated 0 (that
+    /// would understate concentration risk on exactly the names most likely to be thin/flat).
+    /// Still returns a real 0 (not nil) for the pre-existing n<2 (insufficient overlap)
+    /// convention — that's a separate, out-of-scope case, left unchanged.
+    nonisolated static func correlation(_ a: [Double], _ b: [Double]) -> Double? {
         let n = Swift.min(a.count, b.count)
         guard n >= 2 else { return 0 }
         let aa = Array(a.suffix(n)), bb = Array(b.suffix(n))
@@ -153,7 +159,8 @@ enum StockSagePortfolioAnalytics {
             cov += da * db; va += da * da; vb += db * db
         }
         let denom = (va * vb).squareRoot()
-        return denom > 0 ? Swift.max(-1, Swift.min(1, cov / denom)) : 0
+        guard denom > 0 else { return nil }   // zero variance in either series → UNDEFINED, not 0
+        return Swift.max(-1, Swift.min(1, cov / denom))
     }
 
     /// Daily returns tagged with the END date of each step: (date_t, close_t/close_{t-1}−1).
@@ -224,14 +231,17 @@ enum StockSagePortfolioAnalytics {
     }
 
     /// Symmetric pairwise correlation matrix for a set of return series (diagonal 1).
-    /// `matrix[i][j]` = correlation of series i and j. Drives the heatmap UI.
+    /// `matrix[i][j]` = correlation of series i and j. Drives the heatmap UI. An undefined pair
+    /// (zero-variance series) stores a 0 here for DISPLAY purposes only — `[[Double]]` can't hold
+    /// nil — but `averageCorrelation` below does NOT read this matrix; it recomputes pairs itself
+    /// and correctly EXCLUDES undefined ones, so this display fallback never corrupts the average.
     nonisolated static func correlationMatrix(_ series: [[Double]]) -> [[Double]] {
         let n = series.count
         var m = Array(repeating: Array(repeating: 1.0, count: n), count: n)
         guard n >= 2 else { return m }
         for i in 0..<n {
             for j in (i + 1)..<n {
-                let c = correlation(series[i], series[j])
+                let c = correlation(series[i], series[j]) ?? 0
                 m[i][j] = c
                 m[j][i] = c
             }
@@ -239,13 +249,21 @@ enum StockSagePortfolioAnalytics {
         return m
     }
 
-    /// Average pairwise correlation across holdings (1 holding → 1 = fully concentrated).
+    /// Average pairwise correlation across holdings (1 holding → 1 = fully concentrated). A pair
+    /// with an undefined correlation (zero-variance series — flat/halted/illiquid) is EXCLUDED
+    /// from the average, not counted as 0 — otherwise a flat holding would silently pull the
+    /// average toward "diversifying" instead of being left out of it. Divides by the count of
+    /// DEFINED pairs only; all-undefined (or <2 holdings) falls back to 1 (fully concentrated),
+    /// mirroring the existing "no data → assume the risk, not the diversification" convention.
     nonisolated static func averageCorrelation(_ series: [[Double]]) -> Double {
         guard series.count >= 2 else { return 1 }
         var sum = 0.0, pairs = 0
         for i in 0..<series.count {
             for j in (i + 1)..<series.count {
-                sum += correlation(series[i], series[j]); pairs += 1
+                if let c = correlation(series[i], series[j]) {
+                    sum += c
+                    pairs += 1
+                }
             }
         }
         return pairs > 0 ? sum / Double(pairs) : 1

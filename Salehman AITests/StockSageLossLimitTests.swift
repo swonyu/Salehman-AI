@@ -67,6 +67,26 @@ struct StockSageLossLimitTests {
         #expect(abs(s.dailyRealized) < 1e-9 && s.lossRun == 0 && s.status == .ok)
     }
 
+    @Test func futureDatedWinnerDoesNotHideActiveStreak() {
+        // A real 3-loss streak plus a mis-dated/typo'd WINNER with closedAt AFTER `now` must not
+        // hide it: the future trade has to be excluded entirely, mirroring the `c <= now` guard
+        // realized(since:) already applies. Unguarded, it sorts to the front (descending date) and
+        // breaks the streak loop immediately, masking a real active loss streak.
+        let futureWinner = t(2, closedAt: todayAt(-1))   // now + 1 hour
+        let s = LL.evaluate(closedTrades: [t(-1, closedAt: now), t(-1, closedAt: todayAt(1)), t(-1, closedAt: todayAt(2)), futureWinner],
+                            policy: LossLimitPolicy(standDownLossRun: 3), now: now)
+        #expect(s.lossRun == 3 && s.status == .halted)
+    }
+
+    @Test func futureDatedLoserDoesNotInflateStreak() {
+        // Symmetric case: a mis-dated/typo'd LOSER with closedAt AFTER `now` must not inflate a
+        // real 1-loss streak into a 2-loss streak.
+        let futureLoser = t(-3, closedAt: todayAt(-1))   // now + 1 hour
+        let s = LL.evaluate(closedTrades: [t(-1, closedAt: now), futureLoser],
+                            policy: LossLimitPolicy(standDownLossRun: 3), now: now)
+        #expect(s.lossRun == 1 && s.status == .ok)
+    }
+
     @Test func stopEqualsEntryLoserStillCountsInTheRun() {
         // A closed loser whose stop == entry has a real negative P&L but a NIL R — it must still
         // count toward (and not break) the loss streak (judged by realized P&L, not R).

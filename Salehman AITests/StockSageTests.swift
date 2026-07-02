@@ -307,4 +307,69 @@ struct StockSageStoreTests {
         #expect(!store.isSampleData)
         #expect(store.symbol(named: "live")?.symbol == "LIVE")   // case-insensitive lookup
     }
+
+    // Finding 1: earnings proximity used to cache the DERIVED daysUntil/severity at fetch time
+    // and never recompute it, so a symbol read "8 days out" stayed frozen at that value forever
+    // in a long session. The fix caches only the raw Date and derives proximity fresh on every
+    // read — the SAME cached raw date must yield a DIFFERENT severity as "now" moves forward.
+    @Test func earningsProximityRecomputesFromRawDateAcrossDifferentNowValues() {
+        let fetchTimeNow = Date(timeIntervalSince1970: 1_700_000_000)
+        let earningsDate = fetchTimeNow.addingTimeInterval(8 * 86_400)   // fixed raw date, 8 days out
+        let dates = ["AAPL": earningsDate]
+
+        // Read #1: "now" is the fetch-time moment → 8 days out → .soon.
+        let atFetch = StockSageStore.deriveEarningsProximity(dates, now: fetchTimeNow)
+        #expect(atFetch["AAPL"]?.daysUntil == 8)
+        #expect(atFetch["AAPL"]?.severity == .soon)
+
+        // Read #2: the SAME cached raw date, but "now" has moved forward 6 days within the same
+        // session — the exact bug this regresses: pre-fix, the cached EarningsProximity stayed
+        // frozen at the fetch-time value (.soon) instead of reflecting that only 2 days remain.
+        let laterNow = fetchTimeNow.addingTimeInterval(6 * 86_400)
+        let later = StockSageStore.deriveEarningsProximity(dates, now: laterNow)
+        #expect(later["AAPL"]?.daysUntil == 2)
+        #expect(later["AAPL"]?.severity == .imminent)
+    }
+
+    // Finding 2: riskParityDropped used to be derived by filtering the ALREADY-filtered
+    // `holdings` array (every element there already satisfies volatility > 0 by construction),
+    // so the predicate could never be true and riskParityDropped was always []. The fix records
+    // exclusions AT THE POINT each position fails (no history, or non-positive vol).
+    @Test func riskParityDroppedNamesHoldingsWithNoHistoryOrZeroVol() {
+        let positions = [
+            PortfolioPosition(symbol: "GOOD", shares: 10, costBasis: 50),
+            PortfolioPosition(symbol: "NOHIST", shares: 5, costBasis: 20),   // missing from histories (feed miss)
+            PortfolioPosition(symbol: "FLAT", shares: 5, costBasis: 20),     // zero-vol (perfectly flat price)
+        ]
+        let goodCloses = (0..<30).map { i -> Double in 100.0 + Double(i) * 0.3 + (i % 2 == 0 ? 1.5 : -1.2) }
+        let goodHistory = StockSagePriceHistory(
+            symbol: "GOOD",
+            dates: goodCloses.enumerated().map { Date(timeIntervalSince1970: Double($0.offset) * 86_400) },
+            opens: goodCloses, highs: goodCloses, lows: goodCloses, closes: goodCloses,
+            volumes: goodCloses.map { _ in 1000 })
+        let flatCloses = Array(repeating: 100.0, count: 30)
+        let flatHistory = StockSagePriceHistory(
+            symbol: "FLAT",
+            dates: flatCloses.enumerated().map { Date(timeIntervalSince1970: Double($0.offset) * 86_400) },
+            opens: flatCloses, highs: flatCloses, lows: flatCloses, closes: flatCloses,
+            volumes: flatCloses.map { _ in 1000 })
+        let histories = ["GOOD": goodHistory, "FLAT": flatHistory]   // "NOHIST" absent → fetch miss
+
+        let (holdings, dropped) = StockSageStore.splitRiskParityHoldings(positions: positions, histories: histories)
+        #expect(holdings.map(\.symbol) == ["GOOD"])
+        #expect(Set(dropped) == ["NOHIST", "FLAT"])
+    }
+
+    // Finding 3: the low-coverage guard used to only fire when `!isSampleData` — i.e. only AFTER
+    // the board had gone live at least once — so a low-coverage response on the VERY FIRST
+    // refresh (isSampleData still true) bypassed it entirely, silently replacing the board with a
+    // partial universe and leaving feedError nil. The fix drops the isSampleData condition.
+    @Test func coverageGuardBailsRegardlessOfSampleDataState() {
+        // Low coverage + something on screen (sample, cached, or already-live) → bail, always.
+        #expect(StockSageStore.coverageGuardShouldBail(coverage: 0.3, hasExistingSymbols: true))
+        // Healthy coverage → never bail.
+        #expect(!StockSageStore.coverageGuardShouldBail(coverage: 0.8, hasExistingSymbols: true))
+        // Nothing on screen to protect → never bail (defensive; shouldn't happen given the sample seed).
+        #expect(!StockSageStore.coverageGuardShouldBail(coverage: 0.3, hasExistingSymbols: false))
+    }
 }

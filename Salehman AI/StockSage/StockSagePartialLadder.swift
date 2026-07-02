@@ -25,6 +25,12 @@ enum StockSagePartialLadder {
     /// Evenly-spaced scale-out rungs (equal fractions) from the first R step up to the target
     /// (the last rung IS the target). Works long and short. nil for a degenerate setup.
     nonisolated static func levels(entry: Double, stop: Double, target: Double, rungs: Int = 3) -> PartialLadder? {
+        // 2026-07-02 adversarial-review fix: the original guard checked only positivity, never
+        // finiteness — Double.infinity > 0 is true, so a non-finite entry/stop/target passed
+        // straight through and targetR = reward / risk became Infinity/Infinity = NaN, poisoning
+        // every rung's price/rMultiple. Mirrors the identical hardening applied to
+        // StockSagePyramid.levels on 2026-07-01.
+        guard entry.isFinite, stop.isFinite, target.isFinite else { return nil }
         let risk = abs(entry - stop)
         let reward = abs(target - entry)
         guard risk > 0, reward > 0, rungs >= 1, entry > 0 else { return nil }

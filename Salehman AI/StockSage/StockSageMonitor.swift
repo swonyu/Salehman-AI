@@ -28,6 +28,12 @@ final class StockSageMonitor {
     /// The last strong recommendation fired per symbol, so we don't re-spam the
     /// SAME alert every cycle (only a NEW or CHANGED strong signal notifies).
     private var lastAlerted: [String: StockSageRecommendation] = [:]
+    /// The last live price seen per TRACKED IDEA symbol, so `checkIdeaAlerts` can detect a
+    /// stop/target CROSSING (this cycle's price vs the prior one) instead of a standing
+    /// condition — mirrors `lastAlerted`'s role for the strong-signal path. A symbol seen for
+    /// the first time seeds this as its own baseline (no prior to compare), so it can't claim a
+    /// crossing that may not be real.
+    private var lastIdeaPrice: [String: Double] = [:]
 
     enum MonitorError: LocalizedError {
         case alreadyRunning
@@ -99,14 +105,22 @@ final class StockSageMonitor {
         let liveNotify = notify && !store.isSampleData && !store.loadedFromCache
         var strong: [StockSageSignal] = []
         var nowStrong: [String: StockSageRecommendation] = [:]
-        for symbol in StockSageStore.shared.fetchAllSymbols() {
+        for symbol in store.fetchAllSymbols() {
             guard let signal = StockSageSignalEngine.generateSignal(for: symbol) else { continue }
             guard signal.recommendation == .strongBuy || signal.recommendation == .strongSell else { continue }
             strong.append(signal)
-            nowStrong[signal.symbol] = signal.recommendation
+            // A quote whose latest MARKET timestamp is stale (a weekend/holiday close) is not
+            // actionable until the market reopens — possibly gapped — so it must neither push a
+            // notification NOR poison `lastAlerted` (that would silently suppress the legitimate
+            // alert once a FRESH quote later confirms the same signal).
+            let fresh = !symbol.isStale()
+            if fresh { nowStrong[signal.symbol] = signal.recommendation }
             // Fire only when this symbol's strong signal is NEW or has FLIPPED
-            // (Strong Buy ⇄ Strong Sell) — not the same alert on every poll.
-            if liveNotify, lastAlerted[signal.symbol] != signal.recommendation {
+            // (Strong Buy ⇄ Strong Sell) AND the quote is fresh — not the same alert on every
+            // poll, and never off a stale close.
+            if liveNotify, Self.shouldPushStrongSignal(recommendation: signal.recommendation,
+                                                        lastAlerted: lastAlerted[signal.symbol],
+                                                        isFresh: fresh) {
                 await sendAlert(signal: signal, market: symbol.market)
             }
         }
@@ -116,7 +130,21 @@ final class StockSageMonitor {
         // strong→hold→strong round-trip would re-fire the identical alert the user already
         // saw. A genuine flip (Strong Buy⇄Strong Sell) still alerts — the rec differs.
         if liveNotify { for (sym, rec) in nowStrong { lastAlerted[sym] = rec } }
-        if notify { await checkPriceAlerts() }
+        if notify {
+            await checkPriceAlerts()
+            // Tracked-idea stop/target pushes: same honesty gate as the strong-signal path
+            // above (never off sample/cached-not-live data), and only off quotes THIS cycle
+            // actually observed as fresh (reuses the per-symbol staleness already computed by
+            // the loop above, one fetchAllSymbols() pass, no extra network calls).
+            if liveNotify {
+                var freshPrices: [String: Double] = [:]
+                for symbol in store.fetchAllSymbols() {
+                    guard !symbol.isStale(), let p = symbol.latest?.price, p > 0 else { continue }
+                    freshPrices[symbol.symbol.uppercased()] = p
+                }
+                await checkIdeaAlerts(prices: freshPrices)
+            }
+        }
         return strong
     }
 
@@ -129,18 +157,27 @@ final class StockSageMonitor {
         let quotes = await StockSageQuoteService.fetchQuotes(for: watch)
         var strong: [StockSageSignal] = []
         var nowStrong: [String: StockSageRecommendation] = [:]
+        var freshPrices: [String: Double] = [:]
         for ticker in watch {
             guard let q = quotes[ticker.uppercased()], q.price > 0, q.previousClose > 0 else { continue }
             let sym = StockSageSymbol(symbol: ticker, market: "★ My watchlist", quotes: [
                 StockSageQuote(price: q.previousClose, previousPrice: q.previousClose,
                                time: Date(timeIntervalSinceNow: -86_400)),
-                StockSageQuote(price: q.price, previousPrice: q.previousClose),
+                // Carry the real MARKET time (was omitted here) so this synthetic symbol's own
+                // `isStale()` can flag a days-old weekend/holiday close, same as the board path.
+                StockSageQuote(price: q.price, previousPrice: q.previousClose, marketTime: q.marketTime),
             ])
+            // Collect the fresh price for the idea stop/target check below regardless of
+            // whether THIS ticker's momentum signal is currently strong.
+            let fresh = !sym.isStale()
+            if fresh { freshPrices[ticker.uppercased()] = q.price }
             guard let signal = StockSageSignalEngine.generateSignal(for: sym) else { continue }
             guard signal.recommendation == .strongBuy || signal.recommendation == .strongSell else { continue }
             strong.append(signal)
-            nowStrong[signal.symbol] = signal.recommendation
-            if notify, lastAlerted[signal.symbol] != signal.recommendation {
+            if fresh { nowStrong[signal.symbol] = signal.recommendation }
+            if notify, Self.shouldPushStrongSignal(recommendation: signal.recommendation,
+                                                    lastAlerted: lastAlerted[signal.symbol],
+                                                    isFresh: fresh) {
                 await sendAlert(signal: signal, market: sym.market)
             }
         }
@@ -148,7 +185,10 @@ final class StockSageMonitor {
         // Publish the freshly-fetched watchlist prices to the board so it reflects live data
         // for the names the user is focused on (watchlist-only stops the full auto-refresh).
         StockSageStore.shared.mergeLiveQuotes(quotes)
-        if notify { await checkPriceAlerts() }
+        if notify {
+            await checkPriceAlerts()
+            await checkIdeaAlerts(prices: freshPrices)
+        }
         return strong
     }
 
@@ -174,6 +214,45 @@ final class StockSageMonitor {
         store.markPriceAlertsTriggered(fired.map(\.id))
     }
 
+    /// Drive stop-breach/target-hit pushes for TRACKED IDEAS via the tested
+    /// `StockSageAlertDecision.evaluate` rule — completes the feature its own header describes
+    /// (the monitor as "a thin shell over a tested rule"); before this, `evaluate` had zero
+    /// production callers and those events only reached the passive in-app
+    /// `StockSageAlerts.detect` list (silent unless the user opens the app). Runs against
+    /// `StockSageStore.shared.ideas` (the advisor's last-computed stop/target per symbol) — a
+    /// no-op until the user has opened the Ideas board at least once. `prices` is keyed by
+    /// UPPERCASED ticker → this cycle's live price, already staleness-filtered by the caller, so
+    /// this never fires off a price it didn't just observe fresh.
+    private func checkIdeaAlerts(prices: [String: Double]) async {
+        guard !prices.isEmpty else { return }
+        let ideas = StockSageStore.shared.ideas
+        guard !ideas.isEmpty else { return }
+        for idea in ideas {
+            guard let price = prices[idea.symbol.uppercased()], price > 0 else { continue }
+            // First sighting this session: seed the baseline rather than claim a crossing that
+            // may not be real (mirrors `lastAlerted`'s "no alert on first appearance" rule).
+            let priorPrice = lastIdeaPrice[idea.symbol] ?? price
+            lastIdeaPrice[idea.symbol] = price
+            guard let alert = StockSageAlertDecision.evaluate(
+                symbol: idea.symbol,
+                recommendation: Self.ideaAlertRecommendation(for: idea.advice.action),
+                price: price, priorPrice: priorPrice,
+                stop: idea.advice.stopPrice, target: idea.advice.targetPrice,
+                lastAlertedRecommendation: nil
+            ), Self.isPushableIdeaAlert(alert) else { continue }
+            await sendIdeaAlert(alert)
+        }
+    }
+
+    private func sendIdeaAlert(_ alert: StockSageAlert) async {
+        let content = UNMutableNotificationContent()
+        content.title = "\(alert.kind.rawValue): \(alert.symbol)"
+        content.body = alert.reason
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        try? await UNUserNotificationCenter.current().add(request)
+    }
+
     private func sendPriceAlert(_ alert: PriceAlert, price: Double) async {
         let content = UNMutableNotificationContent()
         content.title = "Price alert: \(alert.symbol) \(alert.direction.symbol) \(alert.target.formatted())"
@@ -194,5 +273,37 @@ final class StockSageMonitor {
 
     private func requestNotificationPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+    }
+
+    // MARK: - Pure decision helpers (testable without the async I/O / @MainActor state above)
+
+    /// Whether a strong-buy/sell push should fire: the recommendation must be NEW or FLIPPED vs
+    /// the last one alerted on for this symbol, AND the quote behind it must be fresh — a stale
+    /// weekend/holiday close is not actionable until the market reopens (possibly gapped), so it
+    /// must never notify. `isFresh: true` reproduces the exact pre-fix dedup-only check.
+    nonisolated static func shouldPushStrongSignal(recommendation: StockSageRecommendation,
+                                                    lastAlerted: StockSageRecommendation?,
+                                                    isFresh: Bool) -> Bool {
+        isFresh && recommendation != lastAlerted
+    }
+
+    /// Map a tracked idea's advisor action to the long/short side `StockSageAlertDecision.evaluate`
+    /// needs to pick the correct stop/target crossing direction — mirrors
+    /// `StockSageAdvisor.stopTarget`'s own short definition (`.sell`/`.reduce`) exactly. Only
+    /// `evaluate`'s STOP/TARGET branches are consumed from this path (see
+    /// `isPushableIdeaAlert`) — the "new strong signal" branch is owned elsewhere in this file
+    /// (the price-momentum `StockSageSignalEngine`, a different rule) — so this only needs to
+    /// reproduce the correct side, not a faithful `TradeAdvice.Action → StockSageRecommendation`
+    /// mapping (`.hold`/`.avoid` have no stop/target anyway — `stopTarget` returns nil for both).
+    nonisolated static func ideaAlertRecommendation(for action: TradeAdvice.Action) -> StockSageRecommendation {
+        (action == .sell || action == .reduce) ? .strongSell : .strongBuy
+    }
+
+    /// Restrict `checkIdeaAlerts` to the events it owns: a stop breach or target hit. A "new
+    /// strong signal" / "flip" alert can still fall out of `evaluate` here (this path always
+    /// passes `lastAlertedRecommendation: nil`), but that event class belongs to the
+    /// price-momentum strong-signal path above — never double-push it from here.
+    nonisolated static func isPushableIdeaAlert(_ alert: StockSageAlert?) -> Bool {
+        alert?.kind == .stopBreach || alert?.kind == .targetHit
     }
 }

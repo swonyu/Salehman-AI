@@ -115,6 +115,17 @@ struct StockSageAdvisorStopTargetTests {
         #expect(A.stopMultiple(forVol: 0.40) == 2.0)
         #expect(A.stopMultiple(forVol: 0.39) == 1.5)
     }
+
+    @Test func stopMultipleNonFiniteVolFallsBackToTheNeutralDefault() {
+        // Regression: the old code only guarded `nil` ("guard let v = realizedVol else { return 2.0
+        // }"), not `.isFinite`. A NaN realizedVol makes BOTH ">=" comparisons false (NaN comparisons
+        // are always false in IEEE-754), so it fell through to the final `else` and returned 1.5 —
+        // the TIGHTEST "calm" stop, the opposite of the documented neutral default. Mirrors the same
+        // `.isFinite` guard already on `varianceScalar`.
+        #expect(A.stopMultiple(forVol: .nan) == 2.0)
+        #expect(A.stopMultiple(forVol: .infinity) == 2.0)
+        #expect(A.stopMultiple(forVol: -.infinity) == 2.0)
+    }
 }
 
 struct StockSageIndicatorTests {
@@ -270,6 +281,19 @@ struct StockSageAdvisorTests {
         let a = StockSageAdvisor.advise(closes: TrendFixtures.up(120))
         #expect(a.action == .buy || a.action == .strongBuy)
         #expect(a.rationale.contains { $0.contains("50DMA") })
+    }
+
+    /// Regression for the review fix: `returnOverPeriod` uses `min(closes.count - 1, 126)` as its
+    /// actual lookback, so any history shorter than 127 bars uses a period well short of "6 months"
+    /// (e.g. 39 days on a 40-bar history, ~6 weeks) — the rationale must say so honestly instead of
+    /// always claiming "6-month momentum" (same honesty treatment as `shortHistoryUsesFiftyDMAOnlyBranch`).
+    @Test func shortHistoryMomentumRationaleDoesNotClaimSixMonths() {
+        let closes = TrendFixtures.up(40)   // 40 bars → momPeriod = min(39, 126) = 39
+        let a = StockSageAdvisor.advise(closes: closes)
+        #expect(!a.rationale.contains { $0.contains("6-month") },
+                "40-bar history must not claim 6-month momentum — got \(a.rationale)")
+        #expect(a.rationale.contains { $0.contains("39-day window") },
+                "40-bar history's rationale should honestly reflect the true 39-day window — got \(a.rationale)")
     }
 
     @Test func stopTargetWithZeroATRUses8PercentFallback() {

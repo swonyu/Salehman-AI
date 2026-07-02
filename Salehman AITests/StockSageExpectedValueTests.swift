@@ -806,4 +806,28 @@ struct StockSageExpectedValueTests {
     @Test func winProbEstimateMidpoint() {
         #expect(abs(StockSageExpectedValue.winProbEstimate(conviction: 0.5) - 0.465) < 1e-9)
     }
+
+    @Test func laneCorrelationExcludesAZeroVarianceLegRatherThanCountingItAsUncorrelated() {
+        // A flat/halted history's correlation with anything is UNDEFINED (0/0), not a genuine
+        // "uncorrelated" 0 — laneCorrelation must exclude that pair from its average.
+        let cryptoIdea = idea("BTC-USD", conviction: 0.5, stop: 90, target: 110)
+        let equityIdea = idea("AAPL", conviction: 0.5, stop: 90, target: 110)
+        let flat: [Double] = [100, 100, 100, 100, 100, 100]
+        let moving: [Double] = [100, 101, 99, 102, 98, 103]
+
+        // Every crypto×equity pair undefined (flat crypto leg) → nothing to average → nil,
+        // not a falsely-reassuring 0.
+        let allUndefined = EV.laneCorrelation(crypto: [cryptoIdea], equity: [equityIdea],
+                                              histories: ["BTC-USD": flat, "AAPL": moving])
+        #expect(allUndefined == nil)
+
+        // Mixed case: one equity leg is flat (excluded), the other is IDENTICAL to the crypto leg
+        // (correlation +1). The average must reflect only the ONE defined pair, not be diluted by
+        // the undefined flat pair reading as a fake 0.
+        let equityFlat = idea("MSFT", conviction: 0.5, stop: 90, target: 110)
+        let mixed = EV.laneCorrelation(crypto: [cryptoIdea], equity: [equityIdea, equityFlat],
+                                       histories: ["BTC-USD": moving, "AAPL": moving, "MSFT": flat])
+        #expect(mixed != nil)
+        #expect(abs((mixed ?? 0) - 1) < 1e-9)
+    }
 }

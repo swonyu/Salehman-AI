@@ -61,6 +61,14 @@ struct StockSageCurrencyTests {
         #expect(CC.currencyForSymbol("FOO.ZZ") == "ZZ")      // unknown → suffix (surfaces as unpriced)
     }
 
+    @Test func currencyForSymbolMapsDubaiFinancialMarketSuffix() {
+        // EMAAR.AE / DEWA.AE are the app's own curated DFM universe tickers (.AD/.DU don't
+        // price on Yahoo). Must resolve to "AED", not fall through to the literal suffix "AE".
+        #expect(CC.currencyForSymbol("EMAAR.AE") == "AED")
+        #expect(CC.currencyForSymbol("DEWA.AE") == "AED")
+        #expect(CC.currencyForSymbol("emaar.ae") == "AED")   // case-insensitive
+    }
+
     @Test func fxPairMapsToItsNonBaseLeg() {
         #expect(CC.currencyForSymbol("EURUSD=X") == "EUR")   // long EUR vs USD → EUR exposure
         #expect(CC.currencyForSymbol("USDJPY=X") == "JPY")   // base USD → the JPY leg
@@ -72,6 +80,21 @@ struct StockSageCurrencyTests {
     @Test func guardsNothingConvertible() {
         #expect(CC.breakdown(holdings: [], ratesToBase: ["EUR": 1.1], base: "USD") == nil)
         #expect(CC.breakdown(holdings: [(100, "JPY")], ratesToBase: [:], base: "USD") == nil)
+    }
+
+    @Test func exposuresTieBreakDeterministicByCurrencyCode() {
+        // GBP and EUR land on the exact same baseValue (500) — Dictionary iteration order is
+        // randomized per-process, so without a secondary sort key the tie order (and thus which
+        // one `concentration` would pick, if both were flagged) would be nondeterministic.
+        let b = CC.breakdown(holdings: [(1000, "USD"), (500, "GBP"), (500, "EUR")],
+                             ratesToBase: ["GBP": 1.0, "EUR": 1.0], base: "USD")!
+        #expect(b.exposures.map(\.currency) == ["USD", "EUR", "GBP"])  // USD largest, then alphabetical tie-break
+
+        // Same tie, but both non-base legs above threshold — `concentration` must deterministically
+        // pick the alphabetically-first currency ("EUR"), not whichever the dictionary happened to yield.
+        let b2 = CC.breakdown(holdings: [(100, "USD"), (500, "GBP"), (500, "EUR")],
+                              ratesToBase: ["GBP": 1.0, "EUR": 1.0], base: "USD")!
+        #expect(b2.concentration?.currency == "EUR")
     }
 
     @Test func concentrationJustUnder25PercentNotFlagged() {

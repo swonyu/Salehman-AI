@@ -63,7 +63,7 @@ enum StockSageAllocation {
         for h in holdings where h.value > 0 { sums[key(h.symbol), default: 0] += h.value }
         return sums.map { AllocationBreakdown.Slice(label: $0.key, value: $0.value,
                                                     fraction: total > 0 ? $0.value / total : 0) }
-            .sorted { $0.fraction > $1.fraction }
+            .sorted { $0.fraction != $1.fraction ? $0.fraction > $1.fraction : $0.label < $1.label }
     }
 
     /// Allocation by class and by region from (symbol, current value) holdings.
