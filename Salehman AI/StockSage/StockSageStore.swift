@@ -29,12 +29,20 @@ struct StockSageIdea: Sendable, Equatable, Identifiable {
     /// "computed at" note is shown (HONESTY_FLOOR: only claim a timestamp we actually have).
     let generatedAt: Date?
 
+    /// 0–1 read on whether SHORT-HORIZON momentum is genuinely hot right now, as computed by
+    /// `StockSageExpectedValue.momentumQuality(for:closes:)` from the RAW daily close history.
+    /// nil ⇒ history was too short for ANY of the three internal signals (the spark is down-sampled
+    /// and cannot substitute here). NEVER defaults to a number — nil means unknown, not neutral.
+    let momentumQuality: Double?
+
     nonisolated init(symbol: String, market: String, price: Double, advice: TradeAdvice,
                      spark: [Double], dailyMove: Double? = nil, realizedVol: Double? = nil,
-                     volRegime: VolRegime? = nil, generatedAt: Date? = nil) {
+                     volRegime: VolRegime? = nil, generatedAt: Date? = nil,
+                     momentumQuality: Double? = nil) {
         self.symbol = symbol; self.market = market; self.price = price
         self.advice = advice; self.spark = spark; self.dailyMove = dailyMove
         self.realizedVol = realizedVol; self.volRegime = volRegime; self.generatedAt = generatedAt
+        self.momentumQuality = momentumQuality
     }
 }
 
@@ -476,10 +484,21 @@ final class StockSageStore: ObservableObject {
                 let dailyMove = StockSageExpectedValue.typicalDailyMove(recent)
                 // Realized vol from the FULL raw closes (matches the advisor) for allocator vol-targeting.
                 let realizedVol = StockSageIndicators.annualizedVolatility(history.closes)
+                // Momentum quality from the FULL raw closes — requires at least 21 bars for the
+                // loosest internal signal (Kaufman efficiencyRatio, period 20 → needs count > 20).
+                // When closes are too short for ALL signals, momentumQuality() returns the neutral
+                // sentinel 1.0 (no data ⇒ no penalty), which is NOT a real quality score — store
+                // nil instead so callers know "unknown" vs a measured value.
+                let momentumQuality: Double? = history.closes.count > 20
+                    ? StockSageExpectedValue.momentumQuality(for: StockSageIdea(symbol: sym.symbol,
+                        market: sym.market, price: price, advice: advice, spark: spark),
+                        closes: history.closes)
+                    : nil
                 out.append(StockSageIdea(symbol: sym.symbol, market: sym.market,
                                          price: price, advice: advice, spark: spark,
                                          dailyMove: dailyMove, realizedVol: realizedVol,
-                                         volRegime: volRegime, generatedAt: Date()))
+                                         volRegime: volRegime, generatedAt: Date(),
+                                         momentumQuality: momentumQuality))
             }
             return out
         }.value

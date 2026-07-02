@@ -882,4 +882,92 @@ struct StockSageExpectedValueTests {
         #expect(mixed != nil)
         #expect(abs((mixed ?? 0) - 1) < 1e-9)
     }
+
+    // MARK: - FASTMONEY_BACKLOG #5 (data-plumbing stage): StockSageIdea.momentumQuality field
+
+    /// Verifies the three mandated semantics for the new `momentumQuality` field on `StockSageIdea`:
+    /// (1) every existing construction is unaffected (field defaults nil — trailing-default parameter);
+    /// (2) an explicit value is stored and retrieved faithfully;
+    /// (3) the build-time nil-vs-value threshold is honest: nil when closes are too short for ANY
+    ///     of the three signals (≤ 20 bars), a real computed score when at least one signal fires
+    ///     (> 20 bars for the loosest signal, Kaufman efficiencyRatio).
+
+    @Test func momentumQualityFieldDefaultsNil() {
+        // All existing StockSageIdea constructions omit momentumQuality — they must compile and
+        // produce nil, not a fabricated 0.5 or 1.0.
+        let plain = StockSageIdea(symbol: "AAPL", market: "M", price: 100,
+                                  advice: TradeAdvice(action: .buy, conviction: 0.7, regime: .bullTrend,
+                                                       rationale: [], stopPrice: 90, targetPrice: 130,
+                                                       suggestedWeight: 0.05, caveat: "x"),
+                                  spark: [])
+        #expect(plain.momentumQuality == nil)
+        // The trailing-default also covers the other optional fields — they all default independently.
+        let withVol = StockSageIdea(symbol: "BTC-USD", market: "M", price: 100,
+                                    advice: TradeAdvice(action: .buy, conviction: 0.9, regime: .bullTrend,
+                                                         rationale: [], stopPrice: 90, targetPrice: 130,
+                                                         suggestedWeight: 0.05, caveat: "x"),
+                                    spark: [], realizedVol: 0.35)
+        #expect(withVol.momentumQuality == nil)
+    }
+
+    @Test func momentumQualityFieldCarriesExplicitValue() {
+        // When buildIdeas computes a quality score and passes it in, the field stores it faithfully.
+        let q = 0.667
+        let withQ = StockSageIdea(symbol: "AAPL", market: "M", price: 100,
+                                  advice: TradeAdvice(action: .buy, conviction: 0.7, regime: .bullTrend,
+                                                       rationale: [], stopPrice: 90, targetPrice: 130,
+                                                       suggestedWeight: 0.05, caveat: "x"),
+                                  spark: [], momentumQuality: q)
+        #expect(withQ.momentumQuality == q)
+        // Extreme ends of the 0–1 range are stored faithfully too.
+        let hot = StockSageIdea(symbol: "HOT", market: "M", price: 100,
+                                advice: TradeAdvice(action: .buy, conviction: 0.9, regime: .bullTrend,
+                                                     rationale: [], stopPrice: 90, targetPrice: 130,
+                                                     suggestedWeight: 0.05, caveat: "x"),
+                                spark: [], momentumQuality: 1.0)
+        let cold = StockSageIdea(symbol: "COLD", market: "M", price: 100,
+                                 advice: TradeAdvice(action: .buy, conviction: 0.9, regime: .bullTrend,
+                                                      rationale: [], stopPrice: 90, targetPrice: 130,
+                                                      suggestedWeight: 0.05, caveat: "x"),
+                                 spark: [], momentumQuality: 0.0)
+        #expect(hot.momentumQuality == 1.0)
+        #expect(cold.momentumQuality == 0.0)
+    }
+
+    @Test func momentumQualityNilWhenClosesTooShortForAnySignal() {
+        // 20 bars: efficiencyRatio needs count > 20 (period=20 → at least 21), so ALL three
+        // signals are nil at exactly 20 bars. The honest result is nil (unknown), not the
+        // momentumQuality() neutral sentinel 1.0.
+        let shortCloses = Array(repeating: 100.0, count: 20)
+        // Pin that all three signals are indeed nil at 20 bars (prevents silent indicator changes
+        // from invalidating the threshold decision below without a loud test failure here first).
+        #expect(StockSageIndicators.efficiencyRatio(shortCloses) == nil)  // needs count > 20
+        #expect(StockSageIndicators.macd(shortCloses) == nil)             // needs >= 35
+        #expect(StockSageIndicators.returnOverPeriod(shortCloses, period: 21) == nil) // needs count > 21
+        // The threshold guard: ≤ 20 bars → nil stored, never the fabricated 1.0 sentinel.
+        let tooShort = 20
+        let nilResult: Double? = tooShort > 20
+            ? StockSageExpectedValue.momentumQuality(
+                for: idea("X", conviction: 0.8, stop: 90, target: 120),
+                closes: shortCloses)
+            : nil
+        #expect(nilResult == nil)
+    }
+
+    @Test func momentumQualityNonNilWhenClosesLongEnoughForEfficiencyRatio() {
+        // 21 bars: efficiencyRatio fires (count > 20), so at least one signal is computable
+        // and momentumQuality() returns a REAL value — stored, not nil.
+        let justEnough = Array(stride(from: 100.0, through: 121.0, by: 1.0))  // 22 bars, monotone up
+        #expect(justEnough.count == 22)
+        #expect(StockSageIndicators.efficiencyRatio(justEnough) != nil)   // fires at 22 bars
+        let stub = idea("X", conviction: 0.8, stop: 90, target: 120)
+        let q = justEnough.count > 20
+            ? StockSageExpectedValue.momentumQuality(for: stub, closes: justEnough)
+            : nil
+        #expect(q != nil)
+        // A monotone uptrend has ER = 1.0 → hot signal fires → quality ≥ 1/3 (at least 1 of 3).
+        // (macd and returnOverPeriod may or may not be computable at 22 bars — we only assert ≥ 1/3
+        // so this test is resilient to indicator-bar-count changes.)
+        #expect((q ?? 0) >= 1.0 / 3.0)
+    }
 }

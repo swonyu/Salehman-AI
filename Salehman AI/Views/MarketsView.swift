@@ -53,7 +53,11 @@ struct MarketsView: View {
     @ScaledMetric(relativeTo: .caption2) private var mvFont9: CGFloat = 9
     @ScaledMetric(relativeTo: .caption2) private var mvFont10: CGFloat = 10
     @ScaledMetric(relativeTo: .caption2) private var mvFont11: CGFloat = 11
+    @ScaledMetric(relativeTo: .caption2) private var mvFont12: CGFloat = 12
     @ScaledMetric(relativeTo: .caption2) private var mvFont13: CGFloat = 13
+    @ScaledMetric(relativeTo: .caption2) private var mvFont14: CGFloat = 14
+    @ScaledMetric(relativeTo: .caption2) private var mvFont15: CGFloat = 15
+    @ScaledMetric(relativeTo: .caption2) private var mvFont16: CGFloat = 16
     @ObservedObject private var store = StockSageStore.shared
     @ObservedObject private var portfolio = StockSagePortfolio.shared
     @ObservedObject private var journal = StockSageJournalStore.shared
@@ -2854,7 +2858,7 @@ struct MarketsView: View {
                 Image(systemName: "sparkles.rectangle.stack.fill")
                     .font(.system(size: 18)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Trade ideas").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                    Text("Trade ideas").font(.system(size: mvFont15, weight: .semibold)).foregroundStyle(.white)
                     Text("Rules-based what / when / how-much across the \(StockSageUniverse.worldwide.count)-name analyzed core, on 1-year history.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     // Honesty: say plainly whether the EV/win numbers below are MEASURED from
@@ -2920,7 +2924,7 @@ struct MarketsView: View {
                                 Text(store.isLoadingIdeas ? "Analyzing…" : "Find ideas")
                             }
                         }
-                        .font(.system(size: 11.5, weight: .semibold)).contentTransition(.opacity)
+                        .font(.system(size: mvFont11, weight: .semibold)).contentTransition(.opacity)
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 11).padding(.vertical, 6)
@@ -2979,7 +2983,7 @@ struct MarketsView: View {
         return VStack(alignment: .leading, spacing: DS.Space.sm) {
             HStack(spacing: DS.Space.sm) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(idea.symbol).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    Text(idea.symbol).font(.system(size: mvFont15, weight: .bold, design: .rounded)).foregroundStyle(.white)
                     Text(idea.market).font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -3027,6 +3031,19 @@ struct MarketsView: View {
                         .background((bearish ? DS.Palette.danger : DS.Palette.successSoft).opacity(0.14), in: Capsule())
                         .help(a.confluenceNote ?? "1-month, daily, and 1-year trends all agree — a breadth read, not a probability of profit.")
                         .accessibilityLabel(a.confluenceNote ?? "Three-timeframe confluence")
+                }
+                // Execution-timing chip: display-only. StockSageExecutionTiming.sessionNote
+                // gates to trending buy/sell in bullTrend/bearTrend regimes only (nil for
+                // range/hold/avoid — those never show this chip). Evidence: Lou-Polk-Skouras
+                // (JFE): momentum premia accrue almost entirely OVERNIGHT → enter near close.
+                if let timingNote = StockSageExecutionTiming.sessionNote(action: a.action, regime: a.regime) {
+                    Text("⏱ near close")
+                        .font(.system(size: mvFont10, weight: .bold))
+                        .foregroundStyle(DS.Palette.accent)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(DS.Palette.accent.opacity(0.14), in: Capsule())
+                        .help(timingNote)
+                        .accessibilityLabel("Execution timing: \(timingNote)")
                 }
                 if a.targetPrice != nil || a.stopPrice != nil {
                 Menu {
@@ -3127,14 +3144,18 @@ struct MarketsView: View {
         // dropped the label and left the tap non-activatable).
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .accessibilityLabel("\(idea.symbol), \(a.action.rawValue), conviction \(Int(a.conviction * 100)) percent"
-            + ({ () -> String in
-                switch earnFlag {
-                case .demoted(let d):     return ", earnings imminent in about \(d) days — demoted in the rank"
-                case .approaching(let d): return ", earnings approaching in about \(d) days"
-                case .clear, .unknown:    return ""
-                }
-            }()))
+        .accessibilityLabel({ () -> String in
+            var label = "\(idea.symbol), \(a.action.rawValue), conviction \(Int(a.conviction * 100)) percent"
+            switch earnFlag {
+            case .demoted(let d):     label += ", earnings imminent in about \(d) days — demoted in the rank"
+            case .approaching(let d): label += ", earnings approaching in about \(d) days"
+            case .clear, .unknown:    break
+            }
+            if StockSageExecutionTiming.sessionNote(action: a.action, regime: a.regime) != nil {
+                label += ", enter near close for trend momentum edge"
+            }
+            return label
+        }())
         .accessibilityHint("Opens full advice and backtest")
         .accessibilityAction { selectedIdea = idea }
         .accessibilityAction(named: "Backtest") { Task { await store.runBacktest(symbol: idea.symbol) } }
@@ -3276,7 +3297,7 @@ struct MarketsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: DS.Space.sm) {
                         Image(systemName: "bolt.fill").font(.system(size: 13)).foregroundStyle(DS.Palette.accent)
-                        Text("Best opportunity now").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                        Text("Best opportunity now").font(.system(size: mvFont12, weight: .bold)).foregroundStyle(.white)
                         Spacer()
                         calibrationChip   // is the green Est. EV / Win est. below measured or assumed?
                         Text(idea.advice.action.rawValue).font(.system(size: mvFont10, weight: .bold))
@@ -3284,7 +3305,7 @@ struct MarketsView: View {
                             .padding(.horizontal, 7).padding(.vertical, 2).background(actionColor(idea.advice.action), in: Capsule())
                     }
                     HStack(spacing: DS.Space.sm) {
-                        Text(idea.symbol).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                        Text(idea.symbol).font(.system(size: mvFont16, weight: .bold, design: .rounded)).foregroundStyle(.white)
                         ideaMetric("Est. EV", String(format: "%+.2fR", ev.evR), color: DS.Palette.successSoft)
                         ideaMetric("R:R", String(format: "%.1f:1", ev.rewardR))
                         ideaMetric("Win est.", String(format: "~%.0f%%", ev.winProbEstimate * 100))
@@ -3367,7 +3388,7 @@ struct MarketsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: DS.Space.sm) {
                         Image(systemName: "chart.pie.fill").font(.system(size: 13)).foregroundStyle(DS.Palette.accent)
-                        Text("Deploy capital — allocation plan").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                        Text("Deploy capital — allocation plan").font(.system(size: mvFont12, weight: .bold)).foregroundStyle(.white)
                         Spacer()
                         calibrationChip   // the per-line EV that drove these sizes — measured or assumed?
                         ideaMetric("Open heat", String(format: "%.1f%%", plan.totalHeat * 100), color: heatColor)
@@ -3623,7 +3644,7 @@ struct MarketsView: View {
                              subColor: Color = DS.Palette.successSoft) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(label.uppercased()).font(.system(size: mvFont8, weight: .semibold)).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white).lineLimit(1)
+            Text(value).font(.system(size: mvFont14, weight: .bold, design: .rounded)).foregroundStyle(.white).lineLimit(1)
             Text(sub).font(.system(size: mvFont8)).foregroundStyle(subColor).lineLimit(1)
         }
     }
@@ -3733,7 +3754,7 @@ struct MarketsView: View {
             let earnFlag  = StockSageExpectedValue.earningsRankFlag(for: idea, earnings: store.earnings)
             Button { selectedIdea = idea } label: {
                 HStack(spacing: DS.Space.sm) {
-                    Text(idea.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                    Text(idea.symbol).font(.system(size: mvFont12, weight: .semibold)).foregroundStyle(.white)
                         .frame(width: 84, alignment: .leading)
                     Text(String(format: "%+.3fR/day gross", v)).font(.system(size: mvFont11, design: .monospaced))
                         .foregroundStyle(DS.Palette.successSoft)
@@ -3747,11 +3768,36 @@ struct MarketsView: View {
                     if floorFlag.isDeranked {
                         Text("below net-cost floor").font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft)
                     }
+                    // FASTMONEY #5 — momentum quality dot: colored indicator when the field is
+                    // non-nil (nil → show NOTHING, per honesty-floor: no fabricated neutral).
+                    // Natural values are 0, 1/3, 2/3, 1 (3 binary signals averaged).
+                    if let mq = idea.momentumQuality {
+                        let mqHot   = mq >= 2.0 / 3.0
+                        let mqMixed = mq >= 1.0 / 3.0
+                        let mqColor = mqHot ? DS.Palette.successSoft : mqMixed ? DS.Palette.warningSoft : DS.Palette.danger
+                        let mqLabel = mqHot ? "hot" : mqMixed ? "mixed" : "cold"
+                        HStack(spacing: 3) {
+                            Circle().fill(mqColor).frame(width: 5, height: 5)
+                            Text(mqLabel).font(.system(size: mvFont8)).foregroundStyle(mqColor)
+                        }
+                        .help("Momentum read: ER trend + MACD histogram + 21-day return — a 1-day blip is not a 3-12d win. Descriptive, not predictive.")
+                    }
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right").font(.system(size: mvFont8)).foregroundStyle(.secondary)
                 }.contentShape(Rectangle())
             }.buttonStyle(LuxPressStyle())
-            .accessibilityLabel("\(idea.symbol): \(String(format: "%+.3f", v)) R per day gross velocity\(idea.symbol.hasSuffix("-USD") ? ", 24/7 volatile" : "")\(!earnFlag.badge.isEmpty ? ", \(earnFlag.badge)" : "")\(floorFlag.isDeranked ? ", below net-cost floor" : ""). Tap for the plan.")
+            .accessibilityLabel({
+                var label = "\(idea.symbol): \(String(format: "%+.3f", v)) R per day gross velocity"
+                if idea.symbol.hasSuffix("-USD") { label += ", 24/7 volatile" }
+                if !earnFlag.badge.isEmpty { label += ", \(earnFlag.badge)" }
+                if floorFlag.isDeranked { label += ", below net-cost floor" }
+                if let mq = idea.momentumQuality {
+                    let mqLabel = mq >= 2.0/3.0 ? "hot" : mq >= 1.0/3.0 ? "mixed" : "cold"
+                    label += ", momentum \(mqLabel)"
+                }
+                label += ". Tap for the plan."
+                return label
+            }())
         }
     }
 
