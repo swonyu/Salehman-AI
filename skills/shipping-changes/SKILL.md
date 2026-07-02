@@ -90,8 +90,9 @@ git push -u origin <branch>
 ```
 - **NEVER `git add -A` / `-a` / `git add .`** — the working tree routinely carries a
   concurrent session's in-flight edits. `PROJECT_CONTEXT.md` may be dirty from another
-  session: never stage, revert, or stash it. `tools/test_grok_bridge.py` stays
-  **untracked and untouched** — never add it, never delete it.
+  session: never stage, revert, or stash it. (`tools/test_grok_bridge.py` is TRACKED since
+  713064e, 2026-07-02 — the old "keep it untracked" rule is obsolete; treat it like any
+  other tracked file.)
 
 **CI gate** (push triggers CI on every branch; runs take ~20s–a few min on the runner):
 ```bash
@@ -113,13 +114,14 @@ git push origin main
 git branch -d <branch> && git push origin --delete <branch>  # delete BOTH sides
 ```
 
-## 6. End state: clean tree except the one known untracked file
+## 6. End state: fully clean tree
 
 ```bash
 git status --porcelain
 ```
-Every file YOU touched must be gone from this output (committed and merged). The one
-permanently acceptable line is `?? tools/test_grok_bridge.py`. Any other ` M` line that
+Every file YOU touched must be gone from this output (committed and merged) — the expected
+end state is EMPTY output (`tools/test_grok_bridge.py` has been tracked since 713064e,
+2026-07-02, so it no longer appears as an acceptable `??` line). Any ` M` line that
 predates your session belongs to a concurrent session — leave it exactly as found.
 
 ## Rollback
