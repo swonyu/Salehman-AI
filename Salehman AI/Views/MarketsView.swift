@@ -5003,7 +5003,10 @@ struct MarketsView: View {
                             Button { prefillTradeFromIdea(idea) } label: {
                                 HStack(spacing: 6) {
                                     Image(systemName: "square.and.pencil").font(.system(size: 11, weight: .semibold))
-                                    Text("Log this trade").font(.system(size: 11.5, weight: .semibold))
+                                    // Short label: the bar packs 3 buttons + the verdict chip into the
+                                    // 440pt-minWidth sheet — long labels wrap mid-word (visual QA 2026-07-02).
+                                    Text("Log trade").font(.system(size: 11.5, weight: .semibold))
+                                        .lineLimit(1).fixedSize()
                                 }
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 11).padding(.vertical, 6)
@@ -5028,6 +5031,7 @@ struct MarketsView: View {
                                 Text(planCopied ? "Copied" : "Copy plan")
                                     .font(.system(size: 11.5, weight: .semibold))
                                     .frame(minWidth: 58, alignment: .leading)
+                                    .lineLimit(1).fixedSize()
                                     .contentTransition(.opacity)
                             }
                             .foregroundStyle(.white).padding(.horizontal, 11).padding(.vertical, 6)
@@ -5040,7 +5044,8 @@ struct MarketsView: View {
                         Button { Task { await store.runBacktest(symbol: idea.symbol) } } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "clock.arrow.circlepath").font(.system(size: 11, weight: .semibold))
-                                Text("Backtest 5 years").font(.system(size: 11.5, weight: .semibold))
+                                Text("Backtest 5y").font(.system(size: 11.5, weight: .semibold))
+                                    .lineLimit(1).fixedSize()
                             }
                             .foregroundStyle(.white)
                             .padding(.horizontal, 11).padding(.vertical, 6)
@@ -5048,6 +5053,7 @@ struct MarketsView: View {
                             .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                         }
                         .buttonStyle(LuxPressStyle()).disabled(store.isBacktesting)
+                        .help("Run a 5-year backtest of the advisor's rules on this symbol — results appear in the Evidence section")
 
                         Spacer(minLength: 0)
 
@@ -5077,14 +5083,19 @@ struct MarketsView: View {
                                 : (chipGate.decision == .caution ? DS.Palette.warningSoft : DS.Palette.danger)
                             let chipIcon = chipGate.decision == .clear ? "checkmark.shield.fill"
                                 : (chipGate.decision == .caution ? "exclamationmark.triangle.fill" : "xmark.shield.fill")
-                            // WV5: accessibilityLabel so "Clear to trade" reads in context for VoiceOver;
-                            // layoutPriority(1) + lineLimit(1) so "Don't take this trade" never truncates.
-                            Label(chipGate.decision.rawValue, systemImage: chipIcon)
+                            // WV5 + visual QA 2026-07-02: the bar can't fit 3 buttons + the full verdict
+                            // phrase at the 440pt sheet floor ("Proceed with caution" truncated to
+                            // "Proceed…"). The chip uses a COMPACT label — icon + tint carry severity,
+                            // the full verdict stays in .help and the VoiceOver label, and the complete
+                            // gate section above remains the authoritative wording.
+                            let chipCompact = chipGate.decision == .clear ? "Clear"
+                                : (chipGate.decision == .caution ? "Caution" : "Do NOT trade")
+                            Label(chipCompact, systemImage: chipIcon)
                                 .font(.system(size: mvFont9, weight: .semibold))
                                 .foregroundStyle(chipColor)
                                 .lineLimit(1)
                                 .layoutPriority(1)
-                                .help(chipGate.caveat)
+                                .help("\(chipGate.decision.rawValue) — \(chipGate.caveat)")
                                 .accessibilityLabel("Pre-trade gate: \(chipGate.decision.rawValue)")
                         }
                     }
