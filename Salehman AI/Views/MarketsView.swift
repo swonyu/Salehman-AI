@@ -4346,7 +4346,10 @@ struct MarketsView: View {
                 entry: idea.price, stop: stop, target: target,
                 spreadBps: costs.spreadBps, slippageBps: costs.slippageBps, takerFeeBps: costs.takerFeeBps,
                 annualFinancingRate: finRate, holdDays: finDays) {
-                let financingNote = finRate > 0 ? String(format: " + ~%.0fbps/yr short financing", finRate * 10_000) : ""
+                // F27 (factored): single source of truth — StockSageExpectedValue.financingNoteSuffix
+                // keys on BOTH rate > 0 AND days > 0 (FX/index sells have 0 hold days → $0 financing;
+                // a rate-only guard would falsely claim financing was modeled when nothing was charged).
+                let financingNote = StockSageExpectedValue.financingNoteSuffix(rate: finRate, days: finDays)
                 // WV6: "est." added to match sheet's "After ~13bps est. … costs" wording.
                 plan += String(format: "\nNet R:R (after ~%dbps est. %@ costs%@): %.1f:1 (gross %.1f:1)",
                                Int(costs.roundTripBps), costs.assetClass, financingNote, ne.netRR, ne.grossRR)
@@ -4607,7 +4610,8 @@ struct MarketsView: View {
                         annualFinancingRate: finRate, holdDays: finDays,
                         winProb: StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target, calibration: store.convictionCalibration)?.winProbEstimate) {
                         let c = ne.costErodesEdge ? DS.Palette.warningSoft : DS.Palette.textSecondary
-                        let financingNote = finRate > 0 ? String(format: " + ~%.0fbps/yr short financing", finRate * 10_000) : ""
+                        // F27 (factored): same logic as fullPlanText, now via the shared helper.
+                        let financingNote = StockSageExpectedValue.financingNoteSuffix(rate: finRate, days: finDays)
                         let pre = "After ~\(Int(costs.roundTripBps))bps est. \(costs.assetClass) costs\(financingNote): "
                         let body = ne.netRR > 0
                             ? pre + String(format: "net R:R %.1f:1 (gross %.1f:1). %@", ne.netRR, ne.grossRR, ne.verdict)
@@ -5055,8 +5059,11 @@ struct MarketsView: View {
         .task(id: idea.symbol) {
             guard !ProcessInfo.processInfo.arguments.contains("--qa") else { return }
             await store.refreshMultiTimeframe(symbol: idea.symbol)
-            // Mark MTF fetch complete (success or failure) so the view can replace the
-            // permanent ProgressView with "unavailable" when the fetch returns no data.
+            // F31: guard the completion mark with Task.isCancelled. If the sheet was dismissed
+            // mid-fetch the task is cancelled but execution continues past the await — inserting
+            // into mtfFetchCompleted in that case would cause the NEXT open to skip the spinner
+            // and flash "Weekly timeframe unavailable" while a new fetch is in flight.
+            guard !Task.isCancelled else { return }
             mtfFetchCompleted.insert(idea.symbol.uppercased())
             await store.refreshPrecheck(symbol: idea.symbol)
             await store.refreshEarnings(symbol: idea.symbol)

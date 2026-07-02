@@ -186,6 +186,14 @@ enum StockSageExpectedValue {
         return (StockSageNetEdge.defaultShortBorrowRate, expectedHoldDays(for: idea) ?? 0)
     }
 
+    /// F27: single source of truth for the financing-cost note appended to net-cost display strings.
+    /// Returns " + ~NNNbps/yr short financing" when BOTH rate > 0 AND days > 0; otherwise "".
+    /// Keyed on BOTH conditions: rate > 0 alone would falsely claim financing was modeled for
+    /// FX/index sells whose expectedHoldDays returns nil → 0 (no hold estimate → $0 financing).
+    nonisolated static func financingNoteSuffix(rate: Double, days: Double) -> String {
+        (rate > 0 && days > 0) ? String(format: " + ~%.0fbps/yr short financing", rate * 10_000) : ""
+    }
+
     /// Does the idea's conviction-mapped win prob clear its AFTER-COST break-even? A thin,
     /// high-cost flip can be positive-EV on paper yet net-negative once frictions are paid.
     /// No defined R (no stop/target) ⇒ treated as clearing (don't demote — unchanged).

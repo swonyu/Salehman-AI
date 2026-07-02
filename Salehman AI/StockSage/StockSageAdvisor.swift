@@ -146,7 +146,9 @@ enum StockSageAdvisor {
         // (closes.count between the 30-bar minimum and 126) `momPeriod` is the true, shorter
         // window actually used above — the rationale must say so honestly rather than always
         // claiming "6-month" (same honesty treatment as the degraded-SMA branch above).
-        let momWindowLabel = momPeriod >= 100 ? "6-month momentum" : "momentum (\(momPeriod)-day window)"
+        // F37: threshold raised from 100 to 120. 100 bars ≈ 4.6 months, which is not "6-month";
+        // only momPeriod >= 120 (≥ ~5.5 months, ~one trading week short of 126) earns that label.
+        let momWindowLabel = momPeriod >= 120 ? "6-month momentum" : "momentum (\(momPeriod)-day window)"
         if mom > 0 { score += 0.15; rationale.append(String(format: "+%.0f%% \(momWindowLabel)", mom)) }
         else if mom < 0 { score -= 0.15; rationale.append(String(format: "%.0f%% \(momWindowLabel)", mom)) }
         // MACD trend confirmation — weighted LIGHTER than independent momentum

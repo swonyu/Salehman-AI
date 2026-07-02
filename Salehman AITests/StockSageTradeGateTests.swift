@@ -91,4 +91,64 @@ struct StockSageTradeGateTests {
             #expect(c.label.contains("Net reward:risk (after est. costs)"))
         }
     }
+
+    // MARK: - F36 correlation label bands (label-only fix; gate level unchanged)
+    //
+    // Hand-derived via derive_statecache.swift:
+    //   corr=0.79 → moderate band (0.5–<0.8) → "Moderate correlation 0.79 — partial overlap with your book" (.pass)
+    //   corr=0.45 → low band (<0.5)           → "Low correlation (0.45) with the book — adds diversification" (.pass)
+    //   corr=0.85 → high band (>=0.8)          → warn label unchanged
+    //
+    // Gate LEVEL must remain .pass for both 0.79 and 0.45 (neither is a warn/fail).
+
+    @Test func correlationAtSeventyNineIsModerateNotLow() {
+        let v = G.evaluate(hasStop: true, rewardToRisk: 2.5, riskFraction: 0.01, maxCorrelation: 0.79)
+        #expect(v.decision == .clear, "0.79 correlation must not warn — gate level unchanged")
+        let corrCheck = v.checks.first { $0.label.lowercased().contains("correlation") }
+        #expect(corrCheck != nil)
+        if let c = corrCheck {
+            #expect(c.level == .pass, "0.79 is not high enough to warn")
+            // Moderate band label — must NOT say "Low" or "adds diversification"
+            #expect(c.label.contains("Moderate correlation 0.79"), "got: \(c.label)")
+            #expect(c.label.contains("partial overlap with your book"), "got: \(c.label)")
+            #expect(!c.label.contains("Low correlation"), "0.79 must not be labeled Low — got: \(c.label)")
+        }
+    }
+
+    @Test func correlationAtFortyFiveIsLowAndAddsDiversification() {
+        let v = G.evaluate(hasStop: true, rewardToRisk: 2.5, riskFraction: 0.01, maxCorrelation: 0.45)
+        #expect(v.decision == .clear, "0.45 correlation must not warn — gate level unchanged")
+        let corrCheck = v.checks.first { $0.label.lowercased().contains("correlation") }
+        #expect(corrCheck != nil)
+        if let c = corrCheck {
+            #expect(c.level == .pass)
+            // Low band label — must say "Low correlation" with the diversification claim
+            #expect(c.label.contains("Low correlation"), "got: \(c.label)")
+            #expect(c.label.contains("adds diversification"), "got: \(c.label)")
+            #expect(!c.label.contains("Moderate"), "0.45 must not be labeled Moderate — got: \(c.label)")
+        }
+    }
+
+    @Test func correlationBandBoundary05IsModerateNotLow() {
+        // Exact boundary: 0.50 is the first value that falls into the moderate band.
+        let v = G.evaluate(hasStop: true, rewardToRisk: 2.5, riskFraction: 0.01, maxCorrelation: 0.50)
+        #expect(v.decision == .clear)
+        let corrCheck = v.checks.first { $0.label.lowercased().contains("correlation") }
+        #expect(corrCheck != nil)
+        if let c = corrCheck {
+            #expect(c.level == .pass)
+            #expect(c.label.contains("Moderate"), "0.50 should fall in moderate band — got: \(c.label)")
+        }
+    }
+
+    @Test func correlationBandBoundary08IsHighlyCorrelated() {
+        // Exact boundary: 0.80 remains "Highly correlated" (warn).
+        let v = G.evaluate(hasStop: true, rewardToRisk: 2.5, riskFraction: 0.01, maxCorrelation: 0.80)
+        #expect(v.decision == .caution, "0.80 must still warn — gate unchanged")
+        let corrCheck = v.checks.first { $0.label.lowercased().contains("correlation") }
+        if let c = corrCheck {
+            #expect(c.level == .warn)
+            #expect(c.label.contains("Highly correlated"), "got: \(c.label)")
+        }
+    }
 }

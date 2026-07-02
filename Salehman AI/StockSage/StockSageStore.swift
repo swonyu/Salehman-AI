@@ -854,9 +854,16 @@ final class StockSageStore: ObservableObject {
         guard laneCorrelationFingerprint != fingerprint else { return }
         guard ToolPolicy.webToolsDisabledReason() == nil else { return }
         let histories = await StockSageQuoteService.fetchHistories(for: symbols)
-        laneCorrelationValue = StockSageExpectedValue.laneCorrelation(
+        guard !Task.isCancelled else { return }
+        let result = StockSageExpectedValue.laneCorrelation(
             crypto: split.crypto, equity: split.equity, histories: histories.mapValues(\.closes))
-        laneCorrelationFingerprint = fingerprint
+        // F11: stamp the fingerprint ONLY on a non-nil result; clear it on failure/cancellation.
+        // If the fetch failed (result==nil), clearing the fingerprint ensures the next call is NOT
+        // blocked by the guard above — allowing a retry after a network miss. A cancelled stale
+        // task cannot reach here (guard above), so it can't clobber a fresh task's published value.
+        // Mirrors the cache-on-success pattern of refreshTrailingStop/refreshLiquidity.
+        laneCorrelationValue = result
+        laneCorrelationFingerprint = (result != nil) ? fingerprint : nil
     }
 
     // Symbols whose latest quote had no real previousClose (a brand-new listing) — Yahoo's
@@ -876,7 +883,18 @@ final class StockSageStore: ObservableObject {
     /// cached raw date must yield a DIFFERENT severity as real time passes, unlike the frozen
     /// fetch-time value the pre-fix code cached.
     nonisolated static func deriveEarningsProximity(_ dates: [String: Date], now: Date = Date()) -> [String: EarningsProximity] {
-        dates.mapValues { StockSageEarnings.proximity(now: now, earnings: $0) }
+        // F32: evict entries whose date is more than 1 day in the past. The session cache never
+        // auto-expires, so after a report date passes mid-session max(0,days) floors at 0 and the
+        // .imminent badge + −2000 rank demotion would persist for hours.
+        // NOTE — one-instant deliberate difference vs the fetch-time guard in refreshEarnings:
+        //   fetch guard:   date.timeIntervalSinceNow > -86_400   (strict, evicts at exactly -86400s)
+        //   derive guard:  date.timeIntervalSince(now) >= -86_400 (non-strict, keeps at exactly -86400s)
+        // The derive guard is deliberately conservative: it keeps the warning for one instant longer
+        // than the fetch guard would. Do NOT change either boundary.
+        dates.compactMapValues { date in
+            guard date.timeIntervalSince(now) >= -86_400 else { return nil }
+            return StockSageEarnings.proximity(now: now, earnings: date)
+        }
     }
 
     /// Earnings proximity — overnight-gap event risk for an equity. Recomputed fresh from

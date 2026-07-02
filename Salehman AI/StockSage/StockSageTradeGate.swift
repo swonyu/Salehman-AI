@@ -79,8 +79,12 @@ enum StockSageTradeGate {
         }
 
         // 4. Correlation with the existing book (concentration).
+        // F36: add a moderate band (0.5–<0.8) so a 0.79 correlation is not mislabeled "Low".
+        // Gate LEVEL is unchanged — only the check's label text is split into three honest bands.
         if let c = maxCorrelation, c >= 0.8 {
             checks.append(TradeGateCheck(level: .warn, label: String(format: "Highly correlated (%.2f) with a holding — sizes as one bet, not two", c)))
+        } else if let c = maxCorrelation, c >= 0.5 {
+            checks.append(TradeGateCheck(level: .pass, label: String(format: "Moderate correlation %.2f — partial overlap with your book", c)))
         } else if let c = maxCorrelation {
             checks.append(TradeGateCheck(level: .pass, label: String(format: "Low correlation (%.2f) with the book — adds diversification", c)))
         }

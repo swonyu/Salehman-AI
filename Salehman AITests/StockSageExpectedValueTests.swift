@@ -989,4 +989,88 @@ struct StockSageExpectedValueTests {
         // value here, not the total==0 sentinel — that path needs ER to be uncomputable too).
         #expect(abs(q - 1.0) < 1e-9)
     }
+
+    // MARK: - F27: financingCostInputs days=0 guard (label-honesty; numeric output unchanged)
+    //
+    // Hand-derived via derive_statecache.swift:
+    //   finRate=3%, finDays=12 → note present: " + ~300bps/yr short financing"
+    //   finRate=3%, finDays=0  → note absent: ""
+    //
+    // The fix is in MarketsView's label construction, not in financingCostInputs itself.
+    // These tests pin the INPUTS that drive the label condition so a regression in the
+    // data path (days becoming 0 or non-zero unexpectedly) is caught here before the UI.
+
+    @Test func financingCostInputsReturnsZeroDaysForFXAndIndexSells() {
+        // FX symbol: expectedHoldDays returns nil → days = 0 even though rate > 0.
+        // A label keyed on `finRate > 0` alone would falsely claim financing was modeled.
+        // price=100 from fixture; sell: stop above (105), target below (85).
+        let fxSell = idea("EURUSD=X", action: .sell, conviction: 0.7, stop: 105, target: 85)
+        let (finRate, finDays) = EV.financingCostInputs(for: fxSell)
+        // Rate is non-zero (short borrow rate is always non-zero for sells)...
+        #expect(finRate > 0)
+        // ...but days is 0 because FX has no hold-day estimate (nil → 0 fallback).
+        #expect(finDays == 0,
+                "FX sells must return days=0 so the financing note is suppressed — got \(finDays)")
+        // Assert the label condition the MarketsView fix enforces: note absent when days=0.
+        let noteAbsent = !(finRate > 0 && finDays > 0)
+        #expect(noteAbsent, "financing note condition (rate>0 && days>0) must be false when days=0 — would be a false label")
+    }
+
+    @Test func financingCostInputsReturnsNonZeroDaysForEquitySells() {
+        // Equity symbol: expectedHoldDays returns the equity hold default (e.g. 12 days).
+        // Both rate and days are non-zero → the financing note IS correctly shown.
+        // Sell convention: stop ABOVE entry (105), target BELOW entry (80). Price = 100 (from fixture).
+        let equitySell = idea("AAPL", action: .sell, conviction: 0.7, stop: 105, target: 80)
+        let (finRate, finDays) = EV.financingCostInputs(for: equitySell)
+        #expect(finRate > 0)
+        #expect(finDays > 0,
+                "Equity sells must return days>0 so the financing note appears — got \(finDays)")
+        // Assert the label condition: note present when both are > 0.
+        let notePresent = finRate > 0 && finDays > 0
+        #expect(notePresent, "financing note condition must be true for equity sells with a hold estimate")
+    }
+
+    @Test func financingCostInputsReturnsBothZeroForBuys() {
+        // Buy-family: rate=0 → note absent regardless of days. This is the existing behavior
+        // and must not regress — buys never paid short financing.
+        let buy = idea("AAPL", action: .buy, conviction: 0.7, stop: 90, target: 130)
+        let (finRate, finDays) = EV.financingCostInputs(for: buy)
+        #expect(finRate == 0 && finDays == 0, "buy family must return (0, 0) — got rate=\(finRate) days=\(finDays)")
+    }
+
+    // MARK: - F27 COPY-DRIFT HARDENING: financingNoteSuffix (factored helper, byte-identical output)
+    //
+    // Hand-derived via derive_f27.swift (derivations preserved here as comments):
+    //   financingNoteSuffix(rate: 0.03, days: 12)
+    //     → String(format: " + ~%.0fbps/yr short financing", 0.03 * 10_000)
+    //     → String(format: " + ~%.0fbps/yr short financing", 300.0)
+    //     → " + ~300bps/yr short financing"
+    //   financingNoteSuffix(rate: 0.03, days: 0)  → guard fails (days == 0) → ""
+    //   financingNoteSuffix(rate: 0,    days: 12) → guard fails (rate == 0) → ""
+    //
+    // These tests also serve as the byte-identity check: the helper's String(format:) call
+    // is textually identical to the two MarketsView sites it replaced (the scratchpad script
+    // confirmed both sites produce the same string before factoring).
+
+    @Test func financingNoteSuffixWithRateAndDaysProducesExpectedString() {
+        // Both rate and days non-zero → note present with correct bps figure.
+        // 3% annual rate → 0.03 * 10_000 = 300.0 → "~300bps/yr"
+        let note = EV.financingNoteSuffix(rate: 0.03, days: 12)
+        #expect(note.contains("300bps/yr short financing"),
+                "expected '300bps/yr short financing' in note — got: '\(note)'")
+    }
+
+    @Test func financingNoteSuffixWithZeroDaysIsEmpty() {
+        // days == 0 → condition fails → empty (FX/index sell path: no hold estimate).
+        let note = EV.financingNoteSuffix(rate: 0.03, days: 0)
+        #expect(note.isEmpty,
+                "financing note must be empty when days=0 — got: '\(note)'")
+    }
+
+    @Test func financingNoteSuffixWithZeroRateIsEmpty() {
+        // rate == 0 → condition fails → empty (buy-family path: no short borrow charged).
+        let note = EV.financingNoteSuffix(rate: 0, days: 12)
+        #expect(note.isEmpty,
+                "financing note must be empty when rate=0 — got: '\(note)'")
+    }
 }

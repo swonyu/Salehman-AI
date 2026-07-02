@@ -394,4 +394,50 @@ struct StockSageAdvisorTests {
             }
         }
     }
+
+    // MARK: - F37 momentum-window label honesty (threshold raised from >=100 to >=120)
+    //
+    // Hand-derived via derive_statecache.swift:
+    //   127-bar history → momPeriod = min(126,126) = 126 ≥ 120 → "6-month momentum"
+    //   121-bar history → momPeriod = min(120,126) = 120 ≥ 120 → "6-month momentum"
+    //   120-bar history → momPeriod = min(119,126) = 119 < 120 → "momentum (119-day window)"
+    //   101-bar history → momPeriod = min(100,126) = 100 < 120 → "momentum (100-day window)"
+    //
+    // Only momPeriod >= 120 (~5.5 months) earns the "6-month" label. Numeric signals unchanged.
+
+    @Test func fullSixMonthLookbackUsesExactSixMonthLabel() {
+        // 127 bars → momPeriod = 126 (the full 6-month window, 252/2 trading days).
+        let a = StockSageAdvisor.advise(closes: TrendFixtures.up(127))
+        #expect(a.rationale.contains { $0.contains("6-month momentum") },
+                "127-bar history (momPeriod=126) must say '6-month momentum' — got \(a.rationale)")
+    }
+
+    @Test func momPeriod120BoundaryUsesExactSixMonthLabel() {
+        // 121 bars → momPeriod = 120; at the new boundary, still earns "6-month".
+        let a = StockSageAdvisor.advise(closes: TrendFixtures.up(121))
+        #expect(a.rationale.contains { $0.contains("6-month momentum") },
+                "121-bar history (momPeriod=120) must say '6-month momentum' — got \(a.rationale)")
+    }
+
+    @Test func momPeriodJustBelowBoundaryUsesDayLabel() {
+        // 120 bars → momPeriod = 119 < 120: must NOT claim "6-month".
+        // (F37 fix raised threshold from >=100 to >=120.)
+        let closes = TrendFixtures.up(120)   // 120 bars → momPeriod = min(119, 126) = 119
+        let a = StockSageAdvisor.advise(closes: closes)
+        #expect(!a.rationale.contains { $0.contains("6-month") },
+                "120-bar history (momPeriod=119) must NOT claim 6-month momentum — got \(a.rationale)")
+        #expect(a.rationale.contains { $0.contains("119-day window") },
+                "120-bar history (momPeriod=119) must say '119-day window' — got \(a.rationale)")
+    }
+
+    @Test func momPeriod100HistoryUsesDayLabel() {
+        // 101 bars → momPeriod = 100 (~4.6 months), not "6-month" under the new threshold.
+        // Under the OLD threshold (>=100) this would incorrectly claim "6-month momentum".
+        let closes = TrendFixtures.up(101)   // 101 bars → momPeriod = min(100, 126) = 100
+        let a = StockSageAdvisor.advise(closes: closes)
+        #expect(!a.rationale.contains { $0.contains("6-month") },
+                "101-bar history (momPeriod=100) must NOT claim 6-month — got \(a.rationale)")
+        #expect(a.rationale.contains { $0.contains("100-day window") },
+                "101-bar history (momPeriod=100) must say '100-day window' — got \(a.rationale)")
+    }
 }
