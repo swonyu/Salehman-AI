@@ -3115,12 +3115,17 @@ struct MarketsView: View {
                 if ideaSort == .velocity,
                    let vel = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
                     ideaMetric("Vel.", String(format: "%+.3fR/d", vel), color: DS.Palette.successSoft)
+                        .help("Gross EV/day. The board ORDERS by net-adjusted growth rate (costs + variance haircuts), which can differ — two cards with similar gross Vel. may rank apart.")
                 }
                 ideaMetric("Price", adaptivePrice(idea.price))
-                if let stop = a.stopPrice {
-                    // trader-workflow #4: stop distance % in parentheses — glanceable risk without opening sheet.
+                if let stop = a.stopPrice, idea.price > 0 {
+                    // trader-workflow #4: stop distance % in parentheses — glanceable risk without
+                    // opening the sheet. price > 0 guard matches rewardRisk()'s own pattern — a
+                    // malformed zero price must not render "(inf%)"/"(nan%)".
                     let stopPct = abs(idea.price - stop) / idea.price * 100
                     ideaMetric("Stop", "\(adaptivePrice(stop)) (\(String(format: "%.1f%%", stopPct)))", color: DS.Palette.danger)
+                } else if let stop = a.stopPrice {
+                    ideaMetric("Stop", adaptivePrice(stop), color: DS.Palette.danger)
                 }
                 if let target = a.targetPrice {
                     ideaMetric("Target", adaptivePrice(target), color: DS.Palette.successSoft)
@@ -3201,6 +3206,10 @@ struct MarketsView: View {
             case .approaching(let d): label += ", earnings approaching in about \(d) days"
             case .clear, .unknown:    break
             }
+            // The explicit label on a .combine element REPLACES the synthesized child labels,
+            // so the staleness clock badge's own accessibilityLabel is never spoken — convey
+            // it here (the opacity dimming is invisible to VoiceOver too).
+            if boardIsStale { label += ", board data is over 4 hours old" }
             return label
         }())
         .accessibilityHint("Opens full advice and backtest")

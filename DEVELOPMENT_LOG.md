@@ -10523,3 +10523,11 @@ Then implemented the session-timing note: `StockSageExecutionTiming.sessionNote(
 - board-scan #2 (fixed-width alignment): action badge gets `minWidth: 74`, EV chip gets `minWidth: 72, alignment: .trailing` and `.monospacedDigit()` — enables column-scanning across cards.
 - board-scan #3 (sort-mode chip in summary strip): added a non-interactive "↕ N sort" summaryChip to ideasSummaryStrip, always visible as the board scrolls.
 **Result:** ✅ ** BUILD SUCCEEDED **, ✅ ** TEST SUCCEEDED **.
+
+## 2026-07-02 — Ideas-card wave 5: delta-verify of wave 4 + 3 fixes (owner priority: ideas card)
+**Files:** `Salehman AI/Views/MarketsView.swift`.
+**What & why:** A Sonnet-max verifier ran 9 targeted probes on wave 4's diff (commit f62c6fd). Six clean — including the sharpest probes: `store.ideasIsStale` genuinely exists (StockSageStore.swift, >4h), the Vol-adj formula is exactly `suggestedWeight × sizingMultiplier`, the chip removal left zero dead code while the buildIdeas rationale wiring survived, and the retained "24/7 volatile" a11y text on fast-lane rows was judged a deliberate, defensible VoiceOver choice (row-by-row navigation loses the section-header context sighted users get). Three findings, fixed by hand:
+1. **Staleness never spoken to VoiceOver** (moderate) — the explicit `.accessibilityLabel` on the card's `.combine` element REPLACES synthesized child labels, swallowing the clock badge's own label; the opacity dim is invisible to VoiceOver too. Fixed: `boardIsStale` now appends ", board data is over 4 hours old" inside the outer label closure.
+2. **No zero-price guard on the stop-distance %** (minor) — `abs(price−stop)/price` could render "(inf%)"/"(nan%)" on a malformed zero price. Fixed with the same `price > 0` pattern `rewardRisk()` already uses; the bare stop price still displays when unguardable.
+3. **Vel. metric transparency** (minor/informational) — the card shows GROSS EV/day while the board orders by net-adjusted log-growth (documented, intentional, consistent with the fast lane). Added a `.help` tooltip disclosing the divergence so two cards with similar gross Vel. ranking apart is explicable.
+**Result:** ✅ ** BUILD SUCCEEDED **, ✅ ** TEST SUCCEEDED ** (1444 tests, 0 failures).
