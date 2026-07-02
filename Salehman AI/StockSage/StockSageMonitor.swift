@@ -69,6 +69,9 @@ final class StockSageMonitor {
                     // Evaluate on LIVE quotes: pull a fresh worldwide snapshot before
                     // each cycle (no-ops cleanly when offline / web access is off).
                     await StockSageStore.shared.refresh()
+                    // CONCURRENCY #2: stop() during the refresh await must not start a whole
+                    // evaluation cycle for a monitor the user just turned off.
+                    guard !Task.isCancelled else { break }
                     await self?.runCycle()
                 }
                 // Throttle under pressure: concurrencyLimit() folds in both
@@ -106,6 +109,11 @@ final class StockSageMonitor {
         var strong: [StockSageSignal] = []
         var nowStrong: [String: StockSageRecommendation] = [:]
         for symbol in store.fetchAllSymbols() {
+            // CONCURRENCY #2: stop() cancels the loop task, but a cancelled task keeps executing
+            // past its awaits (the sendAlert below) unless it checks — without this, alerts kept
+            // firing AFTER monitoring was toggled off, and a quick stop→start overlapped two
+            // cycles on the same lastAlerted state (double-fired or suppressed pushes).
+            guard !Task.isCancelled else { break }
             guard let signal = StockSageSignalEngine.generateSignal(for: symbol) else { continue }
             guard signal.recommendation == .strongBuy || signal.recommendation == .strongSell else { continue }
             strong.append(signal)
@@ -129,8 +137,9 @@ final class StockSageMonitor {
         // currently-strong set would forget a symbol that went strong→hold, so a
         // strong→hold→strong round-trip would re-fire the identical alert the user already
         // saw. A genuine flip (Strong Buy⇄Strong Sell) still alerts — the rec differs.
-        if liveNotify { for (sym, rec) in nowStrong { lastAlerted[sym] = rec } }
-        if notify {
+        // CONCURRENCY #2: a dying cycle must not write the dedupe map (two overlapping writers).
+        if liveNotify, !Task.isCancelled { for (sym, rec) in nowStrong { lastAlerted[sym] = rec } }
+        if notify, !Task.isCancelled {
             await checkPriceAlerts()
             // Tracked-idea stop/target pushes: same honesty gate as the strong-signal path
             // above (never off sample/cached-not-live data), and only off quotes THIS cycle
@@ -159,6 +168,8 @@ final class StockSageMonitor {
         var nowStrong: [String: StockSageRecommendation] = [:]
         var freshPrices: [String: Double] = [:]
         for ticker in watch {
+            // CONCURRENCY #2: same cooperative-cancellation bail as runCycle.
+            guard !Task.isCancelled else { break }
             guard let q = quotes[ticker.uppercased()], q.price > 0, q.previousClose > 0 else { continue }
             let sym = StockSageSymbol(symbol: ticker, market: "★ My watchlist", quotes: [
                 StockSageQuote(price: q.previousClose, previousPrice: q.previousClose,
@@ -181,11 +192,11 @@ final class StockSageMonitor {
                 await sendAlert(signal: signal, market: sym.market)
             }
         }
-        if notify { for (s, r) in nowStrong { lastAlerted[s] = r } }
+        if notify, !Task.isCancelled { for (s, r) in nowStrong { lastAlerted[s] = r } }
         // Publish the freshly-fetched watchlist prices to the board so it reflects live data
         // for the names the user is focused on (watchlist-only stops the full auto-refresh).
         StockSageStore.shared.mergeLiveQuotes(quotes)
-        if notify {
+        if notify, !Task.isCancelled {
             await checkPriceAlerts()
             await checkIdeaAlerts(prices: freshPrices)
         }
