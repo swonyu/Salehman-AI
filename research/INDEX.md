@@ -39,5 +39,8 @@ One dated line per research item: topic · one-line finding · source file. Keep
 
 - **2026-06-27 · EDGE_RESEARCH #1 — Per-symbol vol-regime brake (VIX-free, continuous)** · `StockSageVolRegime`: `regime(closes:, volWindow:21, historyWindow:252)` rolls 21-bar realized-vol series, ranks via empirical CDF, returns `VolRegime{current, median, percentile, sizingMultiplier≤1, note, caveat}`. `sizingMultiplier` = min(absoluteBrake=min(1,median/current), percentileBrake=max(0.5,1−max(0,pct−0.5)), floor 0.25). Wired into `buildIdeas` (⚠ note in "Why" when <0.95) + `StockSageCapitalAllocator` (weight×=mult). 8 tests in `StockSageVolRegimeTests`. Works on Tadawul/FX/crypto (VIX-free). Complements `StockSageRegime` (market-wide). · `EDGE_RESEARCH.md`
 
+## Fast-load digest
+- **2026-07-02 · [RESEARCH_CORPUS_DIGEST.md](RESEARCH_CORPUS_DIGEST.md)** — full-fidelity distillation of the three LARGEST docs (quant_engine, quant_engine_II, money_fast_conviction; ~100KB → ~64KB of pure verdicts/numbers/mappings/gotchas). For fast session-start recall; originals win on any disagreement. The other four docs are compact — read them directly.
+
 ## How to extend
 Append a dated line here + write/extend the detail file. PLAN reads this index. This is the Research Spec Keeper's log.
