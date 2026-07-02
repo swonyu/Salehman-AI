@@ -37,7 +37,9 @@ enum StockSageMonteCarloRuin {
                                      seed: UInt64 = 0x5A1E_B0A7, ruinLevel: Double = 0.5,
                                      minTrades: Int = 20) -> MonteCarloRuin? {
         let rs = trades.filter { !$0.isOpen }.compactMap { $0.realizedR }
-        guard rs.count >= minTrades, riskFraction > 0, horizon > 0, sims > 0 else { return nil }
+        // [D-3 2026-07-03] Floor at max(1, minTrades): a caller-supplied minTrades <= 0 must not
+        // let an empty sample reach the bootstrap draw below (`% UInt64(n)` traps on n == 0).
+        guard rs.count >= Swift.max(1, minTrades), riskFraction > 0, horizon > 0, sims > 0 else { return nil }
         let f = riskFraction
         let n = rs.count
         var rng = SplitMix64(seed: seed)

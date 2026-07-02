@@ -34,4 +34,13 @@ struct StockSageMonteCarloRuinTests {
         // The honesty caveat is present and names the i.i.d. limitation.
         #expect(StockSageMonteCarloRuin.caveat.lowercased().contains("independent"))
     }
+
+    @Test func degenerateMinTradesZeroReturnsNilInsteadOfTrapping() {
+        // D-3 (2026-07-03): pre-guard, minTrades: 0 with an empty log passed the count guard
+        // (0 >= 0) and reached `rng.next() % UInt64(0)` — a runtime division-by-zero trap.
+        #expect(StockSageMonteCarloRuin.simulate([], riskFraction: 0.1, minTrades: 0) == nil)
+        #expect(StockSageMonteCarloRuin.simulate([], riskFraction: 0.1, minTrades: -5) == nil)
+        // A 1-trade log with an explicit minTrades: 1 may still simulate (floor is max(1, minTrades)).
+        #expect(StockSageMonteCarloRuin.simulate([tr(110)], riskFraction: 0.1, sims: 100, minTrades: 1) != nil)
+    }
 }
