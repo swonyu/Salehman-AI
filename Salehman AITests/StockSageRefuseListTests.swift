@@ -13,10 +13,21 @@ struct StockSageRefuseListTests {
         // Research refuse-list has exactly 7 numbered items.
         #expect(StockSageRefuseList.all.count == 7)
         #expect(Set(StockSageRefuseList.all.map(\.id)).count == 7)   // ids unique
-        // Every entry carries load-bearing EVIDENCE (a number), not a bare opinion.
+        // Every entry carries load-bearing EVIDENCE, not a bare opinion. Six of the seven
+        // spec entries cite a number; item 4 (overnight-roundtrip) is digit-free IN THE SPEC
+        // (RESEARCH_2026-07-02_week_horizon_velocity.md:35 — "explicitly cost-unattractive per
+        // the source paper; ETF implementations shuttered"), so it is pinned on its load-bearing
+        // spec phrases instead. [Amendment A-1, 2026-07-02: the original universal digit-assert
+        // contradicted the digit-free spec entry — plan bug, not code bug; adding a figure to
+        // the evidence would have fabricated a stat the research corpus does not contain.]
         for setup in StockSageRefuseList.all {
             #expect(!setup.title.isEmpty)
-            #expect(setup.evidence.rangeOfCharacter(from: .decimalDigits) != nil)
+            if setup.id == "overnight-roundtrip" {
+                #expect(setup.evidence.contains("cost-devoured"))
+                #expect(setup.evidence.contains("shut down"))
+            } else {
+                #expect(setup.evidence.rangeOfCharacter(from: .decimalDigits) != nil)
+            }
         }
         // The single most load-bearing verified number: reversal flips to −1.28%/mo NET.
         guard let reversal = StockSageRefuseList.all.first(where: { $0.id == "naive-reversal" }) else {
