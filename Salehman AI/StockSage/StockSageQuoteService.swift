@@ -45,7 +45,10 @@ enum StockSageQuoteService {
 
     /// Browser-like UA — Yahoo's public endpoints answer plain clients far more
     /// reliably with one set (same rationale as `MediaSearch.ua`).
-    private static let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+    /// Internal (not private) so `StockSageEarnings` can share this single constant
+    /// rather than duplicate it — a future UA fix lands in exactly one place (F39 2026-07-02).
+    /// MediaSearch has its own copy outside the Markets fence; leave that untouched.
+    nonisolated static let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 
     // MARK: Public fetch
 
@@ -81,9 +84,12 @@ enum StockSageQuoteService {
     // MARK: One symbol
 
     private static func fetchOne(_ symbol: String) async -> LiveQuote? {
-        // `^` (index marker) and other reserved chars must be percent-encoded in
-        // the path; `.` and `-` (the exchange suffixes) are path-legal and stay.
-        let encoded = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? symbol
+        // `^` (index marker) and other reserved chars must be percent-encoded.
+        // Use .urlHostAllowed (stricter than .urlPathAllowed) so a symbol containing
+        // '/' (e.g. a hypothetical BRK/B) doesn't silently rewrite the request path
+        // segment — same set StockSageEarnings uses for the identical job (F38 2026-07-02).
+        // No symbol in the curated universe contains '/', so live behavior is unchanged.
+        let encoded = symbol.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? symbol
         guard let url = URL(string: "https://query1.finance.yahoo.com/v8/finance/chart/\(encoded)?range=1d&interval=1d") else {
             return nil
         }
@@ -146,7 +152,9 @@ enum StockSageQuoteService {
     /// trend and every indicator. `nil` on failure / when external access is off.
     static func fetchHistory(_ symbol: String, range: String = "1y", interval: String = "1d") async -> StockSagePriceHistory? {
         guard ToolPolicy.isExternalAllowed else { return nil }
-        let encoded = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? symbol
+        // .urlHostAllowed for the same reason as fetchOne (F38 2026-07-02) — stricter set,
+        // path-safe for all curated symbols, consistent with StockSageEarnings.fetchNextEarnings.
+        let encoded = symbol.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? symbol
         guard let url = URL(string: "https://query1.finance.yahoo.com/v8/finance/chart/\(encoded)?range=\(range)&interval=\(interval)") else { return nil }
         var req = URLRequest(url: url)
         req.setValue(ua, forHTTPHeaderField: "User-Agent")

@@ -143,14 +143,14 @@ enum StockSagePortfolioAnalytics {
 
     /// Pearson correlation of two return series (aligned on their common tail). nil when either
     /// series has ZERO VARIANCE (flat/halted/newly-listed/illiquid) — correlation with a
-    /// constant series is mathematically 0/0, UNDEFINED, not a "diversifying" 0. Callers MUST
-    /// exclude a nil pair from any average/matrix use, never treat it as an uncorrelated 0 (that
-    /// would understate concentration risk on exactly the names most likely to be thin/flat).
-    /// Still returns a real 0 (not nil) for the pre-existing n<2 (insufficient overlap)
-    /// convention — that's a separate, out-of-scope case, left unchanged.
+    /// constant series is mathematically 0/0, UNDEFINED, not a "diversifying" 0. Also nil when
+    /// n<2 (insufficient overlap for any correlation computation) — the same "undefined" semantic
+    /// as the zero-variance case. Callers MUST exclude a nil pair from any average/matrix use.
+    /// All three call sites pre-guard their inputs to n≥2 (ClusterCheck ≥2, Precheck ≥5,
+    /// laneCorrelation filter{≥2}), so this change is behavior-identical in production.
     nonisolated static func correlation(_ a: [Double], _ b: [Double]) -> Double? {
         let n = Swift.min(a.count, b.count)
-        guard n >= 2 else { return 0 }
+        guard n >= 2 else { return nil }   // UNDEFINED for n<2, same convention as zero-variance
         let aa = Array(a.suffix(n)), bb = Array(b.suffix(n))
         let ma = aa.reduce(0, +) / Double(n), mb = bb.reduce(0, +) / Double(n)
         var cov = 0.0, va = 0.0, vb = 0.0

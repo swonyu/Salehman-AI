@@ -395,6 +395,32 @@ struct StockSageAdvisorTests {
         }
     }
 
+    // MARK: - F34 score→action boundary semantics (deliberate long-side bias, documented)
+    //
+    // The boundary asymmetry is intentional — see the comment in StockSageAdvisor.actionForScore:
+    //   +0.5 → .strongBuy (inclusive ≥ 0.5)  vs  −0.5 → .reduce (exclusive, NOT .sell)
+    // Shorts carry financing cost + unlimited theoretical loss, so the threshold for committing
+    // to a full .sell requires a stronger signal than the long side does for .strongBuy.
+    // These tests PIN the current behavior so any future symmetry change is deliberate.
+
+    @Test func scoreBoundaryPlusFiftyIsStrongBuy() {
+        // +0.5 (the exact boundary) must be .strongBuy, not .buy.
+        // This is INCLUSIVE: the long side treats a borderline signal as actionable.
+        #expect(StockSageAdvisor.actionForScore(0.5, trending: true) == .strongBuy)
+        #expect(StockSageAdvisor.actionForScore(0.5, trending: false) == .strongBuy)
+        #expect(StockSageAdvisor.actionForScore(0.5001, trending: true) == .strongBuy)
+        #expect(StockSageAdvisor.actionForScore(0.4999, trending: true) == .buy)  // just below → .buy
+    }
+
+    @Test func scoreBoundaryMinusFiftyIsReduceNotSell() {
+        // −0.5 (the mirror boundary) must be .reduce, NOT .sell — the deliberate long-side bias.
+        // The short side requires a strictly stronger signal (< −0.5) before committing to .sell.
+        #expect(StockSageAdvisor.actionForScore(-0.5, trending: true) == .reduce)
+        #expect(StockSageAdvisor.actionForScore(-0.5, trending: false) == .reduce)
+        #expect(StockSageAdvisor.actionForScore(-0.4999, trending: true) == .reduce)   // well inside .reduce
+        #expect(StockSageAdvisor.actionForScore(-0.5001, trending: true) == .sell)     // just past → .sell
+    }
+
     // MARK: - F37 momentum-window label honesty (threshold raised from >=100 to >=120)
     //
     // Hand-derived via derive_statecache.swift:

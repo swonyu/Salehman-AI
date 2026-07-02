@@ -26,6 +26,21 @@ struct StockSagePortfolioAnalyticsTests {
         #expect(abs((PA.correlation([0.1, -0.1, 0.1, -0.1], [-0.1, 0.1, -0.1, 0.1]) ?? 0) + 1) < 1e-9)
     }
 
+    @Test func correlationIsNilNotZeroForInsufficientOverlap() {
+        // n<2 is the SAME "undefined" semantic as zero variance: correlation requires
+        // at least two paired observations to be mathematically defined. Must return nil,
+        // consistent with the zero-variance convention, so callers exclude it rather than
+        // treating a thin/overlapping pair as "uncorrelated". All production callers pre-guard
+        // to n≥2 (ClusterCheck ≥2, Precheck minOverlap=5, laneCorrelation filter{≥2}), so
+        // this convention is byte-identical to the prior return-0 in practice (F33 2026-07-02).
+        #expect(PA.correlation([], []) == nil)                     // n=0
+        #expect(PA.correlation([0.1], [0.1]) == nil)               // n=1
+        #expect(PA.correlation([0.1, 0.2], [0.1]) == nil)          // min(2,1)=1
+        #expect(PA.correlation([0.1], [0.1, 0.2]) == nil)          // min(1,2)=1
+        // n=2 is the boundary: with 2 points Pearson IS defined (unless zero variance).
+        #expect(PA.correlation([0.1, 0.2], [0.1, 0.2]) != nil)    // n=2 → defined
+    }
+
     @Test func correlationIsNilNotZeroForAZeroVarianceSeries() {
         // A flat/halted/illiquid series has ZERO variance — its correlation with anything is
         // mathematically 0/0 (UNDEFINED), not a real "uncorrelated" 0. Must be nil so callers

@@ -513,7 +513,14 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
 
         // --- CANDIDATE 3: ISOTONIC (fit on TRAIN only) ---
         var isoTrainCal: StockSageConvictionCalibration? = nil
-        if train.count >= minTrainSamples {
+        // INVARIANT (F35 2026-07-02): train.count >= minTrainSamples is ALWAYS true here —
+        // the guard at line 479 ensures n - testN - gap >= minTrainSamples, and
+        // train = outcomes[0..<trainEnd] where trainEnd = n - testN - gap, so
+        // train.count == n - testN - gap >= minTrainSamples by construction.
+        // The assert documents this invariant; it must never fire.
+        assert(train.count >= minTrainSamples,
+               "Invariant violated: train.count \(train.count) < minTrainSamples \(minTrainSamples); guard at selectCalibration entry should have prevented this path")
+        do {
             // Use same adaptive nBins but fit on train subset.
             let nBinsTrain = Swift.max(2, Swift.min(binCount, Swift.max(1, train.count / Swift.max(1, minPerBin))))
             var trainCounts = [Int](repeating: 0, count: nBinsTrain)
@@ -538,7 +545,6 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
             }
             let smoothed = poolAdjacentViolators(values, weights: weights)
             // Materialize train-fit isotonic at nBinsAll breakpoints for OOS scoring.
-            let width = 1.0 / Double(nBinsTrain)
             let isoTrainBins = (0..<nBinsAll).map { k -> Bin in
                 let mid = (Double(k) + 0.5) / Double(nBinsAll)
                 let isoIdx = Swift.min(nBinsTrain - 1, Int(mid * Double(nBinsTrain)))
@@ -546,7 +552,6 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
                            winProb: Swift.max(0, Swift.min(1, smoothed[isoIdx])), n: bandCountsAll[k])
             }
             isoTrainCal = StockSageConvictionCalibration(bins: isoTrainBins, sampleSize: n)
-            _ = width  // suppress warning
         }
 
         // --- SCORE OOS and SELECT ---

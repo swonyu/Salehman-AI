@@ -300,14 +300,21 @@ enum StockSageAdvisor {
 
         // Score → action. In a choppy regime with no edge, prefer "Avoid" (stand
         // aside) over "Hold" — the research is clear that forcing trades in chop loses.
-        var action: TradeAdvice.Action
-        switch score {
-        case 0.5...:        action = .strongBuy
-        case 0.2..<0.5:     action = .buy
-        case -0.2..<0.2:    action = trending ? .hold : .avoid
-        case -0.5 ..< -0.2: action = .reduce
-        default:            action = .sell
-        }
+        //
+        // BOUNDARY ASYMMETRY (deliberate, F34 2026-07-02):
+        //   +0.5 → .strongBuy (inclusive ≥ 0.5)  vs  −0.5 → .reduce (exclusive < −0.5 for .sell)
+        // The long side uses ≥ 0.5 (inclusive threshold) so a borderline strong signal is
+        // actionable as a long; the short side uses a STRICTER < −0.5 (i.e. −0.5 itself falls in
+        // the .reduce bucket, not .sell) because shorts carry:
+        //   (a) daily financing cost (short borrow/margin rate),
+        //   (b) unlimited theoretical loss potential (no floor on how far a name can rally).
+        // A score right at −0.5 doesn't yet merit the full .sell commitment — it warrants a
+        // .reduce first. This is a conscious, research-backed long-side bias. Do NOT mirror to
+        // symmetric boundaries without revisiting the short-financing and loss-asymmetry rationale.
+        // The mapping lives in actionForScore(_:trending:) — advise() CALLS it (single source
+        // of truth) and the boundary tests pin that same function, so a threshold change here
+        // is impossible without the pins seeing it.
+        var action = Self.actionForScore(score, trending: trending)
         // Chop has no trend edge — the design (above) prefers Avoid in a range. A trend-DRIVEN buy
         // in a non-trending regime becomes Avoid (stand aside); only an oversold mean-reversion
         // bounce may buy there, and never as a STRONG call. Stops a "Range-bound" card from
@@ -454,6 +461,21 @@ enum StockSageAdvisor {
     /// undefined (<253 closes) → true, preserving short-history behavior byte-for-byte.
     nonisolated static func oversoldBounceIsBuyable(_ closes: [Double]) -> Bool {
         StockSageIndicators.trendOK(closes) ?? true
+    }
+
+    /// Maps a raw score to an Action. This IS the mapping `advise()` uses — advise() calls
+    /// this function (single source of truth; F34 2026-07-02), so the boundary tests that pin
+    /// this function pin the live path, and a threshold change cannot drift past the pins.
+    /// The `trending` flag is advise()'s in-body `trending` (efficiencyRatio >= 0.30),
+    /// controlling the hold-vs-avoid split at score ∈ (-0.2, 0.2).
+    nonisolated static func actionForScore(_ score: Double, trending: Bool) -> TradeAdvice.Action {
+        switch score {
+        case 0.5...:        return .strongBuy
+        case 0.2..<0.5:     return .buy
+        case -0.2..<0.2:    return trending ? .hold : .avoid
+        case -0.5 ..< -0.2: return .reduce
+        default:            return .sell
+        }
     }
 
     nonisolated static func stopTarget(action: TradeAdvice.Action, price: Double, atr: Double?,

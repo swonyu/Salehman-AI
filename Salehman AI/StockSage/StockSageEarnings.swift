@@ -46,7 +46,10 @@ enum StockSageEarnings {
         return EarningsProximity(daysUntil: d, severity: severity(daysUntil: d))
     }
 
-    private static let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+    // UA shared with StockSageQuoteService — one source of truth so a Yahoo UA fix
+    // lands in exactly one place (F39 2026-07-02). MediaSearch has its own copy outside
+    // the Markets fence and is intentionally left untouched.
+    private static let ua = StockSageQuoteService.ua
 
     /// Best-effort next-earnings date via Yahoo quoteSummary `calendarEvents`.
     /// Equities only (FX/crypto/index have no earnings); nil when access is off or

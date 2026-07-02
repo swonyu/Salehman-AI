@@ -192,6 +192,32 @@ struct StockSageConvictionCalibrationTests {
         #expect(StockSageConvictionCalibration.validateOutOfSample(Array(trades.prefix(5))) == nil)
     }
 
+    // MARK: - F35 always-true invariant (assert replaces dead guard, dead width pair removed)
+    //
+    // The `if train.count >= minTrainSamples` guard in selectCalibration was ALWAYS true:
+    // the guard at the top of selectCalibration ensures n - testN - gap >= minTrainSamples,
+    // and train = outcomes[0..<(n-testN-gap)], so train.count == n-testN-gap >= minTrainSamples
+    // by construction. The guard was replaced by an assert (F35 2026-07-02) that documents
+    // this invariant. The dead `width` / `_ = width` pair was also removed.
+    // This test exercises the selectCalibration path at the minimum-valid sample count to
+    // confirm the assert never fires in practice (if it did, the build would crash).
+
+    @Test func selectCalibrationInvariantHoldsAtMinimumSampleCount() {
+        // Minimum input that passes the selectCalibration entry guard:
+        //   testN = round(n * 0.3) >= 1  →  n >= 4
+        //   n - testN - embargo >= minTrainSamples(30)
+        //   For n=44: testN = round(44*0.3) = round(13.2) = 13, gap=1, train=44-13-1=30 ≥ 30 ✓
+        // If the assert were wrong (train.count < minTrainSamples could happen), this call
+        // would crash in Debug builds — the test passing proves the invariant holds.
+        var outcomes: [(conviction: Double, won: Bool)] = []
+        for i in 0..<44 {
+            outcomes.append((conviction: Double(i % 10) / 10.0, won: i.isMultiple(of: 2)))
+        }
+        // candidateSelectorEnabled is true (owner-activated 2026-06-27); fit() calls selectCalibration.
+        let cal = StockSageConvictionCalibration.fit(outcomes, minSamples: 30)
+        #expect(cal != nil, "selectCalibration must succeed at n=44 (minimum passing boundary)")
+    }
+
     @Test func expectedValueUsesCalibrationWhenProvided() {
         // Without calibration → the linear prior (0.35 + 0.23·c).
         #expect(abs(StockSageExpectedValue.winProbEstimate(conviction: 0.5) - (0.35 + 0.23 * 0.5)) < 1e-9)
