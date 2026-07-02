@@ -1834,6 +1834,21 @@ struct MarketsView: View {
         }
     }
 
+    /// Shared tooltip for the two weekly-R display sites: the existing F03/F44 gross label + the
+    /// Item-A turnover disclosure (assumed re-cycles) + the coded refuse-list policy line.
+    /// LABEL-ONLY — the weekly number itself stays GROSS (netting is owner-gated F03/F44).
+    private func weeklyGrossHelp(_ base: String) -> String {
+        var s = base
+        if let note = StockSageExpectedValue.weeklyTurnoverNote(
+            store.ideas,
+            tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration),
+            holds: velocityHolds, calibration: store.convictionCalibration) {
+            s += "\n\n" + note
+        }
+        s += "\n\n" + StockSageRefuseList.policyNote
+        return s
+    }
+
     // The loss-limit circuit breaker, surfaced. R-based + loss-streak policy (no account needed):
     // halts after 3 daily / 6 weekly R lost or a 3-loss streak. A behavioral brake, not advice.
     @ViewBuilder private var lossLimitBanner: some View {
@@ -3581,7 +3596,7 @@ struct MarketsView: View {
                             // F03/F44: weeklyR sums GROSS velocities — label it, and caveat that the
                             // sum can include floor-demoted ideas the "Fastest" pick excludes.
                             ideaMetric("Est./week", String(format: "%+.1fR", wk), sub: "gross, if you run top 3", subColor: .secondary)
-                                .help("Gross, before costs — sums the top fast-lane GROSS velocities. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income.")
+                                .help(weeklyGrossHelp("Gross, before costs — sums the top fast-lane GROSS velocities. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income."))
                         }
                         Spacer(minLength: 0)
                     }
@@ -3789,7 +3804,7 @@ struct MarketsView: View {
                     Text(String(format: "≈ %+.1fR/week gross, before costs, if you run the top %d — estimate, high variance, assumes you take and re-cycle these. Not a promise.", wk, Swift.min(3, lane.count)))
                         .font(.system(size: mvFont9, weight: .medium))
                         .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
-                        .help("Gross, before costs — sums the top fast-lane GROSS velocities. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income.")
+                        .help(weeklyGrossHelp("Gross, before costs — sums the top fast-lane GROSS velocities. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income."))
                     if let acct = StockSageInput.positiveAmount(sizerAccount), let rp = StockSageInput.percent(sizerRiskPct),
                        let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), holds: velocityHolds, calibration: store.convictionCalibration) {
                         Text(String(format: "≈ +$%.0f/week at $%.0f account, %.1f%% risk — gross, before costs; estimate, high variance, NOT income.", usd, acct, rp))
