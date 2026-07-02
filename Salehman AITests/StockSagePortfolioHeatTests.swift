@@ -45,4 +45,21 @@ struct StockSagePortfolioHeatTests {
         #expect(h.level == .warm)
         #expect(h.verdict.contains("getting full"))
     }
+
+    @Test func nonFiniteTradeLegIsExcludedRatherThanCrashingVerdictsIntConversion() {
+        // A fat-fingered "inf"/"nan" entry (Double parses these successfully) must not reach
+        // verdict's Int((heatPct * 100).rounded()) — that traps on a non-finite Double.
+        let withInfEntry = H.compute(openTrades: [(10, .infinity, 95), (5, 200, 180)], accountSize: 10_000)!
+        #expect(withInfEntry.heatPct.isFinite)
+        #expect(abs(withInfEntry.dollarsAtRisk - 100) < 1e-9)   // only the clean 5·|200−180| leg counts
+        _ = withInfEntry.verdict   // must not trap
+
+        let withNaNShares = H.compute(openTrades: [(.nan, 100, 95)], accountSize: 10_000)!
+        #expect(withNaNShares.dollarsAtRisk == 0)
+        _ = withNaNShares.verdict   // must not trap
+
+        let allBad = H.compute(openTrades: [(.infinity, 100, 95), (.nan, 200, 180)], accountSize: 10_000)!
+        #expect(allBad.dollarsAtRisk == 0)
+        #expect(allBad.level == .cool)
+    }
 }

@@ -37,7 +37,13 @@ enum StockSagePortfolioHeat {
     nonisolated static func compute(openTrades: [(shares: Double, entry: Double, stop: Double)],
                                     accountSize: Double) -> PortfolioHeat? {
         guard accountSize > 0 else { return nil }
-        let atRisk = openTrades.reduce(0.0) { $0 + Swift.max(0, $1.shares) * abs($1.entry - $1.stop) }
+        // Non-finite legs (e.g. a fat-fingered "inf" typed into the journal form) are excluded
+        // from the risk sum rather than trusted — otherwise `verdict`'s Int(heatPct * 100) traps
+        // on a non-finite heatPct, crashing every future render of this screen.
+        let atRisk = openTrades.reduce(0.0) { sum, t in
+            guard t.shares.isFinite, t.entry.isFinite, t.stop.isFinite else { return sum }
+            return sum + Swift.max(0, t.shares) * abs(t.entry - t.stop)
+        }
         return PortfolioHeat(dollarsAtRisk: atRisk, accountSize: accountSize, openCount: openTrades.count)
     }
 }

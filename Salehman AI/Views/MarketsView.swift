@@ -1971,7 +1971,7 @@ struct MarketsView: View {
                 }
                 HStack(spacing: 18) {
                     ideaMetric("Max DD", String(format: "−%.1f%%", a.maxDrawdown), color: DS.Palette.danger)
-                    ideaMetric("Calmar", String(format: "%.2f", a.calmar))
+                    ideaMetric("Calmar", a.calmar.map { String(format: "%.2f", $0) } ?? "n/a")
                     ideaMetric("VaR 95%", String(format: "−%.1f%%", a.valueAtRisk95), color: DS.Palette.danger)
                     ideaMetric("Avg corr", String(format: "%.2f", a.avgCorrelation))
                     if let beta = store.portfolioBeta {

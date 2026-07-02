@@ -59,4 +59,28 @@ struct StockSageRebalanceTests {
                                                 targets: ["A": 0.5, "B": 0.5], band: 0.25)!
         #expect(!aboveBand.trades.isEmpty)   // |0.5-0.24| = 0.26 > 0.25
     }
+
+    @Test func nonFiniteHoldingIsExcludedRatherThanPoisoningEveryOtherPositionsRecommendation() {
+        // A single .infinity holding value must not blow up `total`, which would otherwise
+        // silently zero every OTHER holding's current weight and recommend an infinite-dollar
+        // "Buy" for each of them.
+        let p = RB.plan(holdings: [("A", .infinity), ("B", 6000), ("C", 4000)],
+                        targets: ["B": 0.5, "C": 0.5])!
+        #expect(p.totalValue.isFinite)
+        #expect(abs(p.totalValue - 10_000) < 1e-9)   // A excluded entirely
+        #expect(trade(p, "A") == nil)
+        for t in p.trades { #expect(t.deltaValue.isFinite) }
+    }
+
+    @Test func nonFiniteTargetIsTreatedAsZeroRatherThanCorruptingNormalization() {
+        // A NaN target for A is treated as target 0 (not "worth a share of the normalization"),
+        // so the plan sells A fully and buys B up to its full 100% target — never NaN/Infinity.
+        let p = RB.plan(holdings: [("A", 5000), ("B", 5000)], targets: ["A": .nan, "B": 1.0])!
+        #expect(abs(trade(p, "A")!.deltaValue - (-5000)) < 1e-9)
+        #expect(abs(trade(p, "B")!.deltaValue - 5000) < 1e-9)
+    }
+
+    @Test func allNonFiniteHoldingsReturnNilRatherThanACrashOrGarbageOutput() {
+        #expect(RB.plan(holdings: [("A", .infinity), ("B", .nan)], targets: ["A": 1]) == nil)
+    }
 }

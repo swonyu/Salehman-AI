@@ -50,6 +50,25 @@ struct StockSagePortfolioAnalyticsTests {
         #expect(abs((a?.avgCorrelation ?? 0) - 1) < 1e-6)   // identical → fully correlated
         #expect((a?.diversificationScore ?? 100) < 20)      // two identical names = poorly diversified
         #expect(a?.maxDrawdown == 0)                    // monotonic up
+        #expect(a?.calmar == nil)   // maxDrawdown == 0 → calmar is UNDEFINED, not a fake 0.00
+    }
+
+    @Test func aNonFiniteHoldingWeightIsExcludedRatherThanPoisoningEveryOtherHoldingsWeight() {
+        let closes = (0..<12).map { 100.0 + Double($0) }
+        let poisoned = PA.compute(holdings: [(.infinity, closes), (1000, closes)])
+        let clean = PA.compute(holdings: [(1000, closes)])
+        // A non-finite weight must not turn every OTHER holding's normalized weight into 0
+        // (finite / .infinity) or the poisoned holding's own weight into NaN — the poisoned
+        // input should be excluded, so the result matches the single valid holding alone.
+        #expect(poisoned != nil)
+        #expect(poisoned?.annualizedReturn.isFinite == true)
+        #expect(abs((poisoned?.annualizedReturn ?? .nan) - (clean?.annualizedReturn ?? .nan)) < 1e-6)
+        #expect(poisoned?.sharpe?.isFinite ?? true)
+    }
+
+    @Test func allNonFiniteWeightsReturnNilRatherThanACrashOrNaNSuite() {
+        let closes = (0..<12).map { 100.0 + Double($0) }
+        #expect(PA.compute(holdings: [(.infinity, closes), (.nan, closes)]) == nil)
     }
 
     @Test func ratioMetricsAreConsistentWithTheirComponents() {
@@ -66,7 +85,8 @@ struct StockSagePortfolioAnalyticsTests {
         #expect(a.sharpe != nil)   // defined here (vol > 0)
         #expect(abs(a.sharpe! - a.annualizedReturn / a.annualizedVolatility) < 1e-6)
         #expect(a.maxDrawdown > 0)
-        #expect(abs(a.calmar - a.annualizedReturn / a.maxDrawdown) < 1e-6)
+        #expect(a.calmar != nil)   // defined here (maxDrawdown > 0)
+        #expect(abs(a.calmar! - a.annualizedReturn / a.maxDrawdown) < 1e-6)
         // Sortino's downside deviation is normalized over ALL observations (the fix);
         // reverting to ÷down-day-count would break this.
         let n = Double(rets.count)

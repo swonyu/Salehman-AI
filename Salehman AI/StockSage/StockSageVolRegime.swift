@@ -52,17 +52,19 @@ enum StockSageVolRegime {
     nonisolated static func regime(closes: [Double],
                                    volWindow: Int = 21,
                                    historyWindow: Int = 252,
-                                   periodsPerYear: Double = 252,
-                                   assetClass: String? = nil) -> VolRegime? {
+                                   periodsPerYear: Double = 252) -> VolRegime? {
         let minBars = volWindow + historyWindow
         guard closes.count >= minBars else { return nil }
 
-        // Build rolling 21-bar vol series over the last historyWindow windows.
+        // Build rolling 21-bar vol series over the last historyWindow windows. Each window is
+        // a CLOSED range ending AT i (inclusive) — a half-open `..<i` would silently exclude
+        // the anchor bar itself, permanently lagging every reading (including `current`, the
+        // final one) by one trading day behind the latest available close.
         var series: [Double] = []
         series.reserveCapacity(historyWindow)
         let start = closes.count - historyWindow   // first window ending-index
         for i in start ..< closes.count {
-            let window = Array(closes[(i - volWindow) ..< i])
+            let window = Array(closes[(i - volWindow + 1)...i])
             guard let v = StockSageIndicators.annualizedVolatility(window, periodsPerYear: periodsPerYear),
                   v.isFinite, v > 0 else { continue }
             series.append(v)

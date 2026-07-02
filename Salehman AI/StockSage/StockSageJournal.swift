@@ -419,7 +419,12 @@ enum StockSageJournal {
     /// no closed trades that carry both open/close timestamps.
     nonisolated static func holdingPeriod(_ trades: [TradeRecord]) -> HoldingPeriod? {
         func days(_ t: TradeRecord) -> Double? {
-            t.closedAt.map { $0.timeIntervalSince(t.openedAt) / 86_400 }
+            // A closedAt before openedAt (backdated close, import mistake, manual edit) is bad
+            // data, not a real negative holding period — exclude it rather than let it drag the
+            // averages negative, matching TradeRecord.daysHeld's own "never negative" convention.
+            guard let c = t.closedAt else { return nil }
+            let interval = c.timeIntervalSince(t.openedAt) / 86_400
+            return interval >= 0 ? interval : nil
         }
         let closed = trades.filter { !$0.isOpen }
         // Wins are strictly profitable; a BREAKEVEN (scratch, profit==0) is a NON-winner,
@@ -481,7 +486,12 @@ enum StockSageJournal {
         let s = variance.squareRoot()
         guard s > 0 else { return (needed: n, more: 0) }   // no spread → already certain
         let ratio = z * s / abs(mean)
-        let needed = Int((ratio * ratio).rounded(.up))
+        let raw = (ratio * ratio).rounded(.up)
+        // A near-zero mean with a wide spread (e.g. one huge winner, one huge loser) can blow
+        // `raw` past Int.max, which traps on conversion — treat "needs an astronomical sample"
+        // the same as the existing "never confirms" nil case rather than crashing.
+        guard raw.isFinite, raw < Double(Int.max) else { return nil }
+        let needed = Int(raw)
         return (needed: needed, more: Swift.max(0, needed - n))
     }
 
@@ -603,7 +613,9 @@ enum StockSageJournal {
                              winRate: ts.isEmpty ? 0 : Double(wins) / Double(ts.count),
                              closedWithR: rs.count)
         }
-        .sorted { $0.totalR > $1.totalR }
+        // Dictionary iteration order (the pre-sort array) is randomized per process launch —
+        // a deterministic secondary key stops a tied ranking from flipping between app launches.
+        .sorted { $0.totalR != $1.totalR ? $0.totalR > $1.totalR : $0.sector < $1.sector }
     }
 
     /// Is a bucket's win%/avgR worth believing, or small-sample noise? Applies the journal's

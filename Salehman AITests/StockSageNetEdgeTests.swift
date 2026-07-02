@@ -99,4 +99,20 @@ struct StockSageNetEdgeTests {
         #expect(abs(e0.netExpectancyR! - (-1.0)) < 1e-9)
         #expect(abs(e1.netExpectancyR! - 3.0) < 1e-9)
     }
+
+    @Test func hairThinStopCapsNetFiguresAtTheSame50to1CeilingEvUses() {
+        // entry 100, stop 99.99 (risk 0.01), target 110 (reward 10) → gross 1000:1, a degenerate
+        // stop distance. netRR/netExpectancyR/breakEvenWinRate must be derived from the SAME 50:1
+        // ceiling ev() applies, not the raw 1000:1 ratio — otherwise the cost gate (clearsCost)
+        // becomes toothless (breakEvenWinRate collapsing toward 0) for exactly this setup.
+        let e = NE.evaluate(entry: 100, stop: 99.99, target: 110,
+                            spreadBps: 8, slippageBps: 5, winProb: 0.5)!
+        #expect(abs(e.grossRR - 1000) < 1)          // grossRR itself stays the true uncapped ratio
+        #expect(e.netRR < 10)                        // capped netRR ≈ 2.64, nowhere near the uncapped ≈70.5
+        #expect(abs(e.netRR - 0.37 / 0.14) < 1e-6)
+        #expect(e.netExpectancyR! < 20)               // capped ≈ 11.5, nowhere near the uncapped ≈486.5
+        #expect(abs(e.netExpectancyR! - 11.5) < 1e-3)
+        #expect(e.breakEvenWinRate! > 0.2)            // capped ≈ 0.275, not an absurd ≈0.014 bar
+        #expect(!e.clearsCost(estWinProb: 0.05))      // a 5% win rate must NOT clear a real 50:1-capped bar
+    }
 }

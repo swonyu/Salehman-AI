@@ -656,7 +656,10 @@ final class StockSageStore: ObservableObject {
         strategyBacktest = StockSageStrategyBacktest.aggregate(results, trades: trades, tradeEntryDates: tradeDates)
         // Learn conviction→win-prob from the realized BACKTEST trades (nil if too thin). The computed
         // `convictionCalibration` prefers the owner's journal fit over this when their journal is rich enough.
-        backtestConvictionCalibration = StockSageConvictionCalibration.fit(fromBacktest: trades)
+        // `trades` is appended symbol-by-symbol above, so it is NOT globally time-ordered on its own —
+        // pass the 1:1-aligned `tradeDates` so the OOS candidate-selector's train/test split is a
+        // genuine chronological holdout (matching fit(fromJournal:)'s own sort-by-close-date fix).
+        backtestConvictionCalibration = StockSageConvictionCalibration.fit(fromBacktest: trades, dates: tradeDates)
     }
 
     // Portfolio risk analytics — the full backward-looking risk/return suite.

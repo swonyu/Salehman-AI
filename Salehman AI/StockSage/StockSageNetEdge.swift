@@ -117,9 +117,16 @@ enum StockSageNetEdge {
         guard grossReward > 0, grossRisk > 0, entry > 0 else { return nil }
 
         let cost = Swift.max(0, spreadBps + slippageBps + takerFeeBps) / 10_000 * entry + Swift.max(0, commissionPerShare)
-        let netReward = grossReward - cost
-        let netRisk = grossRisk + cost
         let grossRR = grossReward / grossRisk
+        // Net figures (netRR/netExpectancyR/breakEvenWinRate) are derived from the SAME 50:1
+        // ceiling StockSageExpectedValue.ev() already applies to rewardR — a hair-thin stop
+        // (risk → 0) otherwise makes grossRR unbounded, which blows netRR/netExpectancyR up ~20x
+        // past the properly-capped gross figure and collapses breakEvenWinRate toward 0, making
+        // the net-cost gate (clearsCost) toothless for exactly the degenerate setups it exists to
+        // catch. `grossRR` itself stays the true UNCAPPED ratio (still useful for display).
+        let cappedGrossReward = Swift.min(grossRR, 50) * grossRisk
+        let netReward = cappedGrossReward - cost
+        let netRisk = grossRisk + cost
         let netRR = netReward / netRisk
         let costPct = cost / grossReward
 

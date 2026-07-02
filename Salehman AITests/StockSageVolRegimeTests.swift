@@ -81,6 +81,17 @@ struct StockSageVolRegimeTests {
         #expect(VR.regime(closes: closes, volWindow: 21, historyWindow: 252) != nil)
     }
 
+    @Test func perturbingOnlyTheMostRecentCloseChangesCurrentVol() {
+        // Each rolling window must include its own anchor bar `i` — a half-open range that
+        // stops one short would make `current` (the final window) permanently blind to the
+        // single most recent close. Change ONLY the last close and confirm `current` moves.
+        var base = flatCloses(count: 280)
+        let baseline = VR.regime(closes: base, volWindow: 21, historyWindow: 252)!
+        base[base.count - 1] *= 1.15   // a real, sizeable one-day move on the latest bar
+        let perturbed = VR.regime(closes: base, volWindow: 21, historyWindow: 252)!
+        #expect(abs(perturbed.current - baseline.current) > 1e-9)
+    }
+
     @Test func sizingMultiplierNonIncreasingAcrossPercentileSweep() {
         // Hold currentVol=0.30, medianVol=0.20 constant; vary percentile 0→1.
         // multiplier must be non-increasing.

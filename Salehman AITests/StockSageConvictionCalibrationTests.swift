@@ -80,6 +80,57 @@ struct StockSageConvictionCalibrationTests {
         #expect((cal?.winProb(0.9) ?? 0) > (cal?.winProb(0.1) ?? 1))
     }
 
+    @Test func fitFromBacktestWithDatesSortsChronologicallyBeforeFitting() {
+        // Simulate StockSageStore.refreshStrategyBacktest's real aggregation: trades appended
+        // symbol-by-symbol (chronological WITHIN a symbol, but the array as a whole is grouped by
+        // symbol, not globally time-ordered) — e.g. symbol A's 10 trades (days 0-9), then symbol
+        // B's 10 trades (days 0-9 again, a different symbol backtested over the SAME calendar).
+        func trade(_ day: Int, conv: Double, r: Double) -> BacktestTrade {
+            BacktestTrade(entryIndex: day, exitIndex: day + 1, entry: 100,
+                         exit: r > 0 ? 110 : 95, r: r, outcome: r > 0 ? .target : .stop, conviction: conv)
+        }
+        func date(_ day: Int) -> Date { Date(timeIntervalSince1970: Double(day) * 86_400) }
+
+        var symbolA: [(BacktestTrade, Date)] = []
+        var symbolB: [(BacktestTrade, Date)] = []
+        for day in 0..<20 {
+            let conv = Double(day) / 20
+            let won = day >= 10   // later days win more (a real time trend to detect)
+            symbolA.append((trade(day, conv: conv, r: won ? 2.0 : -1.0), date(day)))
+            symbolB.append((trade(day, conv: conv, r: won ? 2.0 : -1.0), date(day)))
+        }
+        // Grouped-by-symbol order (the real StockSageStore aggregation shape): A's 20 (days 0-19)
+        // THEN B's 20 (days 0-19 again) — NOT globally time-ordered.
+        let grouped = symbolA + symbolB
+        let groupedTrades = grouped.map(\.0)
+        let groupedDates = grouped.map(\.1)
+
+        // Feeding `dates:` must produce EXACTLY the same fit as pre-sorting the trades ourselves
+        // (the caller trusting raw array order, as the old code implicitly did) — proving the
+        // internal sort-before-fit works, regardless of the selector's internal mechanics.
+        let preSorted = grouped.sorted { $0.1 < $1.1 }.map(\.0)
+        let withDates = Cal.fit(fromBacktest: groupedTrades, dates: groupedDates, minSamples: 30)
+        let withPreSortedInput = Cal.fit(fromBacktest: preSorted, minSamples: 30)
+        #expect(withDates != nil && withPreSortedInput != nil)
+        #expect(withDates?.sampleSize == withPreSortedInput?.sampleSize)
+        for c in stride(from: 0.0, through: 1.0, by: 0.1) {
+            #expect(abs((withDates?.winProb(c) ?? -1) - (withPreSortedInput?.winProb(c) ?? -2)) < 1e-9)
+        }
+    }
+
+    @Test func fitFromBacktestMismatchedDatesCountFallsBackToInputOrder() {
+        var trades: [BacktestTrade] = []
+        for _ in 0..<20 { trades.append(BacktestTrade(entryIndex: 0, exitIndex: 1, entry: 100, exit: 110,
+                                                      r: 2.0, outcome: .target, conviction: 0.9)) }
+        for _ in 0..<20 { trades.append(BacktestTrade(entryIndex: 0, exitIndex: 1, entry: 100, exit: 95,
+                                                      r: -1.0, outcome: .stop, conviction: 0.1)) }
+        // Wrong-length dates array (caller bug) — must not crash, just falls back to trusting the
+        // input order, byte-identical to omitting `dates` entirely.
+        let mismatched = Cal.fit(fromBacktest: trades, dates: [Date()], minSamples: 30)
+        let omitted = Cal.fit(fromBacktest: trades, minSamples: 30)
+        #expect(mismatched?.sampleSize == omitted?.sampleSize)
+    }
+
     @Test func fitFromJournalUsesClosedTradesWithConviction() {
         func rec(_ conv: Double?, exit: Double?) -> TradeRecord {
             TradeRecord(symbol: "X", side: .long, entry: 100, stop: 90, target: 130, shares: 1,

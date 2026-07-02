@@ -370,6 +370,13 @@ struct StockSageJournalTests {
         #expect(StockSageJournal.tradesToSignificance([closedR(2)]) == nil)
     }
 
+    @Test func nearZeroMeanHighVarianceSampleReturnsNilRatherThanTrapping() {
+        // A near-zero mean (just above the 1e-9 floor) with a wide spread pushes ratio² past
+        // Int.max — Int(Double) traps on that instead of returning; this must return nil.
+        let trades = [closedR(1000), closedR(-1000 + 3e-9)]
+        #expect(StockSageJournal.tradesToSignificance(trades) == nil)
+    }
+
     @Test func noisyZeroMeanSampleIsNotSignificant() {
         // rs = [1,1,−1,−1]: mean 0; var = 4/3; stdev 1.1547; stderr /√4 = 0.5774 > |mean|.
         let c = StockSageJournal.expectancyConfidence([closedR(1), closedR(1), closedR(-1), closedR(-1)])!

@@ -18,7 +18,7 @@ struct PortfolioAnalytics: Sendable, Equatable {
     let sharpe: Double?               // (return − rf≈0) ÷ vol; nil = undefined (zero vol)
     let sortino: Double?              // return ÷ downside deviation; nil = undefined (zero downside)
     let maxDrawdown: Double           // %, positive magnitude (worst peak→trough)
-    let calmar: Double                // annualizedReturn ÷ maxDrawdown
+    let calmar: Double?               // annualizedReturn ÷ maxDrawdown; nil = undefined (zero drawdown)
     let valueAtRisk95: Double         // %, 1-day historical 95% VaR (positive = a loss)
     let avgCorrelation: Double        // −1…1, average pairwise across holdings
     let diversificationScore: Double  // 0…100 (higher = better diversified)
@@ -47,10 +47,13 @@ enum StockSagePortfolioAnalytics {
         guard minLen >= 5 else { return nil }
         let aligned = series.map { Array($0.suffix(minLen)) }
 
-        // Normalized non-negative weights.
-        let rawW = holdings.map { Swift.max($0.weight, 0) }
+        // Normalized non-negative weights. A non-finite weight (a bad quote/FX multiply
+        // upstream) is excluded rather than clamped — Swift.max(w, 0) passes .infinity through
+        // unchanged, which would make wSum infinite and silently zero out every OTHER holding's
+        // normalized weight while turning the poisoned holding's own weight into NaN.
+        let rawW = holdings.map { $0.weight.isFinite ? Swift.max($0.weight, 0) : 0 }
         let wSum = rawW.reduce(0, +)
-        guard wSum > 0 else { return nil }
+        guard wSum > 0, wSum.isFinite else { return nil }
         let w = rawW.map { $0 / wSum }
 
         // Value-weighted daily portfolio returns.
@@ -70,9 +73,10 @@ enum StockSagePortfolioAnalytics {
         let growth = port.reduce(1.0) { $0 * (1 + $1) }
         let annReturn = (growth > 0 ? pow(growth, periodsPerYear / Double(port.count)) - 1 : -1) * 100
 
-        // Zero realized vol → the ratio is UNDEFINED (a divide-by-zero). Report nil so
-        // the UI shows "n/a", not a sentinel that reads as a real (absurd) ratio of 100.
-        let sharpe: Double? = annVol != 0 ? annReturn / annVol : nil
+        // Zero (or non-finite) realized vol → the ratio is UNDEFINED. Report nil so the UI
+        // shows "n/a", not a sentinel that reads as a real (absurd) ratio of 100 — NaN != 0 is
+        // TRUE under IEEE-754, so a NaN annVol must be checked explicitly, not just "!= 0".
+        let sharpe: Double? = (annVol.isFinite && annVol != 0) ? annReturn / annVol : nil
 
         // Sortino — target-downside deviation (MAR = 0): the RMS of min(return, 0)
         // over ALL N observations (the standard definition), NOT only the down days
@@ -80,10 +84,13 @@ enum StockSagePortfolioAnalytics {
         let downSq = port.reduce(0) { $0 + Swift.min($1, 0) * Swift.min($1, 0) }
         let downVar = port.isEmpty ? 0 : downSq / Double(port.count)
         let downDev = downVar.squareRoot() * periodsPerYear.squareRoot() * 100
-        let sortino: Double? = downDev != 0 ? annReturn / downDev : nil
+        let sortino: Double? = (downDev.isFinite && downDev != 0) ? annReturn / downDev : nil
 
         let maxDD = maxDrawdown(port) * 100
-        let calmar = maxDD != 0 ? annReturn / maxDD : 0
+        // maxDD == 0 (no peak-to-trough loss at all — the BEST case) makes calmar a genuine
+        // divide-by-zero, not "0" — mirrors sharpe/sortino's own nil-for-undefined convention
+        // instead of displaying the single worst-looking calmar value for the best outcome.
+        let calmar: Double? = maxDD != 0 ? annReturn / maxDD : nil
 
         // Historical 1-day 95% VaR — the 5th-percentile daily return, as a positive loss.
         let var95 = Swift.max(0, -percentile(port, 0.05) * 100)

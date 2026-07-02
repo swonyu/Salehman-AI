@@ -30,16 +30,20 @@ enum StockSageRebalance {
     /// returned. nil if there's nothing invested or no positive target weight.
     nonisolated static func plan(holdings: [(symbol: String, value: Double)],
                                  targets: [String: Double], band: Double = 0.02) -> RebalancePlan? {
-        let total = holdings.reduce(0) { $0 + Swift.max(0, $1.value) }
-        guard total > 0 else { return nil }
+        // Non-finite values (a bad quote/FX multiply upstream) are excluded rather than
+        // clamped — Swift.max(0, .nan) silently reads as "worthless" and .infinity passes
+        // max(0, ·) unchanged, either of which would poison `total` and, through it, every
+        // OTHER holding's weight and recommended trade size.
+        let total = holdings.reduce(0) { $1.value.isFinite ? $0 + Swift.max(0, $1.value) : $0 }
+        guard total > 0, total.isFinite else { return nil }
 
-        let posTargets = targets.mapValues { Swift.max(0, $0) }
+        let posTargets = targets.mapValues { $0.isFinite ? Swift.max(0, $0) : 0 }
         let tSum = posTargets.values.reduce(0, +)
         guard tSum > 0 else { return nil }
         let norm = posTargets.mapValues { $0 / tSum }
 
         var current: [String: Double] = [:]
-        for h in holdings { current[h.symbol, default: 0] += Swift.max(0, h.value) }
+        for h in holdings where h.value.isFinite { current[h.symbol, default: 0] += Swift.max(0, h.value) }
 
         var trades: [RebalanceTrade] = []
         for s in Set(current.keys).union(norm.keys).sorted() {

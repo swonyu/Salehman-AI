@@ -609,11 +609,27 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
 // MARK: - Build straight from backtest trades
 extension StockSageConvictionCalibration {
     /// Fit from walk-forward backtest trades (a win is a positive realized R). nil when too thin.
-    nonisolated static func fit(fromBacktest trades: [BacktestTrade],
+    /// `dates`, when supplied 1:1-aligned with `trades` (e.g. the caller's own per-trade entry
+    /// dates), sorts trades chronologically first — required so selectCalibration's positional
+    /// train/test split (test = the most-recent slice) is a genuine "OOS = future" holdout, the
+    /// same guarantee `fit(fromJournal:)` already provides. `trades` is aggregated across MANY
+    /// symbols by callers (e.g. StockSageStore.refreshStrategyBacktest appends symbol-by-symbol),
+    /// so it is NOT already globally time-ordered on its own — without `dates`, a positional split
+    /// can silently mix an early trade from a later-processed symbol into "test" while a later
+    /// trade from an earlier symbol sits in "train". Omitting `dates` preserves prior behavior
+    /// exactly (trusts the caller's own order), for callers (tests) that already supply
+    /// chronologically-intentional fixtures.
+    nonisolated static func fit(fromBacktest trades: [BacktestTrade], dates: [Date] = [],
                                 binCount: Int = 5, minSamples: Int = 30,
                                 z: Double = 1.0, prior: Double = 0.5) -> StockSageConvictionCalibration? {
-        fit(trades.map { (conviction: $0.conviction, won: $0.r > 0) },
-            binCount: binCount, minSamples: minSamples, z: z, prior: prior)
+        let ordered: [BacktestTrade]
+        if dates.count == trades.count {
+            ordered = zip(dates, trades).sorted { $0.0 < $1.0 }.map { $0.1 }
+        } else {
+            ordered = trades
+        }
+        return fit(ordered.map { (conviction: $0.conviction, won: $0.r > 0) },
+                   binCount: binCount, minSamples: minSamples, z: z, prior: prior)
     }
 
     /// Fit from the owner's JOURNAL — their OWN realized executions (fills, slippage, discipline),
