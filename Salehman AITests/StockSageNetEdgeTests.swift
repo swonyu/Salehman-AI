@@ -21,21 +21,6 @@ struct StockSageNetEdgeTests {
         #expect(!dead.clearsCost(estWinProb: 0.99))
     }
 
-    @Test func allInCostItemizesEveryLeg() {
-        // entry 100, 8bps spread, 5bps slip, $0.04 comm → 0.08/0.05/0.04, total 0.17, dominant spread.
-        let c = NE.allInCost(entry: 100, spreadBps: 8, slippageBps: 5, commissionPerShare: 0.04)
-        #expect(abs(c.spreadCost - 0.08) < 1e-9 && abs(c.slippageCost - 0.05) < 1e-9 && abs(c.commissionCost - 0.04) < 1e-9)
-        #expect(abs(c.total - 0.17) < 1e-9 && c.dominantLeg == "spread")
-        // Financing only on a held position: same-day → 0; 10-day at 6% → entry·0.06·10/365.
-        #expect(NE.allInCost(entry: 100, annualFinancingRate: 0.06, holdDays: 0).financingCost == 0)
-        #expect(abs(NE.allInCost(entry: 100, annualFinancingRate: 0.06, holdDays: 10).financingCost - 100 * 0.06 * 10 / 365) < 1e-9)
-        // Crypto taker on BOTH fills (the GE-2% analog); equities pay none.
-        #expect(abs(NE.allInCost(entry: 50_000, takerFeeBps: 15).takerFeeCost - 150) < 1e-9)
-        #expect(NE.allInCost(entry: 100, takerFeeBps: 0).takerFeeCost == 0)
-        // dominantLeg names the biggest friction (a thin crypto scalp → taker fee dominates).
-        #expect(NE.allInCost(entry: 100, spreadBps: 2, takerFeeBps: 20).dominantLeg == "takerFee")
-    }
-
     @Test func wideSetupBarelyDentedByCosts() {
         // entry 100, stop 95, target 110 → gross 2:1. 30bps round-trip + $0.05 comm = $0.35/sh.
         let e = NE.evaluate(entry: 100, stop: 95, target: 110,
