@@ -8,13 +8,13 @@ import Foundation
 // pure cross-sectional rank, structurally like `StockSageExpectedValue.rankByEV`/`rankByVelocity`
 // — and never touches `advise()`, conviction, EV, or sizing anywhere.
 //
-// STANDING NOTE (2026-07-01 re-audit, HARDENING_BACKLOG.md): this is still the SAME CLASS of
-// unvalidated "momentum predicts forward returns" premise as the ablated term, just relocated
-// from the score into the ranking layer. It ships here as a STANDALONE, UNWIRED utility — proven
-// correct in isolation (percentile math, monotonic ranking) — pending a dedicated ablation/
-// backtest study (methodology: RESEARCH_2026-06-27_money_fast_conviction.md) before it is ever
-// used to influence ranking order, a UI badge, or conviction. Do not wire this into rankByEV/
-// rankByVelocity/bestOpportunity/advise() without that study landing first.
+// STANDING NOTE (2026-07-02, ablation complete): the dedicated ablation this file called for has
+// now run — see RESEARCH_2026-07-02_confluence_rs_ablation.md (20-symbol/5yr walk-forward, no
+// look-ahead, block-level significance, 5 forward horizons). Result: NO statistically significant
+// forward-return edge at any horizon tested; the point estimate is mildly NEGATIVE, consistent
+// with the known ≤1-month reversal anomaly. Conclusion: do NOT wire this into rankByEV/
+// rankByVelocity/bestOpportunity/advise()/conviction — the ablation does not support it. This
+// remains a STANDALONE, UNWIRED utility by design, not merely by omission.
 
 struct RelativeStrengthRank: Sendable, Equatable, Identifiable {
     let symbol: String

@@ -20,6 +20,8 @@ One dated line per research item: topic · one-line finding · source file. Keep
   The engine's design charter: what/when/how-much/when-to-sell. 2–3 complementary documented-edge signals (NOT more); sizing matters more than the signal; regime filter as the meta-rule; define BOTH exit prices before entering; diversify by RISK not dollars; backtest-honesty or the "edge" is fake.
 - **2026-06-14 · macOS 27 design** → [DESIGN_RESEARCH_macOS27.md](../DESIGN_RESEARCH_macOS27.md)
   UI/design ONLY (not signal). macOS 27 "Golden Gate" vs 26 "Tahoe"; Liquid Glass SwiftUI APIs; the app's crimson flat-dark language is a VALID deliberate divergence — selective alignment, not wholesale adoption.
+- **2026-07-02 · confluence + RS ablation (empirical, real data)** → [RESEARCH_2026-07-02_confluence_rs_ablation.md](../RESEARCH_2026-07-02_confluence_rs_ablation.md)
+  20-symbol/5yr walk-forward, no look-ahead, block-level significance + horizon sweep (5/10/21/42/63d). NEITHER RANKING #12's confluence alignment NOR HARDENING #32's cross-sectional RS rank shows a significant forward-return edge (all p>0.10 at every horizon); RS point estimate is mildly negative, consistent with the known ≤1mo reversal anomaly the app's own TSMOM `skipRecent:21` already accounts for. Closes both modules' "pending ablation" caveat — CONCLUSION: keep both exactly as shipped (opt-in tie-break / fully unwired), do not promote either.
 
 ## Verified research-backed decisions (confidence labels = adversarial multi-vote)
 - **Half-Kelly (0.5×) is optimal** — 75% of max growth, ruin-of-halving 1/2→1/8 (Thorp/MacLean-Ziemba; 3-0). App uses 0.5×. Do NOT raise it. → no-change + iter7 Kelly guardrail.
