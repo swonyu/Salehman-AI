@@ -24,23 +24,36 @@
 ## 1. What this app is
 
 **Salehman AI** is a native **macOS SwiftUI** desktop app: a multi-brain AI chat
-assistant. It can answer from several "brains" — the **Salehman** chain (default:
-cloud-first NVIDIA-hosted DeepSeek → free frontier tiers, with a
-local MLX/Ollama floor), a local **Ollama** model (`qwen2.5-coder:7b`), local
-OpenAI-compatible servers (**Unsloth Studio**, **vLLM**), or cloud providers
-(Claude, xAI Grok, Google Gemini, Groq, Mistral, Cerebras, NVIDIA NIM,
-OpenAI/Codex, GitHub Copilot, OpenRouter). (Apple Intelligence was removed
-2026-06-08.) It has a multi-agent pipeline, on-device tools (shell, vision,
-transcription, web), live audio transcription, a StockSage market-analysis
-subsystem, and persistent chat + long-term memory.
+assistant. **It is local-only** (owner-directed full cloud-provider removal,
+2026-06-18 — "delete anthropic, grok, gemini, groq, mistral, cerebras, openAI,
+copilot, openRouter … go local-only"). Every brain answers on this Mac (or a
+box you personally point it at) — there is no third-party cloud client left in
+the app. It can answer from several local "brains": the **Salehman** chain
+(on-device MLX → Ollama custom model — no external servers, ever), a local
+**Ollama** model (`qwen2.5-coder:7b`, server URL configurable in Settings —
+defaults to `localhost:11434`, can point at e.g. an always-on PC over
+Tailscale), local OpenAI-compatible servers you configure the endpoint for
+(**Unsloth Studio**, **vLLM** — also usable to reach your OWN fine-tune served
+on a free cloud GPU via Colab/Kaggle → cloudflared, since you provide the URL),
+or an **Uncensored** local model (abliterated ~3B via Ollama, web-search
+capable, added 2026-06-18). (Apple Intelligence was removed 2026-06-08;
+DeepSeek's direct API was removed 2026-06-12; all remaining cloud providers
+were removed 2026-06-18.) It has a multi-agent pipeline, on-device tools
+(shell, vision, transcription, web), live audio transcription, a StockSage
+market-analysis subsystem, and persistent chat + long-term memory.
 
 - **Language / runtime:** Swift 6 **language mode** (`SWIFT_VERSION = 6.0`, enforced as of 2026-06-09 — data races are compile errors, not warnings), `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` on the app target and, mirrored, the test targets. Off-main work is explicitly `nonisolated`/`nonisolated(unsafe)`.
   Pure utility statics are marked `nonisolated`.
 - **UI:** SwiftUI, custom dark "DS" design system (no stock chrome).
-- **Secrets:** API keys live ONLY in the macOS **Keychain** (never UserDefaults,
-  never source).
-- **Privacy posture:** `.auto` mode is strictly local-first; cloud brains are
-  used only when the user explicitly pins one (or picks Free·Auto / All-Brains).
+- **Secrets:** the few remaining Keychain entries (NVIDIA NIM key — currently
+  orphaned/unused after the cloud removal, Unsloth API token, HF token, vLLM
+  bearer token for a publicly-hosted server) live ONLY in the macOS
+  **Keychain** (never UserDefaults, never source); no chat brain requires one.
+- **Privacy posture:** every brain is local by construction — there is no
+  cloud provider left to silently pin. `.unslothStudio`/`.vllm` only leave the
+  Mac if you type a non-loopback endpoint yourself (`generateOnDevice`, used by
+  the Knowledge vault, additionally gates on `isLocalLoopback` so it never
+  treats a remote endpoint as on-device).
 
 ### Build, run, test
 ```bash
@@ -67,31 +80,27 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 | `AppState.swift` | Bridge between menu-bar `.commands` and the view layer. |
 | `AppSettings.swift` | **Central persisted settings** (`@Published` + UserDefaults). Holds `BrainPreference`, per-provider model selections, response mode, toggles. `Keys.*` are the UserDefaults keys; `*ModelCurrent` accessors validate-or-fallback. `MachineInfo` (RAM/cores) lives here too. **Shared file — append-only between sessions.** |
 
-### `LLM/` — the brain layer (Chat B's lane)
+### `LLM/` — the brain layer (Chat B's lane) — **local-only since 2026-06-18**
 | File | Purpose |
 |---|---|
-| `LocalLLM.swift` | **The brain router** (~1500 lines). `generate` / `generateStreaming` / `chat` each `switch` on `BrainRouting.dispatch` (per-provider EXECUTION lives here in `cloudOneShot`/`cloudStream`/`cloudConversational`); `currentBrain` = `BrainRouting.reachableBrain` over a `BrainRouteConfig.live()` snapshot. Houses `generateEnsemble` (All-Brains parallel), `generateFreeAuto` (free parallel-race + local backstop), and the **tool loop** (`ollamaToolSpecs`, `runLocalTool`, `chatOllamaWithTools` / `chatOpenAICompatWithTools`). |
-| `BrainRouting.swift` | **The routing PLAN (R1 seam, 2026-06-12)** — pure + hermetically tested (`BrainRoutingDispatchTests`): `CloudProvider` (the ten providers + free/coding/ensemble roster constants + key checks + model/client maps), `BrainRouteConfig` (snapshot; `.live()` probes lazily per-pref), `BrainRouting` (`dispatch` — exactly one target per pref, **Offline Mode hard-gates the ten cloud pins**; roster builders — offline empties every cloud roster; `reachableBrain`/`anyBrainReachable`). Change a routing rule HERE, nowhere else. |
-| `OllamaClient.swift` | Local Ollama server (`localhost:11434`). Model resolver (7b→14b→32b), `keep_alive`/`num_ctx`, `unloadAll()`. Default coder model `qwen2.5-coder:7b`. |
-| `OpenAICompatibleClient.swift` | Generic `/v1/chat/completions` client (+ SSE streaming + error decoding). Groq/Mistral/Cerebras/NVIDIA/OpenAI/OpenRouter are thin configs of this. |
-| `CloudBrains.swift` | The thin configs: `GroqClient`, `MistralClient`, `CerebrasClient`, `OpenRouterClient`, `NvidiaClient` (endpoint + model lists + Keychain account). (DeepSeek's direct client removed 2026-06-12 — owner: "remove deepseek".) |
-| `SalehmanEngine.swift` / `SalehmanLeader.swift` / `SalehmanPersona.swift` | The **`.salehman` default brain**: cloud-first provider chain + persona/system-prompt; `SalehmanLeader` finalizes pipeline output in the Salehman voice. |
+| `LocalLLM.swift` | **The brain router** (~1150 lines). `generate` / `generateStreaming` / `chat` each `switch` on `BrainRouting.dispatch` (per-brain EXECUTION lives here — `SalehmanEngine`/`UnslothStudio`/`VLLM`/`OllamaClient` calls); `currentBrain` = `BrainRouting.reachableBrain` over a `BrainRouteConfig.live()` snapshot. `generateOnDevice` is the local-tier-only entry point for privacy-promising features (Knowledge vault). Houses the **tool loop** (`ollamaToolSpecs`, `runLocalTool`, `chatOllamaWithTools` / `chatOpenAICompatWithTools`). (`generateEnsemble`/`generateFreeAuto` — the All-Brains/Free·Auto cloud composite modes — were deleted with the cloud providers.) |
+| `BrainRouting.swift` | **The routing PLAN (R1 seam, 2026-06-12)** — pure + hermetically tested (`BrainRoutingDispatchTests`): `BrainRouteConfig` (snapshot; `.live()` probes lazily per-pref: Ollama/uncensored/MLX/custom-model readiness + Unsloth/vLLM configured), `BrainRouting` (`dispatch` — exactly one target per pref, all targets local; `reachableBrain`/`anyBrainReachable`). Change a routing rule HERE, nowhere else. (`enum CloudProvider` and every cloud branch were deleted 2026-06-18 — the app is local-only.) |
+| `OllamaClient.swift` | Local Ollama server. Model resolver (7b→14b→32b), `keep_alive`/`num_ctx`, `unloadAll()`. Default coder model `qwen2.5-coder:7b`. Server URL is now **user-configurable** (`AppSettings.ollamaServerURL`, added 2026-06-22) — defaults to `localhost:11434`, can point at a remote box (e.g. an always-on PC over Tailscale) so generation runs on that machine's GPU; both the Chat tab and the Code tab read the same setting. |
+| `OpenAICompatibleClient.swift` | Generic `/v1/chat/completions` client (+ SSE streaming + error decoding). `UnslothStudio` and `VLLM` are thin configs of this — the only two consumers left after the cloud removal. |
+| `SalehmanEngine.swift` / `SalehmanLeader.swift` / `SalehmanPersona.swift` | The **`.salehman` default brain** — **on-device only**: resolution order is (1) on-device MLX if loaded, (2) Ollama's `salehman` custom model. No external servers are ever contacted (`SalehmanEngine.hasAnyCloud` is a hardcoded `false`, kept only so call sites compile unchanged). `SalehmanLeader` finalizes pipeline output in the Salehman voice. |
 | `MLXSalehmanEngine.swift` | Local MLX (Apple-Silicon) inference path for the fine-tuned Salehman weights. |
-| `UnslothStudio.swift` / `VLLM.swift` | Local OpenAI-compatible servers (Unsloth Studio `:8888`/`:8000`; `vllm serve` `:8000/v1`) as pinnable brains. |
-| `BrainAdapter.swift` / `OllamaBrainAdapter.swift` / `AnthropicBrainAdapter.swift` | `BrainAdapter` protocol + adapters — start of the data-driven brain registry (CODEBASE_REVIEW §3 R1). |
-| `GrokClient.swift` | xAI Grok (`api.x.ai`) — OpenAI-ish chat + SSE. |
-| `GeminiClient.swift` | Google Gemini (non-OpenAI shape: contents array, `?key=` param). |
-| `AnthropicClient.swift` | Claude Haiku via Anthropic Messages API. |
-| `OpenAIClient.swift` | The "Codex" brain → OpenAI chat completions. |
-| `CopilotClient.swift` | GitHub Copilot (OAuth device-flow, no API key). |
-| `KeychainStore.swift` | `SecItem*` Keychain wrapper. `Account` enum = one slot per provider. `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`. |
+| `UnslothStudio.swift` / `VLLM.swift` | Local OpenAI-compatible servers (Unsloth Studio / `mlx_lm.server` / LM Studio / llama.cpp's server; `vllm serve` `:8000/v1`) as explicitly-pinned brains — you supply the endpoint URL in Settings, no auto-fallback. Also the route to serve your OWN fine-tune on a free cloud GPU (Kaggle/Colab → cloudflared URL). Each has an `isLocalLoopback` guard so a non-loopback endpoint doesn't qualify for the on-device-only `generateOnDevice` privacy path. |
+| `BrainAdapter.swift` / `OllamaBrainAdapter.swift` | `BrainAdapter` protocol + adapters — start of the data-driven brain registry (CODEBASE_REVIEW §3 R1). `BrainAdapterFactory` gives Ollama a dedicated adapter; every other local brain falls through to `LocalLLMFallbackAdapter` (delegates to `LocalLLM.generate()`). |
+| `KeychainStore.swift` | `SecItem*` Keychain wrapper. `Account` enum is now just 4 local-adjacent entries: `nvidiaAPIKey` (orphaned — the NVIDIA cloud client it served was deleted with the rest; no code reads it), `unslothStudioAPIKey` (only for the Settings "use with Claude Code" copy snippet, not required by the chat brain), `hfToken` (used outside the app, by the cloud-GPU-serving notebook), `vllmAPIKey` (optional bearer token when self-hosting vLLM on a public GPU box). `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`. |
 | `MemoryManager.swift` | Actor: subscribes to memory-pressure + thermal notifications; instance `concurrencyLimit()` + pure static policy funcs (`concurrencyLimit(pressure:thermal:physicalGB:)`, `shouldRefuseHeavyModel(...)`); auto-evicts Ollama under pressure. |
-| `BrainStatus.swift` | MainActor `ObservableObject`; polls which brain is live every 10s; drives the header dot/label (`dotColor`/`symbol`). |
+| `BrainStatus.swift` | MainActor `ObservableObject`; polls which brain is live every 10s; drives the header dot/label (`dotColor`/`symbol`) over the 5 local `LocalLLM.Brain` cases + `.none`. |
+
+*(Deleted 2026-06-18 as part of the owner-directed local-only migration — do not re-add references to these: `AnthropicClient.swift`, `AnthropicBrainAdapter.swift`, `GrokClient.swift`, `GeminiClient.swift`, `OpenAIClient.swift`, `CopilotClient.swift`, `CloudBrains.swift` (held `GroqClient`/`MistralClient`/`CerebrasClient`/`OpenRouterClient`/`NvidiaClient`), `Views/CopilotSignInView.swift`. DeepSeek's direct client was removed earlier, 2026-06-12.)*
 
 ### `Agents/` — multi-agent pipeline (Chat A's lane)
 | File | Purpose |
 |---|---|
-| `AgentPipeline.swift` | `run(mission:)` — short-circuits to ensemble/freeAuto, else runs a complexity-tiered agent team (1 → 15 agents). Batches by `MemoryManager.concurrencyLimit()`. |
+| `AgentPipeline.swift` | `run(mission:)` — runs a complexity-tiered agent team (1 → 15 agents) for every (local) brain. Batches by `MemoryManager.concurrencyLimit()`. (The ensemble/freeAuto/freeCoding/cloudCoding short-circuits were removed with the cloud composite modes, 2026-06-18.) |
 | `AgentDefinitions.swift` | The 15-agent team; roles auto-adapt to the user message. |
 | `AgentRegistry.swift` | Per-agent execution input (Sendable) + handler registry. |
 | `Orchestrator.swift` | Top-level orchestration; reads run outcome for rating. |
@@ -120,8 +129,8 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 | `ContentView.swift` | The chat UI: document-flow message list (hover action pills — copy/speak/regenerate/**quote**/per-reply timing on assistant rows, **edit-and-resend**+copy on user rows), Claude-style composer with **Code-tab parity colors** (signature accent ring), **slash commands** (`/summarize /continue /clear /copy /export /find /voice` + every saved prompt as `/slugged-title`), **Brain/Effort quick-controls menu** (live `· salehman14b` serving badge), **multi-file attachments** (chips per file, multi-select/drop/paste; merged to one synthetic attachment at submit so the pipeline stays single-attachment), **draft persistence** across relaunches, ↑-recall, Esc stops/dismisses, welcome that mirrors `CodeView.welcome` 1:1 (flat disc hero, 3 capsule pills, status line, full-tab optical centering). Presentation/input/focus/search only — conversation + send pipeline live in `ChatViewModel`. QA hooks: `qaForceEmptyState`, `qaShowActions`, `.qaGeometry()` probes (2026-06-11). |
 | `ChatViewModel.swift` | `@MainActor ObservableObject` owning the conversation (`messages`, `isRunning`) + the send/stop/regenerate/**extractForEdit**/transcribe pipeline (wired to `Orchestrator`/`MediaTranscribe`, auto-continue, vision, speech). Extracted from `ContentView` (2026-06-09). Drains `MediaCapture` per turn → `reply.media`. |
 | `MediaGallery.swift` | Inline image/video gallery rendered under an assistant reply (`message.media`). Double-bezel tray + concentric tiles, hover lift, button-in-button play well, duration/source chips. Images open in browser; direct-file videos play inline (AVKit sheet). Fed by `image_search`/`video_search` via `MediaCapture`. |
-| `SettingsView.swift` | Settings panel: **compact Brain grid**, **collapsible Free / Paid API-key groups**, per-provider key/model/test rows, Unsloth Studio / vLLM endpoints, Effort picker, performance/voice/privacy/status sections. Brain-grid readiness reads ONLY cached `@State` key flags — no Keychain syscalls in body recomputes (2026-06-12 perf fix). |
-| `SettingsBrainReadiness.swift` | Pure logic seam for SettingsView (2026-06-12): `BrainReadiness` (per-`BrainPreference` reachability rules over cached flags), `ActiveBrainProbe` (overlapping "is it working" run model), `BrainPing` (ping-reply verdict), `AnthropicKeyPresentation` (no-leak key subtitle). No UI imports; pinned by `SettingsBrainReadyTests`. |
+| `SettingsView.swift` | Settings panel: **compact Brain grid** (4 selectable local brains), Ollama server URL row, Unsloth Studio / vLLM endpoint+model rows, Effort picker, performance/voice/privacy/status sections. No cloud key rows remain post local-only migration. Brain-grid readiness reads ONLY cached `@State` engine-probe flags — no Keychain syscalls in body recomputes (2026-06-12 perf fix). |
+| `SettingsBrainReadiness.swift` | Pure logic seam for SettingsView (2026-06-12, rewritten local-only 2026-06-18): `BrainReadiness` (per-`BrainPreference` reachability rules over the 6 local brains' cached flags), `ActiveBrainProbe` (overlapping "is it working" run model), `BrainPing` (ping-reply verdict). No UI imports; pinned by `SettingsBrainReadyTests`. |
 | `RootView.swift` / `TabSwitcherBar.swift` / `BackgroundView.swift` | Tab container (**8 tabs** — Today/Chat/Code/Agents/Markets/Notes/Knowledge/RuneScape; `AppTab.hidden` (now empty) can gate any tab off every surface at once. **Markets restored 2026-06-20** (was hidden 2026-06-12 while sample-only; un-hidden once a live worldwide feed landed). **RuneScape tab added 2026-06-20** (⌘8, live Grand Exchange prices). Today-first, lazy-kept via `.opacity`; `BottomShortcutBar` pinned at the bottom), frosted segmented bar (sliding `matchedGeometryEffect` pill + **responsive labels**: collapse to icon-only when narrow, threshold scales with tab count), shared gradient background. |
 | `TodayView.swift` | **Today tab (⌘1, default landing)** — home dashboard: greeting + Quick Actions + live stat cards (notes/tasks, knowledge docs, market) reading the real stores. Read-only navigation surface. |
 | `CodeView.swift` / `CodeSyntaxView.swift` / `FileTree.swift` | **Code tab (⌘3)** — agentic coding workspace (file tree + syntax-highlighted editor). |
@@ -135,7 +144,7 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 | `OnboardingView.swift` / `CommandPalette.swift` (⌘K) / `ShortcutsView.swift` (⌘/) | First-run welcome; searchable command palette; keyboard-shortcuts cheat sheet. |
 | `MemoryView.swift` | "What I know about you" — durable facts list. |
 | `MarkdownText.swift` | Lightweight markdown renderer (fenced code blocks, etc.). |
-| `LiveTranscriptionView.swift` / `CopilotSignInView.swift` | Live-transcription UI; Copilot device-flow sheet. |
+| `LiveTranscriptionView.swift` | Live-transcription UI. (`CopilotSignInView.swift` — the Copilot OAuth device-flow sheet — was deleted 2026-06-18 with the rest of the cloud providers.) |
 
 ### `Persistence/`, `Media/`, `StockSage/`, `Knowledge/`, `Voice/`, `DesignSystem/`
 - **Persistence:** `Attachments.swift` (attached items + screen capture), `MemoryStore.swift` (long-term user facts), `PromptLibrary.swift` (reusable prompts), `ScratchpadStore.swift` (notes + tasks; `@MainActor ObservableObject`, JSON in App Support).
@@ -152,62 +161,85 @@ New `.swift` files anywhere under `Salehman AI/Salehman AI/` auto-compile
 
 ## 3. The brain system (the heart of the app)
 
-Two enums drive everything:
-- **`BrainPreference`** (`AppSettings.swift`) — what the USER pinned. 20 cases:
-  `.auto`, `.freeAuto`, `.freeCoding`, `.cloudCoding`, `.ollama`, `.claudeHaiku`,
-  `.grok`, `.gemini`, `.groq`, `.mistral`, `.cerebras`, `.codex`, `.copilot`,
-  `.openRouter`, `.ensemble`, **`.salehman` (the default)**,
-  `.unslothStudio`, `.vllm`, **`.uncensored`** (local abliterated ~3B via Ollama —
-  unfiltered, web-search capable, free/key-less; 4th in `selectableCases`, added
-  2026-06-18). Persisted under `Keys.brainPreference`.
-  (`.apple` was removed with Apple Intelligence, 2026-06-08; `.deepSeek` removed 2026-06-12.)
+**The app is local-only** (owner-directed full cloud removal, 2026-06-18 — see
+§1). Two enums drive everything:
+- **`BrainPreference`** (`AppSettings.swift`) — what the USER pinned. **6 cases,
+  all local:** `.auto`, `.ollama`, **`.salehman` (the default)**,
+  `.unslothStudio`, `.vllm`, **`.uncensored`** (local abliterated ~3B via
+  Ollama — unfiltered, web-search capable, free/key-less; added 2026-06-18).
+  Persisted under `Keys.brainPreference`. `selectableCases` (what the Brain
+  picker shows) is `[.salehman, .auto, .unslothStudio, .uncensored]` — `.ollama`
+  and `.vllm` still work if set directly (e.g. via the rotation hotkey) but
+  aren't surfaced in the menu. `isPaid` is a hardcoded `false` for every case.
+  (`.apple` was removed with Apple Intelligence, 2026-06-08; `.deepSeek`
+  removed 2026-06-12; all 9 `CloudProvider` cases — `.freeAuto`/`.freeCoding`/
+  `.cloudCoding`/`.ensemble`/`.claudeHaiku`/`.grok`/`.gemini`/`.groq`/
+  `.mistral`/`.cerebras`/`.codex`/`.copilot`/`.openRouter` — removed
+  2026-06-18.)
 - **`LocalLLM.Brain`** — which brain actually ANSWERS (resolved from the pref +
-  live availability), used for the header label/dot.
+  live availability), used for the header label/dot. 5 cases + `.none`:
+  `.ollamaCoder`, `.salehman`, `.unslothStudio`, `.vllm`, `.uncensored`.
 
-**Routing** lives in `LocalLLM`:
-- `currentBrain()` resolves pref → Brain (returns `.none` if the pinned brain is
-  unreachable, so the UI shows an honest "unavailable" message).
-- `generate` / `generateStreaming` / `chat` each branch at the top:
-  `if isFreeAutoMode { generateFreeAuto } ; if isEnsembleMode { generateEnsemble }`,
-  then the single-brain `*Allowed` gates (`claudeAllowed`, `grokAllowed`, …).
-- ⚠️ **`generate` is NOT on-device** — it routes to the pinned (possibly paid cloud)
-  brain. Features that PROMISE privacy must use **`generateOnDevice(_:maxTokens:) -> String?`**
-  (local tier only; `nil` if no local brain is reachable). The Knowledge
-  vault uses it (added 2026-06-05 after an audit caught the leak — see DEVELOPMENT_LOG).
-- `AgentPipeline.run` short-circuits ensemble/freeAuto BEFORE spawning the agent
-  team (those modes ask the raw prompt, not a 15-agent pipeline).
+**Routing** lives in `BrainRouting.swift` (the pure routing PLAN) + `LocalLLM`
+(execution):
+- `BrainRouting.dispatch(pref:offlineOnly:)` maps every `BrainPreference` to
+  exactly one `Dispatch` target — `.salehman`, `.unslothStudio`, `.vllm`,
+  `.localTier` (`.auto`/`.ollama` → Ollama), or `.uncensoredLocal` (forces the
+  abliterated model). `generate` / `generateStreaming` / `chat` in `LocalLLM`
+  each `switch` on this dispatch and call the matching engine directly — there
+  is no cloud branch left to gate.
+- `BrainRouting.reachableBrain(_:)` (over a `BrainRouteConfig.live()` snapshot)
+  resolves pref → `LocalLLM.Brain`, returning `.none` if the pinned brain is
+  unreachable so the UI shows an honest "unavailable" message instead of
+  silently falling back.
+- `generate` **routes to the pinned local brain** — since every brain is local
+  there is no "paid cloud" risk, but `.unslothStudio`/`.vllm` still accept an
+  arbitrary user-typed endpoint URL. Features that PROMISE on-device-only
+  behavior must use **`generateOnDevice(_:maxTokens:) -> String?`**, which
+  additionally requires `UnslothStudio`/`VLLM` to be on a **loopback** host
+  (`isLocalLoopback`) before treating them as on-device — a non-loopback
+  endpoint is still pinnable as a normal brain, just not for this path. The
+  Knowledge vault uses it (added 2026-06-05 after an audit caught a leak — see
+  DEVELOPMENT_LOG).
+- The `.salehman` brain itself (`SalehmanEngine.generate`) resolves in a fixed
+  order: **(1) on-device MLX** (if the fine-tune is loaded), **(2) Ollama**
+  (the `salehman` custom model) — no network call is ever made from this path.
 
-**Special modes:**
-- **All Brains at Once (`.ensemble`)** — `generateEnsemble`: runs every reachable
-  brain in parallel, returns one combined `### <brain>` labeled doc. On a <24 GB
-  Mac it SKIPS the local Ollama model (RAM-safety) and notes the skip.
-- **Free · Auto (`.freeAuto`)** — `generateFreeAuto`: races the *configured free*
-  cloud brains (Groq/Cerebras/Gemini/Mistral/OpenRouter) in parallel, returns the
-  **first usable** answer (a 429/error/empty reply loses the race via
-  `isUsableFreeAnswer`); if all free cloud brains fail it falls back to the LOCAL
-  tier **sequentially** (never concurrent — preserves the RAM
-  guardrail). Effectively never blocked. Never uses paid brains.
+**`.salehman` vs `.unslothStudio`/`.vllm`:** these are three *separate* pins,
+not a fallback chain into each other. `.salehman` is MLX→Ollama only. If you
+want the app to talk to your OWN fine-tune served elsewhere (a local
+`mlx_lm.server`/LM Studio/llama.cpp instance, a `vllm serve` box, or a free
+Colab/Kaggle GPU tunneled via cloudflared), pin `.unslothStudio` or `.vllm`
+explicitly and set its endpoint URL in Settings (or via the `/connect` chat
+command for the cloud-GPU case) — there's no key needed for either.
+
+**No composite/cloud modes remain.** All Brains at Once (`.ensemble`) and
+Free · Auto (`.freeAuto`/`.freeCoding`/`.cloudCoding`) — which used to race or
+fan out across the cloud providers — were deleted with those providers on
+2026-06-18. `AgentPipeline.run` no longer needs to short-circuit for them;
+every pinned brain now runs the normal multi-agent path.
 
 ---
 
-## 4. Cloud providers
+## 4. Local inference endpoints
 
-| Brain | Client | Endpoint | Keychain account | Notes / default model |
+There are no cloud providers left — every brain answers on-device or on a
+server whose URL/model you configure yourself. No API key is required for any
+of them (a couple of Keychain slots remain for optional/adjacent uses — see
+`KeychainStore.swift` in §2 — but none gate whether a chat brain works).
+
+| Brain (`BrainPreference`) | Engine | Where it runs | Config | Notes |
 |---|---|---|---|---|
-| Claude Haiku | `AnthropicClient` | Anthropic Messages API | `anthropic-api-key` | paid |
-| xAI Grok | `GrokClient` | `api.x.ai/v1` | `grok-api-key` | paid; models incl. `grok-build-0.1` (probe) |
-| Google Gemini | `GeminiClient` | generativelanguage API | `gemini-api-key` | **free tier**; key looks like `AIza…` |
-| Groq | `GroqClient` | `api.groq.com/openai/v1` | `groq-api-key` | **free**; default `llama-3.3-70b-versatile` |
-| Mistral | `MistralClient` | `api.mistral.ai/v1` | `mistral-api-key` | free tier; `mistral-small-latest` |
-| Cerebras | `CerebrasClient` | `api.cerebras.ai/v1` | `cerebras-api-key` | **free**; default `gpt-oss-120b` (only `gpt-oss-120b`/`zai-glm-4.7` served) |
-| OpenAI / Codex | `OpenAIClient` | `api.openai.com/v1` | `openai-api-key` | **paid** (needs billing); `gpt-4o-mini` |
-| GitHub Copilot | `CopilotClient` | Copilot API | `copilot-github-token` | OAuth device-flow (subscription) |
-| OpenRouter | `OpenRouterClient` | `openrouter.ai/api/v1` | `openrouter-api-key` | **free `:free` models**; default `openai/gpt-oss-120b:free` |
-| NVIDIA NIM | `NvidiaClient` | `integrate.api.nvidia.com/v1` | `nvidia-api-key` | **free tier** — hosts real DeepSeek V4; default `deepseek-ai/deepseek-v4-flash` |
+| `.salehman` (default) | `SalehmanEngine` → `MLXSalehmanEngine` / `OllamaClient` | on-device MLX, else the `salehman` Ollama custom model | none — automatic | Never contacts an external server (`hasAnyCloud == false`, hardcoded). |
+| `.auto` / `.ollama` | `OllamaClient` | Ollama server | `AppSettings.ollamaServerURL` (default `localhost:11434`; can point at a remote GPU box, e.g. over Tailscale) | Default coder model `qwen2.5-coder:7b`; resolver falls back 7b→14b→32b. |
+| `.uncensored` | `OllamaClient` forced to the abliterated model | same Ollama server as above | none — automatic model pin | `OllamaClient.uncensoredModel` (`huihui_ai/llama3.2-abliterate:3b`); web-search capable via the tool loop; warmed into RAM on launch when pinned. |
+| `.unslothStudio` | `UnslothStudio` → `OpenAICompatibleClient` | any local OpenAI-compatible server, or your own fine-tune on a free cloud GPU (Colab/Kaggle → cloudflared) | `AppSettings.unslothStudioEndpoint` + `unslothStudioModel` (Settings, or `/connect` chat command) | Unauthenticated by default (`requiresKey: false`); typically Unsloth Studio `/v1` on `:8000`, `mlx_lm.server` `:8080/v1`, LM Studio, llama.cpp's server. |
+| `.vllm` | `VLLM` → `OpenAICompatibleClient` | a `vllm serve` box (local or remote, e.g. RunPod) | `AppSettings.vllmEndpoint` + `vllmModel` | Unauthenticated for `localhost`; `KeychainStore.Account.vllmAPIKey` is available if you self-host on a public GPU with `--api-key`. |
 
-⚠️ **Cloud model IDs rotate.** Defaults are best-effort; verify against each
-provider's `GET /v1/models`. The app's `*ModelCurrent` accessors fall back to the
-provider default if a stored model is no longer offered.
+⚠️ **`.unslothStudio`/`.vllm` endpoints are user-typed URLs** — only a loopback
+host (`localhost`/`127.0.0.1`/`::1`) is treated as on-device by
+`generateOnDevice`; a public URL still works as a normal pinned brain but
+doesn't qualify for privacy-promising features (the Knowledge vault).
 
 ---
 
