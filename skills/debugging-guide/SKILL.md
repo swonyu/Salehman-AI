@@ -22,7 +22,7 @@ xcodebuild test -scheme "Salehman AI" -destination 'platform=macOS' -configurati
   `** TEST FAILED **`. **That line is the gate — nothing else counts as a pass.**
 - ONLY on failure, extract the failing cases:
   ```bash
-  grep -E "Test case '.*' failed" /tmp/salehman_*.log | sed -E "s/.*'([^']+)'.*/\1/" | sort -u
+  grep -hoE "Test [Cc]ase '[^']+' failed" /tmp/salehman_*.log | sed -E "s/Test [Cc]ase '([^']+)' failed/\1/" | sort -u
   ```
 - **Never `cat`/Read a whole build log into context** — they run to megabytes and the
   answer is always one grep away. Same ban as `SOURCE_BUNDLE.md` (~530k tokens, never Read).

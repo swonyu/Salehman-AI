@@ -37,7 +37,7 @@ Coordinates are approximate and shift if the window moves.
 ## THE CHECKLIST
 Honesty surfaces (a regression here is P1 — the app's whole value is not lying):
 - [ ] Calibration chip: **"win% assumed"** (⚠ triangle) or **"win% measured · n=N"** (seal) —
-      `Views/MarketsView.swift` ~3505; 5 call sites (sheet EV, best-opp, deploy, velocity card, board).
+      `Views/MarketsView.swift` ~3507; 4 call sites (best-opp, deploy capital, money velocity, sheet EV).
 - [ ] **"(gross)"** on every EV figure: card header "+0.51R EV (gross)", "Est. EV … (gross)" metric,
       fast-lane/deploy rows, sheet EV line.
 - [ ] Sheet EV line ends **"— estimate, not a forecast."** (~4667).
