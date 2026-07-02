@@ -47,13 +47,27 @@ enum StockSageLossLimit {
         var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!; return c
     }()
 
+    /// #9's fail-closed fallback: the start of a trailing 7-day window (dayStart − 6 days).
+    /// Any calendar week containing `now` starts at most 6 days before today's start, so
+    /// [dayStart − 6d, now] ⊇ [weekStart, now] — the fallback can only count MORE losses than
+    /// the real week (halt earlier), never fewer. Exposed (not private) so the test pins it.
+    nonisolated static func sevenDayFallbackStart(dayStart: Date, calendar: Calendar = utcCalendar) -> Date {
+        calendar.date(byAdding: .day, value: -6, to: dayStart) ?? dayStart.addingTimeInterval(-6 * 86_400)
+    }
+
     /// Aggregate realized losses + the consecutive-loss run vs `policy`. Open trades (no
     /// closedAt) contribute 0; a breakeven or a win breaks the loss run.
     nonisolated static func evaluate(closedTrades: [TradeRecord], policy: LossLimitPolicy,
                                      now: Date, calendar: Calendar = utcCalendar) -> LossLimitState {
         let closed = closedTrades.filter { $0.closedAt != nil }
         let dayStart = calendar.startOfDay(for: now)
-        let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? dayStart
+        // #9 fail-CLOSED: if the calendar ever fails to produce a week interval (never, for
+        // valid Gregorian dates — but this is a safety breaker), the weekly window must NOT
+        // silently collapse to [startOfToday, now] (a guardrail failing OPEN: weekly losses
+        // under-counted, no halt on a bad week). Fall back to a trailing 7-day window, which
+        // always covers ⊇ any calendar week containing `now` — strictly more conservative.
+        let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start
+            ?? sevenDayFallbackStart(dayStart: dayStart, calendar: calendar)
 
         func realized(since from: Date) -> (dollars: Double, r: Double) {
             var d = 0.0, r = 0.0

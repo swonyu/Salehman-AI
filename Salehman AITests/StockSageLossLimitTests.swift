@@ -97,4 +97,14 @@ struct StockSageLossLimitTests {
                             policy: LossLimitPolicy(standDownLossRun: 2), now: now)
         #expect(s.lossRun == 2 && s.status == .halted)
     }
+
+    @Test func weeklyFallbackWindowIsSevenDaysNotOneDay() {
+        // #9 — fail-closed: the fallback start is dayStart − 6·86 400 s = −518 400 s exactly
+        // (UTC Gregorian, no DST). The OLD code fell back to dayStart itself: a weekly gate
+        // scoped to a single day, silently failing open.
+        let dayStart = Date(timeIntervalSince1970: 1_751_500_800)
+        let fallback = StockSageLossLimit.sevenDayFallbackStart(dayStart: dayStart)
+        #expect(fallback.timeIntervalSince1970 == 1_751_500_800 - 518_400)
+        #expect(fallback < dayStart)   // the property the old `?? dayStart` violated
+    }
 }
