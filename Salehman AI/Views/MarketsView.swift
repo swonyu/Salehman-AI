@@ -3497,7 +3497,7 @@ struct MarketsView: View {
     // fitted calibration when one exists, else the conservative linear prior). The "Deploy capital"
     // plan layers on top: regime sizing bias, per-symbol vol-regime brake, correlation de-weighting,
     // and the total-heat cap — those are the genuine additions the Deploy plan makes.
-    private static let sizeMetricHelp = "Size uses the calibrated win-prob when a journal or backtest calibration is fitted (the same win-rate shown in the EV chip), or the conservative ~35–58% prior otherwise. The ‘Deploy capital’ plan is the one to act on — it layers the market-regime bias, per-symbol vol-regime brake, correlation de-weighting, and the heat cap on top."
+    private static let sizeMetricHelp = "Size uses the calibrated win-prob when a journal or backtest calibration is fitted (the same win-rate shown in the EV chip), or the conservative ~35–58% prior otherwise. The ‘Deploy capital’ plan is the one to act on — it applies: vol-targeting shrink for high-vol names → per-symbol vol-regime brake → correlation de-weighting → heat cap on top."
 
     // Honest "are these EV numbers measured or assumed?" chip — reused on every EV-headline surface.
     @ViewBuilder private var calibrationChip: some View {
@@ -4313,6 +4313,8 @@ struct MarketsView: View {
         let a = idea.advice
         return ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.sm) {
+
+                // ── 1. Header (symbol / market / action badge) ──────────────────────
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(idea.symbol).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
@@ -4332,6 +4334,7 @@ struct MarketsView: View {
                     .buttonStyle(.plain).help("Close").accessibilityLabel("Close")
                 }
 
+                // Sparkline
                 if idea.spark.count >= 2 {
                     let trendWord = (idea.spark.last ?? 0) >= (idea.spark.first ?? 0) ? "up" : "down"
                     Sparkline(values: idea.spark)
@@ -4341,13 +4344,20 @@ struct MarketsView: View {
                         .accessibilityLabel("Price sparkline, trending \(trendWord), high \(adaptivePrice(idea.spark.max() ?? 0)), low \(adaptivePrice(idea.spark.min() ?? 0))")
                 }
 
+                // Conviction meter + honesty caption (hc#2)
                 convictionMeter(a.conviction, color: actionColor(a.action))
                     .help(store.convictionCalibration.map { cal in
-                        "Conviction — rules-based signal strength; win-rate mapped from \(cal.sampleSize) realized trades."
-                    } ?? "Conviction — a rules-based signal strength, not a probability. Estimated win-rate range ~35-58%, not a forecast.")
-                Text("Conviction \(Int(a.conviction * 100))% · \(a.regime.rawValue)")
+                        "Signal strength — rules-based signal strength; win-rate mapped from \(cal.sampleSize) realized trades."
+                    } ?? "Signal strength — a rules-based signal strength, not a probability. Estimated win-rate range ~35-58%, not a forecast.")
+                Text("Signal strength \(Int(a.conviction * 100))/100 · \(a.regime.rawValue)")
                     .font(.caption).foregroundStyle(.secondary)
+                // Always-visible disclaimer: meter % must not read as P(win). (hc#2)
+                // One disclaimer only — the trailing clause was removed from the value
+                // label above (G) to avoid saying "not a win probability" twice.
+                Text("How many rules agree — NOT a win probability.")
+                    .font(.system(size: mvFont9)).foregroundStyle(.secondary)
 
+                // ── 2. Risk-flag chips row ───────────────────────────────────────────
                 let riskFlags = StockSageRiskFlags.flags(
                     action: a.action, conviction: a.conviction, symbol: idea.symbol,
                     earnings: store.earnings[idea.symbol.uppercased()],
@@ -4360,7 +4370,20 @@ struct MarketsView: View {
                     }
                 }
 
+                // ── 3 + 4. Earnings warning (buy-family: above gate) + gate + sizer ─
                 if a.action == .buy || a.action == .strongBuy {
+                    // df#1 / hc#1: earnings severity warning above the gate for buy-family.
+                    // Keep ep.isWarning guard — purely a position move, not a logic change.
+                    if let ep = store.earnings[idea.symbol.uppercased()], ep.isWarning {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "calendar.badge.exclamationmark").font(.system(size: 11))
+                                .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
+                            Text(ep.note).font(.caption2).accessibilityLabel("Earnings risk — see detail sheet")
+                                .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
                     let rr: Double? = {
                         guard let stop = a.stopPrice, let tgt = a.targetPrice else { return nil }
                         let risk = abs(idea.price - stop)
@@ -4378,51 +4401,39 @@ struct MarketsView: View {
                         daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil)
                     tradeGateView(gate)
 
+                    // ── 5. Position sizer (df#3: moved above evidence; gate reads sizerRiskPct
+                    //       so proximity makes the dependency legible). ─────────────────────────
+                    positionSizerPanel(idea)
+
                     // Concentration-in-disguise: warn if this idea moves in lockstep with
                     // something already held (series sourced from the ideas board's sparklines).
-                    let candReturns = StockSagePortfolioAnalytics.dailyReturns(idea.spark)
-                    let heldSeries = portfolio.positions.compactMap { p -> (symbol: String, returns: [Double])? in
-                        guard let sp = store.ideas.first(where: { $0.symbol.uppercased() == p.symbol.uppercased() })?.spark,
-                              sp.count >= 2 else { return nil }
-                        return (p.symbol, StockSagePortfolioAnalytics.dailyReturns(sp))
-                    }
-                    let uncheckedCount = portfolio.positions.count - heldSeries.count
-                    if let cc = StockSageClusterCheck.check(candidate: idea.symbol, candidateReturns: candReturns, holdings: heldSeries) {
-                        // Show the verdict either way: a warning when it concentrates,
-                        // an affirmation when it genuinely diversifies the checked subset.
-                        // Suppress the green affirmation when holdings were skipped (no series
-                        // on the board) — we can't claim diversification on data we didn't check.
-                        let cColor = cc.isConcentrating ? DS.Palette.warningSoft : DS.Palette.textSecondary
-                        let cIcon = cc.isConcentrating ? "exclamationmark.triangle.fill" : "checkmark.shield.fill"
-                        let note: String = {
-                            if !cc.isConcentrating && uncheckedCount > 0 {
-                                return cc.note + " (among \(heldSeries.count) holdings with history — \(uncheckedCount) had no series and were not checked)"
-                            }
-                            return cc.note
-                        }()
-                        if cc.isConcentrating || uncheckedCount == 0 {
-                            HStack(alignment: .top, spacing: 6) {
-                                Image(systemName: cIcon).font(.system(size: 11)).foregroundStyle(cColor)
-                                Text(note).font(.caption2).foregroundStyle(cColor).fixedSize(horizontal: false, vertical: true)
-                            }
-                        } else {
-                            // Partial coverage — show without the green checkmark to avoid over-affirming.
-                            Text(note).font(.caption2).foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
+                    // Moved into Context section below (sd#1); kept in buy-guard.
                 }
+                // sd#D: sell/reduce ideas also have stopPrice and benefit from the sizer's
+                // short-side leverage/liquidation display. Show the sizer for non-buy actions
+                // immediately after the buy-guard so it never renders twice for one idea
+                // (buy-guard already calls positionSizerPanel inside). The sizer's own
+                // stopPrice guard hides it for Hold/Avoid (no stop → nothing rendered).
+                if !(a.action == .buy || a.action == .strongBuy) { positionSizerPanel(idea) }
 
+                // ── 6. Plan numerics (hc#4 labels: "Base size" / "Regime size" + .help) ─
                 HStack(spacing: 20) {
                     ideaMetric("Price", adaptivePrice(idea.price))
                     if let s = a.stopPrice { ideaMetric("Stop", adaptivePrice(s), color: DS.Palette.danger) }
                     if let t = a.targetPrice { ideaMetric("Target", adaptivePrice(t), color: DS.Palette.successSoft) }
-                    if a.suggestedWeight > 0 { ideaMetric("Size", String(format: "%.1f%%", a.suggestedWeight * 100), color: DS.Palette.accent).help(Self.sizeMetricHelp) }
+                    // hc#4: "Base size" = raw half-Kelly before regime/vol/correlation adjustments.
+                    if a.suggestedWeight > 0 {
+                        ideaMetric("Base size", String(format: "%.1f%%", a.suggestedWeight * 100), color: DS.Palette.accent)
+                            .help(Self.sizeMetricHelp)
+                    }
                     if a.suggestedWeight > 0, let r = store.regime {
                         let adj = StockSageRegime.adjustedWeight(base: a.suggestedWeight, bias: r.sizingBias, cap: StockSageAdvisor.maxWeight)
                         // Green ONLY when the regime CUTS size (de-risking). An up-size
                         // is neutral — bigger is not "safer".
+                        // hc#4: "Regime size" gains .help clarifying the pipeline stage.
                         ideaMetric("Regime size", String(format: "%.1f%%", adj * 100),
                                    color: adj < a.suggestedWeight ? DS.Palette.successSoft : DS.Palette.accent)
+                            .help("Regime size = base half-Kelly × regime bias. The Deploy-capital plan then applies: vol-targeting shrink for high-vol names → per-symbol vol-regime brake → correlation de-weighting → heat cap. (Deploy plan is authoritative.)")
                     }
                     Spacer(minLength: 0)
                 }
@@ -4445,6 +4456,50 @@ struct MarketsView: View {
                             .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                // df#4: multi-timeframe row promoted next to plan numerics (was at position 22).
+                if let mtf = store.multiTimeframe[idea.symbol.uppercased()] {
+                    HStack(spacing: DS.Space.sm) {
+                        Image(systemName: mtf.aligned ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                            .font(.system(size: 12)).foregroundStyle(mtf.aligned ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                        Text("Daily \(mtf.daily.rawValue) · Weekly \(mtf.weekly.rawValue)")
+                            .font(.caption).foregroundStyle(.white)
+                        Spacer()
+                    }
+                    Text(mtf.note).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                } else if ToolPolicy.isExternalAllowed
+                           && !ProcessInfo.processInfo.arguments.contains("--qa")
+                           && !mtfFetchCompleted.contains(idea.symbol.uppercased()) {
+                    // Fetch is in progress — show spinner. Once the .task marks the symbol in
+                    // mtfFetchCompleted the spinner is replaced by the unavailable fallback below,
+                    // preventing a permanent spinner on network fetch failure.
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small).tint(DS.Palette.accent)
+                        Text("Checking the weekly timeframe…").font(.caption2).foregroundStyle(.secondary)
+                    }
+                } else {
+                    // Either external access is off, --qa is set, OR the fetch completed without
+                    // writing data (network failure / no history). All three paths land here.
+                    Text("Weekly timeframe unavailable.").font(.caption2).foregroundStyle(.secondary)
+                }
+
+                // ── 7. "Why" rationale (df#2 / hc#3: moved above evidence pile) ────────
+                if !a.rationale.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Why").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                        ForEach(Array(a.rationale.enumerated()), id: \.offset) { _, reason in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "circle.fill").font(.system(size: 4)).foregroundStyle(.secondary).padding(.top, 6)
+                                    .accessibilityHidden(true)   // decorative bullet
+                                Text(reason).font(.caption).foregroundStyle(DS.Palette.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Why: \(a.rationale.joined(separator: ". "))")
+                }
+
+                // ── 8. Evidence: net-cost, EV + calibration tag, velocity/floor, backtest ─
                 if let stop = a.stopPrice, let target = a.targetPrice {
                     let costs = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
                     // Same financing inputs netEVR/netVelocity/netCostFloorFlag already use — this
@@ -4474,21 +4529,17 @@ struct MarketsView: View {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "dollarsign.circle.fill").font(.system(size: 11))
                             .foregroundStyle(ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft)
-                        Text(String(format: "Est. EV %+.2fR per trade (~%.0f%% est. win × %.1f:1) — estimate, not a forecast.",
+                        Text(String(format: "Est. EV %+.2fR per trade (gross) (~%.0f%% est. win × %.1f:1) — estimate, not a forecast.",
                                     ev.evR, ev.winProbEstimate * 100, ev.rewardR))
                             .font(.caption2)
                             .foregroundStyle(ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft)
                             .fixedSize(horizontal: false, vertical: true)
                             .help(StockSageExpectedValue.caveat)
                     }
-                }
-                if let stop = a.stopPrice, let target = a.targetPrice,
-                   let ladder = StockSagePartialLadder.levels(entry: idea.price, stop: stop, target: target, rungs: 3) {
-                    let rungs = ladder.rungs.map { "\(adaptivePrice($0.price)) (+\(String(format: "%.1f", $0.rMultiple))R)" }.joined(separator: ", ")
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "stairs").font(.system(size: 11)).foregroundStyle(DS.Palette.textSecondary)
-                        Text("Scale-out (⅓ each): \(rungs) — blended +\(String(format: "%.1f", ladder.blendedExitR))R. Banks gains + cuts variance vs all-at-target; assumes each level fills.")
-                            .font(.caption2).foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    // hc#1: always-visible measured/assumed tag directly under the EV line.
+                    // "measured" only when store.convictionCalibration != nil; nil-safe.
+                    HStack(spacing: 6) {
+                        calibrationChip
                     }
                 }
                 if let vel = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
@@ -4510,6 +4561,31 @@ struct MarketsView: View {
                         .help(String(format: "Net EV/day after frictions is under %.3fR/day — de-ranked on the velocity board. See the net-cost breakdown above.", StockSageExpectedValue.minNetEVPerDayFloor))
                     }
                 }
+
+                // Backtest panel (aa#5/hc#5: moved above action buttons so evidence precedes commitment).
+                if store.backtestSymbol == idea.symbol { backtestPanel }
+
+                // ── 9. "Exit plan" labeled section (sd#4) ───────────────────────────────
+                // Gate the Divider+header on whether at least one child will actually render.
+                // Derived from the real child guards — no guessing:
+                //   • regime caveat: a.suggestedWeight > 0 && store.regime != nil
+                //   • scale-out ladder: a.stopPrice != nil && a.targetPrice != nil
+                //     (StockSagePartialLadder.levels returns non-nil when stop ≠ entry ≠ target)
+                //   • chandelier: store.trailingStop[symbol] != nil
+                let hasExitPlanContent: Bool = {
+                    if a.suggestedWeight > 0 && store.regime != nil { return true }
+                    if a.stopPrice != nil && a.targetPrice != nil { return true }
+                    if store.trailingStop[idea.symbol.uppercased()] != nil { return true }
+                    return false
+                }()
+                if hasExitPlanContent {
+                    Divider().opacity(0.2)
+                    Text("Exit plan").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                        .accessibilityAddTraits(.isHeader)
+                }
+
+                // Regime-size caveat placed here (was below velocity, now in exit-plan context
+                // where the sizing decision is actually made).
                 if a.suggestedWeight > 0, store.regime != nil {
                     Text(store.regimeIsStale
                          ? "Regime size uses a STALE regime read — re-gauge the regime for a current number."
@@ -4518,12 +4594,113 @@ struct MarketsView: View {
                         .foregroundStyle(store.regimeIsStale ? DS.Palette.warningSoft : .secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+
+                // Scale-out ladder (aa#2: bell buttons per rung to seed price alerts).
+                if let stop = a.stopPrice, let target = a.targetPrice,
+                   let ladder = StockSagePartialLadder.levels(entry: idea.price, stop: stop, target: target, rungs: 3) {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "stairs").font(.system(size: 11)).foregroundStyle(DS.Palette.textSecondary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Scale-out (⅓ each) — blended +\(String(format: "%.1f", ladder.blendedExitR))R. Banks gains + cuts variance vs all-at-target; assumes each level fills.")
+                                .font(.caption2).foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                            ForEach(ladder.rungs.indices, id: \.self) { i in
+                                let rung = ladder.rungs[i]
+                                let dir: PriceAlert.Direction = rung.price > idea.price ? .above : .below
+                                // aa#2: dedup — skip/disable when an identical armed alert already exists
+                                // (mirrors the priceAlertsPanel duplicate check at line ~711).
+                                // Exact Double equality on rung.price is intentional: it matches
+                                // store.addPriceAlert's own dedup; a refreshed quote regenerates
+                                // rungs with new prices, re-enabling the bell. (L)
+                                let alreadyArmed = store.priceAlerts.contains(where: {
+                                    $0.isArmed && $0.symbol == idea.symbol.uppercased()
+                                    && $0.target == rung.price && $0.direction == dir
+                                })
+                                HStack(spacing: 6) {
+                                    Text("\(adaptivePrice(rung.price)) (+\(String(format: "%.1f", rung.rMultiple))R)")
+                                        .font(.caption2).foregroundStyle(DS.Palette.textSecondary)
+                                    Spacer()
+                                    Button {
+                                        // K: pass raw idea.symbol — store normalizes to uppercase internally.
+                                        store.addPriceAlert(symbol: idea.symbol, target: rung.price, direction: dir)
+                                    } label: {
+                                        Image(systemName: alreadyArmed ? "bell.fill" : "bell.badge")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(alreadyArmed ? DS.Palette.accent : .secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(alreadyArmed)
+                                    // F: dynamic .help and .accessibilityLabel based on armed state.
+                                    .help(alreadyArmed
+                                          ? "Price alert already armed at \(adaptivePrice(rung.price))"
+                                          : "Alert at \(adaptivePrice(rung.price)) (+\(String(format: "%.1f", rung.rMultiple))R rung)")
+                                    .accessibilityLabel(alreadyArmed
+                                                        ? "Price alert already armed at \(adaptivePrice(rung.price))"
+                                                        : "Set price alert at \(adaptivePrice(rung.price))")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Chandelier / trailing stop exit (sd#4: moved here from the risk-context area).
+                if let ts = store.trailingStop[idea.symbol.uppercased()] {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "arrow.up.forward.circle").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text("Chandelier exit ~\(adaptivePrice(ts.level)) (highest high − \(String(format: "%.0f", ts.multiple))×ATR, \(String(format: "%.0f", ts.distancePct))% below) — a STARTING trailing level; move it up as new highs print, never down. An exit rule, not a target.")
+                            .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                // ── 10. "Context" labeled section (sd#1) ────────────────────────────────
+                // Gate the Divider+header on whether at least one child will actually render.
+                // Derived from the real child guards:
+                //   • earnings (non-buy path): action != buy/strongBuy && earnings[symbol]?.isWarning
+                //   • asset-class risk note: StockSageGlossary.assetClassRiskNote(symbol) != nil
+                //   • portfolio precheck: precheck[symbol]?.verdict != .noHoldings
+                //   • what-if concentration: !portfolio.positions.isEmpty
+                //   • cluster check: buy/strongBuy action (inner nil-guard handled by child)
+                //   • liquidity: liquidity[symbol] != nil
+                //   • seasonality: seasonality[symbol] != nil (inner stat/samples guard in child)
+                let hasContextContent: Bool = {
+                    let sym = idea.symbol.uppercased()
+                    if a.action != .buy && a.action != .strongBuy,
+                       let ep = store.earnings[sym], ep.isWarning { return true }
+                    if StockSageGlossary.assetClassRiskNote(for: idea.symbol) != nil { return true }
+                    if let pc = store.precheck[sym], pc.verdict != .noHoldings { return true }
+                    if !portfolio.positions.isEmpty { return true }
+                    if a.action == .buy || a.action == .strongBuy { return true }
+                    if store.liquidity[sym] != nil { return true }
+                    if store.seasonality[sym] != nil { return true }
+                    return false
+                }()
+                if hasContextContent {
+                    Divider().opacity(0.2)
+                    Text("Context").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                        .accessibilityAddTraits(.isHeader)
+                }
+
+                // Earnings (sell/reduce path fallback — buy-family earnings already shown above gate).
+                if a.action != .buy && a.action != .strongBuy {
+                    if let ep = store.earnings[idea.symbol.uppercased()], ep.isWarning {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "calendar.badge.exclamationmark").font(.system(size: 11))
+                                .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
+                            Text(ep.note).font(.caption2).accessibilityLabel("Earnings risk — see detail sheet")
+                                .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+
+                // Asset-class risk note
                 if let note = StockSageGlossary.assetClassRiskNote(for: idea.symbol) {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "exclamationmark.circle.fill").font(.system(size: 11)).foregroundStyle(DS.Palette.warningSoft)
                         Text(note).font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                     }
                 }
+
+                // Portfolio precheck
                 if let pc = store.precheck[idea.symbol.uppercased()], pc.verdict != .noHoldings {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: pc.isWarning ? "exclamationmark.triangle.fill"
@@ -4536,46 +4713,8 @@ struct MarketsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                if let ep = store.earnings[idea.symbol.uppercased()], ep.isWarning {
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "calendar.badge.exclamationmark").font(.system(size: 11))
-                            .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
-                        Text(ep.note).font(.caption2).accessibilityLabel("Earnings risk — see detail sheet")
-                            .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                if let s = store.seasonality[idea.symbol.uppercased()] {
-                    // UTC, matching compute()'s bucketing — a LOCAL month can disagree near a
-                    // boundary and highlight the wrong bucket's stat.
-                    let m = StockSageSeasonality.currentMonth()
-                    if let stat = StockSageSeasonality.stat(s, month: m), stat.samples > 0 {
-                        HStack(alignment: .top, spacing: 6) {
-                            Image(systemName: "calendar").font(.system(size: 11)).foregroundStyle(.secondary)
-                            Text(stat.note(monthName: DateFormatter().monthSymbols[m - 1]))
-                                .font(.caption2)
-                                .foregroundStyle(stat.isReliable ? .secondary : DS.Palette.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-                if let liq = store.liquidity[idea.symbol.uppercased()] {
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: liq.tier == .thin ? "drop.triangle.fill" : "drop.fill")
-                            .font(.system(size: mvFont11))
-                            .foregroundStyle(liq.tier == .thin ? DS.Palette.warningSoft : .secondary)
-                        Text(liq.note).font(.caption2)
-                            .foregroundStyle(liq.tier == .thin ? DS.Palette.warningSoft : .secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                if let ts = store.trailingStop[idea.symbol.uppercased()] {
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "arrow.up.forward.circle").font(.system(size: 11)).foregroundStyle(.secondary)
-                        Text("Chandelier exit ~\(adaptivePrice(ts.level)) (highest high − \(String(format: "%.0f", ts.multiple))×ATR, \(String(format: "%.0f", ts.distancePct))% below) — a STARTING trailing level; move it up as new highs print, never down. An exit rule, not a target.")
-                            .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+
+                // What-if concentration (class + sector)
                 let whatIfHoldings = portfolio.positions.map {
                     (symbol: $0.symbol, value: holdingValue($0.symbol, perShare: currentPrice($0.symbol) ?? $0.costBasis, shares: $0.shares))
                 }
@@ -4614,62 +4753,70 @@ struct MarketsView: View {
                     }
                 }
 
-                if let mtf = store.multiTimeframe[idea.symbol.uppercased()] {
-                    HStack(spacing: DS.Space.sm) {
-                        Image(systemName: mtf.aligned ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                            .font(.system(size: 12)).foregroundStyle(mtf.aligned ? DS.Palette.successSoft : DS.Palette.warningSoft)
-                        Text("Daily \(mtf.daily.rawValue) · Weekly \(mtf.weekly.rawValue)")
-                            .font(.caption).foregroundStyle(.white)
-                        Spacer()
+                // Cluster check (concentration-in-disguise check — moved from buy-block to Context).
+                if a.action == .buy || a.action == .strongBuy {
+                    let candReturns = StockSagePortfolioAnalytics.dailyReturns(idea.spark)
+                    let heldSeries = portfolio.positions.compactMap { p -> (symbol: String, returns: [Double])? in
+                        guard let sp = store.ideas.first(where: { $0.symbol.uppercased() == p.symbol.uppercased() })?.spark,
+                              sp.count >= 2 else { return nil }
+                        return (p.symbol, StockSagePortfolioAnalytics.dailyReturns(sp))
                     }
-                    Text(mtf.note).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                } else if ToolPolicy.isExternalAllowed
-                           && !ProcessInfo.processInfo.arguments.contains("--qa")
-                           && !mtfFetchCompleted.contains(idea.symbol.uppercased()) {
-                    // Fetch is in progress — show spinner. Once the .task marks the symbol in
-                    // mtfFetchCompleted the spinner is replaced by the unavailable fallback below,
-                    // preventing a permanent spinner on network fetch failure.
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small).tint(DS.Palette.accent)
-                        Text("Checking the weekly timeframe…").font(.caption2).foregroundStyle(.secondary)
-                    }
-                } else {
-                    // Either external access is off, --qa is set, OR the fetch completed without
-                    // writing data (network failure / no history). All three paths land here.
-                    Text("Weekly timeframe unavailable.").font(.caption2).foregroundStyle(.secondary)
-                }
-
-                if !a.rationale.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Why").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
-                        ForEach(Array(a.rationale.enumerated()), id: \.offset) { _, reason in
-                            HStack(alignment: .top, spacing: 6) {
-                                Image(systemName: "circle.fill").font(.system(size: 4)).foregroundStyle(.secondary).padding(.top, 6)
-                                    .accessibilityHidden(true)   // decorative bullet
-                                Text(reason).font(.caption).foregroundStyle(DS.Palette.textSecondary)
-                                    .fixedSize(horizontal: false, vertical: true)
+                    let uncheckedCount = portfolio.positions.count - heldSeries.count
+                    if let cc = StockSageClusterCheck.check(candidate: idea.symbol, candidateReturns: candReturns, holdings: heldSeries) {
+                        // Show the verdict either way: a warning when it concentrates,
+                        // an affirmation when it genuinely diversifies the checked subset.
+                        // Suppress the green affirmation when holdings were skipped (no series
+                        // on the board) — we can't claim diversification on data we didn't check.
+                        let cColor = cc.isConcentrating ? DS.Palette.warningSoft : DS.Palette.textSecondary
+                        let cIcon = cc.isConcentrating ? "exclamationmark.triangle.fill" : "checkmark.shield.fill"
+                        let note: String = {
+                            if !cc.isConcentrating && uncheckedCount > 0 {
+                                return cc.note + " (among \(heldSeries.count) holdings with history — \(uncheckedCount) had no series and were not checked)"
                             }
+                            return cc.note
+                        }()
+                        if cc.isConcentrating || uncheckedCount == 0 {
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: cIcon).font(.system(size: 11)).foregroundStyle(cColor)
+                                Text(note).font(.caption2).foregroundStyle(cColor).fixedSize(horizontal: false, vertical: true)
+                            }
+                        } else {
+                            // Partial coverage — show without the green checkmark to avoid over-affirming.
+                            Text(note).font(.caption2).foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Why: \(a.rationale.joined(separator: ". "))")
                 }
 
-                positionSizerPanel(idea)
-
-                HStack(spacing: DS.Space.sm) {
-                    Button { Task { await store.runBacktest(symbol: idea.symbol) } } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "clock.arrow.circlepath").font(.system(size: 11, weight: .semibold))
-                            Text("Backtest 5 years").font(.system(size: 11.5, weight: .semibold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 11).padding(.vertical, 6)
-                        .background(Color.white.opacity(0.10), in: Capsule())
-                        .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                // Liquidity
+                if let liq = store.liquidity[idea.symbol.uppercased()] {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: liq.tier == .thin ? "drop.triangle.fill" : "drop.fill")
+                            .font(.system(size: mvFont11))
+                            .foregroundStyle(liq.tier == .thin ? DS.Palette.warningSoft : .secondary)
+                        Text(liq.note).font(.caption2)
+                            .foregroundStyle(liq.tier == .thin ? DS.Palette.warningSoft : .secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .buttonStyle(LuxPressStyle()).disabled(store.isBacktesting)
+                }
 
+                // Seasonality
+                if let s = store.seasonality[idea.symbol.uppercased()] {
+                    // UTC, matching compute()'s bucketing — a LOCAL month can disagree near a
+                    // boundary and highlight the wrong bucket's stat.
+                    let m = StockSageSeasonality.currentMonth()
+                    if let stat = StockSageSeasonality.stat(s, month: m), stat.samples > 0 {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "calendar").font(.system(size: 11)).foregroundStyle(.secondary)
+                            Text(stat.note(monthName: DateFormatter().monthSymbols[m - 1]))
+                                .font(.caption2)
+                                .foregroundStyle(stat.isReliable ? .secondary : DS.Palette.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+
+                // ── 11. CTA buttons LAST ─────────────────────────────────────────────────
+                HStack(spacing: DS.Space.sm) {
                     if isLoggableIdea(a.action) {
                         Button { prefillTradeFromIdea(idea) } label: {
                             HStack(spacing: 6) {
@@ -4692,8 +4839,15 @@ struct MarketsView: View {
                             guard let acct = Double(sizerAccount), let rp = Double(sizerRiskPct) else { return nil }
                             return StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: s)
                         }
+                        // aa#4: compute ladder + chandelier for copy plan inclusion.
+                        let planLadder: PartialLadder? = {
+                            guard let stop = a.stopPrice, let target = a.targetPrice else { return nil }
+                            return StockSagePartialLadder.levels(entry: idea.price, stop: stop, target: target, rungs: 3)
+                        }()
+                        let planChandelier: Double? = store.trailingStop[idea.symbol.uppercased()]?.level
                         var plan = StockSageTradePlan.text(symbol: idea.symbol, market: idea.market, price: idea.price,
-                                                           advice: a, rewardRisk: rr, size: size, flags: riskFlags)
+                                                           advice: a, rewardRisk: rr, size: size, flags: riskFlags,
+                                                           ladder: planLadder, chandelierLevel: planChandelier)
                         // Append the net R:R and the pre-trade gate verdict that the sheet
                         // already displays — so the pasted broker plan can't disagree with
                         // the on-screen go/no-go (mirrors the netRR wiring at lines ~4218-4232).
@@ -4742,10 +4896,23 @@ struct MarketsView: View {
                         .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                     }
                     .buttonStyle(LuxPressStyle())
-                    .help("Copy a clean text trade plan (entry/stop/target/R:R/size/flags) to the clipboard")
-                }
+                    .help("Copy a clean text trade plan (entry/stop/target/R:R/size/flags/scale-out) to the clipboard")
 
-                if store.backtestSymbol == idea.symbol { backtestPanel }
+                    // aa#5: Backtest trigger moved out of primary button row — it is evidence,
+                    // not a commit action. Placed last so the two commit buttons (Log / Copy) are
+                    // clearly the primary actions.
+                    Button { Task { await store.runBacktest(symbol: idea.symbol) } } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "clock.arrow.circlepath").font(.system(size: 11, weight: .semibold))
+                            Text("Backtest 5 years").font(.system(size: 11.5, weight: .semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 11).padding(.vertical, 6)
+                        .background(Color.white.opacity(0.10), in: Capsule())
+                        .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+                    }
+                    .buttonStyle(LuxPressStyle()).disabled(store.isBacktesting)
+                }
 
                 Text(a.caveat).font(.caption2).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
