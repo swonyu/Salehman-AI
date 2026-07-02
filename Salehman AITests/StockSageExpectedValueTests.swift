@@ -955,7 +955,7 @@ struct StockSageExpectedValueTests {
     }
 
     @Test func momentumQualityNonNilWhenClosesLongEnoughForEfficiencyRatio() {
-        // 21 bars: efficiencyRatio fires (count > 20), so at least one signal is computable
+        // 22 bars: efficiencyRatio fires (count > 20), so at least one signal is computable
         // and momentumQuality() returns a REAL value — stored, not nil.
         let justEnough = Array(stride(from: 100.0, through: 121.0, by: 1.0))  // 22 bars, monotone up
         #expect(justEnough.count == 22)
@@ -969,5 +969,24 @@ struct StockSageExpectedValueTests {
         // (macd and returnOverPeriod may or may not be computable at 22 bars — we only assert ≥ 1/3
         // so this test is resilient to indicator-bar-count changes.)
         #expect((q ?? 0) >= 1.0 / 3.0)
+    }
+
+    @Test func momentumQualityAtExactlyTwentyOneBarsUsesOnlyTheEfficiencyRatioSignal() {
+        // THE partial-signal boundary (delta-verify wave 2 finding): at exactly 21 bars,
+        // efficiencyRatio fires (21 > 20) but returnOverPeriod(period: 21) does NOT
+        // (21 > 21 is false) and macd (needs ≥ 35) does not — so the quality is computed
+        // over a ONE-signal denominator (never counting unavailable signals as cold), and
+        // the 1.0 unknown-sentinel is unreachable. Pins the intermediate state so a future
+        // indicator-threshold change can't silently alter the denominator undetected.
+        let at21 = Array(stride(from: 100.0, through: 120.0, by: 1.0))  // 21 bars, monotone up
+        #expect(at21.count == 21)
+        #expect(StockSageIndicators.efficiencyRatio(at21) != nil)                 // fires
+        #expect(StockSageIndicators.returnOverPeriod(at21, period: 21) == nil)    // does NOT fire
+        #expect(StockSageIndicators.macd(at21) == nil)                            // does NOT fire
+        let stub = idea("X", conviction: 0.8, stop: 90, target: 120)
+        let q = StockSageExpectedValue.momentumQuality(for: stub, closes: at21)
+        // Monotone up → ER = 1.0 (hot) → 1 hot of 1 available = exactly 1.0 (a REAL measured
+        // value here, not the total==0 sentinel — that path needs ER to be uncomputable too).
+        #expect(abs(q - 1.0) < 1e-9)
     }
 }

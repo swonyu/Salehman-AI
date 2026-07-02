@@ -53,6 +53,9 @@ struct MarketsView: View {
     @ScaledMetric(relativeTo: .caption2) private var mvFont9: CGFloat = 9
     @ScaledMetric(relativeTo: .caption2) private var mvFont10: CGFloat = 10
     @ScaledMetric(relativeTo: .caption2) private var mvFont11: CGFloat = 11
+    // 11.5 gets its own token (not rounded into mvFont11) so the "Find ideas" button keeps its
+    // exact pre-Dynamic-Type visible size at the default text setting.
+    @ScaledMetric(relativeTo: .caption2) private var mvFont11_5: CGFloat = 11.5
     @ScaledMetric(relativeTo: .caption2) private var mvFont12: CGFloat = 12
     @ScaledMetric(relativeTo: .caption2) private var mvFont13: CGFloat = 13
     @ScaledMetric(relativeTo: .caption2) private var mvFont14: CGFloat = 14
@@ -2924,7 +2927,7 @@ struct MarketsView: View {
                                 Text(store.isLoadingIdeas ? "Analyzing…" : "Find ideas")
                             }
                         }
-                        .font(.system(size: mvFont11, weight: .semibold)).contentTransition(.opacity)
+                        .font(.system(size: mvFont11_5, weight: .semibold)).contentTransition(.opacity)
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 11).padding(.vertical, 6)
@@ -3780,7 +3783,7 @@ struct MarketsView: View {
                             Circle().fill(mqColor).frame(width: 5, height: 5)
                             Text(mqLabel).font(.system(size: mvFont8)).foregroundStyle(mqColor)
                         }
-                        .help("Momentum read: ER trend + MACD histogram + 21-day return — a 1-day blip is not a 3-12d win. Descriptive, not predictive.")
+                        .help("Momentum read: ER trend + MACD histogram + 21-day return — short histories may use fewer than 3 signals. A 1-day blip is not a 3-12d win. Descriptive, not predictive.")
                     }
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right").font(.system(size: mvFont8)).foregroundStyle(.secondary)
