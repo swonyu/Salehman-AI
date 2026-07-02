@@ -456,6 +456,12 @@ final class StockSageStore: ObservableObject {
                    rotation.isRotatingIn {
                     extraNotes.append("⚠ " + rotation.note)
                 }
+                // Execution-timing advisory (week-horizon velocity research #2): flag-only, never
+                // touches score/conviction/sizing — see StockSageExecutionTiming's header for the
+                // evidence and the .bullTrend/.bearTrend-only gate.
+                if let timingNote = StockSageExecutionTiming.sessionNote(action: advice.action, regime: advice.regime) {
+                    extraNotes.append("⏱ " + timingNote)
+                }
                 if !extraNotes.isEmpty {
                     advice = TradeAdvice(action: advice.action, conviction: advice.conviction,
                                          regime: advice.regime, rationale: advice.rationale + extraNotes,
