@@ -86,7 +86,7 @@ struct MarketsTodayActionsCard: View {
                     if plan.isCrypto {
                         Text("24/7").font(.system(size: font8)).foregroundStyle(DS.Palette.warningSoft)
                     }
-                    Text(String(format: "%+.3fR/day", plan.velocity)).font(.system(size: 11, design: .monospaced))
+                    Text(String(format: "%+.3fR/day gross", plan.velocity)).font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(DS.Palette.successSoft)
                     // Same de-rank flags the main ideas/velocity boards already show — fastLane()
                     // demotes but does not EXCLUDE below-floor/low-conviction ideas, so a row here
@@ -116,6 +116,18 @@ struct MarketsTodayActionsCard: View {
                         .font(.system(size: font8, weight: .semibold)).foregroundStyle(DS.Palette.danger)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                // Caution: show the first warn reason as a visible secondary line for sighted users
+                // (the a11y label already carries this, but sighted users had no way to see the reason
+                // without a tooltip). lineLimit(1) keeps the row tight; '+N more' if several warns.
+                if plan.gate.decision == .caution {
+                    let warns = plan.gate.checks.filter { $0.level == .warn }
+                    if let first = warns.first {
+                        let more = warns.count > 1 ? " +\(warns.count - 1) more" : ""
+                        Text("⚠ \(first.label)\(more)")
+                            .font(.system(size: font8)).foregroundStyle(DS.Palette.warningSoft)
+                            .lineLimit(1)
+                    }
+                }
             }
             .padding(.horizontal, DS.Space.sm).padding(.vertical, 6)
             .background(DS.Bezel.cardFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -142,9 +154,17 @@ struct MarketsTodayActionsCard: View {
         let color: Color = gate.decision == .clear ? DS.Palette.successSoft
             : (gate.decision == .caution ? DS.Palette.warningSoft : DS.Palette.danger)
         let label = gate.decision == .clear ? "CLEAR" : (gate.decision == .caution ? "CAUTION" : "BLOCKED")
+        // Build a .help string from the warn/fail check labels so sighted users can hover-reveal
+        // the gate reason without opening the detail sheet.
+        let reasonLabels = gate.checks.filter { $0.level == .warn || $0.level == .fail }.map(\.label)
+        let helpText: String = {
+            if reasonLabels.isEmpty { return "\(label) gate verdict." }
+            return "\(label): \(reasonLabels.joined(separator: " · "))"
+        }()
         Text(label)
             .font(.system(size: font8, weight: .bold)).foregroundStyle(color)
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(color.opacity(0.15), in: Capsule())
+            .help(helpText)
     }
 }

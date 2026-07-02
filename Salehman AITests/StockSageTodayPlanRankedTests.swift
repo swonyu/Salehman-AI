@@ -86,7 +86,9 @@ struct StockSageTodayPlanRankedTests {
         #expect(lines.count >= plans.count)
         for p in plans {
             #expect(text.contains(p.symbol))
-            #expect(text.contains("R/day"))
+            // wave-12 fix #7: copyAllText emits "%+.3fR/day gross" (F29/F30 tag); pin the
+            // full substring so a tag-stripping regression is caught immediately.
+            #expect(text.contains("R/day gross"))
             // Adaptive price: ≥$1 → %.2f, sub-dollar → %.4f, sub-cent → %.6f.
             // These plans use price=100/stop≥95, so %.2f applies (but use the same
             // adaptive logic rather than hard-coding %.2f so the test stays honest).

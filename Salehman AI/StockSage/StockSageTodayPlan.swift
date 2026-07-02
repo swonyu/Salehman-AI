@@ -47,7 +47,7 @@ enum StockSageTodayPlan {
         }
         var n = 1
         lines.append("\(n). Best bet: \(idea.symbol) (\(a.action.rawValue))"
-            + (ev.map { String(format: " — est. EV %+.2fR", $0.evR) } ?? "")); n += 1
+            + (ev.map { String(format: " — est. EV %+.2fR (gross)", $0.evR) } ?? "")); n += 1
 
         let gateExtra = (gate.fails > 0 || gate.warns > 0) ? " (\(gate.fails) fail, \(gate.warns) warn)" : ""
         lines.append("\(n). Gate: \(gate.decision.rawValue)\(gateExtra)"); n += 1
@@ -149,7 +149,7 @@ enum StockSageTodayPlan {
         }
         for (i, p) in plans.enumerated() {
             var line = "#\(i + 1). \(p.symbol)\(p.isCrypto ? " (24/7 crypto)" : "")"
-                + " — \(String(format: "%+.3fR/day", p.velocity))"
+                + " — \(String(format: "%+.3fR/day gross", p.velocity))"
                 + " | entry \(fmt(p.entry)) stop \(fmt(p.stop)) target \(fmt(p.target))"
             if let sh = p.shares, let dr = p.dollarsAtRisk {
                 line += " | \(sh) sh (≈$\(Int(dr.rounded())) at risk)"

@@ -58,6 +58,12 @@ struct MoneyVelocitySummary: Sendable, Equatable {
 }
 
 enum StockSageExpectedValue {
+    // MARK: - Band display constant (F22)
+    // Single source of truth for the assumed win-probability band displayed across the UI.
+    // Derived directly from the linear prior: conviction=0 → 0.35, conviction=1 → 0.35+0.23=0.58.
+    // Every display site that previously hardcoded "35-58%" or "35–58%" now interpolates this.
+    nonisolated static let assumedWinBandLabel = "35–58%"
+
     /// Conviction (0–1) → an estimated win probability. With a fitted `calibration` (learned from
     /// realized outcomes) it returns the MEASURED, conservative win rate for that conviction band;
     /// without one it falls back to the conservative linear prior (0 → 35%, 1 → 58%). conviction is
@@ -825,7 +831,7 @@ enum StockSageExpectedValue {
         var lines = ["Money-velocity playbook — estimates, not advice. Size every entry with a stop."]
         var n = 1
         if let sym = s.bestSymbol, let ev = s.bestEV {
-            lines.append("\(n). Best bet now: \(sym) — est. EV \(String(format: "%+.2f", ev))R. Enter only with a defined stop.")
+            lines.append("\(n). Best bet now: \(sym) — est. EV \(String(format: "%+.2f", ev))R (gross). Enter only with a defined stop.")
             n += 1
         }
         if let sym = s.fastestSymbol, let v = s.fastestVelocity {

@@ -53,7 +53,7 @@ enum StockSageGlossary {
     nonisolated static func explain(_ term: MoneyVelocityTerm) -> String {
         switch term {
         case .ev:
-            return "Expected value (R) = pWin·reward − (1−pWin), where pWin is an ESTIMATE mapped from conviction (a conservative 35–58%), not a real probability. It ranks payoff per trade; it does not predict any single outcome."
+            return "Expected value (R) = pWin·reward − (1−pWin), where pWin is an ESTIMATE mapped from conviction (a conservative \(StockSageExpectedValue.assumedWinBandLabel)), not a real probability. It ranks payoff per trade; it does not predict any single outcome."
         case .velocity:
             return "Velocity = EV ÷ typical hold = expected R per DAY. A setup that resolves faster compounds more, so it can outrank an equal-EV slower one. Built on an estimated hold — a rough assumption, not a measurement."
         case .fastLane:

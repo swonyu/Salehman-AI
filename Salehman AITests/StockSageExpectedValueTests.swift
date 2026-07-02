@@ -1073,4 +1073,18 @@ struct StockSageExpectedValueTests {
         #expect(note.isEmpty,
                 "financing note must be empty when rate=0 — got: '\(note)'")
     }
+
+    // F22 (wave-12): the assumedWinBandLabel constant must stay consistent with the
+    // numeric band endpoints produced by winProbEstimate — the label is a DISPLAY string
+    // that documents the two boundary values.  If either endpoint drifts the constant
+    // must be updated simultaneously (single source of truth).
+    @Test func assumedWinBandLabelMatchesBandEndpoints() {
+        let low  = EV.winProbEstimate(conviction: 0)    // conviction=0 → floor of the prior
+        let high = EV.winProbEstimate(conviction: 1)    // conviction=1 → ceiling of the prior
+        let lowPct  = Int((low  * 100).rounded())       // 0.35 → 35
+        let highPct = Int((high * 100).rounded())       // 0.58 → 58
+        let expected = "\(lowPct)–\(highPct)%"          // "35–58%" (en-dash, matches the constant)
+        #expect(EV.assumedWinBandLabel == expected,
+                "assumedWinBandLabel '\(EV.assumedWinBandLabel)' out of sync with the numeric band '\(expected)'")
+    }
 }

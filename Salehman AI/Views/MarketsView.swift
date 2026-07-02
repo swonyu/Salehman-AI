@@ -80,6 +80,9 @@ struct MarketsView: View {
     /// Tapped idea → per-symbol detail sheet (full advice + larger sparkline + backtest).
     @State private var selectedIdea: StockSageIdea?
     @State private var ideasCopied = false
+    /// Feedback state for the sheet's pinned-bar "Copy plan" button — mirrors the ideasCopied
+    /// pattern (2s revert). Reset on sheet dismiss via .onChange(of: selectedIdea).
+    @State private var planCopied = false
     /// Kelly position-sizer inputs (interactive, no fetch).
     @State private var kellyWinRate = "55"
     @State private var kellyPayoff = "2.0"
@@ -213,6 +216,9 @@ struct MarketsView: View {
             }
         }
         .sheet(item: $selectedIdea) { ideaDetailSheet($0) }
+        // Reset plan-copy feedback when the sheet closes (selectedIdea → nil) so a
+        // re-opened sheet never shows a stale "Copied" state from the previous session.
+        .onChange(of: selectedIdea) { _, newVal in if newVal == nil { planCopied = false } }
     }
 
     /// Honest feed status: the live (green) note once real quotes land, otherwise
@@ -2019,7 +2025,7 @@ struct MarketsView: View {
             }
             // Time-stop: nudge when a position has outlived its planned hold window (the
             // asset-class velocity assumption) — dead money the loss column never shows.
-            let plannedHold = trade.symbol.uppercased().hasSuffix("-USD") ? Int(cryptoHoldDays) : Int(equityHoldDays)
+            let plannedHold = StockSageAllocation.assetClass(trade.symbol) == "Crypto" ? Int(cryptoHoldDays) : Int(equityHoldDays)
             if let ts = StockSageTimeStop.suggest(openedAt: trade.openedAt, now: Date(), daysToHold: plannedHold), ts.shouldExit {
                 Text("⏳ \(ts.rationale)").font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2876,7 +2882,7 @@ struct MarketsView: View {
                     } else {
                         Label("EV win-rates are an assumed estimate — run the Strategy backtest to calibrate", systemImage: "exclamationmark.triangle.fill")
                             .font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
-                            .help("Until a backtest runs, EV uses a cautious hand-set win-prob band (35–58%), not measured rates.")
+                            .help("Until a backtest runs, EV uses a cautious hand-set win-prob band (\(StockSageExpectedValue.assumedWinBandLabel)), not measured rates.")
                     }
                 }
                 Spacer()
@@ -3039,7 +3045,7 @@ struct MarketsView: View {
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background((ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft).opacity(0.14), in: Capsule())
                         .frame(minWidth: 72, alignment: .trailing)
-                        .help("Gross EV — before round-trip frictions. Net EV and velocity are shown in the fast lane and detail sheet. Conviction→win-prob estimate × reward:risk. An estimate, not a forecast.")
+                        .help("Gross EV — before round-trip frictions. The detail sheet's Evidence section shows gross + net velocity, and the net-cost breakdown. Conviction→win-prob estimate × reward:risk. An estimate, not a forecast.")
                 }
                 if a.timeframeAligned {
                     // RANKING_BACKLOG #12 (reframed, pure observer) — display-only badge, never a
@@ -3099,8 +3105,8 @@ struct MarketsView: View {
             }
             convictionMeter(a.conviction, color: actionColor(a.action))
                 .help(store.convictionCalibration.map { cal in
-                    "Conviction — rules-based signal strength; win-rate mapped from \(cal.sampleSize) realized trades."
-                } ?? "Conviction — a rules-based signal strength, not a probability. Estimated win-rate range ~35-58%, not a forecast.")
+                    "Conviction — a rules-based score; win-rate mapped from \(cal.sampleSize) realized trades."
+                } ?? "Conviction — a rules-based signal strength, not a probability. Estimated win-rate range ~\(StockSageExpectedValue.assumedWinBandLabel), not a forecast.")
             if idea.spark.count >= 2 {
                 Sparkline(values: idea.spark)
                     .stroke(sparkColor(idea.spark),
@@ -3358,7 +3364,7 @@ struct MarketsView: View {
                     }
                     HStack(spacing: DS.Space.sm) {
                         Text(idea.symbol).font(.system(size: mvFont16, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                        ideaMetric("Est. EV", String(format: "%+.2fR", ev.evR), color: DS.Palette.successSoft)
+                        ideaMetric("Est. EV", String(format: "%+.2fR (gross)", ev.evR), color: DS.Palette.successSoft)
                         ideaMetric("R:R", String(format: "%.1f:1", ev.rewardR))
                         ideaMetric("Win est.", String(format: "~%.0f%%", ev.winProbEstimate * 100))
                         if idea.advice.suggestedWeight > 0 {
@@ -3457,7 +3463,7 @@ struct MarketsView: View {
                             ideaMetric("Shares", "\(p.shares)")
                             ideaMetric("At risk", String(format: "$%.0f", p.dollarsAtRisk), color: DS.Palette.warningSoft)
                             ideaMetric("Notional", String(format: "$%.0f", p.notional))
-                            ideaMetric("EV", String(format: "%+.2fR", p.evR), color: DS.Palette.successSoft)
+                            ideaMetric("EV", String(format: "%+.2fR (gross)", p.evR), color: DS.Palette.successSoft)
                             Spacer(minLength: 0)
                         }
                     }
@@ -3466,7 +3472,7 @@ struct MarketsView: View {
                         Button {
                             let lines = ["Capital allocation — \(String(format: "$%.0f", plan.account)) account, heat \(String(format: "%.1f%%", plan.totalHeat * 100)) (cap \(String(format: "%.0f%%", plan.maxHeat * 100)))."]
                                 + plan.positions.map { p in
-                                    "\(p.symbol): \(p.shares) sh · \(String(format: "%.2f%%", p.riskFraction * 100)) risk · \(String(format: "$%.0f", p.dollarsAtRisk)) at risk · \(String(format: "$%.0f", p.notional)) notional · EV \(String(format: "%+.2fR", p.evR))"
+                                    "\(p.symbol): \(p.shares) sh · \(String(format: "%.2f%%", p.riskFraction * 100)) risk · \(String(format: "$%.0f", p.dollarsAtRisk)) at risk · \(String(format: "$%.0f", p.notional)) notional · EV \(String(format: "%+.2fR (gross)", p.evR))"
                                 }
                                 + [plan.caveat]
                             NSPasteboard.general.clearContents()
@@ -3493,7 +3499,7 @@ struct MarketsView: View {
     // fitted calibration when one exists, else the conservative linear prior). The "Deploy capital"
     // plan layers on top: regime sizing bias, per-symbol vol-regime brake, correlation de-weighting,
     // and the total-heat cap — those are the genuine additions the Deploy plan makes.
-    private static let sizeMetricHelp = "Size uses the calibrated win-prob when a journal or backtest calibration is fitted (the same win-rate shown in the EV chip), or the conservative ~35–58% prior otherwise. The ‘Deploy capital’ plan is the one to act on — it applies: vol-targeting shrink for high-vol names → per-symbol vol-regime brake → correlation de-weighting → heat cap on top."
+    private static let sizeMetricHelp = "Size uses the calibrated win-prob when a journal or backtest calibration is fitted (the same win-rate shown in the EV chip), or the conservative ~\(StockSageExpectedValue.assumedWinBandLabel) prior otherwise. The ‘Deploy capital’ plan is the one to act on — it applies: vol-targeting shrink for high-vol names → per-symbol vol-regime brake → correlation de-weighting → heat cap on top."
 
     // Honest "are these EV numbers measured or assumed?" chip — reused on every EV-headline surface.
     // "win% assumed" / "win% measured · n=X": the explicit "win%" prefix tells the reader what
@@ -3506,7 +3512,7 @@ struct MarketsView: View {
         } else {
             Label("win% assumed", systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
-                .help("Win-rate uses a cautious hand-set band (35–58%), not measured rates — run the Strategy backtest to calibrate.")
+                .help("Win-rate uses a cautious hand-set band (\(StockSageExpectedValue.assumedWinBandLabel)), not measured rates — run the Strategy backtest to calibrate.")
         }
     }
 
@@ -3530,7 +3536,7 @@ struct MarketsView: View {
                     HStack(alignment: .top, spacing: DS.Space.lg) {
                         if let sym = s.bestSymbol, let ev = s.bestEV {
                             VStack(alignment: .leading, spacing: 2) {
-                                summaryStat("Best now", sym, String(format: "%+.2fR EV", ev))
+                                summaryStat("Best now", sym, String(format: "%+.2fR EV (gross)", ev))
                                 if let ep = store.earnings[sym.uppercased()], ep.isWarning {
                                     let badge = ep.severity == .imminent ? "⚠︎ earnings ~\(ep.daysUntil)d" : "earnings ~\(ep.daysUntil)d"
                                     Text(badge).font(.system(size: mvFont8))
@@ -3641,13 +3647,14 @@ struct MarketsView: View {
     /// for the size line, and `StockSageTodayPlan.build` for the copy action — identical to
     /// `bestOpportunityCard`, just rendered globally instead of only inside the Ideas tab.
     /// Renders nothing without a positive-EV buy idea (bestOpportunity's own `e.evR > 0`
-    /// guard) — never manufactures a move. Crypto (`-USD` suffix, the SAME predicate
-    /// `fastLaneStrip` already uses) gets the warning tint + an honest 24h-range variance
-    /// line from the idea's ALREADY-STORED `realizedVol` — no new volatility computation.
+    /// guard) — never manufactures a move. Crypto (`StockSageAllocation.assetClass == "Crypto"`,
+    /// the SAME predicate `fastLaneStrip` already uses) gets the warning tint + an honest
+    /// 24h-range variance line from the idea's ALREADY-STORED `realizedVol` — no new volatility
+    /// computation.
     @ViewBuilder private var bestOpportunityCTA: some View {
         if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration) {
             let idea = best.idea, ev = best.ev
-            let isCrypto = idea.symbol.hasSuffix("-USD")
+            let isCrypto = StockSageAllocation.assetClass(idea.symbol) == "Crypto"
             let variance: Double? = isCrypto ? StockSageExpectedValue.dailyVariancePct(annualizedVol: idea.realizedVol) : nil
             let sizeInfo: (text: String, isWarning: Bool) = {
                 if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
@@ -3673,7 +3680,7 @@ struct MarketsView: View {
                 stopText: idea.advice.stopPrice.map { "stop \(adaptivePrice($0))" },
                 sizeText: sizeInfo.text,
                 sizeIsWarning: sizeInfo.isWarning,
-                evText: String(format: "EV %+.2fR", ev.evR),
+                evText: String(format: "EV %+.2fR (gross)", ev.evR),
                 caveatText: MoneyVelocityCopy.bestOpportunity,
                 varianceText: variance.map { String(format: "Typical 24h range ±%.1f%% — size down for 24/7.", $0) },
                 accessibilityText: accessibilityText,
@@ -3848,7 +3855,7 @@ struct MarketsView: View {
                     let mqLabel = mq >= 2.0/3.0 ? "hot" : mq >= 1.0/3.0 ? "mixed" : "cold"
                     label += ", momentum \(mqLabel)"
                 }
-                if idea.symbol.hasSuffix("-USD") { label += ", 24/7 volatile" }
+                if StockSageAllocation.assetClass(idea.symbol) == "Crypto" { label += ", 24/7 volatile" }
                 if !earnFlag.badge.isEmpty { label += ", \(earnFlag.badge)" }
                 if floorFlag.isDeranked { label += ", below net-cost floor" }
                 label += ". Tap for the plan."
@@ -4440,8 +4447,8 @@ struct MarketsView: View {
                 // Conviction meter + honesty caption (hc#2)
                 convictionMeter(a.conviction, color: actionColor(a.action))
                     .help(store.convictionCalibration.map { cal in
-                        "Signal strength — rules-based signal strength; win-rate mapped from \(cal.sampleSize) realized trades."
-                    } ?? "Signal strength — a rules-based signal strength, not a probability. Estimated win-rate range ~35-58%, not a forecast.")
+                        "Signal strength — a rules-based score; win-rate mapped from \(cal.sampleSize) realized trades."
+                    } ?? "Signal strength — a rules-based score, not a probability. Estimated win-rate range ~\(StockSageExpectedValue.assumedWinBandLabel), not a forecast.")
                 Text("Signal strength \(Int(a.conviction * 100))/100 · \(a.regime.rawValue)")
                     .font(.caption).foregroundStyle(.secondary)
                 // Always-visible disclaimer: meter % must not read as P(win). (hc#2)
@@ -4515,7 +4522,9 @@ struct MarketsView: View {
                 if !(a.action == .buy || a.action == .strongBuy) { positionSizerPanel(idea) }
 
                 // ── 6. Plan numerics (hc#4 labels: "Base size" / "Regime size" + .help) ─
-                HStack(spacing: 20) {
+                // Spacing reduced to 14 (was 20) — 6 metrics (Price/Stop/Target/Base/Regime/Vol-adj)
+                // need ~427pt with 6-figure crypto prices; at scale≈0.9 they fit in ~392pt available.
+                HStack(spacing: 14) {
                     ideaMetric("Price", adaptivePrice(idea.price))
                     if let s = a.stopPrice { ideaMetric("Stop", adaptivePrice(s), color: DS.Palette.danger) }
                     if let t = a.targetPrice { ideaMetric("Target", adaptivePrice(t), color: DS.Palette.successSoft) }
@@ -4533,7 +4542,26 @@ struct MarketsView: View {
                                    color: adj < a.suggestedWeight ? DS.Palette.successSoft : DS.Palette.accent)
                             .help("Regime size = base half-Kelly × regime bias. The Deploy-capital plan then applies: vol-targeting shrink for high-vol names → per-symbol vol-regime brake → correlation de-weighting → heat cap. (Deploy plan is authoritative.)")
                     }
+                    // Vol-adj: same conditional as the idea card (identical <0.85 gate and value formula).
+                    // Shows only when the vol-regime brake materially cuts size (>15% cut) — same rule
+                    // as the card so the two surfaces can't disagree. Order: Base → Regime → Vol-adj.
+                    if a.suggestedWeight > 0, let vr = idea.volRegime, vr.sizingMultiplier < 0.85 {
+                        ideaMetric("Vol-adj", String(format: "%.1f%%", a.suggestedWeight * vr.sizingMultiplier * 100),
+                                   color: DS.Palette.warningSoft)
+                            .help("Vol-adj size = base half-Kelly × vol-regime brake (current vol elevated vs history). Deploy plan is authoritative — it applies: vol-targeting shrink → per-symbol vol-regime brake → correlation de-weighting → heat cap.")
+                    }
                     Spacer(minLength: 0)
+                }
+                // Regime-size caveat directly under the plan-numerics metrics row — it explains the
+                // Regime size metric there (relocated from the top of the Exit plan section, wave-12).
+                // Stale-regime color branch preserved: amber when regime data is stale.
+                if a.suggestedWeight > 0, store.regime != nil {
+                    Text(store.regimeIsStale
+                         ? "Regime size uses a STALE regime read — re-gauge the regime for a current number."
+                         : "Regime size = base × the regime's risk bias — a gauge, not a forecast; green = a de-risking cut.")
+                        .font(.caption2)
+                        .foregroundStyle(store.regimeIsStale ? DS.Palette.warningSoft : .secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if let stop = a.stopPrice, let target = a.targetPrice,
                    let rr = StockSageRewardRisk.assess(entry: idea.price, stop: stop, target: target) {
@@ -4598,6 +4626,14 @@ struct MarketsView: View {
                 }
 
                 // ── 8. Evidence: net-cost, EV + calibration tag, velocity/floor, backtest ─
+                // "Evidence" header + Divider mirrors "Why" / "Exit plan" / "Context" treatment.
+                // Gated on stop+target OR an active backtest panel — so a stop-less idea with a
+                // running backtest doesn't render the backtest panel header-less between Why and Context.
+                if (a.stopPrice != nil && a.targetPrice != nil) || store.backtestSymbol == idea.symbol {
+                    Divider().opacity(0.2)
+                    Text("Evidence").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 if let stop = a.stopPrice, let target = a.targetPrice {
                     let costs = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
                     // Same financing inputs netEVR/netVelocity/netCostFloorFlag already use — this
@@ -4642,9 +4678,19 @@ struct MarketsView: View {
                     }
                 }
                 if let vel = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
+                    // Item 5 (trust#5 / F29): show gross velocity labeled + net when non-nil so the
+                    // floor de-rank reason is traceable to an actual number shown on this screen.
+                    // NEVER fabricate a net figure when netVelocity returns nil.
+                    let netVel = StockSageExpectedValue.netVelocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
+                    let velText: String = {
+                        if let nv = netVel {
+                            return String(format: "≈ %+.3fR/day gross · %+.3fR/day net after frictions (EV ÷ typical hold) — estimate.", vel, nv)
+                        }
+                        return String(format: "≈ %+.3fR/day gross (EV ÷ typical hold) — faster turnover compounds faster. An estimate.", vel)
+                    }()
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "gauge.with.dots.needle.67percent").font(.system(size: 11)).foregroundStyle(.secondary)
-                        Text(String(format: "≈ %+.3fR/day velocity (EV ÷ typical hold) — faster turnover compounds faster. An estimate.", vel))
+                        Text(velText)
                             .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     // [AUDIT iter6] Honest floor label: shown verbatim when net EV/day (after frictions) is
@@ -4668,33 +4714,20 @@ struct MarketsView: View {
                 if store.backtestSymbol == idea.symbol { backtestPanel }
 
                 // ── 9. "Exit plan" labeled section (sd#4) ───────────────────────────────
-                // Gate the Divider+header on whether at least one child will actually render.
-                // Derived from the real child guards — no guessing:
-                //   • regime caveat: a.suggestedWeight > 0 && store.regime != nil
+                // Simplified to ladder/chandelier only (wave-12): the regime-size caveat was
+                // relocated to directly under the plan-numerics metrics row where it explains
+                // the Regime size metric. hasExitPlanContent now guards only the actual exit content.
                 //   • scale-out ladder: a.stopPrice != nil && a.targetPrice != nil
-                //     (StockSagePartialLadder.levels returns non-nil when stop ≠ entry ≠ target)
                 //   • chandelier: store.trailingStop[symbol] != nil
                 let hasExitPlanContent: Bool = {
-                    if a.suggestedWeight > 0 && store.regime != nil { return true }
                     if a.stopPrice != nil && a.targetPrice != nil { return true }
                     if store.trailingStop[idea.symbol.uppercased()] != nil { return true }
                     return false
                 }()
                 if hasExitPlanContent {
                     Divider().opacity(0.2)
-                    Text("Exit plan").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                    Text("Exit plan").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
                         .accessibilityAddTraits(.isHeader)
-                }
-
-                // Regime-size caveat placed here (was below velocity, now in exit-plan context
-                // where the sizing decision is actually made).
-                if a.suggestedWeight > 0, store.regime != nil {
-                    Text(store.regimeIsStale
-                         ? "Regime size uses a STALE regime read — re-gauge the regime for a current number."
-                         : "Regime size = base × the regime's risk bias — a gauge, not a forecast; green = a de-risking cut.")
-                        .font(.caption2)
-                        .foregroundStyle(store.regimeIsStale ? DS.Palette.warningSoft : .secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 // Scale-out ladder (aa#2: bell buttons per rung to seed price alerts).
@@ -4703,8 +4736,39 @@ struct MarketsView: View {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "stairs").font(.system(size: 11)).foregroundStyle(DS.Palette.textSecondary)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Scale-out (⅓ each) — blended +\(String(format: "%.1f", ladder.blendedExitR))R. Banks gains + cuts variance vs all-at-target; assumes each level fills.")
-                                .font(.caption2).foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                            // Caption + "Arm all 3" button in the same row.
+                            HStack(spacing: 8) {
+                                Text("Scale-out (⅓ each) — blended +\(String(format: "%.1f", ladder.blendedExitR))R. Banks gains + cuts variance vs all-at-target; assumes each level fills.")
+                                    .font(.caption2).foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 0)
+                                // "Arm all 3" — loops all rungs through addPriceAlert using the same
+                                // level-vs-price direction rule as the per-rung bells. Disabled once
+                                // every rung has an existing armed alert (same alreadyArmed predicate).
+                                let allArmed: Bool = ladder.rungs.allSatisfy { rung in
+                                    let d: PriceAlert.Direction = rung.price > idea.price ? .above : .below
+                                    return store.priceAlerts.contains(where: {
+                                        $0.isArmed && $0.symbol == idea.symbol.uppercased()
+                                        && $0.target == rung.price && $0.direction == d
+                                    })
+                                }
+                                Button {
+                                    for rung in ladder.rungs {
+                                        let d: PriceAlert.Direction = rung.price > idea.price ? .above : .below
+                                        store.addPriceAlert(symbol: idea.symbol, target: rung.price, direction: d)
+                                    }
+                                } label: {
+                                    Text("Arm all 3").font(.system(size: 10, weight: .medium))
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(allArmed ? DS.Palette.accent : DS.Palette.textSecondary)
+                                .disabled(allArmed)
+                                .help(allArmed
+                                      ? "All 3 scale-out price alerts are already armed."
+                                      : "Arm price alerts at all 3 scale-out rungs in one tap — same direction rule as the per-rung bells.")
+                                .accessibilityLabel(allArmed
+                                                    ? "All 3 scale-out price alerts already armed"
+                                                    : "Arm all 3 scale-out price alerts")
+                            }   // end HStack (caption + Arm all 3)
                             ForEach(ladder.rungs.indices, id: \.self) { i in
                                 let rung = ladder.rungs[i]
                                 let dir: PriceAlert.Direction = rung.price > idea.price ? .above : .below
@@ -4777,7 +4841,7 @@ struct MarketsView: View {
                 }()
                 if hasContextContent {
                     Divider().opacity(0.2)
-                    Text("Context").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                    Text("Context").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
                         .accessibilityAddTraits(.isHeader)
                 }
 
@@ -4952,10 +5016,19 @@ struct MarketsView: View {
                         Button {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(fullPlanText(for: idea), forType: .string)
+                            planCopied = true
+                            Task { try? await Task.sleep(for: .seconds(2)); planCopied = false }
                         } label: {
                             HStack(spacing: 6) {
-                                Image(systemName: "doc.on.clipboard").font(.system(size: 11, weight: .semibold))
-                                Text("Copy plan").font(.system(size: 11.5, weight: .semibold))
+                                Image(systemName: planCopied ? "checkmark" : "doc.on.clipboard")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .contentTransition(.symbolEffect(.replace))
+                                // Fixed-width frame so the capsule width stays stable when the
+                                // label transitions from "Copy plan" (9 chars) to "Copied" (6).
+                                Text(planCopied ? "Copied" : "Copy plan")
+                                    .font(.system(size: 11.5, weight: .semibold))
+                                    .frame(minWidth: 58, alignment: .leading)
+                                    .contentTransition(.opacity)
                             }
                             .foregroundStyle(.white).padding(.horizontal, 11).padding(.vertical, 6)
                             .background(Color.white.opacity(0.10), in: Capsule())
@@ -5076,7 +5149,10 @@ struct MarketsView: View {
     private func ideaMetric(_ label: String, _ value: String, color: Color = .white) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(label).font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(.secondary)
+                .lineLimit(1)
             Text(value).font(.system(size: 12.5, weight: .semibold, design: .rounded)).foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label) \(value)")
@@ -5299,10 +5375,10 @@ struct BestOpportunityActionCard: View {
             HStack(spacing: 6) {
                 Spacer()
                 Button(action: onCopy) {
-                    Label("Copy plan", systemImage: "checklist").font(.system(size: mvFont9, weight: .medium))
+                    Label("Copy today's plan", systemImage: "checklist").font(.system(size: mvFont9, weight: .medium))
                 }
                 .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
-                .help("Copy a checklist — this move, the pre-trade gate verdict, and the size — to the clipboard. Estimates, not advice.")
+                .help("Copy a checklist — best bet, the pre-trade gate verdict, and the size — to the clipboard. Estimates, not advice.")
             }
         }
     }
