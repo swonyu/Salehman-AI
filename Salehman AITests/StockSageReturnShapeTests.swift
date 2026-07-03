@@ -52,6 +52,20 @@ struct StockSageReturnShapeTests {
         #expect(RS.returnShape(closes: []) == nil)
     }
 
+    // F05-pattern count-boundary straddle for `guard returns.count >= 30` (StockSageReturnShape.swift:49).
+    // The existing test above pins nil BELOW the minimum but nothing pinned non-nil AT it, so an off-by-one
+    // to `>= 31`/`> 30` would pass silently. Fixtures carry a non-flat spread (rets[0] = -0.03) so sd > 0 —
+    // the SECOND guard (line 57) can't be what flips nil, isolating the COUNT guard. The helper inverts
+    // dailyReturns (N returns -> N+1 closes). Derived independently in
+    // scratchpad/derive_returnshape_boundary.swift: 29 returns -> nil · 30 returns -> non-nil (sd 0.00574 > 0).
+    @Test func returnShapeCountBoundaryStraddlesThirty() {
+        var rets29 = [Double](repeating: 0.002, count: 29); rets29[0] = -0.03
+        #expect(RS.returnShape(closes: closes(fromReturns: rets29)) == nil)   // below min -> nil (COUNT, not sd)
+        var rets30 = [Double](repeating: 0.002, count: 30); rets30[0] = -0.03
+        let atMin = RS.returnShape(closes: closes(fromReturns: rets30))
+        #expect(atMin != nil)   // exactly at the minimum -> non-nil; off-by-one to `>= 31`/`> 30` fails HERE
+    }
+
     // Invariants: downside95 non-negative; worstDay ≤ −downside95 (most-negative ≤ the threshold).
     @Test func downsideInvariantsHold() {
         var rets = [Double](repeating: 0.003, count: 35)
