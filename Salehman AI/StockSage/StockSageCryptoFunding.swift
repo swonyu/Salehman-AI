@@ -32,22 +32,33 @@ enum StockSageCryptoFunding {
     nonisolated static let caveat = "Funding is the most regime-dependent cost in crypto and the hardest to estimate honestly — this is an owner-tunable ESTIMATE band, not a forecast and never a quote. It can flip sign (a negative-funding regime pays the long side to hold). Applies to perp/levered positions only. The stop is still the floor."
 
     /// Funding drag in R for a perp position: dailyFunding = annualBps/10 000/365; drag as a
-    /// fraction of 1R = leverage · dailyFunding · holdDays ÷ riskFractionOfNotional. nil on
-    /// degenerate inputs (leverage ≤ 0, holdDays < 0, riskFraction ≤ 0, or an inverted band).
-    nonisolated static func drag(spotNetExpectancyR: Double, riskFractionOfNotional: Double,
+    /// fraction of 1R = leverage · dailyFunding · holdDays ÷ riskFractionOfEquity.
+    ///
+    /// UNITS (the leverage term only exists under EQUITY semantics): riskFractionOfEquity is
+    /// the fraction of account EQUITY at risk per trade (1R = riskFractionOfEquity · equity, the
+    /// app's sizing convention). Funding accrues on the NOTIONAL = leverage · equity, so
+    /// dragR = (leverage·equity·dailyRate·days)/(riskFractionOfEquity·equity) — the shipped
+    /// formula. Under a fraction-of-NOTIONAL reading (1R = f·notional) leverage CANCELS
+    /// (dragR = dailyRate·days/f, no leverage term); this parameter was misnamed
+    /// riskFractionOfNotional until 2026-07-03 — the formula was always the equity one.
+    /// nil on degenerate inputs (leverage ≤ 0, holdDays < 0, riskFraction ≤ 0, or an inverted band).
+    nonisolated static func drag(spotNetExpectancyR: Double, riskFractionOfEquity: Double,
                                  leverage: Double, holdDays: Double,
                                  annualFundingBps: (low: Double, high: Double) = defaultAnnualFundingBps)
         -> CryptoFundingDrag? {
-        guard leverage > 0, holdDays >= 0, riskFractionOfNotional > 0,
+        guard leverage > 0, holdDays >= 0, riskFractionOfEquity > 0,
               annualFundingBps.low <= annualFundingBps.high else { return nil }
         func dragR(_ annualBps: Double) -> Double {
-            leverage * (annualBps / 10_000 / 365) * holdDays / riskFractionOfNotional
+            leverage * (annualBps / 10_000 / 365) * holdDays / riskFractionOfEquity
         }
         let mid = dragR((annualFundingBps.low + annualFundingBps.high) / 2)
         let high = dragR(annualFundingBps.high)
         let after = spotNetExpectancyR - mid
-        let note = String(format: "Est. funding drag over %.0f day(s) at %.1f×: −%.2fR mid (−%.2fR at the high band) off a %+.2fR spot net edge → %+.2fR left (mid). Funding can flip sign — a negative-funding regime PAYS longs to hold. Estimate, not a forecast; the stop is still your floor.",
-                          holdDays, leverage, mid, high, spotNetExpectancyR, after)
+        // Sign-safe: the drag is shown as its signed EFFECT on the edge (%+.2f of −drag), so a
+        // cost renders "-0.09R" and a negative-funding CREDIT renders "+0.65R" — never a
+        // hardcoded minus in front of an already-negative number ("−-0.65R").
+        let note = String(format: "Est. funding effect over %.0f day(s) at %.1f×: %+.2fR mid (%+.2fR at the high band) off a %+.2fR spot net edge → %+.2fR left (mid). Funding can flip sign — a negative-funding regime PAYS longs to hold. Estimate, not a forecast; the stop is still your floor.",
+                          holdDays, leverage, -mid, -high, spotNetExpectancyR, after)
         return CryptoFundingDrag(leverage: leverage, holdDays: holdDays,
                                  annualFundingBpsLow: annualFundingBps.low,
                                  annualFundingBpsHigh: annualFundingBps.high,
