@@ -29,6 +29,15 @@ struct StockSageInputTests {
         #expect(I.percent("nope") == nil)
     }
 
+    @Test func percentStripsThousandsSeparatorSameAsPositiveAmount() {
+        // F04: percent shares `clean()` with positiveAmount — same thousands-separator
+        // stripping, not a separate/divergent parse. "1,000" (default max 100) is comma-stripped
+        // to 1000, which THEN correctly fails the max-100 bound (proves stripping happened,
+        // not that the comma caused the parse to fail some other way).
+        #expect(I.percent("1,000") == nil)
+        #expect(I.percent("1,000", max: 2000) == 1000)      // raised cap: comma-stripped value is accepted
+    }
+
     @Test func nonNegativeAmountAcceptsTypedZeroButNeverDefaultsOne() {
         // Cost basis: 0 is legal (gifted/granted shares) but must be TYPED — blank/unparseable
         // must be nil, never silently 0 (which fabricates a 100%-profit position).
