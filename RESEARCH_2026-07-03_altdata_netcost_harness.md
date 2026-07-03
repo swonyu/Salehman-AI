@@ -66,9 +66,13 @@ about the equity IRRX question.
 
 ## Next step (queued, not forced)
 
-Run the **equity IRRX pilot** on a proper panel the moment one is free: the Yahoo poller's
-1,024-name verification output, or a ≥20-name/≥5-industry Alpha-Vantage-adjusted panel accrued over
-the 25-req/day budget. Populate `earningsExcludedAt` from real earnings dates and run WITH vs WITHOUT.
-An underpowered 6–9-name AV run this session was deliberately declined — a data-starved result would
-pollute the corpus (the mistake to avoid); the runner makes the powered run a fetch-and-go.
+Run the **equity IRRX pilot** on a proper panel the moment a split-adjusted equity source is free.
+**Data-source status (verified 2026-07-03):** the equity path is BLOCKED — Yahoo v8 is throttled
+(poller stuck on Korean symbols), and Alpha Vantage's `TIME_SERIES_DAILY_ADJUSTED` is a **PREMIUM**
+endpoint (free key → rate-limit/premium error, not data); the raw free `TIME_SERIES_DAILY` is
+unusable (split jumps fabricate returns); CoinGecko is crypto-only; Bigdata.com is news/events, not
+prices. Unblock options: (a) the poller's panel once Yahoo cools; (b) a premium AV key; (c) an EODHD
+token or other split-adjusted feed. Given a source, populate `earningsExcludedAt` from real earnings
+dates (Bigdata.com `events_calendar`) and run WITH vs WITHOUT. The runner makes it a fetch-and-go —
+the block is data access, not tooling or effort.
 No engine change ships from any of this without a DSR>0.95 pass **and** owner sign-off (RANKING #10).

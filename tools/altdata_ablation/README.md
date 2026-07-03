@@ -26,11 +26,15 @@ exclusion (the OPEN FRONTIER #1 residual). Context: `skills/money-campaign-map`,
 ## Fetching a panel (Yahoo-free)
 - **Crypto (keyless, abundant):** CoinGecko `coins.marketChart` daily → align → simple returns.
   Category → `industry`; `roundTripBps=70`. (Fenced-domain: machinery validation, not a campaign edge.)
-- **Equity (the campaign target):** Alpha Vantage **`TIME_SERIES_DAILY_ADJUSTED`** (never the RAW
-  `TIME_SERIES_DAILY` — split jumps fabricate returns) for adjusted closes → returns; sector →
-  `industry`; `roundTripBps=13` (US). Earnings dates via AV `EARNINGS.reportedDate` or Bigdata.com
-  `events_calendar` → `earningsExcludedAt`. `TIME_SERIES_DAILY_ADJUSTED` is 20+yr in one call, so a
-  ~20-name / ≥5-industry / 5yr panel is ~20 calls (mind the 25-req/day free-tier cap).
+- **Equity (the campaign target) — BLOCKED on a split-adjusted source (verified 2026-07-03).**
+  You need **split-adjusted** closes (the RAW `TIME_SERIES_DAILY` has split jumps that fabricate
+  returns — never use it). But Alpha Vantage's **`TIME_SERIES_DAILY_ADJUSTED` is a PREMIUM endpoint**
+  — the free key returns a rate-limit/premium error, not data. So the free-tier equity path is
+  closed. A powered equity run needs one of: (a) the Yahoo poller's panel once the throttle clears
+  (`StockSageQuoteService` returns adjusted closes); (b) a **premium** AV key; (c) an EODHD token
+  (see handoff) or another split-adjusted feed. Given a source: sector → `industry`; `roundTripBps=13`
+  (US); earnings dates via Bigdata.com `events_calendar` (or AV `EARNINGS.reportedDate`, also
+  metered) → `earningsExcludedAt`.
 
 ## Earnings-window exclusion (operationalization — a documented choice, not the code's default)
 Mark symbol `s` excluded at a rebalance formed at period `t` if `s` has an earnings date within a
