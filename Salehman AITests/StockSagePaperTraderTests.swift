@@ -292,4 +292,46 @@ struct StockSagePaperTraderTests {
         #expect(store.trades.first(where: { $0.id == b.id })?.isOpen == true)    // B untouched
         #expect(store.open.count == 1 && store.closed.count == 1)
     }
+
+    // MARK: forwardStats — the FORWARD net-of-cost milestone read (DSR/PSR) on the paper record
+
+    /// A CLOSED long paper trade with a chosen realized R: entry 100, stop 90 (risk 10),
+    /// exit = 100 + 10·r ⇒ realizedR == r exactly.
+    private func closedR(_ r: Double) -> TradeRecord {
+        TradeRecord(symbol: "TST", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
+                    openedAt: d(0), exitPrice: 100 + 10 * r, closedAt: d(1))
+    }
+
+    @Test func forwardStatsNilBelowFourClosedTrades() {
+        // 3 closed-with-R → moments() nil → forwardStats nil (honest "too few to read").
+        #expect(StockSagePaperTrader.forwardStats([closedR(2), closedR(-1), closedR(1)]) == nil)
+        // An OPEN trade carries no realized R → does not count toward the 4.
+        let open = StockSagePaperTrader.open(from: idea("Z", price: 100, .buy, stop: 90, target: 120), at: d(0))!
+        #expect(StockSagePaperTrader.forwardStats([closedR(2), closedR(-1), closedR(1), open]) == nil)
+    }
+
+    @Test func forwardStatsComputesWinRateAvgRAndSharpe() {
+        // R = [2, 1, -1, 1.5]. Standalone-derived (/tmp/derive_paperfwd.swift): avgR 0.875, winRate 0.75,
+        // sample-stdev 1.31497782, sharpe 0.66541046.
+        let fs = StockSagePaperTrader.forwardStats([closedR(2), closedR(1), closedR(-1), closedR(1.5)])!
+        #expect(fs.closed == 4)
+        #expect(abs(fs.winRate - 0.75) < 1e-9)
+        #expect(abs(fs.avgR - 0.875) < 1e-9)
+        #expect(abs(fs.sharpe - 0.66541046) < 1e-6)   // mean ÷ SAMPLE stdev (matches the backtester)
+    }
+
+    @Test func forwardStatsWiresRSeriesIntoDeflatedSharpeWithTrialsOne() {
+        let rs = [2.0, 1.0, -1.0, 1.5]
+        let fs = StockSagePaperTrader.forwardStats(rs.map(closedR))!
+        // Independently recompute the deflated Result with the inputs forwardStats should pass: its own
+        // sharpe, n=4, the moments of the R-series, trials:1 (⇒ DSR == PSR, no selection-bias haircut).
+        let m = StockSageDeflatedSharpe.moments(rs)!
+        let expected = StockSageDeflatedSharpe.deflated(observedSharpe: fs.sharpe, nTrades: 4,
+                                                        skew: m.skew, kurtosis: m.kurtosis,
+                                                        trials: 1, varTrialSharpe: 0)
+        #expect(fs.deflated == expected)
+        #expect(fs.deflated.trials == 1)                    // forward OOS ⇒ no NEW selection bias
+        #expect(fs.deflated.dsr == fs.deflated.psr)         // trials:1 ⇒ DSR == PSR
+        #expect(fs.passesForwardBar == fs.deflated.passes)  // milestone bar reflects dsr > 0.95
+    }
 }

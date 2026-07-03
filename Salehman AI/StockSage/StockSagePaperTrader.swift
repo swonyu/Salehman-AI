@@ -118,11 +118,50 @@ enum StockSagePaperTrader {
         return (closes, opens)
     }
 
+    /// FORWARD, out-of-sample, net-of-cost read on the paper record — the campaign's milestone metric
+    /// (DSR > 0.95) applied forward. All from the CLOSED paper trades' realized R (already net-of-cost).
+    /// nil under 4 closed-with-R (moments needs ≥4). The per-trade Sharpe matches StockSageBacktester's
+    /// convention (mean ÷ SAMPLE stdev); `trials: 1` ⇒ DSR == PSR — a forward OOS test of the
+    /// already-selected strategy incurs no NEW selection bias, so no haircut is honest.
+    nonisolated static func forwardStats(_ trades: [TradeRecord]) -> PaperForwardStats? {
+        let rs = trades.filter { !$0.isOpen }.compactMap { $0.realizedR }
+        guard let m = StockSageDeflatedSharpe.moments(rs) else { return nil }   // nil ⇒ <4 closed-with-R
+        let n = rs.count
+        let avgR = rs.reduce(0, +) / Double(n)
+        let variance = rs.reduce(0) { $0 + ($1 - avgR) * ($1 - avgR) } / Double(n - 1)   // sample (n−1)
+        let sd = variance.squareRoot()
+        let sharpe = sd > 0 ? avgR / sd : 0
+        let d = StockSageDeflatedSharpe.deflated(observedSharpe: sharpe, nTrades: n,
+                                                 skew: m.skew, kurtosis: m.kurtosis,
+                                                 trials: 1, varTrialSharpe: 0)
+        let wins = rs.filter { $0 > 0 }.count
+        return PaperForwardStats(closed: n, winRate: Double(wins) / Double(n), avgR: avgR,
+                                 sharpe: sharpe, deflated: d,
+                                 health: StockSageJournal.systemHealth(trades))
+    }
+
     /// Honest framing for any surface that shows the paper track record.
     nonisolated static let caveat =
         "Paper (fake-money) forward test — the engine auto-opens each long idea and marks it to a "
         + "NET-OF-COST fill, closing on stop/target/time-stop. It measures the rules going forward, "
         + "out-of-sample; it is NOT the owner's real trades and does NOT feed win-rate calibration."
+}
+
+/// A FORWARD, out-of-sample, net-of-cost read on the paper track record — the campaign's milestone
+/// metric (DSR > 0.95) applied to the accumulating paper record. Distinct from the strategy backtest's
+/// HISTORICAL DSR: this is genuinely forward (the bars that closed each trade did not exist when the
+/// rules were frozen), so `trials: 1` (no selection-bias haircut) is honest ⇒ DSR == PSR. All fields
+/// derive from the CLOSED paper trades' realized R (already net-of-cost). Labeled PAPER at any surface.
+struct PaperForwardStats: Sendable, Equatable {
+    let closed: Int
+    let winRate: Double
+    let avgR: Double
+    let sharpe: Double                            // per-trade mean ÷ sample-stdev (matches the backtester)
+    let deflated: StockSageDeflatedSharpe.Result  // psr/dsr on the FORWARD R-series
+    let health: SystemHealth?
+    /// dsr > 0.95 — the milestone bar, measured FORWARD/out-of-sample on paper (honest "unproven"
+    /// until enough paper trades resolve).
+    nonisolated var passesForwardBar: Bool { deflated.passes }
 }
 
 // MARK: - Persisted PAPER-trade store (separate from the real journal — never conflated)
@@ -157,6 +196,9 @@ final class StockSagePaperTradeStore: ObservableObject {
     var rDistribution: RDistribution? { StockSageJournal.rDistribution(trades) }
     var expectancyCI: ExpectancyCI? { StockSageJournal.expectancyConfidence(trades) }
     var equityRisk: JournalRisk? { StockSageJournal.equityRisk(trades) }
+    /// The FORWARD net-of-cost milestone read (DSR/PSR) on the paper record — the honest "is the engine
+    /// actually good, going forward?" gauge. nil until ≥4 paper trades have closed.
+    var forwardStats: PaperForwardStats? { StockSagePaperTrader.forwardStats(trades) }
 
     func hasOpen(symbol: String) -> Bool {
         trades.contains { $0.isOpen && $0.symbol.uppercased() == symbol.uppercased() }
