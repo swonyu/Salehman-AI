@@ -358,8 +358,13 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
             // at the exact MLE ln(nPos/nNeg) (the score nPos − n·σ(c) is 0 there; Newton converges
             // immediately — enumeration-proven exact on all 44,850 pairs, worst |dev| 3e-16).
             // The full/2-param paths keep the legacy init: their converged fits are
-            // init-independent, existing fixtures pin their non-converged landings, and any
-            // divergent fit they emit now terminates in this fixed re-anchor.
+            // init-independent and existing fixtures pin their non-converged landings. A
+            // divergent full-path fit reaches this fixed re-anchor ONLY when a slope lands
+            // ≤ 0 (the aNeg/bNeg drop-refit branches); both slopes diverging POSITIVE
+            // together (x1 = ln s and x2 = −ln(1−s) are both increasing in s, so a
+            // quasi-separated sample drives a and b to +∞ jointly) ships .full with extreme
+            // step-map params and never touches the re-anchor — there the OOS-Brier
+            // selector floor is the only guard (pre-existing iter7 fitBeta behavior).
             var c: Double
             if includeX1 || includeX2 {
                 c = Foundation.log((Double(nNeg) + 1.0) / (Double(nPos) + 1.0))
