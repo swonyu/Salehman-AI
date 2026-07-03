@@ -117,6 +117,15 @@ struct MarketsView: View {
     /// Detail-sheet position sizer inputs.
     @AppStorage("marketsSizerAccount") private var sizerAccount = "10000"
     @AppStorage("marketsSizerRiskPct") private var sizerRiskPct = "1"
+    // F04 (sizer-input trust seam): the comma-aware parse the idea CARDS already use
+    // (StockSageInput.positiveAmount/.percent) — nil on blank/unparseable/"10,000" mis-thousands.
+    // Every sheet/copied-plan/gate site below must read THESE, never `Double(sizerAccount)`
+    // directly, or a typed "10,000" silently becomes 0 findings / a fabricated 1% gate verdict.
+    private var parsedAccount: Double? { StockSageInput.positiveAmount(sizerAccount) }
+    /// 0–1 fraction (StockSageInput.percent returns 0–100, matching the card sites' own
+    /// `StockSageInput.percent(sizerRiskPct)` then `/ 100`) — pre-divided here since every
+    /// non-card call site below wants a bare riskFraction, not a displayable percent.
+    private var parsedRiskFraction: Double? { StockSageInput.percent(sizerRiskPct).map { $0 / 100 } }
     /// Focus identity for the three add-holding fields → accent focus glow,
     /// matching the app's other primary inputs.
     private enum AddField: Hashable { case symbol, shares, cost }
@@ -1598,28 +1607,34 @@ struct MarketsView: View {
                     // The user's REAL per-trade risk (same as the MonteCarlo line below) — NOT a
                     // hardcoded 1%, so this survival number reflects how they actually size. A user at
                     // 2–3%/trade was shown a drawdown understated ~2–3× with text falsely claiming "1%".
-                    let riskFrac = Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil } ?? 0.01
-                    if let dd = StockSageRiskOfRuin.scenario(losses: risk.maxConsecutiveLosses, fraction: riskFrac) {
-                        Text(String(format: "Stay in the game: %d 1R stops in a row at %g%%/trade ≈ −%.1f%% to the account — %@",
-                                    dd.losses, riskFrac * 100, dd.drawdownPct * 100,
-                                    dd.isSteep ? "size down; surviving variance is how velocity compounds."
-                                               : "survivable — staying in the game is what lets velocity pay off."))
-                            .font(.caption2)
-                            .foregroundStyle(dd.isSteep ? DS.Palette.warningSoft : .secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .help(StockSageGlossary.explain(.drawdownSurvival))
-                    }
-                    // Forward-looking ruin DISTRIBUTION — bootstraps YOUR realized R into many
-                    // simulated futures at your configured risk %, the complement to the single
-                    // historical path above. nil under 20 R-defined trades (the engine self-gates).
-                    if let mc = StockSageMonteCarloRuin.simulate(journal.trades, riskFraction: riskFrac) {
-                        Text(String(format: "Forward ruin risk (%d sims @ %g%%/trade): P(ruin) %.1f%% · P(>20%% drawdown) %.0f%% · max drawdown ~%.0f%% typical, %.0f%% 95th-pct — bootstrapped from your %d closed trades.",
-                                    mc.sims, riskFrac * 100, mc.pRuin * 100, mc.p20DrawdownProb * 100,
-                                    mc.medianMaxDD * 100, mc.p95MaxDD * 100, mc.sampleSize))
-                            .font(.caption2)
-                            .foregroundStyle(mc.pRuin > 0.05 ? DS.Palette.warningSoft : .secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .help(StockSageMonteCarloRuin.caveat)
+                    // F04: nil (unparseable risk %) must suppress both estimates, never silently
+                    // fall back to a fabricated 1% — that produced a false "survivable" verdict.
+                    if let riskFrac = parsedRiskFraction {
+                        if let dd = StockSageRiskOfRuin.scenario(losses: risk.maxConsecutiveLosses, fraction: riskFrac) {
+                            Text(String(format: "Stay in the game: %d 1R stops in a row at %g%%/trade ≈ −%.1f%% to the account — %@",
+                                        dd.losses, riskFrac * 100, dd.drawdownPct * 100,
+                                        dd.isSteep ? "size down; surviving variance is how velocity compounds."
+                                                   : "survivable — staying in the game is what lets velocity pay off."))
+                                .font(.caption2)
+                                .foregroundStyle(dd.isSteep ? DS.Palette.warningSoft : .secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .help(StockSageGlossary.explain(.drawdownSurvival))
+                        }
+                        // Forward-looking ruin DISTRIBUTION — bootstraps YOUR realized R into many
+                        // simulated futures at your configured risk %, the complement to the single
+                        // historical path above. nil under 20 R-defined trades (the engine self-gates).
+                        if let mc = StockSageMonteCarloRuin.simulate(journal.trades, riskFraction: riskFrac) {
+                            Text(String(format: "Forward ruin risk (%d sims @ %g%%/trade): P(ruin) %.1f%% · P(>20%% drawdown) %.0f%% · max drawdown ~%.0f%% typical, %.0f%% 95th-pct — bootstrapped from your %d closed trades.",
+                                        mc.sims, riskFrac * 100, mc.pRuin * 100, mc.p20DrawdownProb * 100,
+                                        mc.medianMaxDD * 100, mc.p95MaxDD * 100, mc.sampleSize))
+                                .font(.caption2)
+                                .foregroundStyle(mc.pRuin > 0.05 ? DS.Palette.warningSoft : .secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .help(StockSageMonteCarloRuin.caveat)
+                        }
+                    } else {
+                        Text("Enter risk % to estimate drawdown survival.")
+                            .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 if let comp = journal.compounding, comp.multiples.count >= 2 {
@@ -3560,8 +3575,19 @@ struct MarketsView: View {
     @ViewBuilder private var moneyVelocityCard: some View {
         // Honor the user's editable Risk % so the drawdown brake's magnitude AND its label
         // track the same fraction the rest of the card uses (was a hardcoded 1%).
-        let rf = (Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil }) ?? 0.01
-        let s = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, fraction: rf, holds: velocityHolds, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration)
+        // F04: `summary(fraction:)` has no nil path (it always computes a brake scenario), so
+        // when the risk % is unparseable we still call it with the 0.01 default to get the
+        // OTHER content (best/fastest/weeklyR, unaffected by fraction) but then strip the
+        // fraction-dependent brake fields — never show a drawdown number modeled on a risk %
+        // the user never typed.
+        let rawSummary = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, fraction: parsedRiskFraction ?? 0.01, holds: velocityHolds, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration)
+        let riskFrac = parsedRiskFraction
+        let s = riskFrac != nil ? rawSummary : MoneyVelocitySummary(
+            bestSymbol: rawSummary.bestSymbol, bestEV: rawSummary.bestEV,
+            fastestSymbol: rawSummary.fastestSymbol, fastestVelocity: rawSummary.fastestVelocity,
+            weeklyR: rawSummary.weeklyR)
+        // Whether a Brake WOULD have shown had risk % been set — gates the explicit nil-state below.
+        let hadBrakeContent = rawSummary.worstRunLosses != nil
         if s.hasContent {
             VStack(alignment: .leading, spacing: 6) {
             Button {
@@ -3644,6 +3670,12 @@ struct MarketsView: View {
                             .font(.system(size: mvFont10, weight: .semibold))
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                             .accessibilityLabel(String(format: "Risk warning: worst losing run %d trades at %.1g percent risk is about %.1f percent drawdown. Size to survive variance.", losses, s.riskFraction * 100, ddPct * 100))
+                    } else if riskFrac == nil && hadBrakeContent {
+                        // F04: there IS loss history to model a brake from, but risk % is unparseable —
+                        // say so explicitly rather than silently dropping the warning.
+                        Text("Enter risk % to see your drawdown brake.")
+                            .font(.system(size: mvFont10, weight: .semibold))
+                            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), conc.isConcentrated {
                         Text("⚠︎ Fast lane is concentrated — your top \(conc.total) fastest are all \(conc.dominantClass); that's closer to one bet, not \(conc.total). Diversify or size them as one.")
@@ -3663,8 +3695,11 @@ struct MarketsView: View {
             // one leaf, so the inner per-Text labels (drawdown brake, fast-lane concentration) are dead.
             .accessibilityLabel("Money velocity summary; tap for the best opportunity"
                 + ({ () -> String in
-                    guard let ddPct = s.worstRunDrawdownPct, let losses = s.worstRunLosses else { return "" }
-                    return String(format: ". Risk warning: worst losing run %d trades at %.1g percent risk is about %.1f percent drawdown.", losses, s.riskFraction * 100, ddPct * 100)
+                    if let ddPct = s.worstRunDrawdownPct, let losses = s.worstRunLosses {
+                        return String(format: ". Risk warning: worst losing run %d trades at %.1g percent risk is about %.1f percent drawdown.", losses, s.riskFraction * 100, ddPct * 100)
+                    }
+                    if riskFrac == nil && hadBrakeContent { return ". Enter risk percent to see your drawdown brake." }
+                    return ""
                 }())
                 + ({ () -> String in
                     guard let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), conc.isConcentrated else { return "" }
