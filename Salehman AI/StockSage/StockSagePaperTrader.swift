@@ -1,0 +1,189 @@
+import Foundation
+import Combine
+
+// MARK: - Forward paper-trading harness
+//
+// The backtester answers "would the rules have worked on HISTORY?" (overfit-prone). The journal
+// answers "what did the OWNER actually do?" (real money, but empty until they log). This fills the
+// gap between them: it auto-"trades" every long-actionable idea the engine generates with FAKE money,
+// marks each to a realistic NET-OF-COST fill, and closes it when a real future bar crosses the
+// stop/target/time-stop. The accumulating realized outcomes are a genuinely FORWARD, out-of-sample
+// test — overfit-proof, because the bars that decide each trade did not exist when the rules were
+// frozen. It is the data source the calibration/measurement stack is otherwise starving for.
+//
+// HONESTY FLOOR (non-negotiable):
+//   • NET-OF-COST fills, never mid. A naive paper fill overstates and lies — the app's own cost
+//     research is the reason. Cost is applied EXACTLY as the backtester applies it (see below).
+//   • PAPER ≠ REAL. Paper trades live in a SEPARATE store (`StockSagePaperTradeStore`, distinct
+//     UserDefaults key) and are NEVER mixed into the real `StockSageJournalStore`.
+//   • nil = unknown. A trade with no bars after `openedAt` stays open; nothing is fabricated.
+//
+// OWNER-GATE FENCE (F01/F02): paper outcomes do NOT feed the production
+// `StockSageStore.convictionCalibration` / `fit(fromJournal:)`. That map stays real-journal-only.
+// Wiring paper → production sizing is a separate, owner-gated decision, deliberately NOT taken here.
+//
+// BACKTEST PARITY (derive, never copy): exit selection reuses `StockSageBacktester.simulateExit`
+// (gap-honest stop fills, stop-wins-ties, `.timeStop` backstop) and the net-R convention is matched
+// byte-for-byte — a closed paper trade's `TradeRecord.realizedR` equals the backtester's net R for
+// the same trade, so the two paths cannot silently diverge.
+
+enum StockSagePaperTrader {
+
+    /// Open a PAPER trade from a freshly-generated idea. Long-only (the app is long-biased; stops and
+    /// targets are long-side): returns nil unless the action is buy-side AND a stop+target exist AND
+    /// the risk is defined (entry above stop). No fabrication on missing data — nil means "not a paper
+    /// candidate", handled by the caller. `entry` is kept GROSS (the idea's quote); the round-trip cost
+    /// is netted in at the exit, exactly as `StockSageBacktester.runTrades` does.
+    static func open(from idea: StockSageIdea, at openDate: Date,
+                     nominalRisk: Double = 100) -> TradeRecord? {
+        let a = idea.advice
+        guard a.action == .strongBuy || a.action == .buy else { return nil }
+        guard let stop = a.stopPrice, let target = a.targetPrice else { return nil }
+        let entry = idea.price
+        let risk = entry - stop
+        guard entry > 0, risk > 0 else { return nil }   // a long's stop sits below entry → defined risk
+        // Nominal fixed-risk sizing so the reused $ analytics are sensible; R is the scale-free truth.
+        let shares = Swift.max(1, (nominalRisk / risk).rounded())
+        return TradeRecord(symbol: idea.symbol, side: .long, entry: entry, stop: stop,
+                           target: target, shares: shares, openedAt: openDate,
+                           note: "paper (auto)", conviction: a.conviction)
+    }
+
+    /// Mark each OPEN long paper trade to the given symbol's history and close any that crossed
+    /// stop / target / the time-stop backstop. PURE + deterministic (dates come from the bars, no
+    /// `Date.now`). Exit selection is delegated to `StockSageBacktester.simulateExit`; the round-trip
+    /// cost is netted into the stored `exitPrice` so `TradeRecord.realizedR` == the backtester's net R:
+    ///   costPerShare = max(0, roundTripBps)/10_000 · entry ;  exitPrice = grossExit − costPerShare.
+    /// A trade whose symbol ≠ this history, that is already closed, or that has no bar after `openedAt`
+    /// is returned UNCHANGED (still open — honesty: no new data ⇒ no close).
+    static func markToMarket(_ open: [TradeRecord], history: StockSagePriceHistory,
+                             costs: StockSageNetEdge.CostAssumption,
+                             maxHoldingBars: Int = 63) -> [TradeRecord] {
+        let dates = history.dates, opens = history.opens, highs = history.highs
+        let lows = history.lows, closes = history.closes
+        let n = closes.count
+        guard n > 0, opens.count == n, highs.count == n, lows.count == n, dates.count == n else { return open }
+        let costFactor = Swift.max(0, costs.roundTripBps) / 10_000   // × entry ⇒ per-share round-trip cost
+        return open.map { t in
+            guard t.isOpen, t.side == .long,
+                  t.symbol.uppercased() == history.symbol.uppercased(),
+                  let target = t.target else { return t }
+            // First bar STRICTLY after the open — no look-ahead onto the entry bar itself.
+            guard let startIdx = dates.firstIndex(where: { $0 > t.openedAt }) else { return t }
+            let (exitIdx, grossExit, outcome) = StockSageBacktester.simulateExit(
+                entryIdx: startIdx, stop: t.stop, target: target,
+                opens: opens, highs: highs, lows: lows, closes: closes, n: n,
+                mode: .timeStop(maxBars: maxHoldingBars))
+            guard outcome != .openAtEnd else { return t }   // neither level nor time-stop reached → hold
+            var closed = t
+            closed.exitPrice = grossExit - costFactor * t.entry   // long: net proceeds per share
+            closed.closedAt = dates[exitIdx]
+            return closed
+        }
+    }
+
+    /// One forward step: mark existing open trades to their latest history and open new paper trades
+    /// for long-actionable ideas that don't already have an open position. Returns the closes to apply
+    /// and the new trades to add — PURE (no I/O); the store persists them. Dedup: at most one open paper
+    /// trade per symbol.
+    static func step(current: [TradeRecord], ideas: [StockSageIdea],
+                     histories: [String: StockSagePriceHistory], openDate: Date,
+                     costsFor: (String) -> StockSageNetEdge.CostAssumption,
+                     nominalRisk: Double = 100, maxHoldingBars: Int = 63)
+        -> (closes: [TradeRecord], opens: [TradeRecord]) {
+        // 1. Mark-to-market every currently-open trade against its own symbol's history.
+        var closes: [TradeRecord] = []
+        for t in current where t.isOpen {
+            guard let h = histories[t.symbol] ?? histories[t.symbol.uppercased()] else { continue }
+            if let u = markToMarket([t], history: h, costs: costsFor(t.symbol),
+                                    maxHoldingBars: maxHoldingBars).first, !u.isOpen {
+                closes.append(u)
+            }
+        }
+        // Symbols that remain open after this step's closes — don't double-open into them.
+        let closedIds = Set(closes.map(\.id))
+        let stillOpen = Set(current.filter { $0.isOpen && !closedIds.contains($0.id) }
+                                    .map { $0.symbol.uppercased() })
+        // 2. Open new paper trades for long-actionable ideas without an open position.
+        var opens: [TradeRecord] = []
+        var openedThisStep = Set<String>()
+        for idea in ideas {
+            let sym = idea.symbol.uppercased()
+            guard !stillOpen.contains(sym), !openedThisStep.contains(sym) else { continue }
+            if let t = open(from: idea, at: openDate, nominalRisk: nominalRisk) {
+                opens.append(t)
+                openedThisStep.insert(sym)
+            }
+        }
+        return (closes, opens)
+    }
+
+    /// Honest framing for any surface that shows the paper track record.
+    nonisolated static let caveat =
+        "Paper (fake-money) forward test — the engine auto-opens each long idea and marks it to a "
+        + "NET-OF-COST fill, closing on stop/target/time-stop. It measures the rules going forward, "
+        + "out-of-sample; it is NOT the owner's real trades and does NOT feed win-rate calibration."
+}
+
+// MARK: - Persisted PAPER-trade store (separate from the real journal — never conflated)
+
+@MainActor
+final class StockSagePaperTradeStore: ObservableObject {
+    static let shared = StockSagePaperTradeStore()
+
+    @Published private(set) var trades: [TradeRecord] = []
+    /// DISTINCT from the journal's "stocksage.journal.v1" — paper and real never share storage.
+    private let key: String
+    private let defaults: UserDefaults
+    /// Master switch. The owner asked for paper trading, so it is ON by default; OFF ⇒ the store is
+    /// never mutated by the refresh (byte-identical to no paper trading).
+    var enabled = true
+
+    /// `defaults`/`key` are injectable ONLY so tests can isolate storage in an ephemeral suite;
+    /// production (`.shared`) uses `.standard` + the paper key, byte-identical to a fixed private init.
+    init(defaults: UserDefaults = .standard, key: String = "stocksage.papertrades.v1") {
+        self.defaults = defaults
+        self.key = key
+        load()
+    }
+
+    var open: [TradeRecord] { trades.filter { $0.isOpen } }
+    var closed: [TradeRecord] { trades.filter { !$0.isOpen } }
+
+    // Reused analytics (labeled PAPER at the eventual UI) — the same honest machinery the real journal uses.
+    var stats: JournalStats { StockSageJournal.stats(trades) }
+    var edgeStats: JournalEdge { StockSageJournal.edge(trades) }
+    var systemHealth: SystemHealth? { StockSageJournal.systemHealth(trades) }
+    var rDistribution: RDistribution? { StockSageJournal.rDistribution(trades) }
+    var expectancyCI: ExpectancyCI? { StockSageJournal.expectancyConfidence(trades) }
+    var equityRisk: JournalRisk? { StockSageJournal.equityRisk(trades) }
+
+    func hasOpen(symbol: String) -> Bool {
+        trades.contains { $0.isOpen && $0.symbol.uppercased() == symbol.uppercased() }
+    }
+
+    func add(_ t: TradeRecord) { trades.insert(t, at: 0); save() }
+
+    /// Replace an open trade with its closed version (matched by id) — the mark-to-market apply.
+    func applyClose(_ closed: TradeRecord) {
+        guard let i = trades.firstIndex(where: { $0.id == closed.id }) else { return }
+        trades[i] = closed
+        save()
+    }
+
+    func remove(_ id: UUID) { trades.removeAll { $0.id == id }; save() }
+    /// Owner "clear paper history" — wipes the paper record only (the real journal is untouched).
+    func reset() { trades = []; save() }
+
+    private func load() {
+        guard let data = defaults.data(forKey: key),
+              let decoded = try? JSONDecoder().decode([TradeRecord].self, from: data) else { return }
+        trades = decoded
+    }
+
+    private func save() {
+        if let data = try? JSONEncoder().encode(trades) {
+            defaults.set(data, forKey: key)
+        }
+    }
+}

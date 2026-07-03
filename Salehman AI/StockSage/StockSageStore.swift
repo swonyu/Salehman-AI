@@ -342,6 +342,10 @@ final class StockSageStore: ObservableObject {
             if !fired.isEmpty { alerts = Array((fired + alerts).prefix(Self.maxAlerts)) }
         }
         ideas = ranked
+        // FORWARD PAPER TRADING: auto-open a fake-money position for each long-actionable idea and mark
+        // existing open paper trades to the fresh histories (net-of-cost). Separate store, never conflated
+        // with the real journal; does NOT feed win-rate calibration (F01/F02). Best-effort, synchronous.
+        updatePaperTrades(ideas: ranked, histories: histories)
         // Populate earnings for the top names (non-blocking) so the imminent-earnings demotion +
         // warnings fire on the boards, not only on detail-expand. Cached-once → cheap after first load.
         Task { await refreshEarningsForTopIdeas() }
@@ -358,6 +362,23 @@ final class StockSageStore: ObservableObject {
 
     /// Cancel an in-flight ideas scan (backlog #12). The outer refreshIdeas defer clears the spinner.
     func cancelIdeasRefresh() { ideasRefreshTask?.cancel() }
+
+    /// Advance the forward PAPER-trading harness (fake money, honest net-of-cost). Runs after each ideas
+    /// refresh on the MainActor with the just-fetched `histories` + `ideas`: closes any open paper trade a
+    /// new bar resolved (stop/target/time-stop), then opens a paper trade for each long-actionable idea
+    /// without an open position. All state lives in `StockSagePaperTradeStore` (SEPARATE from the real
+    /// journal). Disabled ⇒ byte-identical to no paper trading. Pure orchestration lives in
+    /// `StockSagePaperTrader.step`; this is only the thin persistence boundary. F01/F02 fence: paper
+    /// outcomes never feed `convictionCalibration`.
+    private func updatePaperTrades(ideas: [StockSageIdea], histories: [String: StockSagePriceHistory]) {
+        let store = StockSagePaperTradeStore.shared
+        guard store.enabled else { return }
+        let (closes, opens) = StockSagePaperTrader.step(
+            current: store.trades, ideas: ideas, histories: histories, openDate: Date(),
+            costsFor: { StockSageNetEdge.defaultCosts(forSymbol: $0) })
+        for c in closes { store.applyClose(c) }
+        for o in opens { store.add(o) }
+    }
 
     /// Re-fetch ONLY the symbols the last scan couldn't price and merge them in, re-ranking.
     /// Cheap relative to a full refresh; user-triggered from the "Retry failed" affordance.
