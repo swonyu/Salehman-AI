@@ -325,6 +325,13 @@ final class StockSageStore: ObservableObject {
             ideasError = "Couldn't reach the market feed for analysis — try again."
             return
         }
+        // Persist the just-fetched histories for OFFLINE net-cost validation / backtests
+        // (StockSageHistoryCache). Best-effort and DETACHED so the JSON encode runs off the
+        // main actor and never blocks buildIdeas; ZERO new network — it saves bytes already
+        // downloaded here and otherwise discarded after buildIdeas. Seeds the sim only, not
+        // the live board, so nothing user-visible changes.
+        let historyUniverse = Set(universe.map { $0.symbol.uppercased() })
+        Task.detached { StockSageHistoryCache.from(histories: histories, universe: historyUniverse, savedAt: Date()).save() }
         let cal = convictionCalibration                           // read on the main actor before the await hop
         let journalTrades = StockSageJournalStore.shared.trades   // read on the main actor before the await hop
         let built = await Self.buildIdeas(defs: universe, histories: histories, benchmark: benchmark,
