@@ -1,0 +1,75 @@
+# Research: Weekly-cycle top-N concentration mechanics — position count / correlation limits / per-name caps (NULL — documented absence)
+
+<!-- Deep-research artifact. 2026-07-03, autonomous (owner: "work autonomously 12h, never stop").
+     Opus 4.8 successor session, workflow wbwaf8r1q (runId wf_f1696274-adf): 6-angle literature
+     fan-out (WebSearch/WebFetch) → 3-vote adversarial verification per load-bearing claim → synthesis.
+     25 agents, ~1.53M tokens, 213 tool calls. 57 candidate claims → top-6 carried to 3-vote (51 lower-
+     relevance dropped from the vote but still informed synthesis) → 3 CONFIRMED, 3 REFUTED. Discharges
+     the OPEN FRONTIER item "Weekly top-3 concentration mechanics" (which had carried ZERO verified
+     claims) as an indexed NULL / documented-absence — the item is EXTENDED, not closed (see §5).
+     Changes NO code — any StockSageCapitalAllocator change is OWNER-GATED (§5). -->
+
+> **Result in one line:** the weekly-cycle concentration question is **empirically unestablished** — every
+> located concentration / best-ideas premium is a monthly/quarterly construct, the only well-identified
+> weekly-horizon effect is short-term *reversal* (a liquidity-provision return that does not survive retail
+> costs where it is largest), and the evidence direction (continuous risk-budgeting beats hard integer
+> count-caps) **reinforces the shipped allocator as-is**. A documented absence IS the result.
+
+## 1. Question
+
+At a **weekly (1–5 trading-day) rebalance cycle**, what — if anything — does the evidence establish about optimal concentrated position **count**, maximum pairwise **correlation** between concurrently-held names, per-name weight **caps**, rebalance **frequency**, and whether a **hard count-cap** (e.g. "hold exactly top-3") beats **continuous risk-budgeting** — the OPEN FRONTIER item that has carried ZERO verified claims since the 2026-07-02 week-horizon run.
+
+## 2. Executive summary
+
+| Sub-question | Verdict | Confidence | Horizon basis |
+|---|---|---|---|
+| **Optimal position COUNT** (concentrated) | **No study establishes an optimal concentrated count at a weekly cycle.** Documented absence. | HIGH | **Weekly-direct** (absence). Count guidance that exists (Evans-Archer ~10; Statman 30–40; "100 not enough") is horizon-agnostic *diversification-variance*, not weekly concentration. |
+| **Pairwise CORRELATION limits** | **No academic weekly-calibrated max-pairwise-correlation exists.** The "0.7 halve / 0.85 = one unit" rule is practitioner blog heuristic, not evidence. Use an ENB / DR / n_eff floor (horizon-agnostic, correlation-driven) instead of a hard pairwise number. | LOW (heuristic) / absence otherwise | Weekly-direct absence; the ENB/DR/n_eff math is horizon-agnostic (inherits its correlation-matrix horizon). |
+| **Per-name weight CAPS** | **No credible source specifies a weekly-calibrated single-name weight ceiling.** All located caps are horizon-agnostic risk/regulatory (UCITS 10%, 40-Act 5%/75%, RIC 25% quarter-end) or monthly-to-multi-year skill studies. | HIGH | **Weekly-direct** (absence). |
+| **Rebalance FREQUENCY** | At sub-monthly frequency, added rebalancing is **pure cost with no net-return benefit** at the allocation level; move/band-based rebalancing dominates calendar rebalancing net-of-cost. Weekly reversal survives costs **only** in large-cap/liquid names, and even then on *institutional* costs — not retail. | HIGH (frequency-cost) | Weekly-direct for the reversal-cost result (Avramov-Chordia-Goyal 2006); monthly/annual for the allocation-rebalancing null. |
+| **Hard count-cap vs continuous sizing** | **No paper shows a hard integer count-cap beating a well-built continuous risk-budget allocator at ANY horizon, net-of-cost OOS.** The literature direction favors continuous risk-based sizing; a "cap" helps only as a *continuous regularizer* that shrinks toward equal-risk weighting. | HIGH (direction) | Horizon-agnostic; **no weekly-specific comparison exists** (documented absence). |
+
+**One-line bottom line:** the weekly-cycle concentration question remains **empirically unestablished** — every located concentration/best-ideas premium is a monthly/quarterly construct, and the only well-identified weekly-horizon effect is short-term *reversal*, which is a liquidity-provision return that does not survive retail costs when it concentrates into the illiquid names where it is largest.
+
+## 3. Per-sub-question detail (CONFIRMED findings stated; refuted noted)
+
+### 3a. Position count
+**CONFIRMED (3-vote, HIGH):** No located academic study establishes an optimal *concentrated* position count at a weekly (1–5 day) rebalance. Evans-Archer (1968, *JF* 23(5)) and Statman (1987, *JFQA* 22(3)) are **horizon-agnostic diversification-variance** results (marginal risk-reduction exhausted ~8–10 names / ~30–40 for a "diversified" book; Domian-Louton-Racine 2007 "100 stocks are not enough"); Antón-Cohen-Polk "Best Ideas" is **monthly returns / quarterly holdings**; Kacperczyk-Sialm-Zheng (2005, *JF* 60(4)) industry-concentration is **quarterly**. Source: absence across those four families; corroborated verbatim by the repo's own `RESEARCH_2026-07-02_week_horizon_velocity.md` ("Question 2 … produced ZERO verified claims"). As-of 2026-07-03.
+
+### 3b. Correlation limits
+**CONFIRMED context (horizon-agnostic math):** the correlation→concentration penalty is fully captured by continuous measures — Meucci ENB `N_Ent = exp(−Σ dᵢ ln dᵢ)` (Risk, May 2009; use minimum-linear-torsion, not naive PCA); Choueifaty-Coignard Diversification Ratio `DR = (σᵀw)/√(wᵀΣw)` (JPM 2008) with `N* = DR²` independent bets (Choueifaty-Froidure-Reynier 2013); and the Kish/design-effect `n_eff = N/(1+(N−1)ρ̄)`, which asymptotes to `1/ρ̄` (at ρ̄=0.3 a 10-name book has n_eff≈2.6 and a hard ceiling ~3.3 no matter how many names). None is horizon-specific — each inherits the horizon of the covariance matrix fed to it. Correlations are **regime-dependent** (avg US pairwise ~0.30–0.40 normal → >0.80 in 2008, ~0.75 in Feb–Mar 2020) and **asymmetric** (downside > upside; Page & Panariello 2018, *FAJ* 74(3), citing Leibowitz-Bova 2009: 60/40-diversified book's equity beta rose 0.65→0.95 in 2008), so calm-period caps understate crisis co-movement.
+**REFUTED (3-vote, did NOT survive):** the claim that daily-return correlations are biased *downward* vs true weekly co-movement via the **Epps effect**, so a weekly cap built on daily correlations over-concentrates. The Epps effect is real but **saturates at the minutes-to-hours scale**; daily sampling already sits at the asymptotic value, so there is essentially no Epps-driven daily-vs-weekly bias. Horizon-misattribution — do not use.
+**Absence (HIGH):** no academic weekly-calibrated max-pairwise-correlation exists; the "0.7 halve / >0.85 = one risk unit / cap correlated-cluster ~30% / rolling 60-day" numbers are **practitioner blog heuristics** (alphaexcapital, guardfolio), not peer-reviewed and not horizon-specific — LOW confidence. Academically defensible route: cap by an ENB/DR/n_eff **floor**, not a hard pairwise number.
+
+### 3c. Per-name caps
+**CONFIRMED (3-vote, HIGH):** no credible academic or regulatory source specifies a maximum single-name weight calibrated to a weekly cycle. Located caps are all horizon-agnostic/point-in-time: UCITS 5/10/40 (Directive 2009/65/EC Art.52 — 10% single issuer, 20% index-tracking exception, 35% exceptional); US 40-Act §5(b)(1) 75-5-10 diversified test (residual 25% unconstrained, so a diversified fund can still hold one position well above 5%); IRC §851(b)(3) RIC 25% quarter-end. Fractional-Kelly practice truncates to half/quarter-Kelly and adds an absolute ~20–25% single-position cap for parameter uncertainty (MacLean-Thorp-Ziemba 2011). Statman's 30/40-name diversified count implies a **soft floor** on per-name weight of ~3–5% (25-stock equal-weight ⇒ ~9% residual idiosyncratic vol at ~45% single-stock idio-vol). Source: absence across those primary sources; corroborated by the repo's 106-agent week-horizon run. As-of 2026-07-03.
+
+### 3d. Rebalance frequency
+**CONFIRMED (3-vote, HIGH), weekly-direct:** short-term contrarian/reversal profits are **largest precisely in high-turnover, low-liquidity stocks and are smaller than the transaction costs required to trade them** (Avramov, Chordia & Goyal 2006, *JF* 61(5):2365-2394; ~1.7%/week gross, overwhelmed "under each and every choice of liquidity and turnover"). So the weekly reversal edge does not survive costs when allowed to concentrate into illiquid names — a correctly-attributed **net NULL**, not a decayed edge.
+**REFUTED / downgraded (did NOT survive as stated):**
+- The "780%/week standard vs 321% cost-aware turnover" figures are **misquoted** — de Groot-Huij-Zhou report **677%/week → 325%/week** (~2.08×, not 2.4×). Qualitative point (turnover reduction, not signal change, is the lever) holds; the numbers do not.
+- "Weekly reversal nets +30–50 bps/week net on large-caps" (de Groot-Huij-Zhou 2012, *JBF* 36(2)) — the verbatim figures are correct (broad 1,500-largest goes +61.7 gross → −66/−104 bps net; damage attributed to small-caps) BUT (i) horizon is **misattributed** (the paper rebalances near-daily, holding <3 days, not "weekly rebalance/weekly holding"), and (ii) the surviving net is on **institutional** costs (Keim-Madhavan + Nomura impact, 3–5 bps commissions) on a long-short spread — it does **not** survive **retail** costs or the ~26%/58% OOS/post-publication decay. Consistent with the repo's own −1.28%/mo NET (t=−6.02) and IRRX net-of-cost null.
+
+Supporting horizon-agnostic frequency facts (not weekly-specific): more-frequent time-based rebalancing gives no material net-return/risk improvement while monotonically raising turnover/cost/tax (Vanguard); anomalies with >~50%/month turnover rarely survive costs (Novy-Marx & Velikov 2016, *RFS* 29(1)); move/band-based (no-trade region) rebalancing dominates calendar rebalancing net-of-cost (Leland; Jagannathan-Ma implicit-shrinkage logic); buy/hold asymmetric bands are the most effective turnover-preserving construction.
+
+### 3e. Hard count-cap vs continuous sizing
+**CONFIRMED (3-vote, direction of literature, HIGH):** the weight of evidence favors **continuous risk-based sizing** over hard integer count-caps. A "cap" is documented to help only as a **continuous regularizer** — Jagannathan-Ma (2003, *JF* 58(4)) show upper/lower weight bounds act as implicit covariance shrinkage that *reduces* OOS risk by shrinking **toward equal weighting**; DeMiguel-Garlappi-Nogales-Uppal (2009, *Mgmt Sci* 55(5)) show a continuous **norm/exposure constraint** beats Jagannathan-Ma constraints, Ledoit-Wolf, 1/N and factor portfolios OOS. Half-Kelly captures ~75% of log-growth at ~50% vol; over-concentration (betting > Kelly) raises ruin and eventually *lowers* growth (MacLean-Thorp-Ziemba 2011). Risk parity / vol-targeting raise **risk-adjusted** return by lowering vol, not raw return (Moreira-Muir 2017 in-sample; **Cederburg et al. 2020** caution the vol-managed Sharpe gain largely does NOT survive real-time OOS). **No paper found demonstrates a hard integer count-cap ("hold exactly top-N") beating a well-constructed continuous risk-budget allocator at any horizon on an OOS net-of-cost basis** — and none tests the cap-vs-continuous question at a weekly cycle at all (DeMiguel et al. 2009; estimation error swamps optimization, needing ~3000 months for 25 assets to beat 1/N).
+
+## 4. What this round did NOT establish
+
+Be explicit — these are the honest weekly-horizon absences:
+
+1. **No optimal concentrated position count at a weekly cycle.** Every count result is either horizon-agnostic diversification-variance (Evans-Archer, Statman, Domian-Louton-Racine) or a **monthly/quarterly** concentration premium (Best Ideas is quarterly-rebalanced, 3-month hold, ~2.8–4.5%/yr; alpha is rank-decaying into the top few names — but on monthly returns). The weekly concentration case is **unestablished**.
+2. **No weekly best-ideas / conviction concentration premium.** The concentration/high-conviction literature (Antón-Cohen-Polk; Cremers-Petajisto active-share, which needs ~2-year holds) is documented **only** at quarterly-to-multi-year horizons — and best-ideas is stronger in *illiquid* names, precisely where shortening to weekly multiplies the cost that kills it. What exists at weekly frequency is the **opposite-signed** short-term reversal effect (Lehmann 1990; Jegadeesh 1990), not a conviction premium.
+3. **No weekly-calibrated max pairwise correlation.** Only horizon-agnostic ENB/DR/n_eff math and unverified practitioner heuristics. The Epps-effect argument for a daily-vs-weekly correlation bias was **refuted**.
+4. **No weekly-calibrated per-name weight cap.** Only horizon-agnostic regulatory caps and monthly-plus skill studies.
+5. **No cap-vs-continuous comparison at a weekly cycle**, net-of-cost, on real data. The direction (continuous wins) is inferred from monthly-or-longer evidence.
+6. **The concentration-hurts-net counter-evidence is also monthly/quarterly** (Pollet-Wilson 2008; Sapp-Yan 2008; Huang-Sialm-Zhang 2011, per Acadian) — it warns against tightening below the diversification knee, but does not itself speak to a weekly cycle.
+
+This documented absence **is** the result. The frontier row should be extended, not closed: the weekly concentration mechanics still rest on nothing weekly-specific, and any concentration design continues to cite only the 06-27 monthly/quarterly-horizon evidence.
+
+## 5. Owner / Fable-gate note
+
+- **This research INFORMS; it changes no code.** Any change to `StockSageCapitalAllocator` — position count, correlation limits, or per-name caps — is **owner-gated** (the allocator sits in the gated-scope registry). Do not flag-and-implement; present options, decide none.
+- **A hard "hold exactly top-3" count-cap must NOT be recommended, even if concentration evidence were strong.** Repo settled policy **fences** a hard top-N count-cap: the shipped allocator is governed by the continuous **`maxHeat` (0.08) + half-Kelly + `StockSageCorrelationCluster.correlationAdjustedWeights`** (correlation-aware clique de-weighting) mechanism — which is exactly the *continuous risk-budgeting / continuous-regularizer* construction this literature favors (§3e). "Top-3" is a **display projection** (`maxConcurrent: 3` lives only in `StockSageExpectedValue` card math), **not** an allocator cap; a prior session nearly "fixed" this non-bug and the week-horizon "did NOT establish" audit documents why no code change follows.
+- The evidence direction — no documented weekly concentration edge, continuous sizing beats hard count-caps, weekly turnover is cost-dominated — **reinforces the shipped allocator as-is**. No promotion, no cap, no correlation-threshold constant, no per-name weekly ceiling should ship on this research. If the owner/Fable wants to revisit, the exit condition is an empirical ablation of hard count-caps vs the shipped continuous allocator on real data (net-of-cost, walk-forward, DSR-gated) — same bar as the 2026-07-02 confluence/RS null.
