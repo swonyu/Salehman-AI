@@ -15,6 +15,9 @@ struct MarketsView: View {
     enum IdeaSort: String, CaseIterable {
         case ev = "Expected value", velocity = "EV / day", conviction = "Conviction",
              rr = "Reward:risk", signal = "Signal rank"
+        /// Shown name. `conviction`'s rawValue stays "Conviction" as the stable
+        /// @AppStorage("marketsIdeaSort") identity key; F08 renames only the label.
+        var label: String { self == .conviction ? "Signal strength" : rawValue }
     }
     // Default to money-velocity (EV per day) — the "fastest money" objective: a quick small edge
     // compounds faster than a slow large one. (Existing users keep whatever they last picked.)
@@ -2746,10 +2749,10 @@ struct MarketsView: View {
                 HStack(spacing: DS.Space.sm) {
                     Menu {
                         ForEach(IdeaSort.allCases, id: \.self) { s in
-                            Button { ideaSort = s } label: { Label(s.rawValue, systemImage: ideaSort == s ? "checkmark" : "") }
+                            Button { ideaSort = s } label: { Label(s.label, systemImage: ideaSort == s ? "checkmark" : "") }
                         }
                     } label: {
-                        Label("Sort: \(ideaSort.rawValue)", systemImage: "arrow.up.arrow.down")
+                        Label("Sort: \(ideaSort.label)", systemImage: "arrow.up.arrow.down")
                             .font(.system(size: mvFont10)).foregroundStyle(DS.Palette.accent)
                     }
                     .menuStyle(.borderlessButton).fixedSize()
@@ -2767,16 +2770,16 @@ struct MarketsView: View {
                     Menu {
                         ForEach([0.0, 0.5, 0.6, 0.7, 0.8], id: \.self) { v in
                             Button { ideaMinConv = v } label: {
-                                Label(v == 0 ? "Any conviction" : "≥ \(Int(v * 100))%",
+                                Label(v == 0 ? "Any signal strength" : "≥ \(Int(v * 100))%",
                                       systemImage: ideaMinConv == v ? "checkmark" : "")
                             }
                         }
                     } label: {
-                        Label(ideaMinConv == 0 ? "Conviction" : "≥ \(Int(ideaMinConv * 100))%", systemImage: "speedometer")
+                        Label(ideaMinConv == 0 ? "Signal strength" : "≥ \(Int(ideaMinConv * 100))%", systemImage: "speedometer")
                             .font(.system(size: mvFont10)).foregroundStyle(ideaMinConv == 0 ? .secondary : DS.Palette.accent)
                     }
                     .menuStyle(.borderlessButton).fixedSize()
-                    .accessibilityLabel("Minimum conviction filter")
+                    .accessibilityLabel("Minimum signal-strength filter")
                     HStack(spacing: DS.Space.xs) {
                         Image(systemName: "magnifyingglass").font(.system(size: mvFont10)).foregroundStyle(.secondary)
                         TextField("Search", text: $ideaSearch).textFieldStyle(.plain).font(.system(size: mvFont11))
@@ -2826,7 +2829,7 @@ struct MarketsView: View {
             if avgRR > 0 { summaryChip(String(format: "%.1f", avgRR), "avg R:R") }
             // Non-interactive sort-mode chip so the user always knows why
             // the board is ordered as it is, even after scrolling past the sort/filter strip.
-            summaryChip("↕", ideaSort.rawValue.lowercased() + " sort")
+            summaryChip("↕", ideaSort.label.lowercased() + " sort")
             Spacer(minLength: 0)
         }
     }
@@ -2874,7 +2877,7 @@ struct MarketsView: View {
     /// Why the filtered ideas list is empty — names the active constraint so the user knows what to relax.
     private var ideasEmptyMessage: String {
         if !ideaSearch.trimmingCharacters(in: .whitespaces).isEmpty { return "No ideas match “\(ideaSearch)”." }
-        if ideaMinConv > 0 { return "No ideas at ≥ \(Int(ideaMinConv * 100))% conviction — lower the conviction filter." }
+        if ideaMinConv > 0 { return "No ideas at ≥ \(Int(ideaMinConv * 100))% signal strength — lower the signal-strength filter." }
         if ideaFilter != .all { return "No \(ideaFilter.rawValue.lowercased()) ideas in this scan." }
         return "No ideas in this scan."
     }
@@ -2977,8 +2980,8 @@ struct MarketsView: View {
             }
             if let when = store.ideasUpdated {
                 Text(store.ideasIsStale
-                     ? "⚠︎ Analyzed \(when.formatted(.relative(presentation: .named))) — over 4h old; re-scan for current ideas · ranked by \(ideaSort.rawValue.lowercased())"
-                     : "Analyzed \(Self.timeFormatter.string(from: when)) · ranked by \(ideaSort.rawValue.lowercased())")
+                     ? "⚠︎ Analyzed \(when.formatted(.relative(presentation: .named))) — over 4h old; re-scan for current ideas · ranked by \(ideaSort.label.lowercased())"
+                     : "Analyzed \(Self.timeFormatter.string(from: when)) · ranked by \(ideaSort.label.lowercased())")
                     .font(.caption2).foregroundStyle(store.ideasIsStale ? DS.Palette.warningSoft : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -3137,9 +3140,9 @@ struct MarketsView: View {
                 // F01/F02: wording keyed on the calibration METHOD — identity must read "assumed".
                 .help(store.convictionCalibration.map { cal in
                     cal.method == .identity
-                    ? "Conviction — a rules-based score; win-rate currently ASSUMED equal to conviction (identity floor), not measured from outcomes."
-                    : "Conviction — a rules-based score; win-rate \(cal.method == .platt ? "fitted" : "measured") from \(cal.sampleSize) realized trades."
-                } ?? "Conviction — a rules-based signal strength, not a probability. Estimated win-rate range ~\(StockSageExpectedValue.assumedWinBandLabel), not a forecast.")
+                    ? "Signal strength — a rules-based score; win-rate currently ASSUMED equal to conviction (identity floor), not measured from outcomes."
+                    : "Signal strength — a rules-based score; win-rate \(cal.method == .platt ? "fitted" : "measured") from \(cal.sampleSize) realized trades."
+                } ?? "Signal strength — a rules-based score, not a probability. Estimated win-rate range ~\(StockSageExpectedValue.assumedWinBandLabel), not a forecast.")
             if idea.spark.count >= 2 {
                 Sparkline(values: idea.spark)
                     .stroke(sparkColor(idea.spark),
@@ -3239,7 +3242,7 @@ struct MarketsView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel({ () -> String in
-            var label = "\(idea.symbol), \(a.action.rawValue), conviction \(Int(a.conviction * 100)) percent"
+            var label = "\(idea.symbol), \(a.action.rawValue), signal strength \(Int(a.conviction * 100)) percent"
             switch earnFlag {
             case .demoted(let d):     label += ", earnings imminent in about \(d) days — demoted in the rank"
             case .approaching(let d): label += ", earnings approaching in about \(d) days"
