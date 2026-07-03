@@ -211,7 +211,10 @@ enum StockSageNetCostSim {
         let netVerdictOOS: StockSageDeflatedSharpe.Result?
         let meanGross: Double
         let meanNet: Double
-        /// The gate: does the NET edge clear the honest DSR>0.95 bar out-of-sample?
+        /// The gate: does the NET edge clear the DSR>0.95 bar — OOS when computable. When the
+        /// walk-forward pool is too thin for a verdict (<4 pooled test points; first computable
+        /// OOS verdict needs n≥10 rebalances at folds=3/embargo=1), `simulate` falls back to the
+        /// FULL-series net verdict; `netVerdictOOS == nil` exposes the fallback to consumers.
         let clearsNetOfCost: Bool
     }
 

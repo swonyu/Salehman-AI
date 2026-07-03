@@ -607,8 +607,10 @@ struct StockSageCalibrationSelectorTests {
     // Newton shipped c=6.60e8 → flat winProb 1.000000 (+0.096774 overstatement THROUGH the D-1
     // guard). POST-FIX the intercept-only path inits at the exact MLE ln(nPos/nNeg) = ln(28/3)
     // → σ = 28/31 to full double precision (all values printed by the derive script, not the
-    // app). The mid-band fixtures above sit in the convergent band and are byte-identical
-    // pre/post this init fix (measured).
+    // app). The mid-band fixtures above sit in the convergent band and agree within ~1e-15
+    // (~2 ulp) pre/post this init fix — NOT byte-identical (review-fleet re-measurement
+    // 2026-07-03, verbatim fitBeta extraction at 51483d2 vs 9d26c48); identical at the
+    // tests' 1e-6 tolerance.
     private static let extremeBaseRateWitness: [Outcome] = [
         (conviction: 0.776242, won: true), (conviction: 0.906762, won: true),
         (conviction: 0.308668, won: true), (conviction: 0.887846, won: true),

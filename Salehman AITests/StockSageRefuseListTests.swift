@@ -23,8 +23,12 @@ struct StockSageRefuseListTests {
         for setup in StockSageRefuseList.all {
             #expect(!setup.title.isEmpty)
             if setup.id == "overnight-roundtrip" {
+                // Both pins are genuine spec phrases: "cost-devoured" (exec summary) and
+                // "shuttered" (refuse-list item 4 / roadmap item 2's "NightShares ETF
+                // closures") — the code's earlier "shut down" was a paraphrase, aligned
+                // to the spec 2026-07-03.
                 #expect(setup.evidence.contains("cost-devoured"))
-                #expect(setup.evidence.contains("shut down"))
+                #expect(setup.evidence.contains("shuttered"))
             } else {
                 #expect(setup.evidence.rangeOfCharacter(from: .decimalDigits) != nil)
             }

@@ -48,7 +48,7 @@ struct StockSageNetCostSimTests {
     // F8 — rebalance series gross/turnover/net (covers gross=Σw·fwd, net=gross−turnover·perSide,
     // and the exclusion-driven turnover at t=3). Values from derive_netcostsim_v2.swift.
     // perSide = 50/2/10_000 = 0.0025 per unit turnover. Arithmetic:
-    //   t=2: w=[−¼,¼,¼,−¼] (F2); gross=−¼·0.04+¼·(−0.05)=−0.025; turn=Σ|w−0|=1; net=−0.025−0.0025
+    //   t=2: w=[−¼,¼,¼,−¼] (F2); gross=−¼·0.05+¼·(−0.05)=−0.025; turn=Σ|w−0|=1; net=−0.025−0.0025
     //   t=3: excl s0 → w=[0,0,½,−½]; gross=½·(−0.05)=−0.025; turn=4·0.25=1;     net=−0.025−0.0025
     //   t=4: w back to [−¼,¼,¼,−¼]; gross=−¼·0.04+¼·(−0.05)=−0.0225; turn=1;    net=−0.0225−0.0025
     //   t=5: past=[0.09,0,−0.10,0] → raw=[−.045,.045,.05,−.05]/0.19; gross=−0.0273684…;

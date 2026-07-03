@@ -37,7 +37,7 @@ enum StockSageRefuseList {
                      evidence: "Round-trip costs exceed 1%/mo — more than the gross spread of all but two documented variants (verified)."),
         RefusedSetup(id: "overnight-roundtrip",
                      title: "Daily overnight/intraday round-trip harvesting",
-                     evidence: "The overnight premium is real but the DAILY round-trip is cost-devoured — the source paper itself calls it cost-unattractive, and the NightShares ETF implementations shut down (verified). Hold the overnight session via entry timing instead (already shipped, zero added turnover)."),
+                     evidence: "The overnight premium is real but the DAILY round-trip is cost-devoured — the source paper itself calls it cost-unattractive, and the NightShares ETF implementations shuttered (verified). Hold the overnight session via entry timing instead (already shipped, zero added turnover)."),
         RefusedSetup(id: "funding-seasonality",
                      title: "Crypto funding-rate-seasonality timing",
                      evidence: "Peak-to-trough intraday funding spread ~2.5bps vs 4–10bps/side retail taker fees; single mid-tier source, ~3-month sample — weak evidence AND a negative conclusion (verified)."),

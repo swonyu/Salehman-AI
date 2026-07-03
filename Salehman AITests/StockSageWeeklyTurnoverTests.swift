@@ -25,8 +25,11 @@ struct StockSageWeeklyTurnoverTests {
     }
 
     @Test func topThreePrefixExcludesTheWeakestCrypto() {
-        // derive_weekly_turnover: top-3 of {3× c=0.9, 1× c=0.45} = the 0.9s (strict rank order),
-        // sum = 3·(5/3) = 5.0 exactly; a wrongly-included 4th would read 6.667.
+        // derive_weekly_turnover: sum = 3·(5/3) = 5.0 exactly; a wrongly-included 4th would read
+        // 6.667. MEASURED SCOPE (2026-07-03 review): all four fixtures are crypto with the same
+        // 3d hold, so ANY 3-of-4 subset sums to 5.0 — this pins the prefix(3) COUNT cap only,
+        // not WHICH three were taken (the name, kept for plan cross-refs, overstates); pinning
+        // rank order would need a mixed-class 4th idea with a different hold.
         let ideas = [idea("AAA-USD"), idea("BBB-USD"), idea("CCC-USD"), idea("DDD-USD", conviction: 0.45)]
         let trips = EV.assumedWeeklyRoundTrips(ideas, maxConcurrent: 3, tradingDays: 5)
         #expect(trips != nil && abs(trips! - 5.0) < 1e-9)
