@@ -62,21 +62,24 @@ stocksage-mental-model §7). Verify with `ls skills/` — it shows both dirs:
 - **markets-review-gate** — review gate on other sessions' / external code, plus the outbound external-handoff chores (bundle regen, PROJECT_CONTEXT freshness).
 - **stocksage-engine** — RETIRED: merged into `stocksage-mental-model` §7 on 2026-07-02; the dir was deleted 2026-07-03 (no tombstone remains).
 
-## Status (2026-07-02)
+## Status (2026-07-03)
 
 Authored + adversarially cold-read-reviewed by a Fable-xhigh workflow. The
-review's fix pass **landed** the same day in commit `0171621` ("Skill-library
+review's fix pass **landed** 2026-07-02 in commit `0171621` ("Skill-library
 fix pass"), repairing the three named findings: the `debugging-guide`
 failed-test-extraction grep, `visual-qa`'s `calibrationChip` call-site count
 (5 → 4), and `testing-discipline`'s NetEdge incident date. A same-day hygiene
 pass then de-duplicated the owner-gate registry (canonical copy now ONLY in
 `gated-scope` §1 — every other skill points there) and corrected the stale
 "`tools/test_grok_bridge.py` is untracked" lines (it is TRACKED since
-`713064e`). The same day, five campaign/reference skills were added,
-`stocksage-engine` was merged into `stocksage-mental-model` (and retired to a
-tombstone), and the two remaining operational skills stayed tracked in-place
-at `.claude/skills/` (see above — the promotion has not landed).
-Verify: `git log --oneline | grep 0171621`.
+`713064e`); five campaign/reference skills were added the same day. On
+2026-07-03 the promotion LANDED: `run-salehman-ai` and `markets-review-gate`
+were `git mv`'d into `skills/` (history + executable bit preserved) and are
+symlinked from `.claude/skills/` like everything else, and the retired
+`stocksage-engine` dir was DELETED outright — its content lives in
+`stocksage-mental-model` §7, no tombstone remains. The library stands at
+**19 skills**, all canonical in `skills/`.
+Verify: `ls skills/` (19 dirs) and `git log --oneline | grep 0171621`.
 
 ## Provenance and maintenance
 
