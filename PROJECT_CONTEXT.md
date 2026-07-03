@@ -426,3 +426,61 @@ of just this file isn't missing the newest capabilities:
   equity fast-lane board split + live cross-group correlation, wired into `fastLaneStrip`'s
   `Both/Crypto/Equities` picker.
 
+## 12. StockSage — 2026-07-03 merges (crypto-risk trio · refuse-list · net-cost gate · calibration fix)
+
+Five merges landed on `main` overnight 2026-07-02→03. `DEVELOPMENT_LOG.md` is the chronological record
+and `SOURCE_BUNDLE.md` the authoritative full source; this entry catalogs what a single-file reader would
+otherwise miss. All modules below are pure/deterministic and honesty-floor-bound (labeled estimates, never
+quotes; `nil`=unknown; gross vs net always distinguished).
+
+**Fenced anti-edges (the refuse-list)**
+- **`StockSageRefuseList.swift`** — `enum StockSageRefuseList` + `RefusedSetup`: "the coded refuse-list
+  (research refuse-list items 1–7, verbatim substance)" from `RESEARCH_2026-07-02_week_horizon_velocity.md` —
+  naive standalone reversal, standalone PEAD, ~90%-turnover rotation, overnight/intraday round-trip harvesting,
+  crypto funding-seasonality timing, anomaly-in-illiquid-names. `mcLeanPontiffDecay` holds the #7 decay-haircut
+  policy constants "for future ablations, not runtime multipliers — nothing in production math reads these."
+
+**Crypto-risk trio + tier-aware cost (CRYPTO_RISK #1–4)**
+- **`StockSageNetEdge`** — tier-aware crypto round-trip cost estimate (CRYPTO_RISK #1, `// MARK: - Tier-aware
+  crypto round-trip cost estimate` ~line 143): richer than the flat 70 bps default that "treats BTC and a
+  microcap alt identically." (The dead double-charging `allInCost` was deleted this session — D-2.)
+- **`StockSageCryptoLiquidityGate.swift`** (`CryptoLiquidityGate`, #3) — ADV$ floor/ceiling; below the floor a
+  name is "skip" (unfillable at advisor size), between floor and ceiling → resting limits, sized down.
+- **`StockSageCryptoHonesty.swift`** (`CryptoNetEdgeHonesty`, #2) — pure net-edge verdict classifier composed
+  over `StockSageBacktester.run` + the gate; a `thinNote` from the liquidity gate "forces 'unproven' regardless
+  of the R numbers."
+- **`StockSageCryptoFunding.swift`** (`CryptoFundingDrag`, #4) — perp funding drag in R (`dailyFunding =
+  annualBps/10 000/365`); estimate band ≈3–30% APR, "can be NEGATIVE; owner-tunable, never a quote" (no
+  live/paid funding feed exists in the app).
+
+**Net-of-cost simulation gate**
+- **`StockSageNetCostSim.swift`** — deterministic walk-forward (purge/embargo) harness for the IRRX reversal
+  overlay (week-horizon roadmap item 3): industry-relative earnings-excluded reversal weights → round-trip cost
+  netting (per-side cost accounting, revised in review) → `StockSageDeflatedSharpe` verdict. Honest result on
+  its fixtures: the overlay does **NOT** clear net-of-cost (`clearsNetOfCost=false`), matching "58 bps/mo gross,
+  net unproven." Runs on caller-supplied return panels; not wired into production ranking.
+
+**Calibration honesty fix (D-1/D-1b)**
+- **`StockSageConvictionCalibration`** — the Beta drop-and-refit branches (`.dropA`/`.dropB`) now re-anchor the
+  intercept to the intercept-only MLE when the surviving slope clamps to 0, so a monotonicity-violating sample
+  yields the honest base rate instead of a flat OVERSTATED `σ(c)`. (Fix of an audit finding; red-first fixtures.)
+
+**Risk & display honesty**
+- **`StockSageGapRisk.swift`** — `enum StockSageGapRisk` + `GapRiskScenario`/`TradeSide`: `scenario`/`worstCase`/
+  `fromPosition` overnight-gap loss, long/short aware.
+- **`StockSageLossLimit.swift`** — `LossLimitPolicy`/`LossLimitState` daily-loss halt with a fail-closed
+  missing-data window.
+- **`Views/MarketsView.swift`** — `BacktestVerdict.metricColor(positive:significant:)` gates the verdict COLOR
+  (not just the caption) on statistical significance — "an insignificant sample renders these NEUTRAL," never
+  green (AUDIT_FINDINGS_2 #1).
+
+**Staged / unmerged (NOT on main — do not describe as shipped):**
+- Universe expansion 210→1,024 — `plans/PLAN_2026-07-03_universe_1024.md` (committed but execution-BLOCKED on
+  Yahoo-throttle verification per its §0.5). Candidate pool: `research/UNIVERSE_CANDIDATES_2026-07-03.md`
+  (1,413 live-sourced names); the verified 1,024 manifest is pending the throttle clearing.
+- Sheet-candidate navigation — staged on the held `ideas-card/ux-wave-2` branch (awaiting owner visual QA).
+
+**Operating/discipline skill library:** `.claude/skills/` (19 skills) + `skills/` — durable session-operating
+and discipline docs (opus-operating, gated-scope, incident-ledger, testing-discipline, ablation-harness,
+money-campaign-map, stocksage-mental-model, …). Dev tooling, not app runtime.
+
