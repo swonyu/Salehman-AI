@@ -52,6 +52,18 @@ real-data run of the shipped machinery via a Yahoo-independent path. This is **m
 a fenced-domain (crypto reversal ≈ anti-edge #5) data point**, NOT a campaign edge. It says nothing
 about the equity IRRX question.
 
+**Both cross-sectional directions covered (momentum needs no separate run).** Under the harness's
+L1-normalized industry-relative demeaning, the momentum book (long winners) is the EXACT negation of
+the reversal book: `raw_mom = +(past−indMean) = −raw_rev`, demeaning and the L1 gross are sign/scale
+identical, so `w_mom = −w_rev` with identical turnover. Hence `net_mom(t) = −gross_reversal(t) −
+turnover·cost` — the reversal series already determines it. Applying it to this panel: every config
+is net-negative/null for momentum too (e.g. lb5/hd5 reversal meanNet −0.0064 ⇒ momentum meanGross
++0.0016, minus the same ~0.0048 cost ⇒ momentum net ≈ −0.0033). So **cross-sectional short-horizon
+crypto momentum ALSO fails net-of-cost** — derived analytically from the mirror property, NOT run
+separately (running it would be redundant). Time-series momentum (TSMOM 12-1) is a different signal
+and is already the shipped engine default for all assets incl. crypto — covered by the in-app
+strategy backtest (DSR ≈ 0), not this harness.
+
 ## Did NOT establish
 
 - **Nothing about an equity edge.** Crypto ≠ the campaign target; no equity panel was run here.
