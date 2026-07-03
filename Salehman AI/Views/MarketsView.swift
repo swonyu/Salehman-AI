@@ -4300,8 +4300,8 @@ struct MarketsView: View {
                     Text("Risk %").font(.system(size: mvFont9)).foregroundStyle(.secondary)
                     journalField("1", text: $sizerRiskPct, width: 40)
                 }
-                if let acct = Double(sizerAccount), let rp = Double(sizerRiskPct),
-                   let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: entry, stop: stop) {
+                if let acct = parsedAccount, let rf = parsedRiskFraction,
+                   let ps = StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: entry, stop: stop) {
                     let leveraged = ps.pctOfAccount > 100
                     if ps.shares >= 1 {
                         HStack(spacing: DS.Space.sm) {
@@ -4436,8 +4436,8 @@ struct MarketsView: View {
             a.targetPrice.flatMap { t in StockSageRewardRisk.assess(entry: idea.price, stop: s, target: t) }
         }
         let size: PositionSize? = a.stopPrice.flatMap { s in
-            guard let acct = Double(sizerAccount), let rp = Double(sizerRiskPct) else { return nil }
-            return StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: s)
+            guard let acct = parsedAccount, let rf = parsedRiskFraction else { return nil }
+            return StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: idea.price, stop: s)
         }
         let planLadder: PartialLadder? = {
             guard let stop = a.stopPrice, let target = a.targetPrice else { return nil }
@@ -4447,6 +4447,12 @@ struct MarketsView: View {
         var plan = StockSageTradePlan.text(symbol: idea.symbol, market: idea.market, price: idea.price,
                                            advice: a, rewardRisk: rr, size: size, flags: riskFlags,
                                            ladder: planLadder, chandelierLevel: planChandelier)
+        // F04: StockSageTradePlan.text silently OMITS the "Size:" line when size is nil — which
+        // used to happen for a typed "10,000" (Double() choking on the comma), reading as "no
+        // size available" with no hint why. Say so explicitly when there's a stop to size against.
+        if a.stopPrice != nil, size == nil {
+            plan += "\nSize: enter account size to size this trade."
+        }
         // F15: Net R:R line only when stop+target both exist (need both prices for the ratio).
         // Gate is emitted for buy-family ONLY — same condition as the on-screen gate chip.
         // For a stop-less buy, hasStop=false → "Don't take this trade" appears in the export.
@@ -4486,16 +4492,21 @@ struct MarketsView: View {
                 let gross = abs(target - idea.price) / risk
                 return resolvedNetRR ?? gross
             }()
-            let rf = (Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil }) ?? 0.01
-            let gate = StockSageTradeGate.evaluate(
-                hasStop: a.stopPrice != nil, rewardToRisk: netRR, riskFraction: rf,
-                daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
-                rrIsNet: resolvedNetRR != nil)
-            plan += "\nPre-trade gate: \(gate.decision.rawValue)"
-            let failLabels = gate.checks.filter { $0.level == .fail }.map(\.label)
-            let warnLabels = gate.checks.filter { $0.level == .warn }.map(\.label)
-            if !failLabels.isEmpty { plan += "\n  FAIL: " + failLabels.joined(separator: "; ") }
-            if !warnLabels.isEmpty { plan += "\n  WARN: " + warnLabels.joined(separator: "; ") }
+            // F04: was `?? 0.01` — a typed-but-unparseable risk % silently evaluated the gate at a
+            // fabricated 1%, printing a "Clear"/"Caution" verdict the user never actually asked for.
+            if let rf = parsedRiskFraction {
+                let gate = StockSageTradeGate.evaluate(
+                    hasStop: a.stopPrice != nil, rewardToRisk: netRR, riskFraction: rf,
+                    daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
+                    rrIsNet: resolvedNetRR != nil)
+                plan += "\nPre-trade gate: \(gate.decision.rawValue)"
+                let failLabels = gate.checks.filter { $0.level == .fail }.map(\.label)
+                let warnLabels = gate.checks.filter { $0.level == .warn }.map(\.label)
+                if !failLabels.isEmpty { plan += "\n  FAIL: " + failLabels.joined(separator: "; ") }
+                if !warnLabels.isEmpty { plan += "\n  WARN: " + warnLabels.joined(separator: "; ") }
+            } else {
+                plan += "\nPre-trade gate: not evaluated — enter risk % to see the verdict."
+            }
         }
         return plan
     }
@@ -4605,14 +4616,20 @@ struct MarketsView: View {
                         // churn that fails break-even can't read "Clear to trade". Falls back to gross.
                         return resolvedNetRR ?? gross
                     }()
-                    // Floor 0/negative risk to 1% (matches TodayPlan.build + the velocity sibling at
-                    // 2491) so the on-screen gate and the COPIED broker plan can't disagree on go/no-go.
-                    let rf = (Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil }) ?? 0.01
-                    let gate = StockSageTradeGate.evaluate(
-                        hasStop: a.stopPrice != nil, rewardToRisk: rr, riskFraction: rf,
-                        daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
-                        rrIsNet: resolvedNetRR != nil)
-                    tradeGateView(gate)
+                    // F04: was a `?? 0.01` floor — an unparseable risk % (e.g. a typed "10,000" account
+                    // is fine but a malformed risk field) silently evaluated the gate at a fabricated
+                    // 1%, printing a "Clear"/"Caution" verdict the user never actually set. nil now
+                    // suppresses the verdict instead of fabricating one (fullPlanText mirrors this).
+                    if let rf = parsedRiskFraction {
+                        let gate = StockSageTradeGate.evaluate(
+                            hasStop: a.stopPrice != nil, rewardToRisk: rr, riskFraction: rf,
+                            daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
+                            rrIsNet: resolvedNetRR != nil)
+                        tradeGateView(gate)
+                    } else {
+                        Text("Pre-trade gate: enter risk % to see the verdict.")
+                            .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
 
                     // ── 5. Position sizer (moved above evidence; gate reads sizerRiskPct
                     //       so proximity makes the dependency legible). ─────────────────────────
@@ -4998,8 +5015,8 @@ struct MarketsView: View {
                 if !whatIfHoldings.isEmpty {
                     let bookTotal = whatIfHoldings.reduce(0) { $0 + $1.value }
                     let sizedNotional: Double? = {
-                        if let stop = a.stopPrice, let acct = Double(sizerAccount), let rp = Double(sizerRiskPct),
-                           let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
+                        if let stop = a.stopPrice, let acct = parsedAccount, let rf = parsedRiskFraction,
+                           let ps = StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: idea.price, stop: stop) {
                             // Normalize pence-quoted symbols (.L/.JO) to major-unit value so
                             // the what-if concentration check isn't ~100× overstated.
                             return StockSageCurrency.majorUnitValue(symbol: idea.symbol, rawValue: ps.notional)
@@ -5008,7 +5025,7 @@ struct MarketsView: View {
                     }()
                     // Cap to cash actually deployable — the sizer's notional can be leveraged.
                     let addValue = StockSageWhatIf.proposedAddValue(
-                        sizedNotional: sizedNotional, account: Double(sizerAccount), bookTotal: bookTotal)
+                        sizedNotional: sizedNotional, account: parsedAccount, bookTotal: bookTotal)
                     let impact = StockSageWhatIf.addingHolding(symbol: idea.symbol, addedValue: addValue, to: whatIfHoldings)
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: impact.isWarning ? "exclamationmark.triangle.fill" : "chart.pie.fill")
@@ -5196,29 +5213,41 @@ struct MarketsView: View {
                                 guard risk > 0 else { return nil }
                                 return chipNetRR ?? (abs(tgt - idea.price) / risk)
                             }()
-                            let rf = (Double(sizerRiskPct).flatMap { $0 > 0 ? $0 / 100 : nil }) ?? 0.01
-                            let chipGate = StockSageTradeGate.evaluate(
-                                hasStop: a.stopPrice != nil, rewardToRisk: chipRR, riskFraction: rf,
-                                daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
-                                rrIsNet: chipNetRR != nil)
-                            let chipColor: Color = chipGate.decision == .clear ? DS.Palette.successSoft
-                                : (chipGate.decision == .caution ? DS.Palette.warningSoft : DS.Palette.danger)
-                            let chipIcon = chipGate.decision == .clear ? "checkmark.shield.fill"
-                                : (chipGate.decision == .caution ? "exclamationmark.triangle.fill" : "xmark.shield.fill")
-                            // Visual QA 2026-07-02: the bar can't fit 3 buttons + the full verdict
-                            // phrase at the 440pt sheet floor ("Proceed with caution" truncated to
-                            // "Proceed…"). The chip uses a COMPACT label — icon + tint carry severity,
-                            // the full verdict stays in .help and the VoiceOver label, and the complete
-                            // gate section above remains the authoritative wording.
-                            let chipCompact = chipGate.decision == .clear ? "Clear"
-                                : (chipGate.decision == .caution ? "Caution" : "Do NOT trade")
-                            Label(chipCompact, systemImage: chipIcon)
-                                .font(.system(size: mvFont9, weight: .semibold))
-                                .foregroundStyle(chipColor)
-                                .lineLimit(1)
-                                .layoutPriority(1)
-                                .help("\(chipGate.decision.rawValue) — \(chipGate.caveat)")
-                                .accessibilityLabel("Pre-trade gate: \(chipGate.decision.rawValue)")
+                            // F04: was `?? 0.01` — an unparseable risk % silently rendered a fabricated
+                            // "Clear"/"Caution" verdict in this PINNED bar the user relies on to place
+                            // the trade. nil now renders an honest "set risk %" chip instead of a verdict.
+                            if let rf = parsedRiskFraction {
+                                let chipGate = StockSageTradeGate.evaluate(
+                                    hasStop: a.stopPrice != nil, rewardToRisk: chipRR, riskFraction: rf,
+                                    daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
+                                    rrIsNet: chipNetRR != nil)
+                                let chipColor: Color = chipGate.decision == .clear ? DS.Palette.successSoft
+                                    : (chipGate.decision == .caution ? DS.Palette.warningSoft : DS.Palette.danger)
+                                let chipIcon = chipGate.decision == .clear ? "checkmark.shield.fill"
+                                    : (chipGate.decision == .caution ? "exclamationmark.triangle.fill" : "xmark.shield.fill")
+                                // Visual QA 2026-07-02: the bar can't fit 3 buttons + the full verdict
+                                // phrase at the 440pt sheet floor ("Proceed with caution" truncated to
+                                // "Proceed…"). The chip uses a COMPACT label — icon + tint carry severity,
+                                // the full verdict stays in .help and the VoiceOver label, and the complete
+                                // gate section above remains the authoritative wording.
+                                let chipCompact = chipGate.decision == .clear ? "Clear"
+                                    : (chipGate.decision == .caution ? "Caution" : "Do NOT trade")
+                                Label(chipCompact, systemImage: chipIcon)
+                                    .font(.system(size: mvFont9, weight: .semibold))
+                                    .foregroundStyle(chipColor)
+                                    .lineLimit(1)
+                                    .layoutPriority(1)
+                                    .help("\(chipGate.decision.rawValue) — \(chipGate.caveat)")
+                                    .accessibilityLabel("Pre-trade gate: \(chipGate.decision.rawValue)")
+                            } else {
+                                Label("Set risk %", systemImage: "questionmark.circle")
+                                    .font(.system(size: mvFont9, weight: .semibold))
+                                    .foregroundStyle(DS.Palette.textSecondary)
+                                    .lineLimit(1)
+                                    .layoutPriority(1)
+                                    .help("Enter risk % to see the pre-trade gate verdict.")
+                                    .accessibilityLabel("Pre-trade gate: risk percent not set")
+                            }
                         }
                     }
                     // ── Caveat (always visible — stronger than hiding it below the fold) ──
