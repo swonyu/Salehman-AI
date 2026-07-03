@@ -88,4 +88,25 @@ struct StockSageHistoryCacheTests {
         #expect(result != nil)                              // ← the unblock: cached data now simulates
         #expect((result?.rebalances.count ?? 0) >= 4)       // ≥ 4 rebalances (the sim's own non-nil floor)
     }
+
+    // 7. Panel alignment: symbols with DIFFERENT date axes align on the shared-date INTERSECTION
+    //    (a missing date is dropped, never fabricated); returns are computed on the shared axis only.
+    @Test func panelAlignsOnSharedDateAxisIntersection() throws {
+        let d = (0..<4).map { Date(timeIntervalSince1970: Double($0) * 86_400) }   // d0…d3
+        // AAA has all 4 bars; BBB is MISSING d1 ⇒ shared dates = {d0, d2, d3} (3 → 2 returns).
+        let a = StockSagePriceHistory(symbol: "AAA", dates: d, opens: [10, 11, 12, 13], highs: [10, 11, 12, 13],
+                                      lows: [10, 11, 12, 13], closes: [10, 11, 12, 13], volumes: [1, 1, 1, 1])
+        let b = StockSagePriceHistory(symbol: "BBB", dates: [d[0], d[2], d[3]], opens: [20, 22, 23], highs: [20, 22, 23],
+                                      lows: [20, 22, 23], closes: [20, 22, 23], volumes: [1, 1, 1])
+        let p = try #require(HC.panel(from: ["AAA": a, "BBB": b], industryOf: { _ in 0 }))
+        #expect(p.symbolCount == 2)
+        #expect(p.periodCount == 2)     // 3 shared dates → 2 returns; d1 dropped, not fabricated
+        // AAA on shared [d0,d2,d3] = closes [10,12,13] (d1's 11 DROPPED): return[0] = 12/10−1 = 0.2 exactly.
+        // If alignment did NOT drop d1, return[0] would be 11/10−1 = 0.1 — so 0.2 pins the intersection.
+        #expect(abs(p.returns[0][0] - 0.2) < 1e-9)
+        #expect(abs(p.returns[0][1] - (13.0 / 12.0 - 1.0)) < 1e-9)   // 13/12−1
+        // BBB [20,22,23]: returns 22/20−1 = 0.1, 23/22−1.
+        #expect(abs(p.returns[1][0] - 0.1) < 1e-9)
+        #expect(abs(p.returns[1][1] - (23.0 / 22.0 - 1.0)) < 1e-9)
+    }
 }
