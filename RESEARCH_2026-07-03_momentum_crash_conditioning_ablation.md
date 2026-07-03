@@ -133,3 +133,37 @@ Re-ran the identical overlay/state definitions on a longer, multi-regime panel t
   *fired* slow-bleed-into-second-leg crash (2000-03, 2008) — pre-2011 data, owner-scoped. The
   non-redundancy mechanism is the durable finding; the efficacy sign, where testable, is negative.
   Repro: `python3 scratchpad/mrp_ablation.py` (reads `/tmp/multiregime_panel/panel.json`).
+
+## UPDATE 2026-07-03 — 2008-inclusive re-run (the residual this file named — RESOLVED against the overlay)
+Ran the definitive test the prior UPDATE named: the overlay on a panel reaching back to **2004-01-02**
+so it contains the canonical Daniel-Moskowitz 2008-09 momentum crash.
+
+- **Panel:** 20 tradeable US large-caps + ^GSPC, 5660 daily bars, 2004-01-02→2026-07-02, one shared
+  calendar, zero dropped; fetched gently (concurrency 1, ~2s, no 429). `/tmp/crash2008_panel/panel.json`.
+- **Crash-state episodes (2005-2026):** only 2 independent macro regimes — the **2009-06→2010-10
+  post-GFC recovery** and **2023**. It did NOT fire in 2008, early-2009, 2011, 2020, or 2022.
+- **THE AIRTIGHT DIAGNOSTIC (why 2008 doesn't rescue it):** through the ENTIRE 2008-09 crash and the
+  March-2009 momentum-crash reversal, cond1 (trailing-24mo mkt<0) held TRUE but **cond2 (1mo vol < 2y
+  median) was FALSE** — annualized market vol ran 22–82% vs a 15–23% median. First firing 2009-06-12,
+  ~3 months AFTER the reversal. **The state's "calm-vol" clause structurally excludes every high-vol
+  crash**, so the overlay can only ever act once the panic has passed and losers have already
+  rocketed — it is mis-timed by construction and never gets to act during the momentum crash it targets.
+- **Verdict per horizon (OVERLAY−BASE_MOM, net 13bps, trials=4):** 21d −11.3bp/blk (t=−2.82, p=0.005),
+  42d −15.9 (t=−2.51, p=0.013), 63d −13.4 (p=0.351), 126d −35.8 (p=0.126). Crash-only: 21d −131bp
+  (p=0.003), 42d −215bp (p=0.004). **Sign stably NEGATIVE at every horizon, full-period AND crash-only,
+  now BLOCK-SIGNIFICANT negative at the powered 21/42d horizons.** Best DSR anywhere 0.132 ≪ 0.95.
+- **Per-episode:** 2008-09 the overlay never acted (state didn't fire); 2009-10 recovery flattening
+  HURT (post-crash winners kept winning); 2023 HURT (AI/semis continuation). Isolated positive blocks
+  (2009-11 +202bp, 2023-03 +220bp) swamped; no regime shows net protection.
+- **Overlap mechanism replicated:** varianceScalar 0.994 in-crash vs 0.941 non-crash (in-crash vol
+  6–23% < 20% target) — non-redundant with vol-level controls, but adds negative value where it fires.
+- **Caveat (cuts against this test's own validity):** survivorship is MUCH worse at 20y — the panel is
+  today's survivors only, so every 2004-era name that collapsed in 2008 (the rocketing-losers a
+  momentum-crash overlay is meant to be protected FROM) is absent, biasing the momentum baseline UP and
+  under-representing the true 2008 dynamics. A delisting-inclusive CRSP-grade panel is the only
+  remaining (owner/Fable-scoped) way to revisit.
+- **DISPOSITION: upgraded from REFUSE/insufficient to REFUTE.** Not for lack of power this time, but
+  because the state definition is mis-timed against the very crashes it targets. The non-redundancy
+  mechanism (vol-trajectory vs vol-level) is the only durable keep-worthy finding; non-redundant +
+  net-negative = do NOT add. No campaign positive. Repro: `/tmp/crash2008_ablation.py` (reads
+  `/tmp/crash2008_panel/panel.json`; DSR via compiled real `StockSageDeflatedSharpe`).
