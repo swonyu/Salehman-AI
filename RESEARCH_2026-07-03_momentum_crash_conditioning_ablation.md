@@ -99,3 +99,37 @@ python3 scratchpad/momentum_crash_ablation.py   # reads /tmp/lowbeta_ablation/pa
 ```
 Ported source: `StockSageDeflatedSharpe.swift`, `StockSageNetEdge.swift`, `StockSageIndicators.swift`
 (`timeSeriesMomentum`), `StockSageAdvisor.swift` (`varianceScalar`).
+
+## UPDATE 2026-07-03 — multi-regime 15y re-run (the documented next step)
+Re-ran the identical overlay/state definitions on a longer, multi-regime panel to resolve the
+"insufficient sample" verdict. **Result: upgraded from insufficient-sample to REFUSE / lean-refute
+— now measured net-NEGATIVE where the state fires, sign-stable across 2 independent episodes.**
+
+- **Panel:** 25 liquid US large-caps + ^GSPC, 3771 daily bars, 2011-07-05→2026-07-02, one shared
+  calendar, zero names dropped; fetched gently (concurrency 1, ~2s), no 429. Names: AAPL MSFT JPM
+  XOM JNJ PG KO WMT CAT HD CVX UNH PFE BAC GOOGL IBM GE CSCO INTC MCD DIS MMM HON T VZ. Warmup 524
+  bars → testable from 2013-08. Panel at `/tmp/multiregime_panel/panel.json`.
+- **Crash-state fired only TWICE, BOTH in 2023** (spring 2023-03-10→05-31; fall 2023-08-15→2024-01-08).
+  2020/2022/2018Q4/2025 all FAILED to fire — diagnostic: the state's "trailing-2y-negative AND
+  calm-vol" condition structurally excludes fast/high-vol crashes (2020-03-23 vol 83.6%ann ≫ median
+  → cond2 fails) and melt-up-preceded declines (2022 trailing-2y still +21% from the 2020-21
+  melt-up → cond1 fails). **The binding constraint is the DEFINITION, not data length.**
+- **Verdict per horizon (OVERLAY−BASE_MOM, net 13bps, non-overlapping blocks):** 21d −2.22bp/blk
+  (DSR 0.0007), 42d −5.54 (~0), 63d −12.41 (~0), 126d 0 (no crash-block, overlay≡base). No horizon
+  clears DSR; all fail net-NEGATIVE.
+- **Sign STABLE and NEGATIVE across both episodes** (in-state diff: spring/fall −234/−27bp @21d,
+  −213 @42d, −241/−391 @63d). Both 2023 episodes were momentum CONTINUATIONS (AI/semis rally) —
+  flattening to equal-weight diluted the winning tilt, replicating the 5y fall-2023 result and
+  adding a second independent confirmation.
+- **OVERLAP mechanism REPLICATED:** avg `varianceScalar`=1.000 in-crash vs 0.959–0.971 non-crash;
+  in-state annualized market vol 11.6–14.5% (< 20% target). The vol-level scaling is a no-op
+  precisely in the crash-state — the overlay still targets a genuinely unaddressed axis
+  (vol-trajectory). Non-redundant, but net-negative where it fires.
+- **Caveats:** survivorship WORSE at 15y (today's survivors only — GE/INTC/PFE/T/VZ/IBM survived,
+  every delisted 2011-era name excluded, biasing the momentum baseline up); only 2 episodes, same
+  2023 macro regime (so "sign stable" = stable *within 2023*, not across bear cycles); 2011/2008 are
+  inside/before the warmup; DSR trials=4 fragile.
+- **Disposition:** do NOT add the overlay. A genuine efficacy test still needs a panel containing a
+  *fired* slow-bleed-into-second-leg crash (2000-03, 2008) — pre-2011 data, owner-scoped. The
+  non-redundancy mechanism is the durable finding; the efficacy sign, where testable, is negative.
+  Repro: `python3 scratchpad/mrp_ablation.py` (reads `/tmp/multiregime_panel/panel.json`).
