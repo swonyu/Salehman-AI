@@ -34,5 +34,18 @@ def net_cost(entry: float, stop: float, target: float, symbol: str = "AAPL") -> 
                  "--target", str(target), "--symbol", symbol])
 
 
+@mcp.tool()
+def deflated_sharpe(returns: str, trials: int = 1, var_trial_sharpe: float = 0.0) -> str:
+    """Per-period Sharpe, PSR, and the DEFLATED Sharpe from the real StockSageDeflatedSharpe, for a
+    comma-separated return series (≥4 per-period returns, e.g. "0.02,-0.01,0.03,0.0"). `passesDSRbar`
+    = DSR > 0.95 — the honest "real edge" bar. `trials` (≥2) with `var_trial_sharpe` applies the
+    selection-bias haircut (DSR drops below PSR: the more strategy variants you searched, the higher
+    the bar). trials=1 ⇒ DSR==PSR (no haircut). The shipped engine's measured DSR ≈ 0 (no proven edge)."""
+    args = ["deflated-sharpe", "--returns", returns, "--trials", str(trials)]
+    if var_trial_sharpe:
+        args += ["--var-trial-sharpe", str(var_trial_sharpe)]
+    return _run(args)
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")

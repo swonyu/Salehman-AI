@@ -18,6 +18,13 @@ stocksage netcost --entry 100 --stop 95 --target 110 --symbol AAPL
 the real `StockSageNetEdge`. Asset-class cost ESTIMATES by symbol suffix (US 13bps, `.`-intl 30,
 `-USD` crypto 70, `=X` FX 7, `^` index 8) — labeled, never venue quotes.
 
+```bash
+stocksage deflated-sharpe --returns "0.02,-0.01,0.03,0,0.01,-0.02,0.04,0.01" [--trials N] [--var-trial-sharpe X]
+```
+→ per-period Sharpe (mean ÷ sample-stdev), PSR, and the **Deflated Sharpe** from the real
+`StockSageDeflatedSharpe` — `passesDSRbar` = `DSR > 0.95`, the honest "real edge" bar. `--trials`
+(≥2) + `--var-trial-sharpe` apply the selection-bias haircut (DSR drops below PSR). Needs ≥4 returns.
+
 ## MCP (query from Claude chats)
 macOS system python is externally-managed (PEP 668), so the MCP runs from a dedicated venv:
 ```bash

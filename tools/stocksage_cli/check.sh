@@ -14,4 +14,8 @@ check grossRR 2.000000
 check netRR 1.923977
 check costPerShare 0.130000
 check breakEvenWinRate 0.342000
-if [ $fail -eq 0 ]; then echo "PASS — netcost matches hand-derivation"; else echo "CHECK FAILED"; exit 1; fi
+# deflated-sharpe: hand-derived sharpe (mean 0.01 ÷ sample-sd 0.02 = 0.5); trials=1 ⇒ DSR==PSR; sub-0.95 ⇒ !passes
+ds=$(./stocksage deflated-sharpe --returns "0.02,-0.01,0.03,0,0.01,-0.02,0.04,0.01")
+echo "$ds" | grep -q '"sharpe": 0.500000' && echo "ok  deflated-sharpe sharpe=0.5 (hand-derived)" || { echo "FAIL deflated-sharpe sharpe"; fail=1; }
+echo "$ds" | grep -q '"passesDSRbar": false' && echo "ok  deflated-sharpe passesDSRbar=false" || { echo "FAIL passesDSRbar"; fail=1; }
+if [ $fail -eq 0 ]; then echo "PASS — netcost + deflated-sharpe match hand-derivation"; else echo "CHECK FAILED"; exit 1; fi

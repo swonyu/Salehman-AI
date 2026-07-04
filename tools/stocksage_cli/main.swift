@@ -44,6 +44,33 @@ case "netcost":
     }
     """)
 
+case "deflated-sharpe":
+    guard let rstr = opt("returns") else {
+        die("deflated-sharpe needs --returns \"r1,r2,r3,…\" (per-period returns, ≥4) [--trials N] [--var-trial-sharpe X]")
+    }
+    let rs = rstr.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+    guard rs.count >= 4 else { die("need ≥4 numeric returns (got \(rs.count)) — DSR moments are nil below 4") }
+    let trials = opt("trials").flatMap(Int.init) ?? 1
+    let vts = opt("var-trial-sharpe").flatMap(Double.init) ?? 0
+    let n = rs.count
+    let mean = rs.reduce(0, +) / Double(n)
+    let sd = (rs.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(n - 1)).squareRoot()  // SAMPLE (n−1)
+    let sharpe = sd > 0 ? mean / sd : 0
+    guard let m = StockSageDeflatedSharpe.moments(rs) else { die("moments nil (need ≥4 returns)") }
+    let r = StockSageDeflatedSharpe.deflated(observedSharpe: sharpe, nTrades: n, skew: m.skew,
+                                             kurtosis: m.kurtosis, trials: Swift.max(1, trials), varTrialSharpe: vts)
+    print("""
+    {
+      "n": \(n),
+      "sharpe": \(f6(sharpe)),
+      "psr": \(f6(r.psr)),
+      "dsr": \(f6(r.dsr)),
+      "trials": \(r.trials),
+      "passesDSRbar": \(r.passes),
+      "_note": "sharpe = per-period mean ÷ SAMPLE stdev (backtester convention); DSR>0.95 = the honest 'real edge' bar (trials≥2 applies the selection-bias haircut). The shipped engine has no proven edge (DSR≈0)."
+    }
+    """)
+
 default:
-    die("unknown command '\(cmd)' (have: netcost)")
+    die("unknown command '\(cmd)' (have: netcost, deflated-sharpe)")
 }
