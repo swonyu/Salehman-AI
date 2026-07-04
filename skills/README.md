@@ -29,6 +29,9 @@ Verify: `ls -la .claude/skills/` shows the symlinks, and each resolves to a
 
 ## The skills
 
+### Router (start here)
+- **salehman-activate** (added 2026-07-04) — the single entry point that maps the task at hand (edit engine, decide what to build, ablate, test, ship, review, debug, owner-gated call) to WHICH of the skills below to invoke, plus the workstream non-negotiables. A router, not a replacement — it points to the others.
+
 ### Discipline gates (how to behave — load on every substantive task)
 - **executing-plans** — a step is done only when its verification OUTPUT is pasted; STOP on any plan-vs-reality mismatch.
 - **spec-fidelity** — an expected value mirroring an external API/spec/formula comes only from the captured spec; never fix a failing contract test by editing the assertion.
