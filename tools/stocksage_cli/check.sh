@@ -1,0 +1,17 @@
+#!/bin/bash
+# Runnable check: netcost output must match the HAND-DERIVED expected values (spec-fidelity — the
+# expected numbers come from StockSageNetEdge.evaluate's formula by hand, NOT from the code's output).
+# Hand derivation (entry=100, stop=95, target=110, AAPL=US 13bps):
+#   cost = 13/10000*100 = 0.13 ; grossReward=10, grossRisk=5, grossRR=2.0
+#   cappedGrossReward = min(2.0,50)*5 = 10 ; netReward = 10-0.13 = 9.87 ; netRisk = 5+0.13 = 5.13
+#   netRR = 9.87/5.13 = 1.923977 ; breakEven = 1/(1+1.923977) = 0.342000
+cd "$(dirname "$0")" || exit 1
+[ -x ./stocksage ] || bash build.sh >/dev/null 2>&1 || { echo "build failed"; exit 1; }
+out=$(./stocksage netcost --entry 100 --stop 95 --target 110 --symbol AAPL)
+fail=0
+check() { echo "$out" | grep -q "\"$1\": $2" && echo "ok  $1=$2" || { echo "FAIL $1 expected $2"; fail=1; }; }
+check grossRR 2.000000
+check netRR 1.923977
+check costPerShare 0.130000
+check breakEvenWinRate 0.342000
+if [ $fail -eq 0 ]; then echo "PASS — netcost matches hand-derivation"; else echo "CHECK FAILED"; exit 1; fi
