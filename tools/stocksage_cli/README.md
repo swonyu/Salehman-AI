@@ -42,7 +42,7 @@ It prints the exact registration command (absolute paths, since Claude runs it f
 ```bash
 claude mcp add stocksage -- /ABS/PATH/tools/stocksage_cli/.venv/bin/python /ABS/PATH/tools/stocksage_cli/mcp_server.py
 ```
-Exposes the `net_cost` tool. The MCP is dumb plumbing; all math stays in the compiled Swift engine.
+Exposes three tools — `net_cost`, `deflated_sharpe`, and `indicators`. The MCP is dumb plumbing; all math stays in the compiled Swift engine.
 > Note: run these from a checkout that actually has `tools/stocksage_cli/` (it shipped at commit
 > `a93ef37`). If your working tree is behind, `git pull` first.
 
@@ -52,8 +52,9 @@ Exposes the `net_cost` tool. The MCP is dumb plumbing; all math stays in the com
 - Costs are labeled estimates; gross vs net always labeled; nil = unknown (never fabricated).
 
 ## Scope & roadmap (honest limitations)
-- **v1 = decoupled engine math only** (`netcost`). Cleanly compiles from `StockSageNetEdge` +
-  `StockSageLiquidity` + `StockSageAllocation` (3 files, zero port).
+- **Decoupled engine math only** (`netcost`, `deflated-sharpe`, `indicators`). Cleanly compiles from
+  `StockSageNetEdge` + `StockSageLiquidity` + `StockSageAllocation` + `StockSageDeflatedSharpe` +
+  `StockSageIndicators` (5 files, zero port).
 - **`idea <SYM>` (advise pipeline) is NOT here yet.** `StockSageAdvisor.advise` → `ExpectedValue` →
   `StockSageIdea`, and `StockSageIdea` lives in the SwiftUI-coupled `StockSageStore`. Exposing the
   full idea card standalone needs either an app-side decoupling of `StockSageIdea` out of the Store,

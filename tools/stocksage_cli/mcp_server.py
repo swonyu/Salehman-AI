@@ -18,8 +18,16 @@ mcp = FastMCP("stocksage")
 def _run(args: list[str]) -> str:
     if not os.path.exists(CLI):
         return json.dumps({"error": f"CLI not built at {CLI} — run build.sh"})
-    r = subprocess.run([CLI, *args], capture_output=True, text=True, timeout=20)
-    return r.stdout.strip() if r.returncode == 0 else json.dumps({"error": r.stderr.strip()})
+    try:
+        # 40s > the CLI's own ~30s CoinGecko fetch wait, so a slow-but-successful fetch isn't killed here.
+        r = subprocess.run([CLI, *args], capture_output=True, text=True, timeout=40)
+    except subprocess.TimeoutExpired:
+        return json.dumps({"error": "stocksage timed out (>40s)"})
+    except OSError as e:  # e.g. a present-but-non-executable binary (PermissionError)
+        return json.dumps({"error": f"failed to run stocksage: {e}"})
+    if r.returncode != 0:
+        return json.dumps({"error": r.stderr.strip() or f"stocksage exited {r.returncode}"})
+    return r.stdout.strip()
 
 
 @mcp.tool()

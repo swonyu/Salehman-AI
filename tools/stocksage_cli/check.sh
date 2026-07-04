@@ -24,4 +24,17 @@ if echo "$ind" | grep -q '"bars":'; then
   bars=$(echo "$ind" | sed -nE 's/.*"bars": ([0-9]+).*/\1/p')
   { [ -n "$bars" ] && [ "$bars" -gt 200 ]; } && echo "ok  indicators live: $bars bars, rsi/sma computed" || { echo "FAIL indicators bars ($bars)"; fail=1; }
 else echo "skip indicators (offline / CoinGecko unreachable — non-fatal)"; fi
-if [ $fail -eq 0 ]; then echo "PASS — netcost + deflated-sharpe (hand-derived) + indicators (live sanity)"; else echo "CHECK FAILED"; exit 1; fi
+# --- input-hardening / honesty regression guards (added 2026-07-04 after the adversarial CLI review) ---
+# U2: non-finite input must die CLEANLY (exit 2), never SIGTRAP-crash (was exit 133).
+./stocksage netcost --entry inf --stop 95 --target 110 >/dev/null 2>&1; [ $? -eq 2 ] && echo "ok  netcost rejects inf (clean exit 2, no crash)" || { echo "FAIL netcost inf not cleanly rejected"; fail=1; }
+# U3: a --symbol containing a quote must still emit VALID JSON (was malformed).
+if command -v python3 >/dev/null 2>&1; then
+  ./stocksage netcost --entry 100 --stop 95 --target 110 --symbol 'A"B' | python3 -c 'import sys,json; json.load(sys.stdin)' 2>/dev/null && echo "ok  netcost escapes symbol → valid JSON" || { echo "FAIL netcost symbol breaks JSON"; fail=1; }
+else echo "skip symbol-JSON check (no python3)"; fi
+# U5: a non-numeric --returns token must die, never be silently dropped.
+./stocksage deflated-sharpe --returns "0.02,foo,0.03,0.04,0.05" >/dev/null 2>&1; [ $? -ne 0 ] && echo "ok  deflated-sharpe rejects non-numeric token" || { echo "FAIL deflated-sharpe silently dropped a token"; fail=1; }
+# U6: trials≥2 with NO var-trial-sharpe must NOT claim a haircut was applied (DSR==PSR there).
+./stocksage deflated-sharpe --returns "0.02,-0.01,0.03,0,0.01,-0.02,0.04,0.01" --trials 200 | grep -q "NO selection-bias haircut" && echo "ok  deflated-sharpe note honest about no-op haircut" || { echo "FAIL deflated-sharpe haircut note misleading"; fail=1; }
+# U7: usage string must advertise the real commands, not the nonexistent 'idea'.
+u=$(./stocksage 2>&1); { echo "$u" | grep -q "deflated-sharpe" && ! echo "$u" | grep -q "idea"; } && echo "ok  usage lists real commands" || { echo "FAIL usage string stale"; fail=1; }
+if [ $fail -eq 0 ]; then echo "PASS — netcost + deflated-sharpe (hand-derived) + indicators (live) + input-hardening guards"; else echo "CHECK FAILED"; exit 1; fi

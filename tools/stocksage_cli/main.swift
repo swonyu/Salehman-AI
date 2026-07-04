@@ -4,10 +4,26 @@ import Foundation
 // Honesty floor is the engine's: nil=unknown, gross vs net labeled, "no proven edge" carried.
 
 func die(_ m: String) -> Never { FileHandle.standardError.write((m + "\n").data(using: .utf8)!); exit(2) }
-func f6(_ d: Double) -> String { String(format: "%.6f", d) }
+// Honesty floor: a non-finite value is UNKNOWN, never a fabricated finite-looking number → emit JSON null.
+func f6(_ d: Double) -> String { d.isFinite ? String(format: "%.6f", d) : "null" }
+// JSON-escape a string so a user-supplied --symbol/--coin (or engine free-text) can't break the JSON contract.
+func jstr(_ s: String) -> String {
+    var out = ""
+    for u in s.unicodeScalars {
+        switch u {
+        case "\\": out += "\\\\"
+        case "\"": out += "\\\""
+        case "\n": out += "\\n"
+        case "\r": out += "\\r"
+        case "\t": out += "\\t"
+        default: out += u.value < 0x20 ? String(format: "\\u%04x", u.value) : String(u)
+        }
+    }
+    return out
+}
 
 var argv = Array(CommandLine.arguments.dropFirst())
-guard let cmd = argv.first else { die("usage: stocksage <netcost|idea> ...") }
+guard let cmd = argv.first else { die("usage: stocksage <netcost|deflated-sharpe|indicators> ...") }
 argv = Array(argv.dropFirst())
 func opt(_ name: String) -> String? {
     guard let i = argv.firstIndex(of: "--\(name)"), i + 1 < argv.count else { return nil }
@@ -39,6 +55,7 @@ case "netcost":
           let t = opt("target").flatMap(Double.init) else {
         die("netcost needs --entry E --stop S --target T [--symbol SYM]")
     }
+    guard e.isFinite, s.isFinite, t.isFinite else { die("entry/stop/target must be finite numbers (no inf/nan)") }
     let sym = opt("symbol") ?? "AAPL"
     let c = StockSageNetEdge.defaultCosts(forSymbol: sym)
     guard let ne = StockSageNetEdge.evaluate(entry: e, stop: s, target: t,
@@ -49,7 +66,7 @@ case "netcost":
     let be = ne.breakEvenWinRate.map(f6) ?? "null"
     print("""
     {
-      "symbol": "\(sym)",
+      "symbol": "\(jstr(sym))",
       "assetClass": "\(c.assetClass)",
       "roundTripBps": \(f6(c.roundTripBps)),
       "grossRR": \(f6(ne.grossRR)),
@@ -57,7 +74,7 @@ case "netcost":
       "costPerShare": \(f6(ne.costPerShare)),
       "costAsPctOfReward": \(f6(ne.costAsPctOfReward)),
       "breakEvenWinRate": \(be),
-      "verdict": "\(ne.verdict)",
+      "verdict": "\(jstr(ne.verdict))",
       "_note": "net after a LABELED asset-class cost estimate, not a venue quote; the engine has no proven edge (DSR≈0)."
     }
     """)
@@ -66,7 +83,11 @@ case "deflated-sharpe":
     guard let rstr = opt("returns") else {
         die("deflated-sharpe needs --returns \"r1,r2,r3,…\" (per-period returns, ≥4) [--trials N] [--var-trial-sharpe X]")
     }
-    let rs = rstr.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+    // Strict parse: NEVER silently drop a token the user supplied (honesty floor) — die naming the bad one.
+    let toks = rstr.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    if let bad = toks.first(where: { Double($0) == nil }) { die("--returns has a non-numeric token: '\(bad)'") }
+    let rs = toks.compactMap(Double.init)
+    guard rs.allSatisfy({ $0.isFinite }) else { die("--returns values must be finite (no inf/nan)") }
     guard rs.count >= 4 else { die("need ≥4 numeric returns (got \(rs.count)) — DSR moments are nil below 4") }
     let trials = opt("trials").flatMap(Int.init) ?? 1
     let vts = opt("var-trial-sharpe").flatMap(Double.init) ?? 0
@@ -77,6 +98,11 @@ case "deflated-sharpe":
     guard let m = StockSageDeflatedSharpe.moments(rs) else { die("moments nil (need ≥4 returns)") }
     let r = StockSageDeflatedSharpe.deflated(observedSharpe: sharpe, nTrades: n, skew: m.skew,
                                              kurtosis: m.kurtosis, trials: Swift.max(1, trials), varTrialSharpe: vts)
+    // Honest haircut disclosure: the selection-bias haircut is a NO-OP unless BOTH trials≥2 AND vts>0 (engine
+    // expectedMaxSharpe guards V>0), so DSR==PSR otherwise regardless of trials — state which actually happened.
+    let haircutNote = (Swift.max(1, trials) >= 2 && vts > 0)
+        ? "a selection-bias haircut WAS applied (trials≥2 and --var-trial-sharpe>0 ⇒ DSR≤PSR)"
+        : "NO selection-bias haircut applied — it needs BOTH trials≥2 AND --var-trial-sharpe>0; here DSR==PSR"
     print("""
     {
       "n": \(n),
@@ -85,7 +111,7 @@ case "deflated-sharpe":
       "dsr": \(f6(r.dsr)),
       "trials": \(r.trials),
       "passesDSRbar": \(r.passes),
-      "_note": "sharpe = per-period mean ÷ SAMPLE stdev (backtester convention); DSR>0.95 = the honest 'real edge' bar (trials≥2 applies the selection-bias haircut). The shipped engine has no proven edge (DSR≈0)."
+      "_note": "sharpe = per-period mean ÷ SAMPLE stdev (backtester convention); DSR>0.95 = the honest 'real edge' bar. \(haircutNote). The shipped engine has no proven edge (DSR≈0)."
     }
     """)
 
@@ -102,7 +128,7 @@ case "indicators":
     func jb(_ b: Bool?) -> String { b.map { $0 ? "true" : "false" } ?? "null" }
     print("""
     {
-      "coin": "\(coin.lowercased())",
+      "coin": "\(jstr(coin.lowercased()))",
       "bars": \(n),
       "lastClose": \(f6(closes.last!)),
       "rsi14": \(jn(StockSageIndicators.rsi(closes))),
