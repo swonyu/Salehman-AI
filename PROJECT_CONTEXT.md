@@ -484,3 +484,19 @@ quotes; `nil`=unknown; gross vs net always distinguished).
 and discipline docs (opus-operating, gated-scope, incident-ledger, testing-discipline, ablation-harness,
 money-campaign-map, stocksage-mental-model, …). Dev tooling, not app runtime.
 
+## 13. `tools/stocksage_cli/` — query the real engine from any Claude chat (2026-07-04)
+
+A **free** Swift CLI + thin Python MCP (`tools/stocksage_cli/`, OUTSIDE the app Xcode target — no app
+build/runtime impact) that exposes the REAL StockSage engine by compiling the app's own PURE engine files
+verbatim (**zero port risk** — no second copy of the math to drift, F46). Three tools:
+- `netcost --entry E --stop S --target T --symbol SYM` → real `StockSageNetEdge`: net R:R, break-even
+  win-rate `p*=1/(1+netRR)`, asset-class cost breakdown.
+- `deflated-sharpe --returns "…" [--trials N] [--var-trial-sharpe X]` → real `StockSageDeflatedSharpe`:
+  Sharpe/PSR/DSR, `passesDSRbar`=DSR>0.95 (the honest "real edge" bar; trials≥2 applies the selection-bias haircut).
+- `indicators --coin <coingecko-id> [--days N]` → fetches FREE CoinGecko daily closes (crypto only — the
+  equity/Yahoo path stays throttled) and runs real `StockSageIndicators` (rsi/sma/tsMomentum/trendOK/
+  efficiencyRatio/vol). `nil`=unknown (insufficient history), never fabricated.
+`build.sh` compiles; `check.sh` verifies against hand-derivations; `setup_mcp.sh` creates a venv (system
+python is PEP-668) and registers the MCP. Honesty floor carried verbatim ("no proven edge, DSR≈0"). The MCP
+runs from a dedicated worktree `/Users/saleh/ai-mcp`. Dev/analysis tool, NOT app runtime; never for advice.
+
