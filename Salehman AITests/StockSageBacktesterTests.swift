@@ -192,6 +192,28 @@ struct StockSageBacktesterTests {
         #expect(s.outcome == .stop && s.exitIdx == 2 && s.exitPrice == 5)
     }
 
+    // Gap-honest fills — money-critical: both the backtester AND the paper-trader net R depend on
+    // this, so a regression to plain `effStop` (ignoring gaps) would silently overstate every trade.
+    // simulateExitResolvesEachMode's stop case fills AT the stop (its open ≥ stop); these pin the two
+    // branches it leaves untested. Hand-derived in /tmp/derive_gapfill.swift (NOT read off the code):
+    //   gap-DOWN through the stop → fill at the WORSE open (3, not 5); target gap-UP → fill at the
+    //   resting LIMIT (20, not the higher 25 print).
+    @Test func simulateExitFillsAreGapHonest() {
+        // Bar 2 OPENS BELOW the stop (gap down): fill at the open (3), never the stop (5).
+        let gd = StockSageBacktester.simulateExit(entryIdx: 1, stop: 5, target: 20,
+                    opens: [10,10,3,10,10,10], highs: [10,10,3,10,10,10],
+                    lows: [10,10,2,10,10,10], closes: [10,10,3,12,13,14], n: 6, mode: .allAtTarget)
+        #expect(gd.outcome == .stop && gd.exitIdx == 2)
+        #expect(gd.exitPrice == 3)      // the gapped-through open
+        #expect(gd.exitPrice < 5)       // a gap makes the fill WORSE than the planned stop (the honesty point)
+        // Bar 2 GAPS UP through the target: fill at the resting LIMIT (20), never the higher print (25).
+        let tu = StockSageBacktester.simulateExit(entryIdx: 1, stop: 5, target: 20,
+                    opens: [10,10,22,10,10,10], highs: [10,10,25,10,10,10],
+                    lows: [10,10,21,10,10,10], closes: [10,10,24,10,10,10], n: 6, mode: .allAtTarget)
+        #expect(tu.outcome == .target && tu.exitIdx == 2)
+        #expect(tu.exitPrice == 20)     // capped at the limit — a gap can't pay you more than your target
+    }
+
     @Test func scaleOutLadderBanksRungsHonestlyAtRestingLevels() {
         // entry 100, stop 90 (risk 10), target 120 (2R), 2 rungs → rung1 @110 (1R), rung2 @120 (2R),
         // each half. blendedExitR = 0.5·1 + 0.5·2 = 1.5. (python-verified fills)
