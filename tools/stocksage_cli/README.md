@@ -19,10 +19,17 @@ the real `StockSageNetEdge`. Asset-class cost ESTIMATES by symbol suffix (US 13b
 `-USD` crypto 70, `=X` FX 7, `^` index 8) — labeled, never venue quotes.
 
 ## MCP (query from Claude chats)
+macOS system python is externally-managed (PEP 668), so the MCP runs from a dedicated venv:
 ```bash
-claude mcp add stocksage -- python3 tools/stocksage_cli/mcp_server.py   # needs `pip install mcp`
+bash tools/stocksage_cli/setup_mcp.sh    # creates .venv, installs mcp, builds the CLI, prints the add command
+```
+It prints the exact registration command (absolute paths, since Claude runs it from elsewhere):
+```bash
+claude mcp add stocksage -- /ABS/PATH/tools/stocksage_cli/.venv/bin/python /ABS/PATH/tools/stocksage_cli/mcp_server.py
 ```
 Exposes the `net_cost` tool. The MCP is dumb plumbing; all math stays in the compiled Swift engine.
+> Note: run these from a checkout that actually has `tools/stocksage_cli/` (it shipped at commit
+> `a93ef37`). If your working tree is behind, `git pull` first.
 
 ## Honesty floor (inherited from the engine)
 - The engine has **no proven edge** (Deflated Sharpe ≈ 0) — its value is risk-discipline, not alpha.

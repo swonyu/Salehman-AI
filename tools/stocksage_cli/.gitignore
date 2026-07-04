@@ -1,3 +1,4 @@
 stocksage
 err.log
 *.o
+.venv/
