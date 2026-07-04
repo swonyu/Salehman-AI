@@ -26,15 +26,19 @@ exclusion (the OPEN FRONTIER #1 residual). Context: `skills/money-campaign-map`,
 ## Fetching a panel (Yahoo-free)
 - **Crypto (keyless, abundant):** CoinGecko `coins.marketChart` daily → align → simple returns.
   Category → `industry`; `roundTripBps=70`. (Fenced-domain: machinery validation, not a campaign edge.)
-- **Equity (the campaign target) — BLOCKED on a split-adjusted source (verified 2026-07-03).**
-  You need **split-adjusted** closes (the RAW `TIME_SERIES_DAILY` has split jumps that fabricate
-  returns — never use it). But Alpha Vantage's **`TIME_SERIES_DAILY_ADJUSTED` is a PREMIUM endpoint**
-  — the free key returns a rate-limit/premium error, not data. So the free-tier equity path is
-  closed. A powered equity run needs one of: (a) the Yahoo poller's panel once the throttle clears
-  (`StockSageQuoteService` returns adjusted closes); (b) a **premium** AV key; (c) an EODHD token
-  (see handoff) or another split-adjusted feed. Given a source: sector → `industry`; `roundTripBps=13`
-  (US); earnings dates via Bigdata.com `events_calendar` (or AV `EARNINGS.reportedDate`, also
-  metered) → `earningsExcludedAt`.
+- **Equity (the campaign target) — FETCH-AND-GO via EODHD (2026-07-04).** `fetch_eodhd_panel.py`
+  builds a split-adjusted 24-name/6-sector US panel from EODHD's `adjusted_close` (the RAW
+  `TIME_SERIES_DAILY`/close has split jumps that fabricate returns — never use it). One command:
+  ```bash
+  EODHD_API_TOKEN=xxxxx ./fetch_and_ablate.sh              # base run
+  EODHD_API_TOKEN=xxxxx ./fetch_and_ablate.sh --earnings   # + IRRX earnings-window exclusion (the "X")
+  ```
+  The fetch→parse→returns path is validated offline against the KEYLESS demo token (AAPL.US only):
+  `python3 fetch_eodhd_panel.py --self-test` (confirmed 1256 adjusted bars, max|r|=15% ⇒ no split
+  leak). It aligns on the INTERSECTION of trading dates (no fabricated bars), sets `roundTripBps=13`
+  (US), sector → `industry`, and populates `earningsExcludedAt` from EODHD earnings dates when
+  `--earnings` is passed (else EMPTY, never fabricated). Other split-adjusted paths still work too:
+  the Yahoo poller's panel once the throttle clears, or a premium AV key.
 
 ## Earnings-window exclusion (operationalization — a documented choice, not the code's default)
 Mark symbol `s` excluded at a rebalance formed at period `t` if `s` has an earnings date within a
