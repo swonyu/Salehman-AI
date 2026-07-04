@@ -18,4 +18,10 @@ check breakEvenWinRate 0.342000
 ds=$(./stocksage deflated-sharpe --returns "0.02,-0.01,0.03,0,0.01,-0.02,0.04,0.01")
 echo "$ds" | grep -q '"sharpe": 0.500000' && echo "ok  deflated-sharpe sharpe=0.5 (hand-derived)" || { echo "FAIL deflated-sharpe sharpe"; fail=1; }
 echo "$ds" | grep -q '"passesDSRbar": false' && echo "ok  deflated-sharpe passesDSRbar=false" || { echo "FAIL passesDSRbar"; fail=1; }
-if [ $fail -eq 0 ]; then echo "PASS — netcost + deflated-sharpe match hand-derivation"; else echo "CHECK FAILED"; exit 1; fi
+# indicators: LIVE CoinGecko fetch — sanity only (data is non-deterministic), skipped offline
+ind=$(./stocksage indicators --coin bitcoin --days 365 2>/dev/null)
+if echo "$ind" | grep -q '"bars":'; then
+  bars=$(echo "$ind" | sed -nE 's/.*"bars": ([0-9]+).*/\1/p')
+  { [ -n "$bars" ] && [ "$bars" -gt 200 ]; } && echo "ok  indicators live: $bars bars, rsi/sma computed" || { echo "FAIL indicators bars ($bars)"; fail=1; }
+else echo "skip indicators (offline / CoinGecko unreachable — non-fatal)"; fi
+if [ $fail -eq 0 ]; then echo "PASS — netcost + deflated-sharpe (hand-derived) + indicators (live sanity)"; else echo "CHECK FAILED"; exit 1; fi

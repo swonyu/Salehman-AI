@@ -5,7 +5,7 @@
 cd "$(dirname "$0")" || exit 1
 ENG="../../Salehman AI/StockSage"
 # Grow this list by re-running and adding any "cannot find X in scope" file until it compiles.
-CORE="StockSageNetEdge.swift StockSageLiquidity.swift StockSageAllocation.swift StockSageDeflatedSharpe.swift"
+CORE="StockSageNetEdge.swift StockSageLiquidity.swift StockSageAllocation.swift StockSageDeflatedSharpe.swift StockSageIndicators.swift"
 files=()
 for name in $CORE; do files+=("$ENG/$name"); done
 echo "compiling main.swift + ${#files[@]} decoupled engine files: $CORE"

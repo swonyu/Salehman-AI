@@ -14,6 +14,24 @@ func opt(_ name: String) -> String? {
     return argv[i + 1]
 }
 
+// FREE daily closes from CoinGecko (keyless, crypto only). Synchronous via a semaphore (CLI).
+func fetchDailyCloses(coin: String, days: Int) -> [Double]? {
+    let id = coin.lowercased()
+    guard let url = URL(string: "https://api.coingecko.com/api/v3/coins/\(id)/market_chart?vs_currency=usd&days=\(days)&interval=daily") else { return nil }
+    var out: [Double]?
+    let sem = DispatchSemaphore(value: 0)
+    var req = URLRequest(url: url); req.timeoutInterval = 25
+    URLSession.shared.dataTask(with: req) { data, _, _ in
+        defer { sem.signal() }
+        guard let data = data,
+              let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let prices = j["prices"] as? [[Double]] else { return }
+        out = prices.compactMap { $0.count >= 2 ? $0[1] : nil }
+    }.resume()
+    _ = sem.wait(timeout: .now() + 30)
+    return out
+}
+
 switch cmd {
 case "netcost":
     guard let e = opt("entry").flatMap(Double.init),
@@ -71,6 +89,33 @@ case "deflated-sharpe":
     }
     """)
 
+case "indicators":
+    guard let coin = opt("coin") else {
+        die("indicators needs --coin <coingecko-id, e.g. bitcoin|ethereum|solana> [--days N] (crypto only — free CoinGecko)")
+    }
+    let days = opt("days").flatMap(Int.init) ?? 365
+    guard let closes = fetchDailyCloses(coin: coin, days: days), closes.count >= 30 else {
+        die("fetch failed or <30 daily closes for '\(coin)' — check the CoinGecko coin-id (not the ticker) + network")
+    }
+    let n = closes.count
+    func jn(_ d: Double?) -> String { d.map(f6) ?? "null" }
+    func jb(_ b: Bool?) -> String { b.map { $0 ? "true" : "false" } ?? "null" }
+    print("""
+    {
+      "coin": "\(coin.lowercased())",
+      "bars": \(n),
+      "lastClose": \(f6(closes.last!)),
+      "rsi14": \(jn(StockSageIndicators.rsi(closes))),
+      "sma50": \(jn(StockSageIndicators.sma(closes, period: 50))),
+      "sma200": \(jn(StockSageIndicators.sma(closes, period: 200))),
+      "tsMomentum12_1": \(jn(StockSageIndicators.timeSeriesMomentum(closes))),
+      "trendOK": \(jb(StockSageIndicators.trendOK(closes))),
+      "efficiencyRatio": \(jn(StockSageIndicators.efficiencyRatio(closes))),
+      "annualizedVol_fraction": \(jn(StockSageIndicators.annualizedVolatility(closes))),
+      "_note": "real StockSageIndicators on CoinGecko daily closes (free, keyless). nil=unknown (insufficient history — trendOK/tsMomentum need ~253 bars, sma200 needs 200), NEVER fabricated. annualizedVol is a FRACTION (0.20=20%). Analysis, not advice; the engine has no proven edge (DSR≈0)."
+    }
+    """)
+
 default:
-    die("unknown command '\(cmd)' (have: netcost, deflated-sharpe)")
+    die("unknown command '\(cmd)' (have: netcost, deflated-sharpe, indicators)")
 }

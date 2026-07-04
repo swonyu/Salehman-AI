@@ -25,6 +25,14 @@ stocksage deflated-sharpe --returns "0.02,-0.01,0.03,0,0.01,-0.02,0.04,0.01" [--
 `StockSageDeflatedSharpe` — `passesDSRbar` = `DSR > 0.95`, the honest "real edge" bar. `--trials`
 (≥2) + `--var-trial-sharpe` apply the selection-bias haircut (DSR drops below PSR). Needs ≥4 returns.
 
+```bash
+stocksage indicators --coin bitcoin [--days 365]     # crypto only (free CoinGecko, keyless)
+```
+→ fetches daily closes from **CoinGecko** (free — the equity/Yahoo path stays throttled) and runs the
+real `StockSageIndicators`: `rsi14`, `sma50`/`sma200`, `tsMomentum12_1` (12-1 trend), `trendOK`,
+`efficiencyRatio` (<0.30 = ranging), `annualizedVol` (a FRACTION). `--coin` is the CoinGecko **id**
+(`bitcoin`, `ethereum`, `solana`), not the ticker. `nil` = unknown (insufficient history), never faked.
+
 ## MCP (query from Claude chats)
 macOS system python is externally-managed (PEP 668), so the MCP runs from a dedicated venv:
 ```bash

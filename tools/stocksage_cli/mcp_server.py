@@ -47,5 +47,16 @@ def deflated_sharpe(returns: str, trials: int = 1, var_trial_sharpe: float = 0.0
     return _run(args)
 
 
+@mcp.tool()
+def indicators(coin: str, days: int = 365) -> str:
+    """Real StockSageIndicators for a CRYPTO symbol on FREE CoinGecko daily closes (keyless; the
+    equity/Yahoo path stays throttled, so this is crypto-only). Returns rsi14, sma50/sma200,
+    tsMomentum12_1 (12-1 trend), trendOK, efficiencyRatio (<0.30 = ranging), annualizedVol (a
+    FRACTION). `coin` is the CoinGecko id — "bitcoin", "ethereum", "solana" — NOT the ticker.
+    nil = unknown (insufficient history: trendOK/tsMomentum need ~253 bars), never fabricated.
+    Analysis, not advice; the engine has no proven edge (DSR ≈ 0)."""
+    return _run(["indicators", "--coin", coin, "--days", str(days)])
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
