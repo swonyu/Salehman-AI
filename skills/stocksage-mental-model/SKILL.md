@@ -117,9 +117,12 @@ then grep every consumer file for the changed symbol and re-check each call site
   and the views render NOTHING for nil. Wiring a new surface? Replicate BOTH guards or no-data renders "hot".
 - **A calibration object existing ≠ measured win-probs.** Three traps: (a) `store.convictionCalibration`
   is nil until a journal fit succeeds or the owner taps Run on the Strategy backtest — until then every
-  win-prob is the assumed 0.35–0.58 prior; (b) the "win% measured" chip keys solely on `!= nil`, but the
-  iter7 selector can return an **identity** fit (`winProb(c) = c` — conviction passed through, F01/F02,
-  owner-gated); (c) every EV/ranking function defaults `calibration: = nil` — forget to thread
+  win-prob is the assumed 0.35–0.58 prior; (b) the "win% measured" chip must key on the calibration
+  `.method`, never merely on `!= nil`, because the iter7 selector can return an **identity** fit that is
+  not a real measurement — the OOS-validated identity winner (n≥44) passes conviction through
+  (`winProb(c) ≈ c`), the THIN-split identity (n∈[30,43]) is clamped to the prior (`min(c, prior)`,
+  F01 CLOSED 2026-07-04 `64b1725`), and BOTH must render "assumed" (F02); (c) every EV/ranking function
+  defaults `calibration: = nil` — forget to thread
   `store.convictionCalibration` at a new call site and that surface silently reverts to the assumed prior.
 - **Velocity ranking is net-adjusted; the displayed R/day is gross-labeled.** `velocityRankKey` (hidden
   sort: log-growth at half-Kelly × net/gross ratio, demotion sentinels) and `velocity()` (displayed: gross
@@ -193,10 +196,15 @@ Do not mirror the boundaries. Sizing constants: `riskPerTrade` 0.01, `maxWeight`
   chronological TRAIN split, scores them by OOS Brier on TEST, and refits the winner on ALL data.
   Identity wins ties (a candidate must beat it by > 1e-9) and is the only option when the sample is
   too thin to split honestly.
-- **Corrected claim (F01/F43 — the old stocksage-engine skill overstated this):** identity is a floor
-  only in the OOS-Brier-selection sense. Identity's `winProb(c) ≈ c` EXCEEDS the nil-calibration prior
-  for conviction ≳ 0.45 — it is NOT conservative relative to that prior. Whether the thin branch should
-  return nil / clamp to the prior instead is owner-gated (F01/F02 — registry via §6).
+- **F01 CLOSED 2026-07-04 (`64b1725`, owner-approved clamp) — the thin-vs-OOS split now matters:**
+  the **OOS-validated** identity winner (n≥44, empirically selected) passes conviction through
+  (`winProb(c) ≈ c`), which EXCEEDS the nil-calibration prior for conviction ≳ 0.45 — acceptable because
+  it is OOS-selected, not an unvalidated fallback (still renders "assumed", F02). The **thin-split**
+  identity (n∈[30,43], no OOS validation) is now CLAMPED to the prior —
+  `winProb = min(c, priorWinProb(c))` via `buildIdentity(clampToPrior:)` — so it is genuinely
+  conservative (≤ prior everywhere; the old c ≳ 0.45 inversion is gone) and only ever lowers, never
+  promotes an idea. Both prior paths route through the single `StockSageExpectedValue.priorWinProb(_:)`
+  (F46 anti-drift). No longer owner-gated (the earlier F01/F43 note flagged the inversion; the clamp fixed it).
 - **Provenance field**: `Method` enum {isotonicWilson, beta, platt, identity}. UI honesty wording keys
   on `.method`, never on `calibration != nil`; identity must always render "assumed" (see §5 trap b).
 - **Flag-off legacy seam** (regression-locked by `flagOffIsByteIdenticalToCurrent`): below
