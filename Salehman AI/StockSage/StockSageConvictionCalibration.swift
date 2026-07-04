@@ -76,15 +76,16 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
     /// leak-free chronological-split selector: candidates are fit on TRAIN, scored on TEST by OOS
     /// Brier, and the winner refit on ALL data — with IDENTITY as the floor (selected unless a
     /// candidate beats it by >1e-9 OOS, and the only option when the sample is too thin to split
-    /// honestly). HONESTY NOTE (F01/F43 2026-07-02): identity is a floor only in the OOS-Brier
-    /// selection sense — it is NOT conservative relative to the nil-calibration 0.35+0.23·c prior:
-    /// identity's winProb(c) ≈ c EXCEEDS that prior for conviction ≳ 0.45, so the earlier
-    /// "strictly more conservative" claim here was inverted in that range. Whether the thin branch
-    /// should instead return nil / clamp to the prior is an OWNER-HELD decision (see
-    /// AUDIT_2026-07-02_ideas_board.md F01); until then the `method` provenance field makes every
-    /// display render identity as "assumed", never "measured". The nil-calibration prior in
-    /// winProbEstimate is untouched. Set false to restore the byte-identical pre-iter7
-    /// Platt/isotonic seam (regression-locked by flagOffIsByteIdenticalToCurrent).
+    /// honestly). HONESTY NOTE (F01/F43): identity is a floor in the OOS-Brier selection sense.
+    /// RESOLVED (F01, owner-approved 2026-07-04 — clamp option): the THIN-split identity (n∈[30,43],
+    /// no OOS validation) is now clamped to the 0.35+0.23·c prior in `buildIdentity(clampToPrior:)`,
+    /// so it is genuinely "strictly more conservative" (winProb ≤ prior everywhere — the old
+    /// inversion for conviction ≳ 0.45 is gone) while the low-conviction band is untouched (clamp
+    /// only lowers → no idea is promoted). The OOS-VALIDATED identity winner (sufficient data) stays
+    /// raw — it is empirically selected, not an unvalidated fallback. The `method` provenance field
+    /// still renders every identity as "assumed", never "measured" (F02). The nil-calibration prior
+    /// in winProbEstimate is the single source both paths route through (F46). Set false to restore
+    /// the byte-identical pre-iter7 Platt/isotonic seam (regression-locked by flagOffIsByteIdenticalToCurrent).
     nonisolated(unsafe) static var candidateSelectorEnabled = true
 
     /// Fit from realized outcomes. Returns nil when too few samples to calibrate honestly.
@@ -541,14 +542,14 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
         let testN = Int((Double(n) * testFraction).rounded())
         let gap = Swift.max(0, embargo)
         guard testN >= 1, n - testN - gap >= minTrainSamples else {
-            // Too thin to split honestly → identity (no calibration).
-            return buildIdentity(outcomes, binCount: binCount, minPerBin: minPerBin)
+            // Too thin to split honestly → prior-clamped identity (F01: conservative floor, not conviction-as-P(win)).
+            return buildIdentity(outcomes, binCount: binCount, minPerBin: minPerBin, clampToPrior: true)
         }
         let trainEnd = n - testN - gap
         let train = Array(outcomes[0..<trainEnd])
         let test  = Array(outcomes[(n - testN)..<n])
         guard !train.isEmpty, !test.isEmpty else {
-            return buildIdentity(outcomes, binCount: binCount, minPerBin: minPerBin)
+            return buildIdentity(outcomes, binCount: binCount, minPerBin: minPerBin, clampToPrior: true)
         }
 
         // Adaptive nBins (same rule as isotonic/Platt paths).
@@ -659,7 +660,7 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
     /// Materialized at band midpoints so it has the same Bin[] structure as other paths.
     private nonisolated static func buildIdentity(
         _ outcomes: [(conviction: Double, won: Bool)],
-        binCount: Int, minPerBin: Int
+        binCount: Int, minPerBin: Int, clampToPrior: Bool = false
     ) -> StockSageConvictionCalibration? {
         let n = outcomes.count
         guard n > 0 else { return nil }
@@ -670,7 +671,17 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
             let idx = Swift.min(nBins - 1, Int(c * Double(nBins)))
             bandCounts[idx] += 1
         }
-        let bins = materializeBins(mapFn: { $0 }, nBins: nBins, bandCounts: bandCounts)
+        // F01 (owner-approved 2026-07-04): the THIN-split identity (n∈[30,43], NO OOS validation)
+        // is clamped to the conservative prior — winProb = min(conviction, prior) — so it is
+        // GENUINELY "strictly more conservative" (never conviction-as-P(win) for c ≳ 0.45, the
+        // exact defect F01 named). Low conviction (< ~0.4545, identity already below prior) is
+        // untouched, so no idea is ever promoted — the clamp only lowers. The OOS-floor scoring
+        // and the OOS-VALIDATED identity winner pass clampToPrior:false → byte-identical (the
+        // large-journal identity is empirically OOS-selected, not an unvalidated fallback).
+        let mapFn: (Double) -> Double = clampToPrior
+            ? { Swift.min($0, StockSageExpectedValue.priorWinProb($0)) }
+            : { $0 }
+        let bins = materializeBins(mapFn: mapFn, nBins: nBins, bandCounts: bandCounts)
         // F01/F02: identity MUST carry .identity — the UI renders it "assumed", never "measured".
         return StockSageConvictionCalibration(bins: bins, sampleSize: n, method: .identity)
     }

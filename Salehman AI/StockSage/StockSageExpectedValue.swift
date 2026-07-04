@@ -77,7 +77,15 @@ enum StockSageExpectedValue {
     nonisolated static func winProbEstimate(conviction: Double,
                                             calibration: StockSageConvictionCalibration? = nil) -> Double {
         if let calibration { return calibration.winProb(conviction) }
-        return 0.35 + Swift.max(0, Swift.min(1, conviction)) * 0.23
+        return priorWinProb(conviction)
+    }
+
+    /// The conservative linear win-prob prior: conviction 0 → 35%, 1 → 58%. SINGLE SOURCE OF
+    /// TRUTH — `winProbEstimate`'s no-calibration fallback AND the F01 thin-identity clamp
+    /// (`StockSageConvictionCalibration.buildIdentity(clampToPrior:)`) both route through this,
+    /// so the two can never drift (F46). Byte-identical to the former inline expression.
+    nonisolated static func priorWinProb(_ conviction: Double) -> Double {
+        0.35 + Swift.max(0, Swift.min(1, conviction)) * 0.23
     }
 
     /// Expected value in R: pWin·rewardR − (1−pWin)·1. nil if there's no defined

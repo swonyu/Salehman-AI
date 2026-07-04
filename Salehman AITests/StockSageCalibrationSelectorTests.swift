@@ -153,24 +153,39 @@ struct StockSageCalibrationSelectorTests {
         let saved = Cal.candidateSelectorEnabled; defer { Cal.candidateSelectorEnabled = saved }
         Cal.candidateSelectorEnabled = true
 
-        // (A) Small-N guard: n=43, testN=13, gap=1, trainEnd=29 < minTrainSamples(30) → identity.
+        // (A) Small-N guard: n=43, testN=13, gap=1, trainEnd=29 < minTrainSamples(30) → the thin
+        //     identity floor. F01 (clamp, owner-approved 2026-07-04): that thin identity is now
+        //     CLAMPED to the conservative prior — winProb = min(mid, 0.35+0.23·mid) — so it is
+        //     genuinely "strictly more conservative" (≤ prior everywhere; the old inversion for
+        //     conviction ≳ 0.45 is gone) while the low-conviction band is untouched (no promotion).
+        //     Hand-derived in /tmp/derive_identity_clamp.swift (NOT read off the code), n=43 → nBins=2:
+        //       bin[0] mid 0.25 → min(0.25, 0.4075) = 0.25    (low conv — clamp does NOT bind)
+        //       bin[1] mid 0.75 → min(0.75, 0.5225) = 0.5225  (high conv — clamp BINDS, capped at prior)
         var tinyOutcomes: [Outcome] = []
         for i in 0..<43 {
             let s = (Double(i) + 0.5) / 43.0
             tinyOutcomes.append((conviction: s, won: i % 2 == 0))
         }
-        // outer minSamples=30 passes (43 ≥ 30); selector's split gives train=29 < 30 → identity.
-        let calTiny = Cal.fit(tinyOutcomes, minSamples: 30)
-        if let calTiny {
-            let nBins = calTiny.bins.count
-            let width = 1.0 / Double(nBins)
-            for bin in calTiny.bins {
-                let mid = bin.upper - width / 2.0
-                #expect(abs(bin.winProb - mid) < width + 1e-9,
-                        "Small-N → identity: winProb \(bin.winProb) should ≈ mid \(mid)")
-            }
-            #expect(calTiny.sampleSize == 43)
+        // outer minSamples=30 passes (43 ≥ 30); selector's split gives train=29 < 30 → thin identity.
+        let calTiny = try! #require(Cal.fit(tinyOutcomes, minSamples: 30),
+                                    "n=43 must produce the thin identity floor, not nil")
+        #expect(calTiny.method == .identity)   // still identity provenance → renders "assumed" (F02)
+        #expect(calTiny.sampleSize == 43)
+        let nBins = calTiny.bins.count
+        #expect(nBins == 2)
+        let width = 1.0 / Double(nBins)
+        func priorLocal(_ c: Double) -> Double { 0.35 + max(0, min(1, c)) * 0.23 }
+        for bin in calTiny.bins {
+            let mid = bin.upper - width / 2.0
+            let expected = min(mid, priorLocal(mid))   // the clamped contract
+            #expect(abs(bin.winProb - expected) < 1e-9,
+                    "thin identity must be prior-clamped: winProb \(bin.winProb) != min(mid,prior)=\(expected)")
+            #expect(bin.winProb <= priorLocal(mid) + 1e-9,
+                    "F01: clamped identity must be ≤ prior (the conservative-floor claim, now true)")
         }
+        // Exact hand-derived band pins — the high band is where F01's inversion used to live.
+        #expect(abs(calTiny.bins[0].winProb - 0.25) < 1e-9)     // low band: unchanged by the clamp
+        #expect(abs(calTiny.bins[1].winProb - 0.5225) < 1e-9)   // high band: clamped 0.75 → prior 0.5225
 
         // (B) Structural invariants on regular-sized data (selector picks best OOS candidate
         //     and that result is always non-decreasing and in [0,1]).
