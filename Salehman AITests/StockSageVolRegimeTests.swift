@@ -131,4 +131,32 @@ struct StockSageVolRegimeTests {
             #expect(!result.note.isEmpty)
         }
     }
+
+    // MARK: - F17: the 0.25 hard sizing floor ("sizing never goes to 0")
+    // The load-bearing lower bound of the entire brake chain was pinned by NO test — the
+    // suite above only reaches ratio 3.0 (→ 0.333), which never touches the floor. Expected
+    // values derived independently in /tmp/derive_volregime_floor.swift (NOT read off code):
+    //   p=1, cur=1.0, med=0.2 → raw min(absoluteBrake 0.2, percentileBrake 0.5)=0.2 < 0.25 → floor BINDS → 0.25
+    //   p=1, cur=100, med=0.2 → raw 0.02 → still exactly 0.25 (proves a floor, not a coincidence)
+    //   p=1, cur=0.8 (=4×med) → raw exactly 0.25 (floor meets raw)
+    //   p=1, cur=0.6 (=3×med) → 0.333 > 0.25 (the gap the old suite left — floor unreached)
+    // 0.25 == 1/4 is exact in binary FP and max(0.25, x) returns the literal when x<0.25, so
+    // `== 0.25` is a safe exact assertion here.
+
+    @Test func sizingMultiplierFlooredAtQuarterUnderExtremeVol() {
+        #expect(VR.sizingMultiplier(percentile: 1.0, currentVol: 1.0, medianVol: 0.2) == 0.25)   // floor binds
+        #expect(VR.sizingMultiplier(percentile: 1.0, currentVol: 100.0, medianVol: 0.2) == 0.25) // stays floored — it IS a floor
+        #expect(VR.sizingMultiplier(percentile: 1.0, currentVol: 0.8, medianVol: 0.2) == 0.25)   // boundary: raw==floor
+        #expect(VR.sizingMultiplier(percentile: 1.0, currentVol: 0.6, medianVol: 0.2) > 0.25)    // ratio 3.0: above the floor
+    }
+
+    @Test func regimeSizingMultiplierNeverBelowFloorEndToEnd() {
+        // The floor must hold through the full regime() pipeline, not just the pure helper.
+        // The low→very-high vol tail (~8% → ~63% annualized, ratio ≫ 4×) drives the absolute
+        // brake well below 0.25; the pipeline must clamp to the floor (never 0, never negative).
+        let closes = lowThenHighVolCloses()
+        let result = try! #require(VR.regime(closes: closes))
+        #expect(result.sizingMultiplier >= 0.25 - 1e-12)   // floor respected end-to-end
+        #expect(result.sizingMultiplier < 1.0)             // brake genuinely engaged (non-vacuous)
+    }
 }

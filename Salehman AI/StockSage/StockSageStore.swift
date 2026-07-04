@@ -1105,7 +1105,9 @@ final class StockSageStore: ObservableObject {
 
     /// Ranking score for the "best ideas now" board: strongest conviction buys
     /// first, holds/avoids in the middle, sells last.
-    private static func rankScore(_ a: TradeAdvice) -> Double {
+    // internal (not private): the board's default `.signal` ordering, pinned by
+    // StockSageRankScoreTests (AUDIT F41) — a single sign slip silently reorders the board.
+    static func rankScore(_ a: TradeAdvice) -> Double {
         switch a.action {
         case .strongBuy: return 2 + a.conviction
         case .buy:       return 1 + a.conviction
