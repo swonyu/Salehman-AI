@@ -5027,6 +5027,41 @@ struct MarketsView: View {
                     HStack(spacing: 6) {
                         calibrationChip
                     }
+                    // UI wave #6: net-edge ledger. Itemizes ONLY the cost granularity
+                    // StockSageNetEdge.evaluate() actually exposes — the shipped NetEdge result
+                    // folds spread+slippage+taker-fee+financing into ONE aggregate cost
+                    // (costPerShare/costAsPctOfReward); it does NOT expose separate legs. So this
+                    // renders exactly 3 rows: gross expectancy (ev.evR, same figure as the EV line
+                    // above), ONE deduction row labeled with the engine's own "round-trip costs"
+                    // terminology (matching the R:R line's "After ~Nbps est. … costs" wording,
+                    // ONLY appending the financing note when financingNoteSuffix is non-empty —
+                    // never inventing a spread/fee split), and net expectancy (ne.netExpectancyR,
+                    // same winProb as ev so the two rows are the same trade). Same cost inputs as
+                    // the R:R fusion line above (line ~4983) — can't disagree with it. nil ⇒
+                    // nothing new renders (no fabricated ledger).
+                    if let stop = a.stopPrice, let target = a.targetPrice {
+                        let costs = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
+                        let (finRate, finDays) = StockSageExpectedValue.financingCostInputs(for: idea)
+                        if let ne = StockSageNetEdge.evaluate(
+                            entry: idea.price, stop: stop, target: target,
+                            spreadBps: costs.spreadBps, slippageBps: costs.slippageBps, takerFeeBps: costs.takerFeeBps,
+                            annualFinancingRate: finRate, holdDays: finDays,
+                            winProb: ev.winProbEstimate),
+                           let netR = ne.netExpectancyR {
+                            let financingNote = StockSageExpectedValue.financingNoteSuffix(rate: finRate, days: finDays)
+                            let deductionLabel = "Round-trip costs (~\(Int(costs.roundTripBps))bps \(costs.assetClass))\(financingNote)"
+                            let netColor = netR < 0 ? DS.Palette.dangerSoft : DS.Palette.successSoft
+                            VStack(alignment: .leading, spacing: 3) {
+                                ledgerRow("Gross expectancy", String(format: "%+.2fR", ev.evR), color: .white)
+                                ledgerRow(deductionLabel, String(format: "−%.2fR", ev.evR - netR), color: DS.Palette.textSecondary)
+                                ledgerRow("Net expectancy", String(format: "%+.2fR", netR), color: netColor)
+                            }
+                            .padding(.top, 2)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(String(format: "Gross expectancy %+.2fR, minus %@, net expectancy %+.2fR",
+                                                       ev.evR, deductionLabel, netR))
+                        }
+                    }
                 }
                 if let vel = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
                     // F29: show gross velocity labeled + net when non-nil so the
@@ -5657,6 +5692,19 @@ struct MarketsView: View {
         let d: Text = Text(netLabel).font(font).foregroundStyle(color)
         let e: Text = Text(suffix).font(font).foregroundStyle(color)
         return a + b + c + d + e
+    }
+
+    // UI wave #6: one row of the net-edge ledger — label left, value right (monospaced digits
+    // so the R figures align down the column), matching this sheet's caption2/mvFont9 rhythm.
+    private func ledgerRow(_ label: String, _ value: String, color: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(label).font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Text(value).font(.system(size: mvFont11, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(color)
+        }
     }
 
     // F24: merged with the former summaryStat helper (uniform a11y is the audit's stated goal —
