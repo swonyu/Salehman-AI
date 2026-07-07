@@ -68,4 +68,30 @@ struct StockSageRegimeTests {
     @Test func zeroBiasSilentlyZerosPosition() {
         #expect(StockSageRegime.adjustedWeight(base: 0.10, bias: 0.0, cap: 0.20) == 0.0)
     }
+
+    // sizingBias band clamps [0.40, 1.25] — pins the EXACT boundaries the looser
+    // `> 1.0` / `< 0.75` tests above leave open (money-math verification 2026-07-07,
+    // invariant #8 was only PARTIAL: crisis 0.25 pinned, the band edges were not).
+    // sizingBias = crisis ? 0.25 : max(0.40, min(1.25, 0.75 + risk*0.5)); risk = clamp(score,±1).
+    // Hand-derived in scratchpad/derive_regime_band.swift.
+    @Test func sizingBiasBandClampsAtExactBounds() {
+        // Max-BEAR non-crisis: downtrend (−0.40) + RSI<45 (−0.10) + breadth≤0.30 (−0.25)
+        // + VIX 20–40 elevated (−0.15) = score −0.90 → raw 0.75−0.45 = 0.30, CLAMPED UP to 0.40.
+        // Genuine straddle: the raw 0.30 sits BELOW the 0.40 floor, so this proves the clamp binds.
+        let bear = StockSageRegime.assess(
+            indexCloses: (1...250).reversed().map(Double.init),
+            vix: 30, breadthAbove200: 0.20)
+        #expect(bear.state == .trendingBear)
+        #expect(abs(bear.sizingBias - 0.40) < 1e-9)          // lower clamp binds (raw 0.30 → 0.40)
+
+        // Max-BULL non-crisis: uptrend (+0.40) + RSI>55 (+0.10) + breadth≥0.70 (+0.25)
+        // + VIX<20 calm (+0.10) = score +0.85 → 0.75 + 0.425 = 1.175 (< the 1.25 upper clamp,
+        // i.e. the max REACHABLE bias is 1.175; the 1.25 cap is deliberately slack, never binds).
+        let bull = StockSageRegime.assess(
+            indexCloses: (1...250).map(Double.init),
+            vix: 15, breadthAbove200: 0.80)
+        #expect(bull.state == .trendingBull)
+        #expect(abs(bull.sizingBias - 1.175) < 1e-9)         // exact linear value, below the 1.25 cap
+        #expect(bull.sizingBias < 1.25)                      // upper clamp is slack at max reachable
+    }
 }
