@@ -4971,7 +4971,7 @@ struct MarketsView: View {
                             .font(.system(size: mvFont9)).foregroundStyle(.secondary)
                         if let pct {
                             let up = pct >= 0
-                            Text("· \(up ? "+" : "")\(String(format: "%.1f", pct))% vs current")
+                            Text("· \(up ? "+" : "")\(String(format: "%.1f", pct))% vs avg cost")
                                 .font(.system(size: mvFont9)).foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.dangerSoft)
                         }
                     }
