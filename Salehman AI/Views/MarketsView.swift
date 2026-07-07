@@ -3646,15 +3646,40 @@ struct MarketsView: View {
     @ViewBuilder private var calibrationChip: some View {
         if let cal = store.convictionCalibration {
             let assumed = cal.method == .identity
-            Label(cal.chipTitle, systemImage: assumed ? "exclamationmark.triangle.fill" : "checkmark.seal.fill")
-                .font(.system(size: fontChipLabel, weight: .semibold))
-                .foregroundStyle(assumed ? DS.Palette.warningSoft : DS.Palette.successSoft)
-                .help(cal.chipHelp)
+            calibrationChipChrome(assumed: assumed) {
+                Label(cal.chipTitle, systemImage: assumed ? "exclamationmark.triangle.fill" : "checkmark.seal.fill")
+                    .font(.system(size: fontChipLabel, weight: .semibold))
+                    .foregroundStyle(assumed ? DS.Palette.warningSoft : DS.Palette.successSoft)
+                    .help(cal.chipHelp)
+            }
         } else {
-            Label("win% assumed", systemImage: "exclamationmark.triangle.fill")
-                .font(.system(size: fontChipLabel, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
-                .help("Win-rate uses a cautious hand-set band (\(StockSageExpectedValue.assumedWinBandLabel)), not measured rates — run the Strategy backtest to calibrate.")
+            calibrationChipChrome(assumed: true) {
+                Label("win% assumed", systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: fontChipLabel, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
+                    .help("Win-rate uses a cautious hand-set band (\(StockSageExpectedValue.assumedWinBandLabel)), not measured rates — run the Strategy backtest to calibrate.")
+            }
         }
+    }
+
+    // Preattentive assumed-vs-measured chrome for calibrationChip (Gemini UI-wave #6, LOW risk).
+    // Keyed on the SAME `assumed` condition the icon/color already use — one condition, two
+    // encodings, no new semantic tier. No DS chip-stroke token existed to extend, so values are
+    // inline: dashed capsule stroke for assumed, solid for measured; both at reduced opacity so
+    // this stays a chip accent, not a banner.
+    @ViewBuilder
+    private func calibrationChipChrome<Content: View>(assumed: Bool, @ViewBuilder content: () -> Content) -> some View {
+        let strokeColor = (assumed ? DS.Palette.warningSoft : DS.Palette.successSoft)
+            .opacity(assumed ? 0.55 : 0.8)
+        content()
+            .opacity(assumed ? 0.85 : 1.0)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule().strokeBorder(
+                    strokeColor,
+                    style: StrokeStyle(lineWidth: 1, dash: assumed ? [3, 2] : [])
+                )
+            )
     }
 
     @ViewBuilder private var moneyVelocityCard: some View {
