@@ -524,6 +524,7 @@ struct StockSageJournalTests {
         let h = StockSageJournal.history(for: "AAPL", in: trades)!
         #expect(h.count == 2)
         #expect(abs(h.totalR - 0.5) < 1e-9)   // hand-derived above
+        #expect(h.rDefinedCount == 2)         // both trades have a defined R
     }
 
     @Test func historyExcludesOpenTrades() {
@@ -533,6 +534,26 @@ struct StockSageJournalTests {
         let h = StockSageJournal.history(for: "AAPL", in: [open, closed])!
         #expect(h.count == 1)                  // only the closed one counts
         #expect(abs(h.totalR - 0.8) < 1e-9)
+    }
+
+    // L6 (honesty-labels fleet, 2026-07-07): count must include closed trades with an UNDEFINED
+    // R (no exit price recorded) — the old compactMap(realizedR) implementation silently dropped
+    // them from the count, not just from totalR.
+    //
+    // Hand-derived (swift /tmp/derive_journal.swift, NOT calling this code):
+    //   3 closed AAPL trades: two with realizedR +0.8/−0.3 (sum 0.5, same fixtures as above),
+    //   one closed WITHOUT an exit price (realizedR nil) → count=3, rDefinedCount=2, totalR=0.5.
+    @Test func historyCountsClosedTradesWithUndefinedR() {
+        let withR1 = tSym("AAPL", .long, entry: 190, stop: 185, shares: 10, exit: 194)     // R = +0.8
+        let withR2 = tSym("AAPL", .long, entry: 190, stop: 185, shares: 10, exit: 188.5)   // R = −0.3
+        // Closed (closedAt set) but no exit price recorded → realizedR is nil (undefined R).
+        let undefinedR = TradeRecord(symbol: "AAPL", side: .long, entry: 190, stop: 185, target: nil,
+                                      shares: 10, openedAt: Date(timeIntervalSince1970: 0),
+                                      exitPrice: nil, closedAt: Date(timeIntervalSince1970: 100))
+        let h = StockSageJournal.history(for: "AAPL", in: [withR1, withR2, undefinedR])!
+        #expect(h.count == 3)                  // all three closed trades count
+        #expect(h.rDefinedCount == 2)          // only two contributed a realized R
+        #expect(abs(h.totalR - 0.5) < 1e-9)    // totalR sums only the defined-R subset
     }
 
     @Test func historyIsNilOnZeroClosedTrades() {

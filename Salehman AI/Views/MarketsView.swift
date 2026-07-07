@@ -3215,12 +3215,13 @@ struct MarketsView: View {
                 // combined neutral chip so the row never exceeds five chips (the recorded-
                 // acceptable density). Still neutral/display-only, never part of ranking.
                 if let held, let jh {
+                    let rNote = jh.rDefinedCount != jh.count ? " (R defined on \(jh.rDefinedCount))" : ""
                     Text("Held · \(numString(held.shares)) sh · \(jh.count)x")
                         .font(.system(size: fontChipLabel, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .modifier(IdeaChipChrome(tint: DS.Palette.surfaceStroke))
-                        .help(String(format: "You hold %@ shares @ %@ (avg cost). Your journal: %d closed trades on %@, realized %+.1fR total. Context only — not part of ranking.", numString(held.shares), adaptivePrice(held.costBasis), jh.count, idea.symbol, jh.totalR))
-                        .accessibilityLabel(String(format: "You hold %@ shares of %@ at an average cost of %@. Your journal: %d closed trades, realized %+.1fR total. Context only, not part of ranking.", numString(held.shares), idea.symbol, adaptivePrice(held.costBasis), jh.count, jh.totalR))
+                        .help(String(format: "You hold %@ shares @ %@ (avg cost). Your journal: %d closed trades on %@, realized %+.1fR total%@. Context only — not part of ranking.", numString(held.shares), adaptivePrice(held.costBasis), jh.count, idea.symbol, jh.totalR, rNote))
+                        .accessibilityLabel(String(format: "You hold %@ shares of %@ at an average cost of %@. Your journal: %d closed trades, realized %+.1fR total%@. Context only, not part of ranking.", numString(held.shares), idea.symbol, adaptivePrice(held.costBasis), jh.count, jh.totalR, rNote))
                 } else if let held {
                     Text("Held · \(numString(held.shares)) sh")
                         .font(.system(size: fontChipLabel, weight: .semibold))
@@ -3229,12 +3230,13 @@ struct MarketsView: View {
                         .help("You hold \(numString(held.shares)) shares @ \(adaptivePrice(held.costBasis)) (avg cost). Context only — not part of ranking.")
                         .accessibilityLabel("You hold \(numString(held.shares)) shares of \(idea.symbol) at an average cost of \(adaptivePrice(held.costBasis)). Context only, not part of ranking.")
                 } else if let jh {
+                    let rNote = jh.rDefinedCount != jh.count ? " (R defined on \(jh.rDefinedCount))" : ""
                     Text("Traded \(jh.count)x")
                         .font(.system(size: fontChipLabel, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .modifier(IdeaChipChrome(tint: DS.Palette.surfaceStroke))
-                        .help(String(format: "Your journal: %d closed trades on %@, realized %+.1fR total. Context only — not part of ranking.", jh.count, idea.symbol, jh.totalR))
-                        .accessibilityLabel(String(format: "Your journal: %d closed trades on %@, realized %+.1fR total. Context only, not part of ranking.", jh.count, idea.symbol, jh.totalR))
+                        .help(String(format: "Your journal: %d closed trades on %@, realized %+.1fR total%@. Context only — not part of ranking.", jh.count, idea.symbol, jh.totalR, rNote))
+                        .accessibilityLabel(String(format: "Your journal: %d closed trades on %@, realized %+.1fR total%@. Context only, not part of ranking.", jh.count, idea.symbol, jh.totalR, rNote))
                 }
                 // Scan-delta chip ("New" / "was <Action>", PLAN_2026-07-07_scan_deltas.md):
                 // LOW-priority — dropped when the row already has five conditional chips. Count
@@ -4985,8 +4987,9 @@ struct MarketsView: View {
                 // the ideas-sheet AA rule) matches the Held-line unrealized-% convention above.
                 if let jh = StockSageJournal.history(for: idea.symbol, in: journal.trades) {
                     let up = jh.totalR >= 0
-                    Text(String(format: "Journal: %d closed on this name · realized %@%.1fR total",
-                                jh.count, up ? "+" : "", jh.totalR))
+                    Text(String(format: "Journal: %d closed on this name · realized %@%.1fR total%@",
+                                jh.count, up ? "+" : "", jh.totalR,
+                                jh.rDefinedCount != jh.count ? " (R defined on \(jh.rDefinedCount))" : ""))
                         .font(.system(size: mvFont9))
                         .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.dangerSoft)
                         .fixedSize(horizontal: false, vertical: true)

@@ -676,14 +676,19 @@ enum StockSageJournal {
     nonisolated static let caveat =
         "Your own trade record — not advice. P&L/R are computed from the prices you entered; a journal documents decisions, it doesn't validate them."
 
-    /// "Your history with this name" — count + summed realized R of CLOSED trades for one
-    /// symbol (case-insensitive match, same convention as StockSagePortfolio.holding). Open
-    /// trades are excluded (only realizedR-bearing closes count). nil when there are zero
+    /// "Your history with this name" — count of CLOSED trades for one symbol (case-insensitive
+    /// match, same convention as StockSagePortfolio.holding) + summed realized R over the subset
+    /// that has a defined R. `count` is every closed trade regardless of whether R is defined
+    /// (a closed trade with no exit price, or entry==stop, must still be counted — dropping it
+    /// from `count` via compactMap(realizedR) silently undercounts "your history with this
+    /// name"). `rDefinedCount` <= `count`; when they differ, the caller's .help should disclose
+    /// how many of the closed trades actually contributed to totalR. nil when there are zero
     /// closed trades on the symbol — display-only, nothing here feeds ranking/EV/sizing.
-    nonisolated static func history(for symbol: String, in trades: [TradeRecord]) -> (count: Int, totalR: Double)? {
+    nonisolated static func history(for symbol: String, in trades: [TradeRecord]) -> (count: Int, totalR: Double, rDefinedCount: Int)? {
         let sym = symbol.uppercased()
-        let rs = trades.filter { !$0.isOpen && $0.symbol.uppercased() == sym }.compactMap { $0.realizedR }
-        guard !rs.isEmpty else { return nil }
+        let closed = trades.filter { !$0.isOpen && $0.symbol.uppercased() == sym }
+        guard !closed.isEmpty else { return nil }
+        let rs = closed.compactMap { $0.realizedR }
         let total = rs.reduce(0, +)
         // Defensive-only and unreachable via this reduce: reduce(0, +) over Doubles cannot
         // produce IEEE -0.0 from cancelling non-zero pairs (0.05 + -0.05 == +0.0, not -0.0;
@@ -691,7 +696,7 @@ enum StockSageJournal {
         // here). Kept anyway as a guard against a future refactor of the summation strategy —
         // own-it precedent (AggregatedHolding.unrealizedPct) hit the same -0.0 render bug via a
         // different code path, so the cost of keeping this branch is one line.
-        return (count: rs.count, totalR: total == 0 ? 0 : total)
+        return (count: closed.count, totalR: total == 0 ? 0 : total, rDefinedCount: rs.count)
     }
 }
 
