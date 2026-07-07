@@ -100,4 +100,23 @@ struct StockSageMoneyInvariantSweepTests {
         }
         #expect(count == 2)
     }
+
+    // MARK: 4. priorWinProb output stays finite and in [0.35, 0.58] for ANY input
+
+    @Test func priorWinProbStaysInBandForAnyInputIncludingNaN() {
+        // priorWinProb(c) = 0.35 + max(0, min(1, c))·0.23. The clamp is the load-bearing money-path
+        // guard: a NaN/Inf/out-of-range conviction must NOT escape as a non-finite win-prob (which
+        // would poison evR and the rank comparator — strict-weak-ordering). Swift's min/max return
+        // the NON-NaN operand, and here `conviction` is the SECOND arg to min(1, ·), so min(1, NaN)=1.
+        // Reorder that to min(NaN, 1) and NaN would leak — this test locks the current safe order.
+        // Hand-derived exacts (derive_priorwinprob_band.swift): 0→0.35, 0.5→0.465, 1→0.58,
+        // −5→0.35, 5→0.58, +Inf→0.58, −Inf→0.35, NaN→0.58 (all finite, all in-band).
+        let exact: [(Double, Double)] = [(0, 0.35), (0.5, 0.465), (1, 0.58), (-5, 0.35), (5, 0.58)]
+        for (c, want) in exact { #expect(abs(StockSageExpectedValue.priorWinProb(c) - want) < 1e-9) }
+        for c in [Double.infinity, -Double.infinity, Double.nan] {
+            let r = StockSageExpectedValue.priorWinProb(c)
+            #expect(r.isFinite)                          // never escapes as ±Inf/NaN
+            #expect(r >= 0.35 && r <= 0.58)              // stays in the assumed-band (F02)
+        }
+    }
 }
