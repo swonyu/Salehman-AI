@@ -685,7 +685,13 @@ enum StockSageJournal {
         let rs = trades.filter { !$0.isOpen && $0.symbol.uppercased() == sym }.compactMap { $0.realizedR }
         guard !rs.isEmpty else { return nil }
         let total = rs.reduce(0, +)
-        return (count: rs.count, totalR: total == 0 ? 0 : total)   // normalize IEEE -0.0, own-it precedent
+        // Defensive-only and unreachable via this reduce: reduce(0, +) over Doubles cannot
+        // produce IEEE -0.0 from cancelling non-zero pairs (0.05 + -0.05 == +0.0, not -0.0;
+        // -0.0 only arises from an explicit negation or a -1 multiply, neither of which happens
+        // here). Kept anyway as a guard against a future refactor of the summation strategy —
+        // own-it precedent (AggregatedHolding.unrealizedPct) hit the same -0.0 render bug via a
+        // different code path, so the cost of keeping this branch is one line.
+        return (count: rs.count, totalR: total == 0 ? 0 : total)
     }
 }
 

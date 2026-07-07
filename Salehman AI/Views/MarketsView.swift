@@ -3208,21 +3208,27 @@ struct MarketsView: View {
                         .help("Latest close is the highest/lowest of the last \(idea.spark.count) sampled points shown in the sparkline — context, not a buy/sell signal.")
                         .accessibilityLabel(extreme == .atHigh ? "At the high of the shown \(idea.spark.count)-bar window" : "At the low of the shown \(idea.spark.count)-bar window")
                 }
-                // "Own it" chip: neutral like the at-extreme chip above — a held position is
-                // context for the reader, not part of the ranking or an endorsement.
-                if let held {
+                // "Own it" / "Your history with this name" chips (2026-07-07 fix round, issue
+                // #1): six chips garbled mid-word at 560pt ("Backtes/t" defect class — see
+                // incident-ledger). When BOTH held and traded context exist, merge into ONE
+                // combined neutral chip so the row never exceeds five chips (the recorded-
+                // acceptable density). Still neutral/display-only, never part of ranking.
+                let jh = StockSageJournal.history(for: idea.symbol, in: journal.trades)
+                if let held, let jh {
+                    Text("Held · \(numString(held.shares)) sh · \(jh.count)x")
+                        .font(.system(size: fontChipLabel, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .modifier(IdeaChipChrome(tint: DS.Palette.surfaceStroke))
+                        .help(String(format: "You hold %@ shares @ %@ (avg cost). Your journal: %d closed trades on %@, realized %+.1fR total. Context only — not part of ranking.", numString(held.shares), adaptivePrice(held.costBasis), jh.count, idea.symbol, jh.totalR))
+                        .accessibilityLabel(String(format: "You hold %@ shares of %@ at an average cost of %@. Your journal: %d closed trades, realized %+.1fR total. Context only, not part of ranking.", numString(held.shares), idea.symbol, adaptivePrice(held.costBasis), jh.count, jh.totalR))
+                } else if let held {
                     Text("Held · \(numString(held.shares)) sh")
                         .font(.system(size: fontChipLabel, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .modifier(IdeaChipChrome(tint: DS.Palette.surfaceStroke))
                         .help("You hold \(numString(held.shares)) shares @ \(adaptivePrice(held.costBasis)) (avg cost). Context only — not part of ranking.")
                         .accessibilityLabel("You hold \(numString(held.shares)) shares of \(idea.symbol) at an average cost of \(adaptivePrice(held.costBasis)). Context only, not part of ranking.")
-                }
-                // "Your history with this name" chip (2026-07-07 assessment gap #2): the owner's
-                // OWN closed-trade record on this symbol — neutral like Held/at-extreme, never
-                // tinted, never part of ranking/EV/sizing (StockSageJournal.history is a pure
-                // display-only aggregate; grep-verifiable no ranking call site reads it).
-                if let jh = StockSageJournal.history(for: idea.symbol, in: journal.trades) {
+                } else if let jh {
                     Text("Traded \(jh.count)x")
                         .font(.system(size: fontChipLabel, weight: .semibold))
                         .foregroundStyle(.secondary)

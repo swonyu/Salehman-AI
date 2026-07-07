@@ -550,20 +550,6 @@ struct StockSageJournalTests {
         #expect(StockSageJournal.history(for: "aapl", in: trades)?.count == 1)
         #expect(StockSageJournal.history(for: "AaPl", in: trades)?.count == 1)
     }
-
-    // −0.0 boundary: two trades summing to exactly a tiny-negative that rounds to −0.0 must
-    // normalize to +0.0 (own-it precedent's AggregatedHolding.unrealizedPct convention, extended
-    // here) — a sign check on raw -0.0 reads "positive" (-0.0 >= 0 is true in Swift), so an
-    // un-normalized totalR would render "+-0.0R" downstream.
-    @Test func historyNormalizesNegativeZero() {
-        let trades = [
-            tSym("X", .long, entry: 100, stop: 90, shares: 1, exit: 100.5),   // R = +0.05
-            tSym("X", .long, entry: 100, stop: 90, shares: 1, exit: 99.5),    // R = −0.05
-        ]
-        let h = StockSageJournal.history(for: "X", in: trades)!
-        #expect(h.totalR == 0.0)
-        #expect(h.totalR.sign == .plus)   // NOT .minus (the -0.0 IEEE case)
-    }
 }
 
 /// Pins `StockSageJournalStore.qaSeed` — the QA in-memory REPLACE seam (money-critical: keeps

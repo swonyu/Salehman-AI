@@ -73,18 +73,24 @@ enum QASnapshots {
             defer { restore() }
             // Neutral prefs BEFORE seeding so every render (fixtures included) sees them.
             await StockSageStore.shared.seedQAIdeas()
-            // "Own it" awareness (ideas card/sheet held-position chip): seed ONE fake AAPL lot
-            // so the QA capture actually exercises the Held chip/line. In-memory only — qaSeed
-            // assigns StockSagePortfolio.positions directly, bypassing save(), so nothing is
-            // written to the owner's real UserDefaults. Restored (also in-memory only) in the
-            // same defer as the board prefs above, mirroring neutralizeIdeaBoardPrefsForQA's
-            // save→restore-exact shape even though persistence was never touched here.
+            // "Own it" awareness (ideas card/sheet held-position chip): seed ONE fake NVDA lot
+            // so the QA capture actually exercises the Held chip/line. NVDA (not AAPL — 2026-
+            // 07-07 fix round issue #2): NVDA's card has chip headroom (strongBuy + at-extreme
+            // + combined + EV = 4-5 chips) AND NVDA is the seeded qaDetailSymbol, i.e. an
+            // actually-captured sheet surface — so the combined chip, Held line, and Journal
+            // line all get real pixels instead of AAPL's uncaptured card. In-memory only —
+            // qaSeed assigns StockSagePortfolio.positions directly, bypassing save(), so
+            // nothing is written to the owner's real UserDefaults. Restored (also in-memory
+            // only) in the same defer as the board prefs above, mirroring
+            // neutralizeIdeaBoardPrefsForQA's save→restore-exact shape even though persistence
+            // was never touched here.
             let restorePortfolio = seedQAPortfolio()
             defer { restorePortfolio() }
             // "Your history with this name" (2026-07-07 assessment gap #2): seed 2 fake CLOSED
-            // AAPL trades so the QA capture exercises the "Traded Nx" chip / Journal sheet line
-            // on the same AAPL fixture symbol seedQAPortfolio uses. In-memory REPLACE, same
-            // seam shape as seedQAPortfolio (StockSageJournalStore.qaSeed bypasses save()).
+            // NVDA trades so the QA capture exercises the "Traded Nx" chip / Journal sheet line
+            // on the same NVDA fixture symbol seedQAPortfolio uses (moved off AAPL alongside
+            // it — see seedQAPortfolio's doc comment). In-memory REPLACE, same seam shape as
+            // seedQAPortfolio (StockSageJournalStore.qaSeed bypasses save()).
             // MONEY-CRITICAL: 2 trades keeps StockSageConvictionCalibration.fit(fromJournal:)'s
             // minSamples=30 floor un-crossed (fit returns nil during the capture window) —
             // see qaSeed's doc comment in StockSageJournal.swift for the full seam analysis.
@@ -134,9 +140,11 @@ enum QASnapshots {
         }
     }
 
-    /// Seed ONE fake position (AAPL, 30 sh @ $100.00) so the QA capture actually exercises
+    /// Seed ONE fake position (NVDA, 30 sh @ $100.00) so the QA capture actually exercises
     /// the "own it" Held chip (ideaCard badge row) and Held line (detail sheet) on a real
-    /// fixture symbol — `qaFixtureDefs()` includes AAPL. `qaSeed` is an in-memory-only assign
+    /// fixture symbol — `qaFixtureDefs()` includes NVDA (strongBuy/bullTrend, and the seeded
+    /// qaDetailSymbol so the sheet actually renders — 2026-07-07 fix round issue #2, moved off
+    /// AAPL, whose card/sheet were never captured). `qaSeed` is an in-memory-only assign
     /// (StockSagePortfolio.qaSeed bypasses save()), so this never reaches UserDefaults; the
     /// returned closure restores whatever real positions were loaded (owner's actual holdings,
     /// or none), same save→restore-exact shape as `neutralizeIdeaBoardPrefsForQA` above.
@@ -145,20 +153,20 @@ enum QASnapshots {
     /// window: a hard process kill mid-capture skips the restore closure entirely (in-memory
     /// state just dies with the process — no UserDefaults write, so nothing persists). The
     /// second, narrower residual specific to this seam: the owner clicking Add/Remove position
-    /// on the real UI during the ~1-2s seeded window would `save()` the fake AAPL lot into real
+    /// on the real UI during the ~1-2s seeded window would `save()` the fake NVDA lot into real
     /// UserDefaults (StockSagePortfolio.add/remove both persist), overwriting whatever
     /// `seedQAPortfolio` captured to restore. Accepted, not silently swallowed: qa.sh's flow
     /// runs unattended (owner isn't clicking through the app during a capture run).
     private static func seedQAPortfolio() -> () -> Void {
         let portfolio = StockSagePortfolio.shared
         let saved = portfolio.positions
-        portfolio.qaSeed([PortfolioPosition(symbol: "AAPL", shares: 30, costBasis: 100.00)])
+        portfolio.qaSeed([PortfolioPosition(symbol: "NVDA", shares: 30, costBasis: 100.00)])
         return { portfolio.qaSeed(saved) }
     }
 
-    /// Seed 2 fake CLOSED AAPL trades (realizedR +0.8 and −0.3 → "Traded 2x" chip / "+0.5R total"
+    /// Seed 2 fake CLOSED NVDA trades (realizedR +0.8 and −0.3 → "Traded 2x" chip / "+0.5R total"
     /// sheet line, hand-derived) so the QA capture exercises the "your history with this name"
-    /// chip/line on the same AAPL fixture symbol seedQAPortfolio holds. In-memory REPLACE via
+    /// chip/line on the same NVDA fixture symbol seedQAPortfolio holds. In-memory REPLACE via
     /// `StockSageJournalStore.qaSeed` — bypasses `save()`, never touches UserDefaults.
     ///
     /// MONEY-CRITICAL (why REPLACE, not append): `trades` feeds `StockSageStore.
@@ -179,10 +187,10 @@ enum QASnapshots {
         let saved = store.trades
         let now = Date()
         store.qaSeed([
-            TradeRecord(symbol: "AAPL", side: .long, entry: 190, stop: 185, target: 200,
+            TradeRecord(symbol: "NVDA", side: .long, entry: 190, stop: 185, target: 200,
                         shares: 10, openedAt: now.addingTimeInterval(-86_400 * 10),
                         exitPrice: 194, closedAt: now.addingTimeInterval(-86_400 * 5)),   // realizedR = +0.8
-            TradeRecord(symbol: "AAPL", side: .long, entry: 190, stop: 185, target: 200,
+            TradeRecord(symbol: "NVDA", side: .long, entry: 190, stop: 185, target: 200,
                         shares: 10, openedAt: now.addingTimeInterval(-86_400 * 4),
                         exitPrice: 188.5, closedAt: now.addingTimeInterval(-86_400 * 2)),  // realizedR = -0.3
         ])
