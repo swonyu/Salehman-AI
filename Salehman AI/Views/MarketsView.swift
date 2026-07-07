@@ -208,9 +208,29 @@ struct MarketsView: View {
     /// heatmap) offscreen; normal use defaults to the watchlist.
     // Land on the EV-ranked Ideas board on open — the owner's "where's my best move?" answer,
     // 0 taps in. (The QA harness passes an explicit section so its snapshots stay deterministic.)
-    init(qaSection: MarketSection = .ideas) { _section = State(initialValue: qaSection) }
+    /// QA-only seam (mirrors `qaSection`): when set, `body` renders the idea-detail SHEET
+    /// content for the matching `store.ideas` symbol directly — no `.sheet` presentation,
+    /// so the harness can snapshot it pixel-stable and unclipped. nil (every non-QA
+    /// construction site) is byte-identical to today's body; never set outside QASnapshots.
+    private let qaDetailSymbol: String?
+    init(qaSection: MarketSection = .ideas, qaDetailSymbol: String? = nil) {
+        _section = State(initialValue: qaSection)
+        self.qaDetailSymbol = qaDetailSymbol
+    }
 
     var body: some View {
+        if let sym = qaDetailSymbol {
+            if let idea = store.ideas.first(where: { $0.symbol.uppercased() == sym.uppercased() }) {
+                ideaDetailSheet(idea)
+            } else {
+                Text("QA: no such idea — \(sym)").foregroundStyle(.red)
+            }
+        } else {
+            normalBody
+        }
+    }
+
+    @ViewBuilder private var normalBody: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: DS.Space.lg) {
