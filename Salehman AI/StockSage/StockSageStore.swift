@@ -1241,4 +1241,73 @@ final class StockSageStore: ObservableObject {
             StockSageQuote(price: current, previousPrice: previous),
         ])
     }
+
+    // MARK: - QA fixture ideas (QA/test-only seam — reachable ONLY from the --qa
+    // capture path in QASnapshots.checkAndRun; never on a normal launch)
+
+    /// Deterministic synthetic histories that exercise real advisor branches.
+    /// Series are the TEST SUITE'S PROVEN generators (StockSageAdvisorTests /
+    /// StockSageBuildIdeasDirectTests) inlined — the test target can't be imported here.
+    /// Pure + nonisolated so a test can pipe them through buildIdeas without
+    /// touching the shared singleton (parallel-test safe).
+    nonisolated static func qaFixtureDefs() -> [StockSageSymbol] {
+        [
+            StockSageSymbol(symbol: "NVDA",    market: "NASDAQ"),  // strongBuy, bullTrend
+            StockSageSymbol(symbol: "AAPL",    market: "NASDAQ"),  // buy (+ seeded earnings warning)
+            StockSageSymbol(symbol: "1120.SR", market: "TASI"),    // sell-family, bearTrend (short plan)
+            StockSageSymbol(symbol: "BTC-USD", market: "Crypto"),  // crypto strongBuy
+            StockSageSymbol(symbol: "7010.SR", market: "TASI"),    // vol-regime brake ⚠ note
+        ]
+    }
+
+    nonisolated static func qaFixtureHistories() -> [String: StockSagePriceHistory] {
+        func hist(_ sym: String, _ closes: [Double]) -> StockSagePriceHistory {
+            let dates = closes.enumerated().map { Date(timeIntervalSince1970: Double($0.offset) * 86_400) }
+            return StockSagePriceHistory(symbol: sym, dates: dates,
+                opens: closes, highs: closes.map { $0 * 1.005 }, lows: closes.map { $0 * 0.995 },
+                closes: closes, volumes: closes.map { _ in 100_000 })
+        }
+        // TrendFixtures.up(250): accelerating uptrend → pinned strongBuy + stop/target + ⏱ note
+        // (StockSageBuildIdeasDirectTests.executionTimingNoteAppearsForBullTrendBuy).
+        let up250 = (0..<250).map { 50.0 + 0.0153 * pow(Double($0), 2) }
+        // TrendFixtures.up(70): lighter 50DMA branch → pinned .buy
+        // (StockSageAdvisorTests.fiftyBarHistoryUsesLighterTrendScore).
+        let up70 = (0..<70).map { 50.0 + 0.0153 * pow(Double($0), 2) }
+        // Gentle linear downtrend 200→~50 → pinned sell/reduce + bearTrend, short stop/target
+        // (StockSageAdvisorTests.cleanDowntrendIsASellShortSetup).
+        let down250 = (0..<250).map { 200.0 - Double($0) * 0.602 }
+        // 293 bars: 272 calm sinusoidal then 21 alternating ±3% → vol-regime brake note
+        // (StockSageBuildIdeasDirectTests.volRegimeBrakeNoteAppearsWhenRecentVolElevated).
+        var px = 100.0; var brake = [px]
+        for i in 0..<272 { px *= (1 + sin(Double(i)) * 0.005); brake.append(px) }
+        for i in 0..<20  { px *= (1 + (i % 2 == 0 ? 1.0 : -1.0) * 0.030); brake.append(px) }
+        return [
+            "NVDA":    hist("NVDA", up250),
+            "AAPL":    hist("AAPL", up70),
+            "1120.SR": hist("1120.SR", down250),
+            // ×600 scale puts BTC at a plausible price level; the advisor is scale-invariant
+            // (returns/ATR%/momentum are all ratios), so the action is identical to up250's.
+            "BTC-USD": hist("BTC-USD", up250.map { $0 * 600 }),
+            "7010.SR": hist("7010.SR", brake),
+        ]
+    }
+
+    /// Seed the shared store with deterministic fixture ideas COMPUTED THROUGH THE REAL
+    /// buildIdeas/advise pipeline. Forces the sample-labeled state first (seedSampleData →
+    /// isSampleData = true) so the fixture board is honestly bannered "Sample data" —
+    /// never rendered under the cached/live banner. In-memory only: nothing here persists
+    /// (ideas/earningsDates are not written to disk; paper-trading/alerts/monitor untouched).
+    func seedQAIdeas() async {
+        seedSampleData()   // honest labeling: whole board = sample, isSampleData = true
+        let built = await Self.buildIdeas(defs: Self.qaFixtureDefs(),
+                                          histories: Self.qaFixtureHistories(),
+                                          benchmark: nil,          // no RS term → deterministic
+                                          calibration: nil,        // prior sizing → deterministic
+                                          journalTrades: [])       // sector rotation no-op
+        ideas = built.sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
+        ideasUpdated = Date()
+        // Earnings warning on the buy card: ≤3 days → .imminent (StockSageEarnings severity)
+        // → "⚠︎ earnings ~2d" chip + rank demotion visible on the AAPL card. In-memory only.
+        earningsDates["AAPL"] = Date().addingTimeInterval(2 * 86_400)
+    }
 }
