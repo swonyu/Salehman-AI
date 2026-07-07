@@ -4425,6 +4425,58 @@ struct MarketsView: View {
         .accessibilityLabel(String(format: "Underwater curve, worst drawdown %.0f percent", u.maxDrawdown))
     }
 
+    /// UI-wave (Gemini #3, detail sheet): compact waterfall of the per-idea sizing-brake
+    /// chain — base half-Kelly → regime-adjusted → vol-regime-brake. ONLY numbers that
+    /// already exist per-idea and are already shown/derivable on this sheet (Base size /
+    /// Regime size / Vol-adj, same symbols as the HStack above) — no fabricated stages.
+    /// Correlation de-weighting + heat cap are PORTFOLIO-level (allocator), so they get no
+    /// per-idea bar; the footer reuses the exact established `sizeMetricHelp` wording.
+    /// A stage whose input is nil is omitted entirely (nil ⇒ nothing rendered); fewer than
+    /// 2 resolved stages ⇒ the whole waterfall renders nothing (no single-bar waterfall).
+    @ViewBuilder private func sizingBrakeWaterfall(_ idea: StockSageIdea) -> some View {
+        let a = idea.advice
+        if a.suggestedWeight > 0 {
+            var stages: [(label: String, value: Double)] = [("Base size", a.suggestedWeight)]
+            if let r = store.regime {
+                let adj = StockSageRegime.adjustedWeight(base: a.suggestedWeight, bias: r.sizingBias, cap: StockSageAdvisor.maxWeight)
+                stages.append(("Regime size", adj))
+            }
+            if let vr = idea.volRegime {
+                stages.append(("Vol-adj size", a.suggestedWeight * vr.sizingMultiplier))
+            }
+            if stages.count >= 2 {
+                let base = stages[0].value
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Sizing brakes").font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white)
+                    ForEach(stages.indices, id: \.self) { i in
+                        let s = stages[i]
+                        HStack(spacing: 8) {
+                            Text(s.label).font(.system(size: mvFont9)).foregroundStyle(.secondary)
+                                .frame(width: 78, alignment: .leading)
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(Color.white.opacity(0.08)).frame(height: 8)
+                                    Capsule().fill(i == 0 ? DS.Palette.accent : DS.Palette.textSecondary)
+                                        .frame(width: max(4, geo.size.width * min(max(base > 0 ? s.value / base : 0, 0), 1)), height: 8)
+                                }
+                            }
+                            .frame(height: 8)
+                            Text(String(format: "%.1f%%", s.value * 100))
+                                .font(.system(size: mvFont9, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white).frame(width: 42, alignment: .trailing)
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("\(s.label) \(String(format: "%.1f", s.value * 100)) percent")
+                    }
+                    Text("Correlation de-weighting and the heat cap apply at the portfolio level, not shown per-idea. " + Self.sizeMetricHelp)
+                        .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.04)))
+            }
+        }
+    }
+
     @ViewBuilder private func positionSizerPanel(_ idea: StockSageIdea) -> some View {
         if let stop = idea.advice.stopPrice {
             let entry = idea.price
@@ -4848,6 +4900,7 @@ struct MarketsView: View {
                         .foregroundStyle(store.regimeIsStale ? DS.Palette.warningSoft : .secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                sizingBrakeWaterfall(idea)
                 if let stop = a.stopPrice, let target = a.targetPrice,
                    let rr = StockSageRewardRisk.assess(entry: idea.price, stop: stop, target: target) {
                     let c = rr.quality == .strong ? DS.Palette.successSoft
