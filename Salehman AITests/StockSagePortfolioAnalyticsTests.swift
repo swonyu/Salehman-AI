@@ -192,4 +192,27 @@ struct StockSagePortfolioAnalyticsTests {
         #expect((r?.avgCorrelation ?? 1) < -0.9)        // strongly anti-correlated
         #expect((r?.diversificationScore ?? 0) > 70)    // genuine diversification
     }
+
+    // cVaR95 (conditional VaR / expected shortfall — "if you lose, HOW bad?") was untested.
+    // Single holding ⇒ port == dailyReturns(closes). cutoff = percentile(port,0.05);
+    // cVaR95 = tail.isEmpty ? var95 : max(0, −mean(tail)·100). Hand-derived in derive_cvar.swift.
+    @Test func conditionalVaRAveragesTheTailAndFallsBackToVaRWhenTailIsEmpty() {
+        // NORMAL branch: 21 closes → returns [−0.10, +0.01…+0.19]. 5th-pctile cutoff = +0.01,
+        // so the ONLY sub-cutoff return is the −0.10 crash ⇒ tail = [−0.10] ⇒ cVaR95 = 10.0,
+        // while var95 = max(0, −0.01·100) = 0.0. cVaR95 ≠ var95 PROVES the tail-mean branch fired
+        // (a fallback would make them equal).
+        var normal = [100.0]
+        for r in [-0.10] + (1...19).map({ Double($0) / 100 }) { normal.append(normal.last! * (1 + r)) }
+        let a = PA.compute(holdings: [(1000, normal)])!
+        #expect(abs(a.cVaR95 - 10.0) < 1e-6)
+        #expect(abs(a.valueAtRisk95 - 0.0) < 1e-6)
+        #expect(a.cVaR95 > a.valueAtRisk95)   // expected shortfall ≥ VaR when the tail bites
+
+        // FALLBACK branch: 6 closes → 5 returns (compute needs minLen ≥ 5). The 5th-pctile idx =
+        // round(4·0.05) = 0 = the minimum (−0.10 crash), so NOTHING is strictly below it ⇒ empty
+        // tail ⇒ cVaR95 falls back to var95 (both = 10.0).
+        let f = PA.compute(holdings: [(1000, [100, 90, 91, 92, 93, 94])])!
+        #expect(abs(f.cVaR95 - 10.0) < 1e-6)
+        #expect(f.cVaR95 == f.valueAtRisk95)   // empty tail ⇒ exact fallback to VaR
+    }
 }
