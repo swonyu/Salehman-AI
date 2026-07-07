@@ -32,8 +32,10 @@ enum QASnapshots {
         if let custom = ProcessInfo.processInfo.environment["QA_SNAPSHOT_DIR"] {
             return URL(fileURLWithPath: custom, isDirectory: true)
         }
+        // Repo moved 2026-07-05: ~/Desktop/Salehman AI → ~/Salehman-AI. The old Desktop copy
+        // still exists — captures must land in the LIVE repo or tools/qa.sh waits forever.
         return URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("Desktop/Salehman AI/qa", isDirectory: true)
+            .appendingPathComponent("Salehman-AI/qa", isDirectory: true)
     }
 
     /// Launch hook: capture if `qa/SNAPSHOT_REQUEST` is present. The request
@@ -60,6 +62,10 @@ enum QASnapshots {
         guard ProcessInfo.processInfo.arguments.contains("--qa") else { return }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 800_000_000)
+            // Deterministic ideas-board fixtures (real buildIdeas pipeline, sample-labeled).
+            // ONLY here — the --qa path. Menu captures (View ▸ Capture QA Snapshots) stay
+            // live-state so an owner-session capture never clobbers the real board.
+            await StockSageStore.shared.seedQAIdeas()
             captureAll()
             try? FileManager.default.removeItem(at: request)
         }
@@ -109,6 +115,10 @@ enum QASnapshots {
         snap(KnowledgeView(),      "knowledge",    "Knowledge tab", .init(width: 1000, height: 700), in: dir)
         snap(MarketsView(qaSection: .watchlist), "markets",  "Markets tab", .init(width: 1000, height: 740), in: dir)
         snap(MarketsView(qaSection: .heatmap), "markets_heatmap", "Markets — heatmap sub-section (tile colour-contrast)", .init(width: 1000, height: 640), in: dir)
+        // Ideas board — QA-seeded fixture ideas (real buildIdeas pipeline on synthetic
+        // histories; sample-bannered). Tall frame: the board sits below header/velocity/
+        // CTA/best-opportunity/fast-lane/backtest panels — 740pt would show zero cards.
+        snap(MarketsView(qaSection: .ideas), "markets_ideas", "Markets — Ideas board (seeded fixtures: strongBuy/buy/sell/crypto/⚠vol + earnings chip)", .init(width: 1000, height: 2400), in: dir)
         // Memory is a SHEET (round-1 audit caught it floating in a 1000×700
         // frame with uncomposited margins) — capture at its natural sheet size.
         snap(MemoryView(),         "memory",       "Memory sheet", .init(width: 500, height: 620), in: dir)
@@ -132,6 +142,7 @@ enum QASnapshots {
         // ── Responsive: narrow widths catch layout breaks on the flexible tabs ──
         snap(TodayView(),     "today_narrow",     "Today @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
         snap(MarketsView(qaSection: .watchlist), "markets_narrow", "Markets @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
+        snap(MarketsView(qaSection: .ideas), "markets_ideas_narrow", "Markets Ideas board @ 560pt — responsive / chip-wrap check", .init(width: 560, height: 2800), in: dir)
         snap(KnowledgeView(), "knowledge_narrow", "Knowledge @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
 
         // Bridge layout + accessibility findings to the audit. MERGE, don't
