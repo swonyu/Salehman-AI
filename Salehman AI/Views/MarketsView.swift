@@ -3526,7 +3526,14 @@ struct MarketsView: View {
                     HStack(spacing: DS.Space.sm) {
                         ideaMetric("Entry", adaptivePrice(idea.price))
                         if let stop = idea.advice.stopPrice {
-                            ideaMetric("Stop", adaptivePrice(stop), color: DS.Palette.dangerSoft)
+                            if idea.price > 0 {
+                                // Signed distance-to-invalidation: raw (stop/price − 1)×100 — negative
+                                // for longs (stop below price), positive for shorts (stop above). No abs().
+                                let stopDistPct = (stop / idea.price - 1) * 100
+                                ideaMetric("Stop", "\(adaptivePrice(stop)) (\(String(format: "%+.1f%%", stopDistPct)) to stop)", color: DS.Palette.dangerSoft)
+                            } else {
+                                ideaMetric("Stop", adaptivePrice(stop), color: DS.Palette.dangerSoft)
+                            }
                         }
                         if let target = idea.advice.targetPrice {
                             ideaMetric("Target", adaptivePrice(target), color: DS.Palette.successSoft)
@@ -4775,7 +4782,16 @@ struct MarketsView: View {
                 // need ~427pt with 6-figure crypto prices; at scale≈0.9 they fit in ~392pt available.
                 HStack(spacing: 14) {
                     ideaMetric("Price", adaptivePrice(idea.price))
-                    if let s = a.stopPrice { ideaMetric("Stop", adaptivePrice(s), color: DS.Palette.dangerSoft) }
+                    if let s = a.stopPrice {
+                        // Signed distance-to-invalidation, same convention as the board card/best-opportunity
+                        // card: raw (stop/price − 1)×100, negative for longs, positive for shorts, no abs().
+                        if idea.price > 0 {
+                            let stopDistPct = (s / idea.price - 1) * 100
+                            ideaMetric("Stop", "\(adaptivePrice(s)) (\(String(format: "%+.1f%%", stopDistPct)) to stop)", color: DS.Palette.dangerSoft)
+                        } else {
+                            ideaMetric("Stop", adaptivePrice(s), color: DS.Palette.dangerSoft)
+                        }
+                    }
                     if let t = a.targetPrice { ideaMetric("Target", adaptivePrice(t), color: DS.Palette.successSoft) }
                     // "Base size" = raw half-Kelly before regime/vol/correlation adjustments.
                     if a.suggestedWeight > 0 {
