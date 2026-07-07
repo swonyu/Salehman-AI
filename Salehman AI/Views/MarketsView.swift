@@ -4901,12 +4901,18 @@ struct MarketsView: View {
                         // F27 (factored): same logic as fullPlanText, now via the shared helper.
                         let financingNote = StockSageExpectedValue.financingNoteSuffix(rate: finRate, days: finDays)
                         let pre = "After ~\(Int(costs.roundTripBps))bps est. \(costs.assetClass) costs\(financingNote): "
-                        let body = ne.netRR > 0
-                            ? pre + String(format: "net R:R %.1f:1 (gross %.1f:1). %@", ne.netRR, ne.grossRR, ne.verdict)
-                            : pre + ne.verdict
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "scissors").font(.system(size: mvFont11)).foregroundStyle(c)
-                            Text(body).font(.caption2).foregroundStyle(c).fixedSize(horizontal: false, vertical: true)
+                            // Gross→net fusion (UI wave #1): when both resolve, render as ONE Text unit
+                            // — gross at reduced opacity, net at full — so they can't be read as two
+                            // independent numbers. nil/non-positive net path is byte-identical to before.
+                            (ne.netRR > 0
+                                ? grossToNetText(
+                                    prefix: pre + "R:R ", grossLabel: String(format: "%.1f:1 (gross)", ne.grossRR),
+                                    netLabel: String(format: "%.1f:1 (net)", ne.netRR),
+                                    suffix: ". \(ne.verdict)", font: .caption2, color: c)
+                                : Text(pre + ne.verdict).font(.caption2).foregroundStyle(c))
+                                .fixedSize(horizontal: false, vertical: true)
                                 .help("Nets an asset-class round-trip spread+slippage estimate (crypto widest, FX/large-cap tightest) — and, for a short, the overnight borrow/margin cost of holding the expected duration — out of the reward:risk. Your real costs differ — wide-margin trades barely notice; thin scalps can lose the whole edge.")
                         }
                     }
@@ -4934,16 +4940,20 @@ struct MarketsView: View {
                     // floor de-rank reason is traceable to an actual number shown on this screen.
                     // NEVER fabricate a net figure when netVelocity returns nil.
                     let netVel = StockSageExpectedValue.netVelocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
-                    let velText: String = {
-                        if let nv = netVel {
-                            return String(format: "≈ %+.3fR/day gross · %+.3fR/day net after frictions (EV ÷ typical hold) — estimate.", vel, nv)
-                        }
-                        return String(format: "≈ %+.3fR/day gross (EV ÷ typical hold) — faster turnover compounds faster. An estimate.", vel)
-                    }()
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "gauge.with.dots.needle.67percent").font(.system(size: mvFont11)).foregroundStyle(.secondary)
-                        Text(velText)
-                            .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        // Gross→net fusion (UI wave #1): when both resolve, render as ONE Text unit
+                        // — gross at reduced opacity, net at full — so they can't be read as two
+                        // independent numbers. nil net path renders the existing gross-only sentence
+                        // byte-identically (no arrow, no placeholder).
+                        (netVel != nil
+                            ? grossToNetText(
+                                prefix: "≈ ", grossLabel: String(format: "%+.3fR/day (gross)", vel),
+                                netLabel: String(format: "%+.3fR/day (net)", netVel!),
+                                suffix: " after frictions (EV ÷ typical hold) — estimate.", font: .caption2, color: .secondary)
+                            : Text(String(format: "≈ %+.3fR/day gross (EV ÷ typical hold) — faster turnover compounds faster. An estimate.", vel))
+                                .font(.caption2).foregroundStyle(.secondary))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     // Honest floor label: shown verbatim when net EV/day (after frictions) is
                     // below the 0.005R/day floor. The idea is de-ranked on the velocity board; this badge
@@ -5537,6 +5547,23 @@ struct MarketsView: View {
             .accessibilityLabel("Next idea")
             .keyboardShortcut(.downArrow, modifiers: [.command, .option])
         }
+    }
+
+    /// Gross→net fusion (UI wave #1, plans/PLAN_2026-07-07_ui_wave_gemini.md item #1): renders
+    /// "<prefix><gross> → <net><suffix>" as ONE Text unit — gross at reduced opacity (0.7), net at
+    /// full opacity — so the two figures read as a single decayed→resolved quantity, never as two
+    /// independent numbers. Both "(gross)"/"(net)" labels are baked into the caller's grossLabel/
+    /// netLabel strings (honesty floor: adjacency strengthens the label, never replaces it). Only
+    /// call this when both values have already resolved non-nil — the nil path is the caller's
+    /// existing byte-identical gross-only branch.
+    private func grossToNetText(prefix: String, grossLabel: String, netLabel: String, suffix: String,
+                                 font: Font, color: Color) -> Text {
+        let a: Text = Text(prefix).font(font).foregroundStyle(color)
+        let b: Text = Text(grossLabel).font(font).foregroundStyle(color.opacity(0.7))
+        let c: Text = Text(" → ").font(font).foregroundStyle(color)
+        let d: Text = Text(netLabel).font(font).foregroundStyle(color)
+        let e: Text = Text(suffix).font(font).foregroundStyle(color)
+        return a + b + c + d + e
     }
 
     // F24: merged with the former summaryStat helper (uniform a11y is the audit's stated goal —
