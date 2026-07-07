@@ -171,6 +171,11 @@ enum QASnapshots {
         // maxWidth 680, so 700 captures it fully unclipped.
         snap(MarketsView(qaDetailSymbol: "NVDA"), "markets_idea_detail", "Markets — idea detail sheet content (NVDA strongBuy fixture)", .init(width: 700, height: 1600), in: dir)
         snap(MarketsView(qaDetailSymbol: "NVDA"), "markets_idea_detail_narrow", "Markets — idea detail sheet @ 460pt — responsive / layout-break check", .init(width: 460, height: 1600), in: dir)
+        // 7010.SR is the vol-brake fixture (293 bars → volRegime resolves, brake < 0.85):
+        // with QA's nil market-regime it is the ONLY seeded idea where ≥2 sizing stages
+        // resolve, i.e. the positive-path proof for the sizing-brake waterfall (NVDA's
+        // 250 bars < 273 → volRegime nil → waterfall correctly renders nothing there).
+        snap(MarketsView(qaDetailSymbol: "7010.SR"), "markets_idea_detail_brake", "Markets — idea detail sheet (7010.SR vol-brake fixture: sizing waterfall positive path)", .init(width: 700, height: 1600), in: dir)
         // Memory is a SHEET (round-1 audit caught it floating in a 1000×700
         // frame with uncomposited margins) — capture at its natural sheet size.
         snap(MemoryView(),         "memory",       "Memory sheet", .init(width: 500, height: 620), in: dir)
