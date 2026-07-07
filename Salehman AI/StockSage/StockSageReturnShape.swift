@@ -63,7 +63,11 @@ enum StockSageReturnShape {
 
         let downside95 = Swift.max(0, -StockSagePortfolioAnalytics.percentile(returns, 0.05))
         let worstDay = returns.min() ?? 0
-        let isLeftTailed = skewness < -0.5
+        // Require BOTH negative skew AND at least 2% downside tail — a noisy
+        // skew-only threshold produces too many false positives at low N
+        // (≤~120 daily returns). The 2% floor filters out trivial left-tail
+        // noise that has no economic magnitude.
+        let isLeftTailed = skewness < -0.5 && downside95 > 0.02
 
         let note = isLeftTailed
             ? String(

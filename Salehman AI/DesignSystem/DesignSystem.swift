@@ -48,6 +48,10 @@ enum DS {
         static let danger        = Color.red
         static let successSoft   = Color(red: 0.45, green: 0.85, blue: 0.55)
         static let warningSoft   = Color(red: 1.0,  green: 0.72, blue: 0.35)
+        /// Soft red for small WCAG-AA danger text (~6.98:1 on the dark card bg).
+        /// Use for caption/caption2/mvFont9-mvFont11 text where `danger` (~4.25:1)
+        /// falls below the 4.5:1 AA floor. Never for icons (icons only need 3:1).
+        static let dangerSoft    = Color(red: 1.0,  green: 0.50, blue: 0.50)
 
         // SuperGrok (xAI) – elevated "Super" brain visual identity
         static let superGrok     = Color(red: 0.55, green: 0.45, blue: 0.95)

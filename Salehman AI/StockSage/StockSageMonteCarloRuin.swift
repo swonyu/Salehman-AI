@@ -50,7 +50,7 @@ enum StockSageMonteCarloRuin {
             for _ in 0..<horizon {
                 let r = rs[Int(rng.next() % UInt64(n))]
                 equity *= (1 + f * r)
-                if equity < 0 { equity = 0 }
+                if equity < 0 || !equity.isFinite { equity = 0 }   // clamp negative/impossible to ruin
                 if equity > peak { peak = equity }
                 let dd = peak > 0 ? (peak - equity) / peak : 0
                 if dd > maxDD { maxDD = dd }

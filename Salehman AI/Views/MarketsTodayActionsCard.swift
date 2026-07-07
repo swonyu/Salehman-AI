@@ -113,7 +113,7 @@ struct MarketsTodayActionsCard: View {
                 }
                 if blocked {
                     Text("DO NOT TRADE — \(plan.gate.checks.first(where: { $0.level == .fail })?.label ?? "gate failed")")
-                        .font(.system(size: font8, weight: .semibold)).foregroundStyle(DS.Palette.danger)
+                        .font(.system(size: font8, weight: .semibold)).foregroundStyle(DS.Palette.dangerSoft)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 // Caution: show the first warn reason as a visible secondary line for sighted users
@@ -152,7 +152,7 @@ struct MarketsTodayActionsCard: View {
     @ViewBuilder
     private func gateBadge(_ gate: TradeGateVerdict) -> some View {
         let color: Color = gate.decision == .clear ? DS.Palette.successSoft
-            : (gate.decision == .caution ? DS.Palette.warningSoft : DS.Palette.danger)
+            : (gate.decision == .caution ? DS.Palette.warningSoft : DS.Palette.dangerSoft)
         let label = gate.decision == .clear ? "CLEAR" : (gate.decision == .caution ? "CAUTION" : "BLOCKED")
         // Build a .help string from the warn/fail check labels so sighted users can hover-reveal
         // the gate reason without opening the detail sheet.

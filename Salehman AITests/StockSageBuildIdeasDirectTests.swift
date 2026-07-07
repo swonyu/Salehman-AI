@@ -104,12 +104,14 @@ struct StockSageBuildIdeasDirectTests {
 
     // MARK: - F05(b): left-tailed history note lands in rationale
 
-    @Test func leftTailedNoteAppearsInRationaleWhenHistoryHasNegativeSkew() async {
-        // 31 bars: 30 days of +0.5% then one -20% crash. Derived skewness ≈ −5.3 < −0.5.
-        // Needs ≥31 closes (≥30 returns) for ReturnShape to fire.
+    @Test func singleCrashDayDoesNotTriggerLeftTailedWithoutMaterialDownside() async {
+        // 32 closes (31 returns): 30 days of +0.5% then one −20% crash.
+        // Skew ≈ −5.3 < −0.5 but downside_95 ≈ 0 (only 1 bad day among 30 up-days).
+        // The 2026-07-07 threshold change requires BOTH skew < −0.5 AND downside_95 > 2%
+        // — a single outlier skew is NOT a genuine left-tail, so this DOES NOT trigger.
         var closes = [100.0]
-        for _ in 0..<30 { closes.append(closes.last! * 1.005) }  // +0.5% each
-        closes.append(closes.last! * 0.80)                         // −20% crash
+        for _ in 0..<30 { closes.append(closes.last! * 1.005) }
+        closes.append(closes.last! * 0.80)
         assert(closes.count == 32)
 
         let sym = equitySym("SKEWAAPL")
@@ -120,9 +122,27 @@ struct StockSageBuildIdeasDirectTests {
         #expect(ideas.count == 1)
         guard let idea = ideas.first else { Issue.record("buildIdeas returned no ideas"); return }
         let allRationale = idea.advice.rationale.joined(separator: " ")
-        // The note is "⚠ Left-tailed history — worst days exceed …"
+        // Single-outlier skew — does NOT trigger left-tail flag under the new threshold.
+        #expect(!allRationale.contains("Left-tailed"),
+                "Single crash day should NOT trigger Left-tailed without material downside tail. rationale: \(idea.advice.rationale)")
+    }
+
+    // A multi-crash fixture: 25 up-days + 5 crash days at −12% each produces
+    // skew ≈ −1.79 < −0.5 AND downside_95 ≈ 12% > 2%. Hand-derived 2026-07-07.
+    @Test func multiCrashHistoryTriggersLeftTailed() async {
+        var closes = [100.0]
+        for _ in 0..<25 { closes.append(closes.last! * 1.005) }
+        for _ in 0..<5  { closes.append(closes.last! * 0.88) }
+        assert(closes.count == 31)   // 30 returns — meets the ≥30 minimum
+        let sym = equitySym("CRASHAAPL")
+        let h = history("CRASHAAPL", closes: closes)
+        let ideas = await StockSageStore.buildIdeas(
+            defs: [sym], histories: ["CRASHAAPL": h])
+        #expect(ideas.count == 1)
+        guard let idea = ideas.first else { Issue.record("no ideas"); return }
+        let allRationale = idea.advice.rationale.joined(separator: " ")
         #expect(allRationale.contains("Left-tailed"),
-                "Expected 'Left-tailed' in rationale when skewness < −0.5; got: \(idea.advice.rationale)")
+                "Multi-crash history should trigger Left-tailed; got: \(idea.advice.rationale)")
     }
 
     // MARK: - F05(b): whippy-volatility note lands in rationale

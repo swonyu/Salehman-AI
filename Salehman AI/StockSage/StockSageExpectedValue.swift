@@ -371,7 +371,23 @@ enum StockSageExpectedValue {
     private nonisolated static func evRankKey(for idea: StockSageIdea,
                                               calibration: StockSageConvictionCalibration? = nil) -> Double? {
         guard let base = qualityAdjustedEVR(for: idea, calibration: calibration) else { return nil }
-        var key = base
+        // Continuous net-cost ratio: matches velocityRankKey's pattern so EV ranking
+        // and velocity ranking are consistent — a barely-clears-cost setup scales lower
+        // than a strongly-clears one, instead of tying on the binary gate alone.
+        // NOTE: when `netEVR` returns nil (degenerate setup where `StockSageNetEdge.evaluate`
+        // can't compute a net edge, e.g. zero reward/risk — guarded separately by the `evR>0`
+        // check above), `netRatio` defaults to 1 (treat unknown net as full gross). This is
+        // intentionally optimistic for the nil path, which is only reachable on degenerate
+        // inputs that the upstream `ev(for:)` guard (`risk>0, reward>0`) already excludes.
+        // If `evaluate` failures become observable in production, this fallback should be
+        // re-evaluated (conservative → 0 would silently de-rank valid ideas; optimistic → 1
+        // preserves pre-cost ranking for setups whose net-cost can't be computed).
+        let netRatio: Double = {
+            guard let e = ev(for: idea, calibration: calibration), e.evR > 0 else { return 1 }
+            guard let ne = netEVR(for: idea, calibration: calibration) else { return 1 }
+            return Swift.max(0, Swift.min(1, ne / e.evR))   // net≤0 → 0, net>gross → cap 1
+        }()
+        var key = base * netRatio
         if idea.advice.conviction < minConvictionToRank { key -= 1000 }       // low-conviction band
         if !clearsCostAfterFrictions(idea, calibration: calibration) { key -= 500_000 }   // costs eat the edge → below clean setups
         return key
@@ -575,7 +591,15 @@ enum StockSageExpectedValue {
             } else {
                 base = qualityAdjustedEVR(for: idea, calibration: calibration) ?? 0
             }
-            return base
+            // Continuous net-cost ratio — matches evRankKey's new pattern so the
+            // "best opportunity" ranking is consistent with the EV/velocity boards:
+            // a barely-clears-cost candidate ranks below a strongly-clears one.
+            let netRatio: Double = {
+                guard let e = ev(for: idea, calibration: calibration), e.evR > 0 else { return 1 }
+                guard let ne = netEVR(for: idea, calibration: calibration) else { return 1 }
+                return Swift.max(0, Swift.min(1, ne / e.evR))
+            }()
+            return base * netRatio
                 - earningsRankPenalty(for: idea, earnings: earnings)
                 - liquidityRankPenalty(for: idea, liquidity: liquidity)
         }
@@ -616,12 +640,28 @@ enum StockSageExpectedValue {
     /// velocity (EV/day) desc — the fastest-compounding opportunities. Index/FX (no
     /// hold) and non-positive-EV ideas are excluded. Faster turnover = more cycles
     /// AND more chances to be wrong; the UI carries that caveat.
+    ///
+    /// Membership includes demoted ideas (low-conviction, below-cost-floor) — they
+    /// receive a negative `velocityRankKey` that sorts them to the bottom, but are
+    /// NOT excluded. This is intentional (demotion, not exclusion): a demoted idea
+    /// can be the only fast-lane member in a thin scan, and the caller may still
+    /// want to surface it with appropriate warnings. Callers that need only "clean"
+    /// fast-lane members should additionally filter by `velocityRankKey > 0` or
+    /// check `netCostFloorFlag.isDeranked` + `isLowConviction`.
+    ///
+    /// `earnings` and `liquidity` (default empty) apply the same demotion penalties
+    /// that `rankByVelocity` already uses, so the fast-lane strip and the velocity
+    /// board are consistent: an imminent-earnings or thin-liquidity idea ranks lower
+    /// in the lane. Empty dicts → byte-identical to the pre-penalty ordering.
     nonisolated static func fastLane(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults,
-                                     calibration: StockSageConvictionCalibration? = nil) -> [StockSageIdea] {
+                                     calibration: StockSageConvictionCalibration? = nil,
+                                     earnings: [String: EarningsProximity] = [:],
+                                     liquidity: [String: LiquidityProfile] = [:]) -> [StockSageIdea] {
         ideas.enumerated().compactMap { idx, idea -> (Int, StockSageIdea, Double)? in
             guard let e = ev(for: idea, calibration: calibration), e.evR > 0,
                   let v = velocityRankKey(for: idea, holds: holds, calibration: calibration) else { return nil }
-            return (idx, idea, v)
+            let key = v - earningsRankPenalty(for: idea, earnings: earnings) - liquidityRankPenalty(for: idea, liquidity: liquidity)
+            return (idx, idea, key)
         }
         .sorted { $0.2 == $1.2 ? $0.0 < $1.0 : $0.2 > $1.2 }
         .map { $0.1 }
@@ -700,10 +740,19 @@ enum StockSageExpectedValue {
     /// "usually similar."
     nonisolated static func rankByVelocityWeighted(_ ideas: [StockSageIdea], closes: [String: [Double]] = [:],
                                                    holds: VelocityHoldDays = .defaults,
-                                                   calibration: StockSageConvictionCalibration? = nil) -> [StockSageIdea] {
-        let lane = fastLane(ideas, holds: holds, calibration: calibration)
+                                                   calibration: StockSageConvictionCalibration? = nil,
+                                                   earnings: [String: EarningsProximity] = [:],
+                                                   liquidity: [String: LiquidityProfile] = [:]) -> [StockSageIdea] {
+        let lane = fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity)
         func weightedVelocity(_ idea: StockSageIdea) -> Double {
-            let key = velocityRankKey(for: idea, holds: holds, calibration: calibration) ?? 0
+            let rawKey = velocityRankKey(for: idea, holds: holds, calibration: calibration) ?? 0
+            // Apply the same e/l penalties fastLane already applies so a momentum-hot
+            // demoted idea can't be resurrected by the quality multiplier (same class
+            // of bug as the 2026-07-01 adversarial-review fix — a demoted idea's
+            // raw key must NEVER outrank below the penalty threshold).
+            let key = rawKey
+                - earningsRankPenalty(for: idea, earnings: earnings)
+                - liquidityRankPenalty(for: idea, liquidity: liquidity)
             guard key > 0 else { return key }   // demoted/non-positive → pass through unchanged, never resurrected
             let series = closes[idea.symbol] ?? []
             guard !series.isEmpty else { return key }   // no history for THIS symbol → unweighted (×1)
@@ -741,6 +790,26 @@ enum StockSageExpectedValue {
         // summing their velocities as if independent overstates the real weekly R by counting
         // one correlated bet N times. Haircut the total (not each leg) so the raw per-idea
         // velocities stay honest; 0.70 is a conservative single-token estimate, not a fit.
+        let concentrationFactor = fastLaneConcentration(ideas, topN: maxConcurrent, holds: holds, calibration: calibration)?.isConcentrated == true ? 0.70 : 1.0
+        return vels.reduce(0, +) * tradingDays * concentrationFactor
+    }
+
+    /// NET-of-cost weekly R estimate — companion to `expectedWeeklyR` that sums
+    /// `netVelocity` (EV/day after round-trip frictions, costs, and financing)
+    /// instead of gross velocities. Uses the same fast-lane ordering (now
+    /// earnings/liquidity-aware via `fastLane`'s optional params), concentration
+    /// haircut, and trading-days cadence as the gross version. nil when the fast
+    /// lane is empty or no net velocity is computable. An estimate, not income.
+    nonisolated static func netExpectedWeeklyR(_ ideas: [StockSageIdea], maxConcurrent: Int = 3,
+                                               tradingDays: Double = 5,
+                                               holds: VelocityHoldDays = .defaults,
+                                               calibration: StockSageConvictionCalibration? = nil,
+                                               earnings: [String: EarningsProximity] = [:],
+                                               liquidity: [String: LiquidityProfile] = [:]) -> Double? {
+        let vels = fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity)
+            .prefix(Swift.max(0, maxConcurrent))
+            .compactMap { netVelocity(for: $0, holds: holds, calibration: calibration) }
+        guard !vels.isEmpty else { return nil }
         let concentrationFactor = fastLaneConcentration(ideas, topN: maxConcurrent, holds: holds, calibration: calibration)?.isConcentrated == true ? 0.70 : 1.0
         return vels.reduce(0, +) * tradingDays * concentrationFactor
     }
@@ -967,9 +1036,11 @@ enum StockSageExpectedValue {
     /// excludes them) for anything that isn't Crypto or Equity (Index/FX), so nothing is dropped or
     /// double-counted by this split.
     nonisolated static func fastLaneByClass(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults,
-                                            calibration: StockSageConvictionCalibration? = nil)
+                                            calibration: StockSageConvictionCalibration? = nil,
+                                            earnings: [String: EarningsProximity] = [:],
+                                            liquidity: [String: LiquidityProfile] = [:])
     -> (crypto: [StockSageIdea], equity: [StockSageIdea]) {
-        let lane = fastLane(ideas, holds: holds, calibration: calibration)
+        let lane = fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity)
         return (lane.filter { StockSageAllocation.assetClass($0.symbol) == "Crypto" },
                 lane.filter { StockSageAllocation.assetClass($0.symbol) == "Equity" })
     }

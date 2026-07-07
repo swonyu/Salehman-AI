@@ -20,6 +20,7 @@ struct PortfolioAnalytics: Sendable, Equatable {
     let maxDrawdown: Double           // %, positive magnitude (worst peak→trough)
     let calmar: Double?               // annualizedReturn ÷ maxDrawdown; nil = undefined (zero drawdown)
     let valueAtRisk95: Double         // %, 1-day historical 95% VaR (positive = a loss)
+    let cVaR95: Double                // %, 1-day conditional VaR / expected shortfall: average loss GIVEN the VaR threshold is breached (positive = loss)
     let avgCorrelation: Double        // −1…1, average pairwise across holdings
     let diversificationScore: Double  // 0…100 (higher = better diversified)
     let holdingsAnalyzed: Int
@@ -64,6 +65,11 @@ enum StockSagePortfolioAnalytics {
         }
 
         let mean = port.reduce(0, +) / Double(port.count)
+        // Sample variance (÷(n−1)) — standard for Sharpe ratio per academic convention.
+        // Sortino's downside deviation below uses population denominator (÷n) — the RMS
+        // of ALL negative returns, also standard. The two denominators are intentionally
+        // different, not a drift: Sharpe uses sample-estimate variance; Sortino uses
+        // the actual mean squared negative return over the full observation window.
         let variance = port.count > 1
             ? port.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(port.count - 1) : 0
         let sd = variance.squareRoot()
@@ -94,6 +100,14 @@ enum StockSagePortfolioAnalytics {
 
         // Historical 1-day 95% VaR — the 5th-percentile daily return, as a positive loss.
         let var95 = Swift.max(0, -percentile(port, 0.05) * 100)
+        // Conditional VaR (expected shortfall): average of ALL returns strictly below
+        // the VaR threshold — "if you lose, HOW BAD?" Uses the same 5% tail.
+        let cVar95: Double = {
+            let cutoff = percentile(port, 0.05)
+            let tail = port.filter { $0 < cutoff }
+            guard !tail.isEmpty else { return var95 }   // zero tail observations → fall back to VaR
+            return Swift.max(0, -tail.reduce(0, +) / Double(tail.count) * 100)
+        }()
 
         let avgCorr = averageCorrelation(aligned)
         let base = (1 - avgCorr) / 2                                   // 0…1 (corr 1→0, −1→1)
@@ -105,7 +119,7 @@ enum StockSagePortfolioAnalytics {
         return PortfolioAnalytics(
             annualizedReturn: annReturn, annualizedVolatility: annVol,
             sharpe: sharpe, sortino: sortino, maxDrawdown: maxDD, calmar: calmar,
-            valueAtRisk95: var95, avgCorrelation: avgCorr,
+            valueAtRisk95: var95, cVaR95: cVar95, avgCorrelation: avgCorr,
             diversificationScore: divScore, holdingsAnalyzed: holdings.count,
             observations: minLen, caveat: caveat)
     }

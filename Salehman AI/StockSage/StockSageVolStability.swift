@@ -89,16 +89,21 @@ enum StockSageVolStability {
 
         // Build the rolling-vol series: historyWindow points, each from a volWindow-bar close slice.
         // Anchors: i ∈ { closes.count - historyWindow, …, closes.count - 1 } (most-recent last).
+        // Individual invalid windows are SKIPPED (matching VolRegime's approach) instead of
+        // aborting the whole computation — a single flash-crash bar shouldn't hide the
+        // stability read from the other ~125 clean bars.
         var series: [Double] = []
         series.reserveCapacity(historyWindow)
         let firstAnchor = closes.count - historyWindow
         for i in firstAnchor..<closes.count {
-            let slice = Array(closes[(i - volWindow + 1)...i])    // volWindow closes → volWindow-1 log-returns
+            let slice = Array(closes[(i - volWindow + 1)...i])
             guard let v = StockSageIndicators.annualizedVolatility(slice),
-                  v.isFinite, v > 0 else { return nil }
+                  v.isFinite, v > 0 else { continue }
             series.append(v)
         }
-        // series.count == historyWindow by construction.
+        // Require at least 60% of the expected windows to have valid vol — otherwise the
+        // remaining sample is too spotty for a meaningful CoV.
+        guard series.count >= Swift.max(5, Int(Double(historyWindow) * 0.6)) else { return nil }
 
         let n = Double(series.count)
         let mean = series.reduce(0.0, +) / n
