@@ -3165,6 +3165,17 @@ struct MarketsView: View {
         // sub-AA on its own .secondary text — a known gap, tracked as its own DEFERRED
         // follow-up; different surface, own wave, no watchlist code touched here).
         let boardIsStale = store.ideasIsStale
+        // QA-4+F1 (density rework): ONE seam for which conditional chips are
+        // visible — see IdeaChipPlan's doc for the priority order + why the
+        // action badge/EV chip stay uncounted. Computed once per card; both the
+        // render site below and the a11y label builder consume this SAME list,
+        // so they can never desync (the prior bug: two hand-copied `chipsSoFar`
+        // computations, one of which didn't even see confluence/extreme as
+        // droppable).
+        let visibleChips = IdeaChipPlan.visibleChips(
+            stale: boardIsStale, earnings: !earnFlag.badge.isEmpty, floor: floorFlag.isDeranked,
+            heldOrTraded: held != nil || jh != nil, delta: store.scanDeltas[idea.symbol] != nil,
+            extreme: extreme != .neither, confluence: a.timeframeAligned)
         return VStack(alignment: .leading, spacing: IdeaSpace.stack) {
             HStack(spacing: IdeaSpace.chipGap) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -3181,21 +3192,21 @@ struct MarketsView: View {
                     .background(actionColor(a.action), in: Capsule())
                     .frame(minWidth: 74, alignment: .center)
                 // Staleness badge — mirrors watchlist card pattern.
-                if boardIsStale {
+                if visibleChips.contains(.stale) {
                     Image(systemName: "clock.badge.exclamationmark")
                         .font(.system(size: mvFont10)).foregroundStyle(DS.Palette.warningSoft)
                         .help("Board is over 4h old — tap Refresh for current ideas")
                         .accessibilityLabel("Board data is stale — over 4 hours old")
                 }
                 // Risk warnings first: earnings and floor before EV.
-                if !earnFlag.badge.isEmpty {
+                if visibleChips.contains(.earnings) {
                     Text(earnFlag.badge)
                         .font(.system(size: fontChipLabel, weight: .semibold))
                         .foregroundStyle(earnFlag.isDemoted ? DS.Palette.warningSoft : .secondary)
                         .modifier(IdeaChipChrome(tint: earnFlag.isDemoted ? DS.Palette.warningSoft : DS.Palette.surfaceStroke))
                         .help(store.earnings[idea.symbol.uppercased()]?.note ?? "Upcoming earnings — binary event risk; a protective stop may gap through it.")
                 }
-                if floorFlag.isDeranked {
+                if visibleChips.contains(.floor) {
                     Text("costs > edge")
                         .font(.system(size: fontChipLabel, weight: .semibold))
                         .foregroundStyle(DS.Palette.warningSoft)
@@ -3205,7 +3216,8 @@ struct MarketsView: View {
                 }
                 // At-the-extreme chip: neutral descriptive fact, not a signal — deliberately
                 // secondary/plain styling (no success/danger tint) so it never implies good/bad.
-                if extreme != .neither {
+                // Lowest-priority-but-one in IdeaChipPlan — droppable under the cap.
+                if visibleChips.contains(.extreme) {
                     Text(extreme == .atHigh ? "At \(extremeSpan)-day high" : "At \(extremeSpan)-day low")
                         .font(.system(size: fontChipLabel, weight: .semibold))
                         .foregroundStyle(.secondary)
@@ -3216,9 +3228,9 @@ struct MarketsView: View {
                 // "Own it" / "Your history with this name" chips (2026-07-07 fix round, issue
                 // #1): six chips garbled mid-word at 560pt ("Backtes/t" defect class — see
                 // incident-ledger). When BOTH held and traded context exist, merge into ONE
-                // combined neutral chip so the row never exceeds five chips (the recorded-
-                // acceptable density). Still neutral/display-only, never part of ranking.
-                if let held, let jh {
+                // combined neutral chip — ONE slot in IdeaChipPlan regardless of which of the
+                // three renders below. Still neutral/display-only, never part of ranking.
+                if visibleChips.contains(.heldOrTraded), let held, let jh {
                     let rNote = jh.rDefinedCount != jh.count ? " (R defined on \(jh.rDefinedCount))" : ""
                     Text("Held · \(numString(held.shares)) sh · \(jh.count)x")
                         .font(.system(size: fontChipLabel, weight: .semibold))
@@ -3226,14 +3238,14 @@ struct MarketsView: View {
                         .modifier(IdeaChipChrome(tint: DS.Palette.surfaceStroke))
                         .help(String(format: "You hold %@ shares @ %@ (avg cost). Your journal: %d closed trades on %@, realized %+.1fR total%@. Context only — not part of ranking.", numString(held.shares), adaptivePrice(held.costBasis), jh.count, idea.symbol, jh.totalR, rNote))
                         .accessibilityLabel(String(format: "You hold %@ shares of %@ at an average cost of %@. Your journal: %d closed trades, realized %+.1fR total%@. Context only, not part of ranking.", numString(held.shares), idea.symbol, adaptivePrice(held.costBasis), jh.count, jh.totalR, rNote))
-                } else if let held {
+                } else if visibleChips.contains(.heldOrTraded), let held {
                     Text("Held · \(numString(held.shares)) sh")
                         .font(.system(size: fontChipLabel, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .modifier(IdeaChipChrome(tint: DS.Palette.surfaceStroke))
                         .help("You hold \(numString(held.shares)) shares @ \(adaptivePrice(held.costBasis)) (avg cost). Context only — not part of ranking.")
                         .accessibilityLabel("You hold \(numString(held.shares)) shares of \(idea.symbol) at an average cost of \(adaptivePrice(held.costBasis)). Context only, not part of ranking.")
-                } else if let jh {
+                } else if visibleChips.contains(.heldOrTraded), let jh {
                     let rNote = jh.rDefinedCount != jh.count ? " (R defined on \(jh.rDefinedCount))" : ""
                     Text("Traded \(jh.count)x")
                         .font(.system(size: fontChipLabel, weight: .semibold))
@@ -3243,14 +3255,8 @@ struct MarketsView: View {
                         .accessibilityLabel(String(format: "Your journal: %d closed trades on %@, realized %+.1fR total%@. Context only, not part of ranking.", jh.count, idea.symbol, jh.totalR, rNote))
                 }
                 // Scan-delta chip ("New" / "was <Action>", PLAN_2026-07-07_scan_deltas.md):
-                // LOW-priority — dropped when the row already has five conditional chips. Count
-                // every conditional chip actually rendered so far (staleness, earnings, floor,
-                // extreme, held/traded/combined — ONE slot regardless of which of the three
-                // renders) so the seam can never drift from what's actually on screen.
-                let chipsSoFar = [boardIsStale, !earnFlag.badge.isEmpty, floorFlag.isDeranked,
-                                  extreme != .neither, held != nil || jh != nil]
-                    .filter { $0 }.count
-                if chipsSoFar < 5, let delta = store.scanDeltas[idea.symbol] {
+                // visibility now comes solely from IdeaChipPlan (single seam, see above).
+                if visibleChips.contains(.delta), let delta = store.scanDeltas[idea.symbol] {
                     let label: String = {
                         switch delta {
                         case .new: return "New"
@@ -3279,13 +3285,15 @@ struct MarketsView: View {
                         .frame(minWidth: 72, alignment: .trailing)
                         .help("Gross EV — before round-trip frictions. The detail sheet's Evidence section shows gross + net velocity, and the net-cost breakdown. Conviction→win-prob estimate × reward:risk. An estimate, not a forecast.")
                 }
-                if a.timeframeAligned {
+                if visibleChips.contains(.confluence) {
                     // RANKING_BACKLOG #12 (reframed, pure observer) — display-only badge, never a
                     // ranking input; see StockSageIndicators.timeframeConfluence. The engine only
                     // ever sets timeframeAligned for a buy- or sell-family action (StockSageAdvisor
                     // gates it on isBuy/isSell), so a.action alone tells us the direction — tint
                     // matches actionColor's own bullish/bearish convention (2026-07-01 fix: this
                     // badge used to be hardcoded green even for a bearish-aligned Sell/Reduce card).
+                    // QA-4+F1: confluence now JOINS IdeaChipPlan's counted set (lowest priority) —
+                    // it used to render unconditionally, uncapped.
                     let bearish = a.action == .sell || a.action == .reduce
                     Text("3-TF confluence")
                         .font(.system(size: fontChipLabel, weight: .semibold))
@@ -3460,27 +3468,26 @@ struct MarketsView: View {
             // so the staleness clock badge's own accessibilityLabel is never spoken — convey
             // it here (the opacity dimming is invisible to VoiceOver too).
             if boardIsStale { label += ", board data is over 4 hours old" }
-            // A11Y-01 (2026-07-07 fix round): every remaining badge/chip/metric below this
-            // element is also silenced by .combine — mirror EACH render condition above in the
-            // SAME order they appear on screen, reusing the visible strings/help wording, so the
-            // label never claims something the card doesn't currently render.
-            if floorFlag.isDeranked { label += ", below net-cost floor, de-ranked" }
-            if extreme != .neither {
+            // A11Y-01 (2026-07-07 fix round; QA-4+F1 2026-07-07 fix round): every remaining
+            // badge/chip/metric below this element is also silenced by .combine — mirror EACH
+            // render condition above in the SAME order they appear on screen, reusing the
+            // visible strings/help wording. Gates now come from `visibleChips` — the SAME list
+            // the render site above built — so this can never claim a chip the card dropped for
+            // density (the bug this fix closes: two independently hand-copied computations).
+            if visibleChips.contains(.floor) { label += ", below net-cost floor, de-ranked" }
+            if visibleChips.contains(.extreme) {
                 label += extreme == .atHigh ? ", at \(extremeSpan)-day high" : ", at \(extremeSpan)-day low"
             }
-            if let held, let jh {
+            if visibleChips.contains(.heldOrTraded), let held, let jh {
                 let rNote = jh.rDefinedCount != jh.count ? " (R defined on \(jh.rDefinedCount))" : ""
                 label += ", " + String(format: "you hold %@ shares of %@ at an average cost of %@. Your journal: %d closed trades, realized %+.1fR total%@. Context only, not part of ranking.", numString(held.shares), idea.symbol, adaptivePrice(held.costBasis), jh.count, jh.totalR, rNote)
-            } else if let held {
+            } else if visibleChips.contains(.heldOrTraded), let held {
                 label += ", you hold \(numString(held.shares)) shares of \(idea.symbol) at an average cost of \(adaptivePrice(held.costBasis)). Context only, not part of ranking."
-            } else if let jh {
+            } else if visibleChips.contains(.heldOrTraded), let jh {
                 let rNote = jh.rDefinedCount != jh.count ? " (R defined on \(jh.rDefinedCount))" : ""
                 label += ", " + String(format: "your journal: %d closed trades on %@, realized %+.1fR total%@. Context only, not part of ranking.", jh.count, idea.symbol, jh.totalR, rNote)
             }
-            let chipsSoFar = [boardIsStale, !earnFlag.badge.isEmpty, floorFlag.isDeranked,
-                              extreme != .neither, held != nil || jh != nil]
-                .filter { $0 }.count
-            if chipsSoFar < 5, let delta = store.scanDeltas[idea.symbol] {
+            if visibleChips.contains(.delta), let delta = store.scanDeltas[idea.symbol] {
                 switch delta {
                 case .new: label += ", new this scan"
                 case .actionChanged(let previous): label += ", was \(previous)"
@@ -3489,7 +3496,7 @@ struct MarketsView: View {
             if let ev = StockSageExpectedValue.ev(for: idea, calibration: store.convictionCalibration) {
                 label += String(format: ", %+.2fR EV gross", ev.evR)
             }
-            if a.timeframeAligned {
+            if visibleChips.contains(.confluence) {
                 label += ", " + (a.confluenceNote ?? "three-timeframe confluence")
             }
             if ideaSort == .velocity,
