@@ -29,6 +29,9 @@ precedent) ONLY for the lowest-dimension-risk items. Mark each item's risk below
 | 7 | Overtrading / correlation brake (#3.3) | Conditional dangerSoft chip on the card when the idea's asset-class/correlation overlaps an OPEN position (portfolio state → card) | ✅ descriptive state check, not a P(loss) | MED (portfolio state wiring + conditional render) | MarketsView card + portfolio state |
 | 8 | Uncertainty band for win% (#3.1) | Compact bullet graph plotting the 35–58% prior band with a tick at the point estimate; assumed→blurred/low-opacity; nil→EmptyView | ✅ visualizes the band, implies no guarantee | HIGH (custom 80pt-max graphic in 440pt) | MarketsView + new view |
 
+## Wave disposition (2026-07-07, end of the autonomous run)
+Shipped + pixel-verified: #4 (dashed/solid chip chrome), #1 (gross→net fusion, Evidence lines), #3 (signed stop-distance on bestOpp + sheet), #5 (sizing-brake waterfall + 7010.SR brake snapshot), #6 (2-tier net-edge ledger). #2 CLOSED as verified no-op (nothing to reposition; ADD-variant owner-parked). **PARKED #7 (overtrading/correlation brake):** needs (a) a QA portfolio-seeding seam for the positive pixel proof (fixtures hold no positions → the chip could never be captured) and (b) an honesty decision — real correlation isn't computable card-cheap, so the chip would be asset-class-overlap only and must SAY so; park until both are settled. **PARKED #8 (uncertainty band):** the plan's own last-ranked HIGH-layout-risk item; the shipped assumed-chip + "35–58%" band label already carry the honesty payload — marginal value doesn't justify the 440pt risk without an owner pull.
+
 ## Rejected (Gemini's own omissions — correct, keep out)
 Historical win-rate per chart pattern; "P(target hit)" metric; social/LLM news on the card — all
 manufacture the alpha illusion the DSR≈0 reality forbids. Do NOT add.
