@@ -3148,6 +3148,10 @@ struct MarketsView: View {
         // fact about the shown spark series — NOT a momentum/breakout claim, so it sits with the
         // neutral badges, not the warning/opportunity ones either side of it.
         let extreme = SparkSeries.extreme(idea.spark)
+        // "Own it" awareness (top gap, 2026-07-07 assessment): owning a name is context for
+        // reading the card, never an endorsement — neutral styling like the at-extreme chip,
+        // not tinted success/danger. Aggregates every lot (multi-lot books) by symbol.
+        let held = StockSagePortfolio.holding(for: idea.symbol, in: portfolio.positions)
         let hovered = hoveredIdeaID == idea.id
         // Per-card staleness — adds a clock badge when the board is stale, same TRIGGER as
         // watchlist signalCard's sym.isStale() pattern. The dim amount DELIBERATELY diverges:
@@ -3203,6 +3207,16 @@ struct MarketsView: View {
                         .modifier(IdeaChipChrome(tint: DS.Palette.surfaceStroke))
                         .help("Latest close is the highest/lowest of the last \(idea.spark.count) sampled points shown in the sparkline — context, not a buy/sell signal.")
                         .accessibilityLabel(extreme == .atHigh ? "At the high of the shown \(idea.spark.count)-bar window" : "At the low of the shown \(idea.spark.count)-bar window")
+                }
+                // "Own it" chip: neutral like the at-extreme chip above — a held position is
+                // context for the reader, not part of the ranking or an endorsement.
+                if let held {
+                    Text("Held · \(numString(held.shares)) sh")
+                        .font(.system(size: fontChipLabel, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .modifier(IdeaChipChrome(tint: DS.Palette.surfaceStroke))
+                        .help("You hold \(numString(held.shares)) shares @ \(adaptivePrice(held.costBasis)) (avg cost). Context only — not part of ranking.")
+                        .accessibilityLabel("You hold \(numString(held.shares)) shares of \(idea.symbol) at an average cost of \(adaptivePrice(held.costBasis)). Context only, not part of ranking.")
                 }
                 // Opportunity signals after warnings.
                 // "(gross)" label — consistent with fast-lane row.
@@ -4901,6 +4915,25 @@ struct MarketsView: View {
                 // (buy-guard already calls positionSizerPanel inside). The sizer's own
                 // stopPrice guard hides it for Hold/Avoid (no stop → nothing rendered).
                 if !(a.action == .buy || a.action == .strongBuy) { positionSizerPanel(idea) }
+
+                // "Own it" awareness: held-context line right after the Position-size block,
+                // for every idea (not gated on stopPrice, so it survives even for Hold/Avoid
+                // where positionSizerPanel renders nothing). No special-casing for sell-family —
+                // same line for every action, since a held position matters most for exit reads.
+                if let held = StockSagePortfolio.holding(for: idea.symbol, in: portfolio.positions) {
+                    let pct = held.unrealizedPct(vs: idea.price)
+                    HStack(spacing: 4) {
+                        Text("Held: \(numString(held.shares)) sh @ \(adaptivePrice(held.costBasis)) (avg cost)")
+                            .font(.system(size: mvFont9)).foregroundStyle(.secondary)
+                        if let pct {
+                            let up = pct >= 0
+                            Text("· \(up ? "+" : "")\(String(format: "%.1f", pct))% vs current")
+                                .font(.system(size: mvFont9)).foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.danger)
+                        }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityElement(children: .combine)
+                }
 
                 // ── 6. Plan numerics (labels: "Base size" / "Regime size" + .help) ─
                 // Spacing reduced to 14 (was 20) — 6 metrics (Price/Stop/Target/Base/Regime/Vol-adj)

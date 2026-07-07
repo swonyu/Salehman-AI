@@ -73,6 +73,14 @@ enum QASnapshots {
             defer { restore() }
             // Neutral prefs BEFORE seeding so every render (fixtures included) sees them.
             await StockSageStore.shared.seedQAIdeas()
+            // "Own it" awareness (ideas card/sheet held-position chip): seed ONE fake AAPL lot
+            // so the QA capture actually exercises the Held chip/line. In-memory only — qaSeed
+            // assigns StockSagePortfolio.positions directly, bypassing save(), so nothing is
+            // written to the owner's real UserDefaults. Restored (also in-memory only) in the
+            // same defer as the board prefs above, mirroring neutralizeIdeaBoardPrefsForQA's
+            // save→restore-exact shape even though persistence was never touched here.
+            let restorePortfolio = seedQAPortfolio()
+            defer { restorePortfolio() }
             captureAll()
             try? FileManager.default.removeItem(at: request)
         }
@@ -115,6 +123,19 @@ enum QASnapshots {
                 }
             }
         }
+    }
+
+    /// Seed ONE fake position (AAPL, 30 sh @ $100.00) so the QA capture actually exercises
+    /// the "own it" Held chip (ideaCard badge row) and Held line (detail sheet) on a real
+    /// fixture symbol — `qaFixtureDefs()` includes AAPL. `qaSeed` is an in-memory-only assign
+    /// (StockSagePortfolio.qaSeed bypasses save()), so this never reaches UserDefaults; the
+    /// returned closure restores whatever real positions were loaded (owner's actual holdings,
+    /// or none), same save→restore-exact shape as `neutralizeIdeaBoardPrefsForQA` above.
+    private static func seedQAPortfolio() -> () -> Void {
+        let portfolio = StockSagePortfolio.shared
+        let saved = portfolio.positions
+        portfolio.qaSeed([PortfolioPosition(symbol: "AAPL", shares: 30, costBasis: 100.00)])
+        return { portfolio.qaSeed(saved) }
     }
 
     /// Render every main surface + the deterministic chat gallery, then write

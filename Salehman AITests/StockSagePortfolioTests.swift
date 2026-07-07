@@ -74,4 +74,75 @@ struct StockSagePortfolioTests {
         #expect(reloaded.positions.first?.shares == 10)
         #expect(reloaded.positions.first?.totalCost == 1500)
     }
+
+    @Test func qaSeedAssignsInMemoryWithoutTouchingUserDefaults() {
+        let name = "test.portfolio.qaseed"
+        UserDefaults().removePersistentDomain(forName: name)
+        let ud = UserDefaults(suiteName: name)!
+        ud.removePersistentDomain(forName: name)
+        let p = StockSagePortfolio(userDefaults: ud)
+        p.qaSeed([PortfolioPosition(symbol: "AAPL", shares: 30, costBasis: 100)])
+        #expect(p.positions.map(\.symbol) == ["AAPL"])
+        // Nothing persisted: a FRESH instance on the same suite sees nothing (qaSeed never calls save()).
+        let reloaded = StockSagePortfolio(userDefaults: ud)
+        #expect(reloaded.positions.isEmpty)
+    }
+}
+
+/// Pins the "own it" aggregation (sum shares + weighted-average cost basis across multi-lot
+/// books) and the unrealized-% math. Expected values are hand-derived in a standalone script
+/// (`swift /tmp/derive_ownit.swift`, NOT calling this code), pasted here as literals —
+/// gated-scope rule: never derive fixtures by calling the code under test.
+///
+/// Hand derivation (10sh@90 + 20sh@105):
+///   totalShares = 10 + 20 = 30
+///   weightedCost = (10*90 + 20*105) / 30 = (900 + 2100) / 30 = 3000 / 30 = 100.0 exactly
+///
+/// Hand derivation (pct = (price/costBasis − 1) × 100, one decimal):
+///   gain:  price=110, cost=100 → (110/100 − 1)×100 = +10.0
+///   loss:  price=90,  cost=100 → (90/100  − 1)×100 = −10.0
+@MainActor
+struct StockSagePortfolioAggregationTests {
+
+    @Test func multiLotAggregatesSharesAndWeightedAverageCost() {
+        let positions = [
+            PortfolioPosition(symbol: "AAPL", shares: 10, costBasis: 90),
+            PortfolioPosition(symbol: "AAPL", shares: 20, costBasis: 105),
+        ]
+        let held = StockSagePortfolio.holding(for: "AAPL", in: positions)
+        #expect(held?.shares == 30)
+        #expect(held?.costBasis == 100.0)   // hand-derived exact value above
+    }
+
+    @Test func aggregationIgnoresOtherSymbolsAndIsCaseInsensitive() {
+        let positions = [
+            PortfolioPosition(symbol: "AAPL", shares: 10, costBasis: 90),
+            PortfolioPosition(symbol: "MSFT", shares: 5, costBasis: 300),
+        ]
+        #expect(StockSagePortfolio.holding(for: "aapl", in: positions)?.shares == 10)
+        #expect(StockSagePortfolio.holding(for: "MSFT", in: positions)?.costBasis == 300)
+    }
+
+    @Test func aggregationReturnsNilWhenSymbolNotHeld() {
+        let positions = [PortfolioPosition(symbol: "AAPL", shares: 10, costBasis: 90)]
+        #expect(StockSagePortfolio.holding(for: "TSLA", in: positions) == nil)
+    }
+
+    @Test func unrealizedPctPositiveCase() {
+        let held = AggregatedHolding(symbol: "X", shares: 1, costBasis: 100)
+        #expect(held.unrealizedPct(vs: 110) == 10.0)   // hand-derived above
+    }
+
+    @Test func unrealizedPctNegativeCase() {
+        let held = AggregatedHolding(symbol: "X", shares: 1, costBasis: 100)
+        #expect(held.unrealizedPct(vs: 90) == -10.0)   // hand-derived above
+    }
+
+    @Test func unrealizedPctNilOnNonPositiveCostOrPrice() {
+        let heldZeroCost = AggregatedHolding(symbol: "X", shares: 1, costBasis: 0)
+        #expect(heldZeroCost.unrealizedPct(vs: 100) == nil)
+        let heldPositiveCost = AggregatedHolding(symbol: "X", shares: 1, costBasis: 100)
+        #expect(heldPositiveCost.unrealizedPct(vs: 0) == nil)
+        #expect(heldPositiveCost.unrealizedPct(vs: -5) == nil)
+    }
 }
