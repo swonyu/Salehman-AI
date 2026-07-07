@@ -14,7 +14,7 @@ struct MarketsView: View {
     /// Ideas board ordering: by expected value, EV-per-day velocity, or signal rank.
     enum IdeaSort: String, CaseIterable {
         case ev = "Expected value", velocity = "EV / day", conviction = "Conviction",
-             rr = "Reward:risk", signal = "Signal rank"
+             rr = "Reward:risk", signal = "Signal rank", momentumWeighted = "Momentum-weighted"
         /// Shown name. `conviction`'s rawValue stays "Conviction" as the stable
         /// @AppStorage("marketsIdeaSort") identity key; F08 renames only the label.
         var label: String { self == .conviction ? "Signal strength" : rawValue }
@@ -2935,6 +2935,19 @@ struct MarketsView: View {
 
     /// The ideas in display order — by expected value (best bet first) or the
     /// store's default signal rank.
+    /// Shared earnings-severity warning row — the buy-family (above the gate) and
+    /// sell/reduce (evidence fallback) branches of ideaDetailSheet rendered this
+    /// byte-identical HStack twice; one body = no drift risk (IL-16/IL-22 class).
+    private func earningsWarningRow(_ ep: EarningsProximity) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "calendar.badge.exclamationmark").font(.system(size: mvFont11))
+                .foregroundStyle(ep.severity == .imminent ? DS.Palette.dangerSoft : DS.Palette.warningSoft)
+            Text(ep.note).font(.caption2).accessibilityLabel("Earnings risk — see detail sheet")
+                .foregroundStyle(ep.severity == .imminent ? DS.Palette.dangerSoft : DS.Palette.warningSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var displayedIdeas: [StockSageIdea] {
         let sorted: [StockSageIdea]
         switch ideaSort {
@@ -2943,6 +2956,10 @@ struct MarketsView: View {
         case .conviction: sorted = store.ideas.sorted { $0.advice.conviction > $1.advice.conviction }
         case .rr:         sorted = store.ideas.sorted { rewardRisk($0) > rewardRisk($1) }
         case .signal:     sorted = store.ideas
+        // Momentum-weighted velocity rank: with the default empty `closes` the quality
+        // multiplier is inert and this IS fastLane's earnings/liquidity-aware order —
+        // momentum weighting activates when per-symbol closes are threaded in a future pass.
+        case .momentumWeighted: sorted = StockSageExpectedValue.rankByVelocityWeighted(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity)
         }
         var result: [StockSageIdea]
         switch ideaFilter {
@@ -3745,7 +3762,7 @@ struct MarketsView: View {
                             .font(.system(size: mvFont10, weight: .semibold))
                             .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
-                    if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), conc.isConcentrated {
+                    if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity), conc.isConcentrated {
                         Text("⚠︎ Fast lane is concentrated — your top \(conc.total) fastest are all \(conc.dominantClass); that's closer to one bet, not \(conc.total). Diversify or size them as one.")
                             .font(.system(size: mvFont10, weight: .semibold))
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
@@ -3770,7 +3787,7 @@ struct MarketsView: View {
                     return ""
                 }())
                 + ({ () -> String in
-                    guard let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), conc.isConcentrated else { return "" }
+                    guard let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity), conc.isConcentrated else { return "" }
                     return ". Velocity warning: the fastest \(conc.total) ideas are all \(conc.dominantClass), concentration risk; size them as one bet."
                 }()))
             .help(StockSageGlossary.moneyVelocityHelp)
@@ -3859,9 +3876,9 @@ struct MarketsView: View {
     // board and an equity (9:30–4, ~12d hold) board, since blending them hides that the two run
     // on entirely different clocks (FASTMONEY_BACKLOG #7).
     @ViewBuilder private var fastLaneStrip: some View {
-        let lane = StockSageExpectedValue.fastLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration)
+        let lane = StockSageExpectedValue.fastLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity)
         if lane.count >= 2 {
-            let split = StockSageExpectedValue.fastLaneByClass(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration)
+            let split = StockSageExpectedValue.fastLaneByClass(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Image(systemName: "hare.fill").font(.system(size: mvFont11)).foregroundStyle(DS.Palette.accent)
@@ -3923,7 +3940,7 @@ struct MarketsView: View {
                             .help("Gross, before costs — weekly R × the dollar value of 1R. Can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. NOT income.")
                     }
                 }
-                if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), conc.isConcentrated {
+                if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity), conc.isConcentrated {
                     Text("⚠︎ Your top \(conc.total) fastest are all \(conc.dominantClass) — likely correlated; that's closer to ONE bet than \(conc.total). Size all \(conc.total) TOGETHER at 1-2% total risk, not per symbol.")
                         .font(.system(size: mvFont9, weight: .medium))
                         .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
@@ -4027,7 +4044,8 @@ struct MarketsView: View {
             riskFraction: StockSageInput.percent(sizerRiskPct).map { $0 / 100 },
             holds: velocityHolds,
             calibration: store.convictionCalibration,
-            earnings: store.earnings)
+            earnings: store.earnings,
+            liquidity: store.liquidity)
         MarketsTodayActionsCard(plans: plans, isSampleData: store.isSampleData) { symbol in
             if let idea = store.ideas.first(where: { $0.symbol == symbol }) { selectedIdea = idea }
         }
@@ -4676,13 +4694,7 @@ struct MarketsView: View {
                     // Earnings severity warning above the gate for buy-family.
                     // Keep ep.isWarning guard — purely a position move, not a logic change.
                     if let ep = store.earnings[idea.symbol.uppercased()], ep.isWarning {
-                        HStack(alignment: .top, spacing: 6) {
-                            Image(systemName: "calendar.badge.exclamationmark").font(.system(size: mvFont11))
-                                .foregroundStyle(ep.severity == .imminent ? DS.Palette.dangerSoft : DS.Palette.warningSoft)
-                            Text(ep.note).font(.caption2).accessibilityLabel("Earnings risk — see detail sheet")
-                                .foregroundStyle(ep.severity == .imminent ? DS.Palette.dangerSoft : DS.Palette.warningSoft)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                        earningsWarningRow(ep)
                     }
 
                     // Track whether netRR actually resolved (non-nil from StockSageNetEdge.netRR)
@@ -5063,13 +5075,7 @@ struct MarketsView: View {
                 // Earnings (sell/reduce path fallback — buy-family earnings already shown above gate).
                 if a.action != .buy && a.action != .strongBuy {
                     if let ep = store.earnings[idea.symbol.uppercased()], ep.isWarning {
-                        HStack(alignment: .top, spacing: 6) {
-                            Image(systemName: "calendar.badge.exclamationmark").font(.system(size: mvFont11))
-                                .foregroundStyle(ep.severity == .imminent ? DS.Palette.dangerSoft : DS.Palette.warningSoft)
-                            Text(ep.note).font(.caption2).accessibilityLabel("Earnings risk — see detail sheet")
-                                .foregroundStyle(ep.severity == .imminent ? DS.Palette.dangerSoft : DS.Palette.warningSoft)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                        earningsWarningRow(ep)
                     }
                 }
 
@@ -5317,8 +5323,13 @@ struct MarketsView: View {
                                 // "Proceed…"). The chip uses a COMPACT label — icon + tint carry severity,
                                 // the full verdict stays in .help and the VoiceOver label, and the complete
                                 // gate section above remains the authoritative wording.
+                                // "Blocked" (2026-07-07): the Today family's ratified chip vocabulary.
+                                // "Do NOT trade" (80pt ideal at 9pt) truncated to "Do NOT t…" in the 45pt
+                                // slot at the sheet's NATURAL width (the sheet doesn't grow with the
+                                // window) — visual-QA'd on the F04 + ux-wave-2 merges. "Blocked" fits;
+                                // the full verdict wording stays in the gate section, .help and VoiceOver.
                                 let chipCompact = chipGate.decision == .clear ? "Clear"
-                                    : (chipGate.decision == .caution ? "Caution" : "Do NOT trade")
+                                    : (chipGate.decision == .caution ? "Caution" : "Blocked")
                                 // Font reverted to mvFont9 (NOT fontChipLabel, unlike every other chip on
                                 // this surface): offscreen layout measurement at the 440pt sheet floor
                                 // (392pt inner width) found the three CTA buttons incompressible at

@@ -31,6 +31,26 @@ struct StockSageTodayPlanRankedTests {
         #expect(plans.map(\.symbol) == Array(lane.prefix(3)).map(\.symbol))
     }
 
+    @Test func liquidityPassThroughDemotesThinNamesInRankedActions() throws {
+        let ideas = [clearIdea("A", conviction: 0.6, riskAbs: 5, rewardAbs: 11),
+                     clearIdea("B", conviction: 0.95, riskAbs: 2, rewardAbs: 12),
+                     clearIdea("C", conviction: 0.8, riskAbs: 4, rewardAbs: 16)]
+        let first = try #require(StockSageExpectedValue.fastLane(ideas).first).symbol
+        let thin = [first: LiquidityProfile(avgDollarVolume: 50_000, tier: .thin)]
+        let laneThin = StockSageExpectedValue.fastLane(ideas, liquidity: thin)
+        // Engine sanity: the −3000 thin sentinel (band-pinned in
+        // liquidityRankPenaltyFiresOnlyForTheThinTier) demotes the former #1 —
+        // conviction gaps here are ≤ 350 (1000 × Δconviction), far under 3000.
+        #expect(laneThin.first?.symbol != first)
+        // The contract this test pins: rankedActions MIRRORS fastLane's demoted order
+        // under identical inputs (before 2026-07-07 the liquidity param didn't exist,
+        // so the Today card's order silently diverged from the strip's).
+        let plans = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: nil, liquidity: thin)
+        #expect(plans.map(\.symbol) == Array(laneThin.prefix(3)).map(\.symbol))
+        // Demotion, not exclusion: the thin name still appears in the 3-slot plan.
+        #expect(plans.map(\.symbol).contains(first))
+    }
+
     @Test func sharesXorNilAccount() {
         let ideas = [clearIdea("A"), clearIdea("B", conviction: 0.9, riskAbs: 3, rewardAbs: 15)]
         let noAccount = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: nil)

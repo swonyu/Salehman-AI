@@ -1009,8 +1009,12 @@ enum StockSageExpectedValue {
     /// fast lane can be an illusion. `isConcentrated` = the top-N are ALL one class.
     nonisolated static func fastLaneConcentration(_ ideas: [StockSageIdea], topN: Int = 3,
                                                   holds: VelocityHoldDays = .defaults,
-                                                  calibration: StockSageConvictionCalibration? = nil) -> FastLaneConcentration? {
-        let top = Array(fastLane(ideas, holds: holds, calibration: calibration).prefix(Swift.max(0, topN)))
+                                                  calibration: StockSageConvictionCalibration? = nil,
+                                                  earnings: [String: EarningsProximity] = [:],
+                                                  liquidity: [String: LiquidityProfile] = [:]) -> FastLaneConcentration? {
+        // Same earnings/liquidity demotions as the displayed lane — the "top 3 are all X"
+        // warning must analyze the SAME top-3 the strip shows, or the warning lies.
+        let top = Array(fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity).prefix(Swift.max(0, topN)))
         guard top.count >= 2 else { return nil }
         let counts = Dictionary(grouping: top.map { StockSageAllocation.assetClass($0.symbol) }, by: { $0 })
             .mapValues(\.count)

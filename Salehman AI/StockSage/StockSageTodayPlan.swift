@@ -87,10 +87,11 @@ enum StockSageTodayPlan {
                                          holds: VelocityHoldDays = .defaults,
                                          calibration: StockSageConvictionCalibration? = nil,
                                          earnings: [String: EarningsProximity] = [:],
+                                         liquidity: [String: LiquidityProfile] = [:],
                                          max: Int = 3) -> [TodayActionPlan] {
         let rf = Swift.max(0, riskFraction ?? 0)
         let gateRiskFraction = rf > 0 ? rf : 0.01   // same fallback `build` uses — the gate can't disagree
-        let lane = StockSageExpectedValue.fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings)
+        let lane = StockSageExpectedValue.fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity)
         var out: [TodayActionPlan] = []
         for idea in lane {
             guard out.count < Swift.max(0, max) else { break }
