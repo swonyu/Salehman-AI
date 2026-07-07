@@ -13,8 +13,10 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 QA="$ROOT/qa"; SNAPS="$QA/snapshots"
-APP="${SALEHMAN_APP:-$HOME/Library/Developer/Xcode/DerivedData/Salehman_AI-fcpwwssdbbmiloenbxdxsxwhcoev/Build/Products/Debug/Salehman AI.app}"
-[ -d "$APP" ] || { echo "❌ Debug app not found at: $APP"; echo "   Build it first, or set SALEHMAN_APP."; exit 1; }
+# Newest Debug build wins (DerivedData hash changes when the project moves — the old
+# hardcoded hash pointed at a build of the pre-move repo and captured stale UI).
+APP="${SALEHMAN_APP:-$(ls -dt "$HOME/Library/Developer/Xcode/DerivedData/"Salehman_AI-*"/Build/Products/Debug/Salehman AI.app" 2>/dev/null | head -1)}"
+[ -d "$APP" ] || { echo "❌ Debug app not found."; echo "   Build it first, or set SALEHMAN_APP."; exit 1; }
 
 mkdir -p "$QA"
 before=$(stat -f %m "$SNAPS/INDEX.md" 2>/dev/null || echo 0)
@@ -26,9 +28,14 @@ echo "→ launching app to fulfill the snapshot request…"
 # tonight). Always quit first so the capture runs the freshest binary on disk.
 osascript -e 'tell application "Salehman AI" to quit' 2>/dev/null || true
 sleep 1
-# `--qa` marks this as a QA-initiated launch — the in-app capture hooks only run
-# with it, so a pending request can never slow the owner's normal Dock launches.
-open "$APP" --args --qa
+# DIRECT binary launch (not `open`) so QA_SNAPSHOT_DIR (and any future env) survive —
+# `open` detaches via launchd and drops the caller's environment.
+# NOTE: the ideas-board *list* at the bottom of markets_ideas is still gated by the
+# owner's persisted board filter (≥N% signal strength / action / sizer risk). Those are
+# @AppStorage and NSArgumentDomain `-key value` overrides do NOT reach them here (tried,
+# confirmed inert). Neutralizing them for the capture is owed as a save→set→restore in
+# the QASnapshots `--qa` path (QASnapshots.swift), not here — see DEVELOPMENT_LOG.
+"$APP/Contents/MacOS/Salehman AI" --qa > /dev/null 2>&1 &
 
 audit_before=$(stat -f %m "$SNAPS/AUDIT.json" 2>/dev/null || echo 0)
 echo -n "→ waiting for fresh capture"
