@@ -48,9 +48,13 @@ enum DS {
         static let danger        = Color.red
         static let successSoft   = Color(red: 0.45, green: 0.85, blue: 0.55)
         static let warningSoft   = Color(red: 1.0,  green: 0.72, blue: 0.35)
-        /// Soft red for small WCAG-AA danger text (~6.98:1 on the dark card bg).
-        /// Use for caption/caption2/mvFont9-mvFont11 text where `danger` (~4.25:1)
-        /// falls below the 4.5:1 AA floor. Never for icons (icons only need 3:1).
+        /// Softened red for SMALL danger TEXT on dark surfaces (chips/labels): system
+        /// red measures ~3.7–4.3:1 there — under WCAG AA 4.5:1 for sub-18pt text —
+        /// while this swatch clears AA on every ideas-surface background (5.01 / 4.72 /
+        /// 5.99:1; derivation in PLAN_2026-07-03_ux_wave2_design_system.md §D). Keep
+        /// `danger` for icons, fills and strokes (non-text 3:1 bar). Mirrors the
+        /// successSoft/warningSoft precedent; A11Y_BUGHUNT #12's swatch, lightened
+        /// 0.45→0.50 to clear the detail sheet's lighter chip background.
         static let dangerSoft    = Color(red: 1.0,  green: 0.50, blue: 0.50)
 
         // SuperGrok (xAI) – elevated "Super" brain visual identity

@@ -1335,3 +1335,22 @@ git status --short
       regenerated (` M SOURCE_BUNDLE.md`).
 - [ ] Task H visual QA: screenshots at default AND 440pt, buy AND sell sheets, checklist walked,
       findings fixed and re-captured — pixels, not narration, close this wave.
+
+## Amendment A-2 (2026-07-03, orchestrator re-pin after executor STOP at Task A Step 1)
+**STOP confirmed real** (executor + Opus reviewer, independently): the sheet-nav plan's Step 1 appends `enum SheetCandidateNavigation` AT EOF anchored on the "// Concrete improvement: EV badge…" comment as the file's last line — but calc wave 2 (4e53bd3) appended `enum BacktestVerdict` after that comment, so the anchor is mid-file (5502 of 5521). A-0.7's "still the file's last line" assertion is falsified.
+**Ruling — TRUE-EOF variant:** the append-at-EOF design intent wins (Step 1's own section title). Do NOT interleave at the old comment. Step 1's OLD anchor is REPLACED by the file's current true tail — these exact final 5 lines of `Salehman AI/Views/MarketsView.swift` (verified unique at the A-2 pin, lines 5517–5521):
+```swift
+    static func metricColor(positive: Bool, significant: Bool) -> Color {
+        guard significant else { return DS.Palette.textSecondary }
+        return positive ? DS.Palette.successSoft : DS.Palette.danger
+    }
+}
+```
+NEW = the same 5 lines followed by a blank line and then the sheet-nav plan's Step-1 `enum SheetCandidateNavigation` block VERBATIM (unchanged from the old plan). Verify after applying: the enum's opening line greps at exactly 1 hit AND is preceded in the file only by content ending with `BacktestVerdict`'s closing brace; the file's new EOF is the sheet-nav enum's closing `}`.
+**Everything else stands:** A-0.7's other assertions re-verified exact by the executor at e037e34 (PF-3 counts 10/4/0/present/1/4, PF-4 honesty baseline 11/11 exact, PF-2 shape); the line-5511 prose mention of "SheetCandidateNavigation testability pattern" inside BacktestVerdict's doc-comment is BENIGN (not a declaration; the four symbol greps are zero-hit). Gate baseline re-measured B=1543 → full-suite target B+8=1551. A-2 sanctions ONLY this Step-1 anchor substitution; any other divergence remains a STOP.
+
+## Amendment A-3 (2026-07-03, orchestrator ruling after executor STOP at Task D Step D10.4)
+**STOP confirmed real** (executor + Opus reviewer, independently): D10.4 names ONE "sheet earnings-imminent warning" HStack (2 danger→dangerSoft swaps budgeted), but that 6-line block exists BYTE-IDENTICAL in TWO mutually-exclusive `ideaDetailSheet` branches — buy-family (guard `a.action == .buy || a.action == .strongBuy`, block at ~4594–4600 with the "Earnings risk — see detail sheet" a11y label at 4597) and sell/reduce fallback (guard `a.action != .buy && a.action != .strongBuy`, block at ~4975–4981, label at 4978). The duplication pre-exists this wave on main (grep-verified at the merge base). The plan's D10×7 math and final count of 11 never accounted for the second branch.
+**Ruling — swap BOTH branches (4 swaps in D10.4, not 2):** the design intent is WCAG-AA contrast for the earnings warning WHEREVER it renders; the two branches are the same visual element shown to different action types, and re-tinting only one would ship inconsistent contrast with no design basis. The declared count was a plan miscount, not a design decision. ARITHMETIC UPDATES (supersede the originals): D10×7(=1+1+1+2+2) becomes D10×9(=1+1+1+2+2+2); the plan-§ (line ~1013) expected `DS.Palette.dangerSoft` count in MarketsView becomes **13** (was 11); the residual `DS.Palette.danger` expected count DECREASES BY 2 from whatever the plan's D-verify block states (re-derive the residual by grep after applying, and show both counts). Verify after applying: both blocks byte-identical AGAIN post-swap (the duplication is preserved, only the tint changed); the a11y labels at both sites unchanged.
+**Scope note:** the byte-identical duplication itself is a pre-existing DRY smell — OUT OF SCOPE for this wave (no scope expansion); it is recorded in the wave's dev-log entry as a follow-up candidate, not fixed here.
+**A-3 sanctions ONLY this D10.4 second-branch extension; any other divergence remains a STOP.**
