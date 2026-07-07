@@ -4776,7 +4776,17 @@ struct MarketsView: View {
         .background(color.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(color.opacity(0.3), lineWidth: 1))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Pre-trade gate: \(v.decision.rawValue). \(v.fails) failed, \(v.warns) warnings, \(v.passes) passed.")
+        .accessibilityLabel({ () -> String in
+            var label = "Pre-trade gate: \(v.decision.rawValue). \(v.fails) failed, \(v.warns) warnings, \(v.passes) passed."
+            // A11Y-04 (2026-07-07 fix round): the count-only label never says WHICH check
+            // failed or warned — append the non-passing checks' own visible labels so VoiceOver
+            // users get the same information sighted users read in the list below.
+            let nonPassing = v.checks.filter { $0.level != .pass }.map { $0.label }
+            if !nonPassing.isEmpty {
+                label += " Failed or warned: \(nonPassing.joined(separator: ". "))."
+            }
+            return label
+        }())
     }
 
     // MARK: - Full plan text helper (item 4 — honesty-floor breach fix)
