@@ -17,6 +17,13 @@ Fixture note (pixel-proof guaranteed): NVDA's up250 ends AT its running high and
 low — both B3 states render in QA; B1 renders under the neutralized 10000/1% sizer; B2 renders on
 markets_idea_detail (long) + markets_idea_detail_brake (short direction flips the band).
 
+## Disposition (wave COMPLETE, 2026-07-07 evening)
+B1 shipped e28146c (at-risk ≈$88·5sh pixel-verified against hand-derivation). B2 shipped 7d132ba —
+first impl BLOCKED by the adversarial review (two y-mappings on one chart = geometry lie), fixed at
+root via a single shared domain + registration test; direction proof on both long and sell sheets.
+B3 shipped (extreme chip; label honest-by-construction to the rendered series; busiest-row pixel
+check passed). Every item: sonnet impl → opus review → independent gate → pixel QA → CI.
+
 ## Closed at triage
 - **X-ray gate checklist (Ghostfolio rules engine)** — ALREADY PRESENT: the sheet's pre-trade gate block
   renders pass/fail icons + plain-language sentences with actual numbers interpolated ("Risk 1.0% within
