@@ -89,4 +89,55 @@ struct SparkSeriesTests {
         // the drawn last point instead of floating at a different y (review blocker 2).
         #expect(normalized.last! == SparkSeries.fraction(series.last!, in: domain))
     }
+
+    // MARK: - extreme (OSS-borrow B3: "At recent high/low" chip)
+    // Hand-derived in /tmp/derive_b3.py — never from calling extreme() itself.
+
+    @Test func extremeStraddleEndsExactlyAtMaxIsAtHigh() {
+        // Straddle case 1: series ends exactly at its running max -> atHigh.
+        #expect(SparkSeries.extreme([1, 5, 3, 7, 7]) == .atHigh)
+    }
+
+    @Test func extremeStraddleOneTickBelowMaxIsNeither() {
+        // Straddle case 2: last value one tick below the max -> neither (the boundary that
+        // proves this isn't epsilon-fuzzed — exact == only).
+        #expect(SparkSeries.extreme([1, 5, 3, 7, 6.999]) == .neither)
+    }
+
+    @Test func extremeFlatSeriesIsNeither() {
+        // Degenerate-series guard (Ghostfolio's own rule): a flat series must NEVER flag,
+        // and never both atHigh and atLow.
+        #expect(SparkSeries.extreme([4, 4, 4, 4]) == .neither)
+    }
+
+    @Test func extremeEndsAtMinIsAtLow() {
+        #expect(SparkSeries.extreme([9, 2, 5, 2]) == .atLow)
+    }
+
+    @Test func extremeTooShortIsNeither() {
+        #expect(SparkSeries.extreme([5]) == .neither)
+        #expect(SparkSeries.extreme([]) == .neither)
+    }
+
+    @Test func extremeMiddleValueIsNeither() {
+        #expect(SparkSeries.extreme([1, 5, 3]) == .neither)
+    }
+
+    @Test func extremeTwoPointSeriesBothDirections() {
+        #expect(SparkSeries.extreme([1, 2]) == .atHigh)
+        #expect(SparkSeries.extreme([2, 1]) == .atLow)
+    }
+
+    // Cross-checks against the shipped QA fixtures (StockSageStore.qaFixtureHistories):
+    // NVDA's up250 = 50 + 0.0153·i² is strictly increasing -> ends at its max.
+    // 1120.SR's down250 = 200 − 0.602·i is strictly decreasing -> ends at its min.
+    @Test func extremeMatchesNVDAUp250Fixture() {
+        let up250 = (0..<250).map { 50.0 + 0.0153 * pow(Double($0), 2) }
+        #expect(SparkSeries.extreme(up250) == .atHigh)
+    }
+
+    @Test func extremeMatches1120SRDowntrendFixture() {
+        let down250 = (0..<250).map { 200.0 - Double($0) * 0.602 }
+        #expect(SparkSeries.extreme(down250) == .atLow)
+    }
 }

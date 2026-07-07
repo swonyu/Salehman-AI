@@ -61,6 +61,23 @@ enum SparkSeries {
     nonisolated static func fraction(_ price: Double, in domain: (lo: Double, hi: Double)) -> Double {
         (price - domain.lo) / (domain.hi - domain.lo)
     }
+
+    /// Whether the series' LAST value sits at the running max, min, or neither — the pure
+    /// primitive behind the "At {N}-bar high/low" chip (OSS-borrow B3, Ghostfolio holding-detail
+    /// min/max highlight). Degenerate-series guard: a flat series (min == max) is ALWAYS
+    /// `.neither` — Ghostfolio's own guard against a flat line claiming to be both a high and a
+    /// low. Equality is EXACT `==` on the raw Double, not epsilon-fuzzed: `last` is one of
+    /// `values`' own elements (or excluded by the nil/short/degenerate guards below), so `==`
+    /// is well-defined and an epsilon would risk false-flagging a near-high as the high itself.
+    nonisolated static func extreme(_ values: [Double]) -> Extreme {
+        guard values.count >= 2, let last = values.last,
+              let lo = values.min(), let hi = values.max(), hi > lo else { return .neither }
+        if last == hi { return .atHigh }
+        if last == lo { return .atLow }
+        return .neither
+    }
+
+    enum Extreme { case atHigh, atLow, neither }
 }
 
 // MARK: - Sparkline (pure SwiftUI Shape)

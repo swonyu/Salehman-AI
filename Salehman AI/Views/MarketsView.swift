@@ -3144,6 +3144,10 @@ struct MarketsView: View {
         // Net-cost-floor honesty badge: surfaced inline so the user never has to open the detail sheet
         // to learn why an idea is de-ranked on the velocity board.
         let floorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
+        // At-the-extreme chip (OSS-borrow B3, Ghostfolio min/max highlight): purely descriptive
+        // fact about the shown spark series — NOT a momentum/breakout claim, so it sits with the
+        // neutral badges, not the warning/opportunity ones either side of it.
+        let extreme = SparkSeries.extreme(idea.spark)
         let hovered = hoveredIdeaID == idea.id
         // Per-card staleness — adds a clock badge when the board is stale, same TRIGGER as
         // watchlist signalCard's sym.isStale() pattern. The dim amount DELIBERATELY diverges:
@@ -3189,6 +3193,16 @@ struct MarketsView: View {
                         .modifier(IdeaChipChrome(tint: DS.Palette.warningSoft))
                         .help(String(format: "Net EV/day after frictions is under %.3fR/day — de-ranked on the velocity board. See the detail sheet for the full net-cost breakdown.", StockSageExpectedValue.minNetEVPerDayFloor))
                         .accessibilityLabel("Below net-cost floor — costs exceed edge; de-ranked on velocity board")
+                }
+                // At-the-extreme chip: neutral descriptive fact, not a signal — deliberately
+                // secondary/plain styling (no success/danger tint) so it never implies good/bad.
+                if extreme != .neither {
+                    Text(extreme == .atHigh ? "At \(idea.spark.count)-bar high" : "At \(idea.spark.count)-bar low")
+                        .font(.system(size: fontChipLabel, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .modifier(IdeaChipChrome(tint: DS.Palette.surfaceStroke))
+                        .help("Latest close is the highest/lowest of the last \(idea.spark.count) sampled points shown in the sparkline — context, not a buy/sell signal.")
+                        .accessibilityLabel(extreme == .atHigh ? "At the high of the shown \(idea.spark.count)-bar window" : "At the low of the shown \(idea.spark.count)-bar window")
                 }
                 // Opportunity signals after warnings.
                 // "(gross)" label — consistent with fast-lane row.
@@ -4793,6 +4807,16 @@ struct MarketsView: View {
                         .overlay(tradePlanOverlay(idea, domain: overlayDomain))
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("Price sparkline, trending \(trendWord), high \(adaptivePrice(idea.spark.max() ?? 0)), low \(adaptivePrice(idea.spark.min() ?? 0))")
+                    // At-the-extreme chip (OSS-borrow B3, Ghostfolio min/max highlight): same
+                    // pure predicate as the ranked card, rendered right under the chart it
+                    // describes. Neutral secondary styling — context, not a signal.
+                    let extreme = SparkSeries.extreme(idea.spark)
+                    if extreme != .neither {
+                        Text(extreme == .atHigh ? "At \(idea.spark.count)-bar high" : "At \(idea.spark.count)-bar low")
+                            .font(.system(size: fontChipLabel, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .help("Latest close is the highest/lowest of the last \(idea.spark.count) sampled points shown above — context, not a buy/sell signal.")
+                    }
                 }
 
                 // Conviction meter + honesty caption
