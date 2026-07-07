@@ -81,6 +81,15 @@ enum QASnapshots {
             // save→restore-exact shape even though persistence was never touched here.
             let restorePortfolio = seedQAPortfolio()
             defer { restorePortfolio() }
+            // "Your history with this name" (2026-07-07 assessment gap #2): seed 2 fake CLOSED
+            // AAPL trades so the QA capture exercises the "Traded Nx" chip / Journal sheet line
+            // on the same AAPL fixture symbol seedQAPortfolio uses. In-memory REPLACE, same
+            // seam shape as seedQAPortfolio (StockSageJournalStore.qaSeed bypasses save()).
+            // MONEY-CRITICAL: 2 trades keeps StockSageConvictionCalibration.fit(fromJournal:)'s
+            // minSamples=30 floor un-crossed (fit returns nil during the capture window) —
+            // see qaSeed's doc comment in StockSageJournal.swift for the full seam analysis.
+            let restoreJournal = seedQAJournal()
+            defer { restoreJournal() }
             captureAll()
             try? FileManager.default.removeItem(at: request)
         }
@@ -145,6 +154,39 @@ enum QASnapshots {
         let saved = portfolio.positions
         portfolio.qaSeed([PortfolioPosition(symbol: "AAPL", shares: 30, costBasis: 100.00)])
         return { portfolio.qaSeed(saved) }
+    }
+
+    /// Seed 2 fake CLOSED AAPL trades (realizedR +0.8 and −0.3 → "Traded 2x" chip / "+0.5R total"
+    /// sheet line, hand-derived) so the QA capture exercises the "your history with this name"
+    /// chip/line on the same AAPL fixture symbol seedQAPortfolio holds. In-memory REPLACE via
+    /// `StockSageJournalStore.qaSeed` — bypasses `save()`, never touches UserDefaults.
+    ///
+    /// MONEY-CRITICAL (why REPLACE, not append): `trades` feeds `StockSageStore.
+    /// convictionCalibration` through a fit memoized on the trades array's VALUE. Appending one
+    /// fake trade to the owner's REAL journal could cross `StockSageConvictionCalibration.
+    /// fit(fromJournal:)`'s minSamples=30 floor (StockSageConvictionCalibration.swift:99) mid-
+    /// capture and silently change what calibration the rest of the capture renders. A REPLACE
+    /// with exactly 2 fake trades keeps outcomes.count (2) < 30 ⇒ fit(fromJournal:) returns nil
+    /// ⇒ convictionCalibration falls back to the backtest fit / prior — the same "win% assumed"
+    /// path the fixtures already render, deterministic and boundary-safe. The restore below is
+    /// itself a qaSeed replace, so the VALUE-keyed memo cache invalidates and recomputes the
+    /// owner's real calibration on the very next post-capture read — nothing leaks.
+    ///
+    /// Same residual-risk acceptance as `seedQAPortfolio`: a hard kill mid-capture skips the
+    /// restore (in-memory only, nothing persists); qa.sh's flow runs unattended.
+    private static func seedQAJournal() -> () -> Void {
+        let store = StockSageJournalStore.shared
+        let saved = store.trades
+        let now = Date()
+        store.qaSeed([
+            TradeRecord(symbol: "AAPL", side: .long, entry: 190, stop: 185, target: 200,
+                        shares: 10, openedAt: now.addingTimeInterval(-86_400 * 10),
+                        exitPrice: 194, closedAt: now.addingTimeInterval(-86_400 * 5)),   // realizedR = +0.8
+            TradeRecord(symbol: "AAPL", side: .long, entry: 190, stop: 185, target: 200,
+                        shares: 10, openedAt: now.addingTimeInterval(-86_400 * 4),
+                        exitPrice: 188.5, closedAt: now.addingTimeInterval(-86_400 * 2)),  // realizedR = -0.3
+        ])
+        return { store.qaSeed(saved) }
     }
 
     /// Render every main surface + the deterministic chat gallery, then write

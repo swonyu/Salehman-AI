@@ -675,6 +675,18 @@ enum StockSageJournal {
 
     nonisolated static let caveat =
         "Your own trade record — not advice. P&L/R are computed from the prices you entered; a journal documents decisions, it doesn't validate them."
+
+    /// "Your history with this name" — count + summed realized R of CLOSED trades for one
+    /// symbol (case-insensitive match, same convention as StockSagePortfolio.holding). Open
+    /// trades are excluded (only realizedR-bearing closes count). nil when there are zero
+    /// closed trades on the symbol — display-only, nothing here feeds ranking/EV/sizing.
+    nonisolated static func history(for symbol: String, in trades: [TradeRecord]) -> (count: Int, totalR: Double)? {
+        let sym = symbol.uppercased()
+        let rs = trades.filter { !$0.isOpen && $0.symbol.uppercased() == sym }.compactMap { $0.realizedR }
+        guard !rs.isEmpty else { return nil }
+        let total = rs.reduce(0, +)
+        return (count: rs.count, totalR: total == 0 ? 0 : total)   // normalize IEEE -0.0, own-it precedent
+    }
 }
 
 // MARK: - Persisted journal store
@@ -734,5 +746,20 @@ final class StockSageJournalStore: ObservableObject {
         if let data = try? JSONEncoder().encode(trades) {
             UserDefaults.standard.set(data, forKey: key)
         }
+    }
+
+    /// QA-only in-memory REPLACE: assigns `trades` directly, bypassing `save()` so nothing
+    /// touches UserDefaults — exact seam shape of `StockSagePortfolio.qaSeed`. MONEY-CRITICAL:
+    /// this is a full REPLACE, never an append. `trades` feeds
+    /// `StockSageStore.convictionCalibration` via a fit memoized on the trades array's VALUE
+    /// (JournalCalibrationCache) — appending one fake trade to the owner's REAL journal could
+    /// cross `StockSageConvictionCalibration.fit(fromJournal:)`'s minSamples=30 floor
+    /// (StockSageConvictionCalibration.swift:99) mid-capture and flip calibration semantics.
+    /// A REPLACE with 1-2 fake trades keeps outcomes.count < 30 ⇒ fit returns nil ⇒ calibration
+    /// falls back to the backtest fit / prior — deterministic and boundary-safe. Because the fit
+    /// cache keys on VALUE, the caller's restore-to-`saved` (also a qaSeed replace) recomputes
+    /// the owner's real calibration on the very next read — nothing leaks past the capture window.
+    func qaSeed(_ seeded: [TradeRecord]) {
+        trades = seeded
     }
 }

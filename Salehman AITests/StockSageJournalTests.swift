@@ -510,4 +510,128 @@ struct StockSageJournalTests {
                                                         n: 30, maxDrawdownR: 3.0, minTrades: 20, deepDrawdownR: 8.0)
         #expect(justBelow.verdict == .developing)
     }
+
+    // MARK: - history(for:in:) — "your history with this name" (2026-07-07, gap #2)
+    //
+    // Hand-derived (swift /tmp/derive_journal.swift, NOT calling this code — spec-fidelity rule):
+    //   2 closed AAPL trades, realizedR +0.8 and −0.3 → count=2, totalR = 0.8 + (−0.3) = 0.5 exactly.
+
+    @Test func historyAggregatesCountAndTotalR() {
+        let trades = [
+            tSym("AAPL", .long, entry: 190, stop: 185, shares: 10, exit: 194),     // R = +0.8
+            tSym("AAPL", .long, entry: 190, stop: 185, shares: 10, exit: 188.5),   // R = −0.3
+        ]
+        let h = StockSageJournal.history(for: "AAPL", in: trades)!
+        #expect(h.count == 2)
+        #expect(abs(h.totalR - 0.5) < 1e-9)   // hand-derived above
+    }
+
+    @Test func historyExcludesOpenTrades() {
+        let open = TradeRecord(symbol: "AAPL", side: .long, entry: 190, stop: 185, target: nil,
+                               shares: 10, openedAt: Date(timeIntervalSince1970: 0))
+        let closed = tSym("AAPL", .long, entry: 190, stop: 185, shares: 10, exit: 194)   // R = +0.8
+        let h = StockSageJournal.history(for: "AAPL", in: [open, closed])!
+        #expect(h.count == 1)                  // only the closed one counts
+        #expect(abs(h.totalR - 0.8) < 1e-9)
+    }
+
+    @Test func historyIsNilOnZeroClosedTrades() {
+        #expect(StockSageJournal.history(for: "AAPL", in: []) == nil)
+        let onlyOpen = TradeRecord(symbol: "AAPL", side: .long, entry: 100, stop: 90, target: nil,
+                                   shares: 1, openedAt: Date(timeIntervalSince1970: 0))
+        #expect(StockSageJournal.history(for: "AAPL", in: [onlyOpen]) == nil)
+        // Closed trades exist but for a DIFFERENT symbol.
+        let msft = tSym("MSFT", .long, entry: 100, stop: 90, shares: 1, exit: 110)
+        #expect(StockSageJournal.history(for: "AAPL", in: [msft]) == nil)
+    }
+
+    @Test func historyIsCaseInsensitive() {
+        let trades = [tSym("AAPL", .long, entry: 190, stop: 185, shares: 10, exit: 194)]
+        #expect(StockSageJournal.history(for: "aapl", in: trades)?.count == 1)
+        #expect(StockSageJournal.history(for: "AaPl", in: trades)?.count == 1)
+    }
+
+    // −0.0 boundary: two trades summing to exactly a tiny-negative that rounds to −0.0 must
+    // normalize to +0.0 (own-it precedent's AggregatedHolding.unrealizedPct convention, extended
+    // here) — a sign check on raw -0.0 reads "positive" (-0.0 >= 0 is true in Swift), so an
+    // un-normalized totalR would render "+-0.0R" downstream.
+    @Test func historyNormalizesNegativeZero() {
+        let trades = [
+            tSym("X", .long, entry: 100, stop: 90, shares: 1, exit: 100.5),   // R = +0.05
+            tSym("X", .long, entry: 100, stop: 90, shares: 1, exit: 99.5),    // R = −0.05
+        ]
+        let h = StockSageJournal.history(for: "X", in: trades)!
+        #expect(h.totalR == 0.0)
+        #expect(h.totalR.sign == .plus)   // NOT .minus (the -0.0 IEEE case)
+    }
+}
+
+/// Pins `StockSageJournalStore.qaSeed` — the QA in-memory REPLACE seam (money-critical: keeps
+/// StockSageConvictionCalibration.fit(fromJournal:)'s minSamples=30 floor un-crossed during a
+/// capture window). Runs against the shared singleton (no injectable-UserDefaults init exists
+/// on this store, unlike StockSagePortfolio) and restores real state via defer — same
+/// save→restore-exact shape QASnapshots.seedQAJournal itself uses.
+@MainActor
+struct StockSageJournalStoreQASeedTests {
+
+    @Test func qaSeedReplacesInMemoryWithoutTouchingUserDefaults() {
+        let store = StockSageJournalStore.shared
+        let saved = store.trades
+        let key = "stocksage.journal.v1"
+        let beforeBytes = UserDefaults.standard.data(forKey: key)
+        defer { store.qaSeed(saved) }
+
+        let fake = [
+            TradeRecord(symbol: "AAPL", side: .long, entry: 190, stop: 185, target: 200, shares: 10,
+                       openedAt: Date(timeIntervalSince1970: 0), exitPrice: 194,
+                       closedAt: Date(timeIntervalSince1970: 100)),
+            TradeRecord(symbol: "AAPL", side: .long, entry: 190, stop: 185, target: 200, shares: 10,
+                       openedAt: Date(timeIntervalSince1970: 200), exitPrice: 188.5,
+                       closedAt: Date(timeIntervalSince1970: 300)),
+        ]
+        store.qaSeed(fake)
+
+        // REPLACE semantics: trades is now EXACTLY the fake list, not the real list + fake.
+        #expect(store.trades.count == 2)
+        #expect(store.trades == fake)
+
+        // Persistence-negative: UserDefaults bytes are byte-identical to before qaSeed ran —
+        // qaSeed never calls save(). (Equivalent to StockSagePortfolioTests' "fresh instance
+        // sees original" proof; StockSageJournalStore has no injectable init to construct a
+        // fresh instance against the same suite, so this checks the persisted bytes directly.)
+        let afterBytes = UserDefaults.standard.data(forKey: key)
+        #expect(afterBytes == beforeBytes)
+    }
+
+    @Test func qaSeedRestoreRecoversExactOriginalTrades() {
+        let store = StockSageJournalStore.shared
+        let saved = store.trades
+        store.qaSeed([tSymTopLevel("AAPL", .long, entry: 100, stop: 90, shares: 1, exit: 110)])
+        #expect(store.trades.count == 1)
+        store.qaSeed(saved)   // restore, exact — mirrors QASnapshots.seedQAJournal's returned closure
+        #expect(store.trades == saved)
+    }
+
+    // 2-trade fake set stays under fit(fromJournal:)'s minSamples=30 floor
+    // (StockSageConvictionCalibration.swift:99: `outcomes.count >= minSamples`) — the money-
+    // critical property the QASnapshots seed depends on. Proven directly on the fit, not by
+    // trusting the count.
+    @Test func twoFakeTradesStayUnderCalibrationMinSamplesFloor() {
+        let fake = [
+            TradeRecord(symbol: "AAPL", side: .long, entry: 190, stop: 185, target: 200, shares: 10,
+                       openedAt: Date(timeIntervalSince1970: 0), exitPrice: 194,
+                       closedAt: Date(timeIntervalSince1970: 100), conviction: 0.6),
+            TradeRecord(symbol: "AAPL", side: .long, entry: 190, stop: 185, target: 200, shares: 10,
+                       openedAt: Date(timeIntervalSince1970: 200), exitPrice: 188.5,
+                       closedAt: Date(timeIntervalSince1970: 300), conviction: 0.6),
+        ]
+        #expect(StockSageConvictionCalibration.fit(fromJournal: fake) == nil)
+    }
+
+    private func tSymTopLevel(_ symbol: String, _ side: TradeRecord.Side, entry: Double, stop: Double,
+                              shares: Double, exit: Double? = nil) -> TradeRecord {
+        TradeRecord(symbol: symbol, side: side, entry: entry, stop: stop, target: nil,
+                    shares: shares, openedAt: Date(timeIntervalSince1970: 0),
+                    exitPrice: exit, closedAt: exit == nil ? nil : Date(timeIntervalSince1970: 100))
+    }
 }

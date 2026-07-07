@@ -3218,6 +3218,18 @@ struct MarketsView: View {
                         .help("You hold \(numString(held.shares)) shares @ \(adaptivePrice(held.costBasis)) (avg cost). Context only — not part of ranking.")
                         .accessibilityLabel("You hold \(numString(held.shares)) shares of \(idea.symbol) at an average cost of \(adaptivePrice(held.costBasis)). Context only, not part of ranking.")
                 }
+                // "Your history with this name" chip (2026-07-07 assessment gap #2): the owner's
+                // OWN closed-trade record on this symbol — neutral like Held/at-extreme, never
+                // tinted, never part of ranking/EV/sizing (StockSageJournal.history is a pure
+                // display-only aggregate; grep-verifiable no ranking call site reads it).
+                if let jh = StockSageJournal.history(for: idea.symbol, in: journal.trades) {
+                    Text("Traded \(jh.count)x")
+                        .font(.system(size: fontChipLabel, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .modifier(IdeaChipChrome(tint: DS.Palette.surfaceStroke))
+                        .help(String(format: "Your journal: %d closed trades on %@, realized %+.1fR total. Context only — not part of ranking.", jh.count, idea.symbol, jh.totalR))
+                        .accessibilityLabel(String(format: "Your journal: %d closed trades on %@, realized %+.1fR total. Context only, not part of ranking.", jh.count, idea.symbol, jh.totalR))
+                }
                 // Opportunity signals after warnings.
                 // "(gross)" label — consistent with fast-lane row.
                 // monospacedDigit + minWidth so EV aligns across cards.
@@ -4933,6 +4945,19 @@ struct MarketsView: View {
                     }
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityElement(children: .combine)
+                }
+
+                // "Your history with this name" (2026-07-07 assessment gap #2): the owner's OWN
+                // closed-trade record on this symbol, right after the Held line — same neutral/
+                // display-only placement. successSoft/dangerSoft coloring (never plain danger —
+                // the ideas-sheet AA rule) matches the Held-line unrealized-% convention above.
+                if let jh = StockSageJournal.history(for: idea.symbol, in: journal.trades) {
+                    let up = jh.totalR >= 0
+                    Text(String(format: "Journal: %d closed on this name · realized %@%.1fR total",
+                                jh.count, up ? "+" : "", jh.totalR))
+                        .font(.system(size: mvFont9))
+                        .foregroundStyle(up ? DS.Palette.successSoft : DS.Palette.dangerSoft)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 // ── 6. Plan numerics (labels: "Base size" / "Regime size" + .help) ─
