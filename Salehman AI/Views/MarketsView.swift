@@ -4816,6 +4816,9 @@ struct MarketsView: View {
                             .font(.system(size: fontChipLabel, weight: .semibold))
                             .foregroundStyle(.secondary)
                             .help("Latest close is the highest/lowest of the last \(idea.spark.count) sampled points shown above — context, not a buy/sell signal.")
+                            // a11y parity with the card's chip (OSS-borrow B3): same explicit
+                            // label instead of relying on the raw visible text.
+                            .accessibilityLabel(extreme == .atHigh ? "At the high of the shown \(idea.spark.count)-bar window" : "At the low of the shown \(idea.spark.count)-bar window")
                     }
                 }
 
