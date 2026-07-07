@@ -100,7 +100,7 @@ enum QASnapshots {
             // on the same NVDA fixture symbol seedQAPortfolio uses (moved off AAPL alongside
             // it — see seedQAPortfolio's doc comment). In-memory REPLACE, same seam shape as
             // seedQAPortfolio (StockSageJournalStore.qaSeed bypasses save()).
-            // MONEY-CRITICAL: 2 trades keeps StockSageConvictionCalibration.fit(fromJournal:)'s
+            // MONEY-CRITICAL: 3 trades keeps StockSageConvictionCalibration.fit(fromJournal:)'s
             // minSamples=30 floor un-crossed (fit returns nil during the capture window) —
             // see qaSeed's doc comment in StockSageJournal.swift for the full seam analysis.
             let restoreJournal = seedQAJournal()
@@ -180,7 +180,7 @@ enum QASnapshots {
         return { portfolio.qaSeed(saved) }
     }
 
-    /// Seed 2 fake CLOSED NVDA trades (realizedR +0.8 and −0.3 → "Traded 2x" chip / "+0.5R total"
+    /// Seed 3 fake CLOSED trades (2 NVDA + 1 7010.SR) (realizedR +0.8 and −0.3 → "Traded 2x" chip / "+0.5R total"
     /// sheet line, hand-derived) so the QA capture exercises the "your history with this name"
     /// chip/line on the same NVDA fixture symbol seedQAPortfolio holds. In-memory REPLACE via
     /// `StockSageJournalStore.qaSeed` — bypasses `save()`, never touches UserDefaults.

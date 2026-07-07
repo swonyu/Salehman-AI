@@ -766,7 +766,7 @@ final class StockSageJournalStore: ObservableObject {
     /// (JournalCalibrationCache) — appending one fake trade to the owner's REAL journal could
     /// cross `StockSageConvictionCalibration.fit(fromJournal:)`'s minSamples=30 floor
     /// (StockSageConvictionCalibration.swift:99) mid-capture and flip calibration semantics.
-    /// A REPLACE with 1-2 fake trades keeps outcomes.count < 30 ⇒ fit returns nil ⇒ calibration
+    /// A REPLACE with a small fixed set (currently 3 fake trades) keeps outcomes.count < 30 ⇒ fit returns nil ⇒ calibration
     /// falls back to the backtest fit / prior — deterministic and boundary-safe. Because the fit
     /// cache keys on VALUE, the caller's restore-to-`saved` (also a qaSeed replace) recomputes
     /// the owner's real calibration on the very next read — nothing leaks past the capture window.
