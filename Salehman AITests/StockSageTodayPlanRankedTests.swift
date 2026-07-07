@@ -55,6 +55,7 @@ struct StockSageTodayPlanRankedTests {
     @Test func gateVerdictMatchesTradeGateEvaluateOnTheSameInputs() {
         let ideas = [clearIdea("A"), clearIdea("B", conviction: 0.9, riskAbs: 3, rewardAbs: 15)]
         let plans = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: 0.01)
+        #expect(plans.count == 2)   // hard count FIRST — a `for p in plans` over an empty list would pass vacuously (WHIPPYX)
         for p in plans {
             let resolvedNetRR = StockSageNetEdge.netRR(symbol: p.symbol, entry: p.entry, stop: p.stop, target: p.target)
             let rr = resolvedNetRR ?? abs(p.target - p.entry) / abs(p.entry - p.stop)
@@ -62,6 +63,12 @@ struct StockSageTodayPlanRankedTests {
             let expected = StockSageTradeGate.evaluate(hasStop: true, rewardToRisk: rr, riskFraction: 0.01,
                                                        rrIsNet: resolvedNetRR != nil)
             #expect(p.gate == expected)
+            // Value pin (not just the plumbing mirror): the decision itself is hand-derived .clear.
+            // A netRR 3.873294, B netRR 4.750799 (both ≥2 → positive-skew PASS; derive_gate_decision.swift);
+            // riskFraction 0.01 ≤ 0.02 cap PASS; hasStop PASS; corr/earnings nil (no check) ⇒ no warn/fail ⇒ .clear.
+            // Catches the failure a pure mirror can't: if rankedActions AND this call shared the same wrong rr,
+            // `p.gate == expected` would still pass while the decision was wrong.
+            #expect(p.gate.decision == .clear)
         }
     }
 
