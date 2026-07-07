@@ -3024,7 +3024,7 @@ struct MarketsView: View {
                     // not on non-nil (an identity calibration is an assumption, not a measurement).
                     if let cal = store.convictionCalibration {
                         if cal.method == .identity {
-                            Label("EV win-rates are assumed (identity floor) — conviction used as win% until a fit beats it out-of-sample", systemImage: "exclamationmark.triangle.fill")
+                            Label("EV win-rates are assumed (identity floor) — conviction, capped at the conservative ~\(StockSageExpectedValue.assumedWinBandLabel) prior when the sample is too thin to validate out-of-sample, used as win% until a fit beats it out-of-sample", systemImage: "exclamationmark.triangle.fill")
                                 .font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
                                 .help(cal.chipHelp)
                         } else {
@@ -3334,7 +3334,7 @@ struct MarketsView: View {
                 // F01/F02: wording keyed on the calibration METHOD — identity must read "assumed".
                 .help(store.convictionCalibration.map { cal in
                     cal.method == .identity
-                    ? "Signal strength — a rules-based score; win-rate currently ASSUMED equal to conviction (identity floor), not measured from outcomes."
+                    ? "Signal strength — a rules-based score; win-rate currently ASSUMED — conviction, capped at the conservative ~\(StockSageExpectedValue.assumedWinBandLabel) prior when the sample is too thin to validate out-of-sample, is used as the win probability (identity floor), not measured from outcomes."
                     : "Signal strength — a rules-based score; win-rate \(cal.method == .platt ? "fitted" : "measured") from \(cal.sampleSize) realized trades."
                 } ?? "Signal strength — a rules-based score, not a probability. Estimated win-rate range ~\(StockSageExpectedValue.assumedWinBandLabel), not a forecast.")
             if idea.spark.count >= 2 {
@@ -4286,7 +4286,7 @@ struct MarketsView: View {
                         .font(.system(size: mvFont11))
                         .foregroundStyle(assumed ? DS.Palette.warningSoft : DS.Palette.successSoft)
                     Text(assumed
-                         ? "EV win-prob is currently the identity floor — conviction used as win%, assumed, not measured; more closed trades let a real fit earn 'measured'."
+                         ? "EV win-prob is currently the identity floor — conviction, capped at the conservative ~\(StockSageExpectedValue.assumedWinBandLabel) prior when the sample is too thin to validate out-of-sample, used as win%, assumed, not measured; more closed trades let a real fit earn 'measured'."
                          : (cal.method == .platt
                             ? "EV fitted from \(cal.sampleSize) realized trades (your journal when rich enough, else the backtest) — a central fit, not a conservative bound."
                             : "EV calibrated from \(cal.sampleSize) realized trades (your journal when rich enough, else the backtest) — measured, not assumed."))
@@ -4887,7 +4887,7 @@ struct MarketsView: View {
                     // F01/F02: wording keyed on the calibration METHOD — identity must read "assumed".
                     .help(store.convictionCalibration.map { cal in
                         cal.method == .identity
-                        ? "Signal strength — a rules-based score; win-rate currently ASSUMED equal to conviction (identity floor), not measured from outcomes."
+                        ? "Signal strength — a rules-based score; win-rate currently ASSUMED — conviction, capped at the conservative ~\(StockSageExpectedValue.assumedWinBandLabel) prior when the sample is too thin to validate out-of-sample, is used as the win probability (identity floor), not measured from outcomes."
                         : "Signal strength — a rules-based score; win-rate \(cal.method == .platt ? "fitted" : "measured") from \(cal.sampleSize) realized trades."
                     } ?? "Signal strength — a rules-based score, not a probability. Estimated win-rate range ~\(StockSageExpectedValue.assumedWinBandLabel), not a forecast.")
                 Text("Signal strength \(Int(a.conviction * 100)) · \(a.regime.rawValue)")
