@@ -70,6 +70,23 @@ Do not trust compacted memories of numbers or line refs — re-grep the `file:li
 When unsure which row applies, it's the middle row. A wrong solo change to engine math
 costs real money; a queued question costs a day.
 
+**Workflow model split (owner directive 2026-07-07, 8th rev — supersedes the 2026-07-06
+Fable-impl/Sonnet-review split below):** when a multi-agent Workflow / subagent fleet runs,
+use exactly three Claude models, ALL at `effort:'xhigh'`, by role —
+**Fable 5 xhigh** = planner / adjudicator / verifier lenses (`{model:'fable', effort:'xhigh'}`);
+**Sonnet 5 xhigh** = implementation (`{model:'sonnet', effort:'xhigh'}`);
+**Opus 4.8 xhigh** = adversarial review / red-team / refactor (`{model:'opus', effort:'xhigh'}`).
+Orchestrator = the session model (owner's bar is Opus 4.8; a Fable 5 session exceeds it —
+fine as-is); the orchestrator ALWAYS runs the independent build+test gate + merge pipeline
+itself. **Fleet size ≤ 5 agents** (owner, 2026-07-07 — supersedes the earlier ≤30).
+DeepSeek/Gemini external relay DROPPED (owner: "forget the deepseek thing"); a flash-tier
+ask maps to Haiku recon only (never financial-math), and NEVER rig external API bridges.
+Never downgrade the subagent tiers to compensate for the orchestrator model. Full revision
+history + verbatim directives live in the `feedback-workflow-models` memory.
+
+*Superseded 7th rev (2026-07-06):* orchestrator = session model; impl = Fable 5 @ max;
+review/verify = Sonnet 5 @ xhigh.
+
 ## 3. Maintenance rules (trigger → artifact)
 
 | Trigger | You MUST update |
