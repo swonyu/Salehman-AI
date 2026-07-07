@@ -5754,9 +5754,16 @@ struct MarketsView: View {
     /// NOT a continuous bar or an N/100 fraction (owner-directed 2026-07-07: a "/100" denominator
     /// reads as P(win) — denominator neglect — which the DSR≈0 reality forbids). `value` 0…1 →
     /// filled = round(value·5). nil is handled by the caller (the meter simply isn't rendered).
-    private func signalBlocks(_ value: Double, color: Color) -> some View {
+    /// Pure count math for `signalBlocks` — extracted so it's unit-testable without
+    /// rendering a View. Byte-identical to the inline computation it replaced:
+    /// clamp to [0,1], scale by 5, round-half-away-from-zero (Double.rounded() default).
+    static func signalBlockCount(_ value: Double) -> Int {
         let v = min(max(value, 0), 1)
-        let filled = Int((v * 5).rounded())
+        return Int((v * 5).rounded())
+    }
+
+    private func signalBlocks(_ value: Double, color: Color) -> some View {
+        let filled = Self.signalBlockCount(value)
         return HStack(spacing: 3) {
             ForEach(0..<5, id: \.self) { i in
                 RoundedRectangle(cornerRadius: 1.5, style: .continuous)
