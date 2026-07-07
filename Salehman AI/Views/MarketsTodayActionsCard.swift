@@ -101,11 +101,16 @@ struct MarketsTodayActionsCard: View {
                     gateBadge(plan.gate)
                 }
                 HStack(spacing: DS.Space.sm) {
+                    // .fixedSize so a money figure wraps instead of silently truncating under
+                    // Dynamic Type / narrow width — a dropped Target price or $-at-risk on a
+                    // money row is an honesty failure (audit L2-02, 2026-07-07).
                     Text("Entry \(adaptivePrice(plan.entry)) · Stop \(adaptivePrice(plan.stop)) · Target \(adaptivePrice(plan.target))")
                         .font(.system(size: font9)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let sh = plan.shares, let dr = plan.dollarsAtRisk {
                         Text("· \(sh) sh (≈$\(Int(dr.rounded())) at risk)")
                             .font(.system(size: font9)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else {
                         Text("· set account to size").font(.system(size: font9)).foregroundStyle(.secondary)
                     }
@@ -138,6 +143,12 @@ struct MarketsTodayActionsCard: View {
             if plan.isCrypto { label += ", 24/7 crypto" }
             if plan.netCostFloorFlag.isDeranked { label += ", below net-cost floor" }
             if plan.isLowConviction { label += ", low conviction" }
+            // The actionable order + size — VoiceOver otherwise hears the verdict but never
+            // the entry/stop/target/size the row exists to convey (audit L2-01, 2026-07-07).
+            label += ". Entry \(adaptivePrice(plan.entry)), stop \(adaptivePrice(plan.stop)), target \(adaptivePrice(plan.target))"
+            if let sh = plan.shares, let dr = plan.dollarsAtRisk {
+                label += ", \(sh) shares, about $\(Int(dr.rounded())) at risk"
+            }
             label += ". \(plan.gate.decision.rawValue)."
             if blocked { label += " Do not trade." }
             if plan.gate.decision == .caution,

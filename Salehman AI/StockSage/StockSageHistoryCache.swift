@@ -121,20 +121,26 @@ nonisolated struct StockSageHistoryCache: Codable, Sendable, Equatable {
                       industryOf: (String) -> Int) -> StockSageNetCostSim.Panel? {
         let syms = histories.keys.sorted()
         guard syms.count >= 2 else { return nil }
-        var shared: Set<Date>? = nil
+        // Bucket by UTC calendar day, not the raw bar timestamp: Yahoo stamps each 1d bar at
+        // its exchange's session-open instant (US ~13:30 UTC, Tadawul ~07:00, crypto 00:00), so
+        // exact-Date set-intersection drops EVERY cross-exchange pair and returns a null/degenerate
+        // panel for any mixed-market universe. Same dayKey the rest of the engine aligns on
+        // (StockSagePortfolioAnalytics.alignByDate) — audit L3-05, 2026-07-07.
+        func dayKey(_ d: Date) -> Int { Int((d.timeIntervalSince1970 / 86_400).rounded(.down)) }
+        var shared: Set<Int>? = nil
         for s in syms {
-            let ds = Set(histories[s]!.dates)
+            let ds = Set(histories[s]!.dates.map(dayKey))
             shared = shared.map { $0.intersection(ds) } ?? ds
         }
-        let dates = (shared ?? []).sorted()
-        guard dates.count >= 2 else { return nil }
+        let days = (shared ?? []).sorted()
+        guard days.count >= 2 else { return nil }
         var returns: [[Double]] = []
         var industry: [Int] = []
         for s in syms {
             guard let h = histories[s] else { return nil }
-            var byDate: [Date: Double] = [:]
-            for (d, c) in zip(h.dates, h.closes) { byDate[d] = c }
-            let closes = dates.map { byDate[$0] ?? Double.nan }
+            var byDate: [Int: Double] = [:]
+            for (d, c) in zip(h.dates, h.closes) { byDate[dayKey(d)] = c }
+            let closes = days.map { byDate[$0] ?? Double.nan }
             guard !closes.contains(where: { $0.isNaN || $0 <= 0 }) else { return nil }   // must be present & positive
             let r = (1..<closes.count).map { closes[$0] / closes[$0 - 1] - 1 }
             returns.append(r)

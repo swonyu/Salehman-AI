@@ -1068,6 +1068,12 @@ final class StockSageStore: ObservableObject {
     func runBacktest(symbol: String) async {
         guard !isBacktesting else { return }
         backtestSymbol = symbol                     // surface which symbol, even while running/failed
+        // Clear the prior symbol's result BEFORE any early-return — else a web-disabled
+        // (or otherwise bailed) run leaves the old symbol's backtest on screen attributed
+        // to the new backtestSymbol (audit L3-02, 2026-07-07).
+        backtest = nil
+        backtestTrail = nil
+        underwater = nil
         if let reason = ToolPolicy.webToolsDisabledReason() {
             backtestError = reason
             return
@@ -1075,9 +1081,6 @@ final class StockSageStore: ObservableObject {
         isBacktesting = true
         defer { isBacktesting = false }             // stays true across the fetch AND the O(bars²) compute
         backtestError = nil
-        backtest = nil                              // clear the prior result while this runs
-        backtestTrail = nil
-        underwater = nil
         // 5 years of daily bars → room to trade after the 200-day warmup.
         let history = await StockSageQuoteService.fetchHistory(symbol, range: "5y")
         guard let history else {
@@ -1145,7 +1148,6 @@ final class StockSageStore: ObservableObject {
         let universe = trackedDefs()
         let quotes = await StockSageQuoteService.fetchQuotes(for: universe.map(\.symbol))
         isRefreshing = false
-        newListings = Set(quotes.filter { $0.value.isNewListing }.keys)
 
         // Merge each curated symbol (keeps the friendly market label) with its
         // live quote; drop any the feed couldn't price.
@@ -1188,6 +1190,11 @@ final class StockSageStore: ObservableObject {
             $0.market == Self.userMarketLabel && !liveKeys.contains($0.symbol.uppercased())
         }
         let committed = liveFiltered + preservedUserRows
+        // Set the new-listing honesty flags only once BOTH non-destructive bails have
+        // passed (empty-feed L1162, coverage L1170) — assigning before them let a failed
+        // or partial refresh wipe the flags while keeping the old rows, so a cached
+        // placeholder-flat IPO row read as a genuine 0.00% move (audit L3-01, 2026-07-07).
+        newListings = Set(quotes.filter { $0.value.isNewListing }.keys)
         replaceAll(committed, isSample: false)
         lastUpdated = Date()
         // Newest MARKET time across the priced quotes — the banner uses this (not fetch time) to

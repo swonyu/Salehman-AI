@@ -810,7 +810,11 @@ enum StockSageExpectedValue {
             .prefix(Swift.max(0, maxConcurrent))
             .compactMap { netVelocity(for: $0, holds: holds, calibration: calibration) }
         guard !vels.isEmpty else { return nil }
-        let concentrationFactor = fastLaneConcentration(ideas, topN: maxConcurrent, holds: holds, calibration: calibration)?.isConcentrated == true ? 0.70 : 1.0
+        // Haircut must analyze the SAME earnings/liquidity-demoted top-N the velocities
+        // above are summed over (line 809 passes earnings+liquidity) — otherwise the 0.70
+        // concentration factor is decided on a different top-3 than the one being summed
+        // (audit L4-1/F2, 2026-07-07). fastLaneConcentration's own contract requires this.
+        let concentrationFactor = fastLaneConcentration(ideas, topN: maxConcurrent, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity)?.isConcentrated == true ? 0.70 : 1.0
         return vels.reduce(0, +) * tradingDays * concentrationFactor
     }
 

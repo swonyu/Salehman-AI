@@ -160,6 +160,33 @@ struct StockSageExpectedValueTests {
         #expect(1000 + 50.0 < 2000 && 2000 < 500_000 && 500_000 < 1_000_000)
     }
 
+    // fastLaneConcentration's earnings/liquidity demotion params (added 71929c3) were UNTESTED
+    // (audit F1/L5), and netExpectedWeeklyR's 0.70 concentration haircut must analyze the SAME
+    // earnings/liquidity-demoted top-3 it sums (audit L4-1, fixed 2026-07-07). This pins BOTH:
+    // a demotion that changes the top-3 asset-class mix flips isConcentrated. Expected outcomes
+    // are derived from the documented demotion sentinels (−2000 imminent earnings, −3000 thin
+    // liquidity), NOT from calling fastLaneConcentration (no circularity).
+    @Test func fastLaneConcentrationRespectsEarningsAndLiquidityDemotion() {
+        let btc  = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
+        let eth  = idea("ETH-USD", conviction: 0.9, stop: 90, target: 130)
+        let sol  = idea("SOL-USD", conviction: 0.9, stop: 90, target: 130)
+        let aapl = idea("AAPL",    conviction: 0.9, stop: 90, target: 130)  // equity: 12d hold → lower velocity
+        let all = [btc, eth, sol, aapl]
+        // Non-vacuous guard: the 3 crypto (vel 0.4093) rank above the lone equity (vel 0.1023) →
+        // AAPL is last. Fails loudly if -USD stopped classifying crypto.
+        #expect(EV.fastLane(all).map(\.symbol).last == "AAPL")
+        // Undemoted top-3 = all crypto → concentrated.
+        #expect(EV.fastLaneConcentration(all, topN: 3)?.isConcentrated == true)
+        // Imminent earnings on SOL (−2000 sentinel) sinks it to last → top-3 = 2 crypto + AAPL → mixed.
+        let earnings: [String: EarningsProximity] = ["SOL-USD": EarningsProximity(daysUntil: 2, severity: .imminent)]
+        #expect(EV.fastLane(all, earnings: earnings).map(\.symbol).last == "SOL-USD")
+        #expect(EV.fastLaneConcentration(all, topN: 3, earnings: earnings)?.isConcentrated == false)
+        // A thin-liquidity demotion (−3000 sentinel) on SOL does the same.
+        let liq: [String: LiquidityProfile] = ["SOL-USD": LiquidityProfile(avgDollarVolume: 50_000, tier: .thin)]
+        #expect(EV.fastLane(all, liquidity: liq).map(\.symbol).last == "SOL-USD")
+        #expect(EV.fastLaneConcentration(all, topN: 3, liquidity: liq)?.isConcentrated == false)
+    }
+
     // liquidityRankPenalty (sibling of earningsRankPenalty, §1.A #2) was UNTESTED. Spec is a
     // direct mapping: no profile → 0; tier == .thin → 3000 (the −3000 thin-liquidity sentinel);
     // any other tier (.moderate/.deep) → 0. Only a REAL .thin profile fires (only-real-data).

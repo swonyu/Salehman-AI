@@ -109,4 +109,30 @@ struct StockSageHistoryCacheTests {
         #expect(abs(p.returns[1][0] - 0.1) < 1e-9)
         #expect(abs(p.returns[1][1] - (23.0 / 22.0 - 1.0)) < 1e-9)
     }
+
+    // 8. Cross-exchange alignment (audit L3-05, fixed 2026-07-07): Yahoo stamps each 1d bar at its
+    //    exchange's session-open instant, so a US name (~13.5h UTC) and a crypto name (00:00 UTC) on
+    //    the SAME calendar day carry DIFFERENT exact Date values. Exact-Date intersection shared ZERO
+    //    dates → nil panel; UTC-day bucketing aligns them. This pins the bucketing.
+    @Test func panelBucketsByUTCDayAcrossExchangeSessionOffsets() throws {
+        let day = 86_400.0
+        // US bars stamped at 13.5h into each UTC day (session open); crypto at 00:00. Same 3 calendar days.
+        let usDates  = (0..<3).map { Date(timeIntervalSince1970: Double($0) * day + 13.5 * 3600) }
+        let btcDates = (0..<3).map { Date(timeIntervalSince1970: Double($0) * day) }
+        // NO exact Date is shared between the two axes (offset 48600s) — exact-intersection would give 0.
+        #expect(Set(usDates).intersection(Set(btcDates)).isEmpty)
+        let us  = StockSagePriceHistory(symbol: "US", dates: usDates, opens: [100, 110, 121], highs: [100, 110, 121],
+                                        lows: [100, 110, 121], closes: [100, 110, 121], volumes: [1, 1, 1])
+        let btc = StockSagePriceHistory(symbol: "BTC-USD", dates: btcDates, opens: [50, 52, 54.6], highs: [50, 52, 54.6],
+                                        lows: [50, 52, 54.6], closes: [50, 52, 54.6], volumes: [1, 1, 1])
+        let p = try #require(HC.panel(from: ["US": us, "BTC-USD": btc], industryOf: { _ in 0 }))
+        #expect(p.symbolCount == 2)
+        #expect(p.periodCount == 2)          // 3 UTC-day-aligned bars → 2 returns (was 0 under exact-Date)
+        // syms sorted → ["BTC-USD","US"]. BTC [50,52,54.6]: 52/50−1 = 0.04, 54.6/52−1 = 0.05.
+        #expect(abs(p.returns[0][0] - 0.04) < 1e-9)
+        #expect(abs(p.returns[0][1] - 0.05) < 1e-9)
+        // US [100,110,121]: 110/100−1 = 0.1, 121/110−1 = 0.1.
+        #expect(abs(p.returns[1][0] - 0.1) < 1e-9)
+        #expect(abs(p.returns[1][1] - 0.1) < 1e-9)
+    }
 }
