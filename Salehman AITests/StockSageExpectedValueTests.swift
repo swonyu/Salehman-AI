@@ -227,7 +227,7 @@ struct StockSageExpectedValueTests {
         #expect(s.fastestSymbol == "BTC-USD")                    // highest net velocity
         // summary() uses netVelocity since iter6 (nets spread+slippage+taker before /holdDays)
         #expect(s.fastestVelocity == EV.netVelocity(for: b))
-        #expect(s.weeklyR != nil)
+        #expect(s.weeklyR != nil)   // value pinned separately by expectedWeeklyRSumsTopVelocities / concentratedFastLaneHaircutsExpectedWeeklyR
         #expect(s.hasContent)
         #expect(!EV.summary([]).hasContent)                      // empty → nothing to show
     }
