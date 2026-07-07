@@ -203,6 +203,23 @@ struct StockSageExpectedValueTests {
         #expect(EV.expectedWeeklyR([crypto], maxConcurrent: 0) == nil)       // no slots → nil (no crash)
     }
 
+    // netExpectedWeeklyR (net-of-cost companion to expectedWeeklyR — sums netVelocity, not gross)
+    // was UNTESTED. Single US-equity idea ⇒ fastLane=[idea], concentration nil ⇒ factor 1.0, so
+    // netExpectedWeeklyR = netVelocity·5. Hand-derived in derive_netweekly.swift (US 13bps, no
+    // financing on a long): cost 0.13, netReward 29.87, netRisk 10.13, p 0.557 ⇒ netEVR 1.215,
+    // netVelocity 1.215/12 = 0.10125 ⇒ ×5 = 0.50625. Strictly BELOW the gross weeklyR (0.5116667)
+    // — the gap IS the round-trip cost, which proves the NET path (not a relabel of gross).
+    @Test func netExpectedWeeklyRSumsNetVelocitiesBelowTheGrossRollup() {
+        let aapl = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        let net = EV.netExpectedWeeklyR([aapl], maxConcurrent: 3, tradingDays: 5)!
+        #expect(abs(net - 0.50625) < 1e-6)
+        // gross single-idea rollup = (1.228/12)·5 = 0.5116667; net < gross ⇒ costs bit.
+        let gross = EV.expectedWeeklyR([aapl], maxConcurrent: 3, tradingDays: 5)!
+        #expect(abs(gross - (1.228 / 12) * 5) < 1e-6)
+        #expect(net < gross)
+        #expect(EV.netExpectedWeeklyR([aapl], maxConcurrent: 0) == nil)      // no slots → nil (no crash)
+    }
+
     @Test func expectedWeeklyDollarsScalesWeeklyRByRiskDollar() {
         let equity = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
         let crypto = idea("BTC-USD", conviction: 0.9, stop: 90, target: 130)
