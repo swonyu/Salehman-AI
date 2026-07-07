@@ -62,12 +62,58 @@ enum QASnapshots {
         guard ProcessInfo.processInfo.arguments.contains("--qa") else { return }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 800_000_000)
-            // Deterministic ideas-board fixtures (real buildIdeas pipeline, sample-labeled).
-            // ONLY here — the --qa path. Menu captures (View ▸ Capture QA Snapshots) stay
-            // live-state so an owner-session capture never clobbers the real board.
+            // The owner's PERSISTED board-preference @AppStorage keys (sort/filter/min-strength/
+            // sizer) can filter the deterministic QA fixture ideas down to zero cards ("No ideas
+            // at ≥ 60% signal strength") — @AppStorage just reads UserDefaults, it doesn't know
+            // this render is a QA capture. NSArgumentDomain launch-arg overrides were tried and
+            // are INERT for these keys (confirmed; do not retry that path). Neutralize them in
+            // UserDefaults for the duration of this capture, then restore — --qa path ONLY, never
+            // the View-menu manual capture (that stays live-state, same as seedQAIdeas above).
+            let restore = neutralizeIdeaBoardPrefsForQA()
+            defer { restore() }
+            // Neutral prefs BEFORE seeding so every render (fixtures included) sees them.
             await StockSageStore.shared.seedQAIdeas()
             captureAll()
             try? FileManager.default.removeItem(at: request)
+        }
+    }
+
+    /// Save the CURRENT value of every board-filter/sizer @AppStorage key, then overwrite
+    /// each with its neutral value so the QA fixture ideas aren't filtered out by whatever
+    /// the owner last left the board set to. Returns a restore closure — call it (via `defer`
+    /// in the caller) to put every key back exactly as found, `nil` → removed, not merely unset.
+    ///
+    /// Defaults chosen to match the app's shipped defaults (never implying a different
+    /// permanent default — RANKING #10 is owner-gated): "EV / day" is `IdeaSort.velocity`'s
+    /// rawValue, "All" is `IdeaFilter.all`'s rawValue.
+    ///
+    /// Crash-safety: restoration runs in the caller's `defer`, so any thrown/early-return path
+    /// out of the capture Task restores. A hard process kill mid-capture (SIGKILL, force-quit)
+    /// cannot run any Swift code including `defer` — that residual risk is accepted, not
+    /// silently swallowed: qa.sh's flow quits the app right after `captureAll()` returns, so the
+    /// only way to leak neutral prefs into the owner's real UserDefaults is a kill in that
+    /// narrow window, not an ordinary crash/throw.
+    private static func neutralizeIdeaBoardPrefsForQA() -> () -> Void {
+        let neutral: [String: Any] = [
+            "marketsIdeaSort": "EV / day",
+            "marketsIdeaFilter": "All",
+            "marketsIdeaMinConv": 0.0,
+            "marketsSizerAccount": "10000",
+            "marketsSizerRiskPct": "1",
+        ]
+        let defaults = UserDefaults.standard
+        let saved: [String: Any?] = neutral.keys.reduce(into: [:]) { acc, key in
+            acc[key] = defaults.object(forKey: key)
+        }
+        for (key, value) in neutral { defaults.set(value, forKey: key) }
+        return {
+            for (key, original) in saved {
+                if let original {
+                    defaults.set(original, forKey: key)
+                } else {
+                    defaults.removeObject(forKey: key)
+                }
+            }
         }
     }
 
