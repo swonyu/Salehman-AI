@@ -160,6 +160,25 @@ struct StockSageExpectedValueTests {
         #expect(1000 + 50.0 < 2000 && 2000 < 500_000 && 500_000 < 1_000_000)
     }
 
+    // liquidityRankPenalty (sibling of earningsRankPenalty, §1.A #2) was UNTESTED. Spec is a
+    // direct mapping: no profile → 0; tier == .thin → 3000 (the −3000 thin-liquidity sentinel);
+    // any other tier (.moderate/.deep) → 0. Only a REAL .thin profile fires (only-real-data).
+    @Test func liquidityRankPenaltyFiresOnlyForTheThinTier() {
+        let advice = TradeAdvice(action: .buy, conviction: 0.8, regime: .bullTrend,
+                                 rationale: [], stopPrice: 90, targetPrice: 110,
+                                 suggestedWeight: 0.1, caveat: "")
+        let idea = StockSageIdea(symbol: "AAPL", market: "M", price: 100, advice: advice, spark: [])
+        let thin = ["AAPL": LiquidityProfile(avgDollarVolume: 50_000, tier: .thin)]
+        let deep = ["AAPL": LiquidityProfile(avgDollarVolume: 5_000_000, tier: .deep)]
+        #expect(EV.liquidityRankPenalty(for: idea, liquidity: thin) == 3000)   // thin → sentinel
+        #expect(EV.liquidityRankPenalty(for: idea, liquidity: deep) == 0)      // deep → no penalty
+        #expect(EV.liquidityRankPenalty(for: idea, liquidity: [:]) == 0)       // no profile → 0
+        #expect(EV.liquidityRankPenalty(for: idea,                             // moderate → 0 (not thin)
+                liquidity: ["AAPL": LiquidityProfile(avgDollarVolume: 1_000_000, tier: .moderate)]) == 0)
+        // Band: the 3000 sentinel sits above conviction(1000)+maxEV, below the cost(500k) demotion.
+        #expect(1000 + 50.0 < 3000 && 3000 < 500_000)
+    }
+
     @Test func earningsRankFlagExplainsTheDemotion() {
         typealias Flag = EV.EarningsRankFlag
         let earnings: [String: EarningsProximity] = [
