@@ -89,9 +89,14 @@ struct AggregatedHolding: Equatable {
     /// nil when either side is non-positive (a nil/zero cost or price must not render a
     /// fabricated percent — honesty floor, same convention as the rest of StockSage's
     /// nil-on-insufficient-data functions).
+    ///
+    /// Normalizes IEEE -0.0 → 0: a price just under breakeven can round to -0.0, which prints
+    /// as "-0.0" and, combined with callers' `pct >= 0 ? "+" : ""` prefix logic (-0.0 >= 0 is
+    /// true), renders "+-0.0%". `r == 0` is true for both since -0.0 == 0 in Swift.
     func unrealizedPct(vs price: Double) -> Double? {
         guard costBasis > 0, price > 0 else { return nil }
-        return ((price / costBasis - 1) * 100 * 10).rounded() / 10
+        let r = ((price / costBasis - 1) * 100 * 10).rounded() / 10
+        return r == 0 ? 0 : r
     }
 }
 

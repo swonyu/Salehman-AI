@@ -145,4 +145,24 @@ struct StockSagePortfolioAggregationTests {
         #expect(heldPositiveCost.unrealizedPct(vs: 0) == nil)
         #expect(heldPositiveCost.unrealizedPct(vs: -5) == nil)
     }
+
+    // Hand derivation (pct = (price/costBasis − 1) × 100, one decimal), computed independently
+    // of the code under test:
+    //   cost=97.25, price=103.7 → (103.7/97.25 − 1)×100 = 6.632390... → rounds to 6.6
+    @Test func unrealizedPctRoundsToOneDecimalPin() {
+        let held = AggregatedHolding(symbol: "X", shares: 1, costBasis: 97.25)
+        #expect(held.unrealizedPct(vs: 103.7) == 6.6)
+    }
+
+    // -0.0 boundary: cost=100, price=99.96 → (99.96/100 − 1)×100 = −0.04 → rounds to −0.0 (IEEE),
+    // which unrealizedPct normalizes to 0. Also pins the rendered string never shows "+-0.0".
+    @Test func unrealizedPctNormalizesNegativeZero() {
+        let held = AggregatedHolding(symbol: "X", shares: 1, costBasis: 100)
+        let pct = held.unrealizedPct(vs: 99.96)
+        #expect(pct == 0.0)
+        let up = pct! >= 0
+        let rendered = "\(up ? "+" : "")\(String(format: "%.1f", pct!))% vs current"
+        #expect(rendered == "+0.0% vs current")
+        #expect(!rendered.contains("+-"))
+    }
 }

@@ -131,6 +131,15 @@ enum QASnapshots {
     /// (StockSagePortfolio.qaSeed bypasses save()), so this never reaches UserDefaults; the
     /// returned closure restores whatever real positions were loaded (owner's actual holdings,
     /// or none), same save→restore-exact shape as `neutralizeIdeaBoardPrefsForQA` above.
+    ///
+    /// Residual risk, same acceptance as `neutralizeIdeaBoardPrefsForQA`'s documented SIGKILL
+    /// window: a hard process kill mid-capture skips the restore closure entirely (in-memory
+    /// state just dies with the process — no UserDefaults write, so nothing persists). The
+    /// second, narrower residual specific to this seam: the owner clicking Add/Remove position
+    /// on the real UI during the ~1-2s seeded window would `save()` the fake AAPL lot into real
+    /// UserDefaults (StockSagePortfolio.add/remove both persist), overwriting whatever
+    /// `seedQAPortfolio` captured to restore. Accepted, not silently swallowed: qa.sh's flow
+    /// runs unattended (owner isn't clicking through the app during a capture run).
     private static func seedQAPortfolio() -> () -> Void {
         let portfolio = StockSagePortfolio.shared
         let saved = portfolio.positions
