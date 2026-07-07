@@ -20,7 +20,7 @@ QA="$ROOT/qa"; SNAPS="$QA/snapshots"
 # changes; the bundle dir date doesn't), so a fresh gate build here still ranked older.
 if [ -z "${SALEHMAN_APP:-}" ]; then
   for d in "$HOME/Library/Developer/Xcode/DerivedData/"Salehman_AI-*/; do
-    wp=$(plutil -extract WorkspacePath raw "$d/info.plist" 2>/dev/null)
+    wp=$(plutil -extract WorkspacePath raw "$d/info.plist" 2>/dev/null || true)
     if [ "$wp" = "$ROOT/Salehman AI.xcodeproj" ]; then APP="$d/Build/Products/Debug/Salehman AI.app"; break; fi
   done
 fi

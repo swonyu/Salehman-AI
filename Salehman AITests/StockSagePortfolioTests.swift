@@ -161,8 +161,8 @@ struct StockSagePortfolioAggregationTests {
         let pct = held.unrealizedPct(vs: 99.96)
         #expect(pct == 0.0)
         let up = pct! >= 0
-        let rendered = "\(up ? "+" : "")\(String(format: "%.1f", pct!))% vs current"
-        #expect(rendered == "+0.0% vs current")
+        let rendered = "\(up ? "+" : "")\(String(format: "%.1f", pct!))% vs avg cost"
+        #expect(rendered == "+0.0% vs avg cost")
         #expect(!rendered.contains("+-"))
     }
 }

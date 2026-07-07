@@ -40,8 +40,9 @@ struct StockSageIdea: Sendable, Equatable, Identifiable {
     /// call `SparkSeries.extreme(spark)` on the DOWNSAMPLED spark array (≤32 of up to 63 points),
     /// so a true high/low on a day the downsample skipped could be missed, silently making the
     /// claim false vs the actual last-63-day window. Computed here from the RAW closes so the
-    /// displayed chip is genuinely honest about the full window it claims. nil when the window
-    /// has fewer than 2 closes (mirrors `SparkSeries.extreme`'s own guard).
+    /// displayed chip is genuinely honest about the full window it claims. nil means
+    /// not computed (default init); buildIdeas always sets a value — `.neither` when the
+    /// window has fewer than 2 closes.
     let recentExtreme: SparkSeries.Extreme?
     /// The actual window length `recentExtreme` was computed over — `min(closes.count, 63)`.
     /// Carried alongside `recentExtreme` so the chip can label "At N-day high/low" with the
