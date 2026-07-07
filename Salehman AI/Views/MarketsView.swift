@@ -3289,6 +3289,16 @@ struct MarketsView: View {
                 } else if let stop = a.stopPrice {
                     ideaMetric("Stop", adaptivePrice(stop), color: DS.Palette.dangerSoft)
                 }
+                // B1 (OSS-borrow, FreqUI TradeDetail "At risk"): the $ LOST if the stop fills —
+                // same guard chain + same sizer call as bestOpportunityCard's "Size it now" line
+                // (line ~3563) so this can never diverge from the shipped sizer's math. nil on
+                // any unparseable/missing input ⇒ nothing new renders.
+                if let stop = a.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
+                   let rp = StockSageInput.percent(sizerRiskPct),
+                   let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
+                    ideaMetric("At risk", String(format: "≈$%.0f · %d sh", ps.dollarsAtRisk, ps.shares), color: DS.Palette.warningSoft)
+                        .help("Sizes the LOSS: a stop-out at \(adaptivePrice(stop)) costs ~$\(String(format: "%.0f", ps.dollarsAtRisk)) (\(String(format: "%.2f", ps.dollarsAtRisk / acct * 100))% of the account). Not a profit promise.")
+                }
                 if let target = a.targetPrice {
                     ideaMetric("Target", adaptivePrice(target), color: DS.Palette.successSoft)
                 }
