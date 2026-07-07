@@ -216,11 +216,16 @@ final class StockSageMonitor {
         guard !armed.isEmpty else { return }
         let q = await StockSageQuoteService.fetchQuotes(for: Array(Set(armed.map { $0.symbol })))
         // CONCURRENCY #2 (L3-09): a stop() during the fetch await above must not let this cycle
-        // push + latch a one-shot price alert — same idiom as runCycle's post-await guards. Without
-        // this, a stop()→start() overlap could double-push the SAME alert: the cancelled cycle's
-        // fetch completes after cancellation, fires the push and (being one-shot) latches
-        // `triggeredAt`, while a concurrent fresh cycle from the new task can independently do the
-        // same. `markPriceAlertsTriggered` is UserDefaults-persisted, so unlike the in-memory
+        // push a one-shot price alert — same idiom as runCycle's post-await guards. Without this,
+        // a stop()→start() overlap could double-push the SAME alert: the cancelled cycle's fetch
+        // completes after cancellation, fires the push and (being one-shot) latches `triggeredAt`,
+        // while a concurrent fresh cycle from the new task can independently do the same. Once
+        // `sendPriceAlert` dispatch begins below, the pushes are unstoppable — UNUserNotificationCenter.add
+        // is completion-bridged, not cancellation-aware — so there must be NO guard between the push
+        // loop and `markPriceAlertsTriggered`: the latch is the truthful record of pushes that went
+        // out, and skipping it would leave the alert ARMED while `newlyTriggered` fires on a STANDING
+        // condition (isMet, not a crossing), re-pushing the same one-shot alert on the next cycle
+        // after restart. `markPriceAlertsTriggered` is UserDefaults-persisted, so unlike the in-memory
         // `lastAlerted`/`lastIdeaPrice` dedup maps, a wrongful fire here doesn't self-heal — the
         // user would need to manually re-arm the alert.
         guard !Task.isCancelled else { return }
@@ -231,7 +236,6 @@ final class StockSageMonitor {
         let fired = StockSagePriceAlertEngine.newlyTriggered(armed, prices: prices)
         guard !fired.isEmpty else { return }
         for a in fired { await sendPriceAlert(a, price: prices[a.symbol] ?? a.target) }
-        guard !Task.isCancelled else { return }
         store.markPriceAlertsTriggered(fired.map(\.id))
     }
 
