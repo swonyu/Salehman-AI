@@ -4604,6 +4604,7 @@ struct MarketsView: View {
             let base = stages[0].value
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Sizing brakes").font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white)
+                        .accessibilityAddTraits(.isHeader)
                     ForEach(stages.indices, id: \.self) { i in
                         let s = stages[i]
                         HStack(spacing: 8) {
@@ -4639,6 +4640,7 @@ struct MarketsView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "function").font(.system(size: mvFont11)).foregroundStyle(DS.Palette.accent)
                     Text("Position size").font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white)
+                        .accessibilityAddTraits(.isHeader)
                     Spacer()
                     Text("Acct $").font(.system(size: mvFont9)).foregroundStyle(.secondary)
                     journalField("10000", text: $sizerAccount, width: 72)
