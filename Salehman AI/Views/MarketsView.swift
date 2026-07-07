@@ -3460,6 +3460,69 @@ struct MarketsView: View {
             // so the staleness clock badge's own accessibilityLabel is never spoken — convey
             // it here (the opacity dimming is invisible to VoiceOver too).
             if boardIsStale { label += ", board data is over 4 hours old" }
+            // A11Y-01 (2026-07-07 fix round): every remaining badge/chip/metric below this
+            // element is also silenced by .combine — mirror EACH render condition above in the
+            // SAME order they appear on screen, reusing the visible strings/help wording, so the
+            // label never claims something the card doesn't currently render.
+            if floorFlag.isDeranked { label += ", below net-cost floor, de-ranked" }
+            if extreme != .neither {
+                label += extreme == .atHigh ? ", at \(extremeSpan)-day high" : ", at \(extremeSpan)-day low"
+            }
+            if let held, let jh {
+                let rNote = jh.rDefinedCount != jh.count ? " (R defined on \(jh.rDefinedCount))" : ""
+                label += ", " + String(format: "you hold %@ shares of %@ at an average cost of %@. Your journal: %d closed trades, realized %+.1fR total%@. Context only, not part of ranking.", numString(held.shares), idea.symbol, adaptivePrice(held.costBasis), jh.count, jh.totalR, rNote)
+            } else if let held {
+                label += ", you hold \(numString(held.shares)) shares of \(idea.symbol) at an average cost of \(adaptivePrice(held.costBasis)). Context only, not part of ranking."
+            } else if let jh {
+                let rNote = jh.rDefinedCount != jh.count ? " (R defined on \(jh.rDefinedCount))" : ""
+                label += ", " + String(format: "your journal: %d closed trades on %@, realized %+.1fR total%@. Context only, not part of ranking.", jh.count, idea.symbol, jh.totalR, rNote)
+            }
+            let chipsSoFar = [boardIsStale, !earnFlag.badge.isEmpty, floorFlag.isDeranked,
+                              extreme != .neither, held != nil || jh != nil]
+                .filter { $0 }.count
+            if chipsSoFar < 5, let delta = store.scanDeltas[idea.symbol] {
+                switch delta {
+                case .new: label += ", new this scan"
+                case .actionChanged(let previous): label += ", was \(previous)"
+                }
+            }
+            if let ev = StockSageExpectedValue.ev(for: idea, calibration: store.convictionCalibration) {
+                label += String(format: ", %+.2fR EV gross", ev.evR)
+            }
+            if a.timeframeAligned {
+                label += ", " + (a.confluenceNote ?? "three-timeframe confluence")
+            }
+            if ideaSort == .velocity,
+               let vel = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
+                label += String(format: ", velocity %+.3fR per day", vel)
+            }
+            label += ", price \(adaptivePrice(idea.price))"
+            if let stop = a.stopPrice, idea.price > 0 {
+                let stopPct = abs(idea.price - stop) / idea.price * 100
+                label += ", stop \(adaptivePrice(stop)) (\(String(format: "%.1f%%", stopPct)))"
+            } else if let stop = a.stopPrice {
+                label += ", stop \(adaptivePrice(stop))"
+            }
+            if let stop = a.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
+               let rp = StockSageInput.percent(sizerRiskPct),
+               let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
+                label += String(format: ", at risk ≈$%.0f, %d shares", ps.dollarsAtRisk, ps.shares)
+            }
+            if let target = a.targetPrice {
+                label += ", target \(adaptivePrice(target))"
+            }
+            if a.suggestedWeight > 0 {
+                label += String(format: ", base size %.1f%%", a.suggestedWeight * 100)
+                if let vr = idea.volRegime, vr.sizingMultiplier < 0.85 {
+                    label += String(format: ", vol-adjusted size %.1f%%", a.suggestedWeight * vr.sizingMultiplier * 100)
+                }
+            }
+            let rr = rewardRisk(idea)
+            if rr > 0 { label += String(format: ", reward to risk %.1f", rr) }
+            if let mq = idea.momentumQuality {
+                let mqLabel = mq >= 2.0 / 3.0 ? "hot" : mq >= 1.0 / 3.0 ? "mixed" : "cold"
+                label += ", momentum \(mqLabel)"
+            }
             return label
         }())
         .accessibilityHint("Opens full advice and backtest")
