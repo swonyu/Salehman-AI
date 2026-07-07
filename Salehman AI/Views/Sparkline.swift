@@ -29,6 +29,14 @@ enum SparkSeries {
         return values.map { ($0 - lo) / (hi - lo) }
     }
 
+    /// Map values to 0…1 against an EXPLICIT domain (not the series' own min/max) — the
+    /// registration primitive an overlay needs to land on the same y-mapping the Shape draws.
+    /// Same flat/degenerate fallback as `normalize(_:)` (mid-line 0.5) when `domain.hi == domain.lo`.
+    nonisolated static func normalize(_ values: [Double], in domain: (lo: Double, hi: Double)) -> [Double] {
+        guard domain.hi > domain.lo else { return values.map { _ in 0.5 } }
+        return values.map { fraction($0, in: domain) }
+    }
+
     /// The y-domain [lo, hi] the Sparkline shape actually draws against, EXTENDED to
     /// include `extra` prices (e.g. a stop/target that fall outside the series' own
     /// min/max) so an overlay line can be positioned in the same normalized space the
@@ -61,13 +69,17 @@ enum SparkSeries {
 /// Snapshot-safe: no animation, no onAppear — it just draws.
 struct Sparkline: Shape {
     let values: [Double]
+    /// Explicit y-domain to normalize against (e.g. extended to fit a stop/target overlay).
+    /// nil (default) preserves the original self-normalizing behavior byte-for-byte — every
+    /// existing call site is unchanged unless it opts in (OSS-borrow B2 registration fix).
+    var domain: (lo: Double, hi: Double)? = nil
 
     // `nonisolated` — Shape.path(in:) is a nonisolated protocol requirement, but the
     // project defaults every type to MainActor isolation; without this the conformance
     // "crosses into main actor-isolated code" (a Swift 6 data-race error in Xcode).
     nonisolated func path(in rect: CGRect) -> Path {
         var path = Path()
-        let norm = SparkSeries.normalize(values)
+        let norm = domain.map { SparkSeries.normalize(values, in: $0) } ?? SparkSeries.normalize(values)
         guard norm.count >= 2, rect.width > 0, rect.height > 0 else { return path }
         let stepX = rect.width / CGFloat(norm.count - 1)
         for (i, v) in norm.enumerated() {

@@ -64,4 +64,29 @@ struct SparkSeriesTests {
         // One point can't form a range.
         #expect(SparkSeries.domain([], extending: [7]) == nil)
     }
+
+    // MARK: - Registration (fix-round: Shape and overlay must share ONE y-mapping)
+    // Hand-derived in /tmp/derive_b2_registration.py — never from calling normalize()/fraction()
+    // themselves. Fixture: series [95,100,105,110], stop=99, target=132 -> domain (95,132).
+    // idea.price ≡ spark.last (110) by invariant (downsample preserves the final element), so
+    // an honest last-bar marker must sit exactly on the Shape's own last drawn point.
+
+    @Test func normalizeInDomainMatchesFractionAtEveryPoint() {
+        let series = [95.0, 100.0, 105.0, 110.0]
+        let stop = 99.0, target = 132.0
+        let domain = SparkSeries.domain(series, extending: [stop, target])!
+        #expect(domain.lo == 95)
+        #expect(domain.hi == 132)
+
+        let normalized = SparkSeries.normalize(series, in: domain)
+        let derived = 0.40540540540540543   // (110 - 95) / (132 - 95), hand-derived
+        #expect(abs(normalized.last! - derived) < 1e-9)
+        #expect(abs(SparkSeries.fraction(110, in: domain) - derived) < 1e-9)
+
+        // The registration invariant itself: the Shape's own normalized last-point fraction
+        // and the overlay's fraction(price, in: domain) must be the SAME value, because
+        // idea.price ≡ spark.last — this is what makes the last-bar marker land exactly on
+        // the drawn last point instead of floating at a different y (review blocker 2).
+        #expect(normalized.last! == SparkSeries.fraction(series.last!, in: domain))
+    }
 }

@@ -4776,10 +4776,21 @@ struct MarketsView: View {
                 // Sparkline
                 if idea.spark.count >= 2 {
                     let trendWord = (idea.spark.last ?? 0) >= (idea.spark.first ?? 0) ? "up" : "down"
-                    Sparkline(values: idea.spark)
+                    // Registration fix (OSS-borrow B2 review): compute the extended domain ONCE
+                    // and hand the SAME value to the Shape and the overlay — two independent
+                    // normalizations (spark's own min/max vs. the overlay's extended domain)
+                    // used to diverge whenever stop/target fell outside the spark's own range.
+                    // ALL-OR-NOTHING gate unchanged: overlayDomain is nil unless stop AND target
+                    // both resolve, so the bare sheet spark stays byte-identical to main whenever
+                    // the overlay itself wouldn't render.
+                    let overlayDomain: (lo: Double, hi: Double)? = {
+                        guard let stop = idea.advice.stopPrice, let target = idea.advice.targetPrice else { return nil }
+                        return SparkSeries.domain(idea.spark, extending: [stop, target, idea.price])
+                    }()
+                    Sparkline(values: idea.spark, domain: overlayDomain)
                         .stroke(sparkColor(idea.spark), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                         .frame(height: 64)
-                        .overlay(tradePlanOverlay(idea))
+                        .overlay(tradePlanOverlay(idea, domain: overlayDomain))
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("Price sparkline, trending \(trendWord), high \(adaptivePrice(idea.spark.max() ?? 0)), low \(adaptivePrice(idea.spark.min() ?? 0))")
                 }
@@ -5823,16 +5834,15 @@ struct MarketsView: View {
     /// ALL-OR-NOTHING: renders only when stop AND target AND a non-empty spark all resolve.
     /// A partial plan (e.g. stop but no target) would draw a half-geometry that misrepresents
     /// the plan, so it renders nothing instead — same honesty posture as the rest of the sheet
-    /// (nil ⇒ no fabricated partial claim). The Sparkline itself is a `Shape`, which
-    /// internally re-normalizes `idea.spark` to its OWN min...max; this overlay recomputes an
-    /// EXTENDED domain (via `SparkSeries.domain(_:extending:)`) that folds in stop/target so
-    /// out-of-range prices genuinely reposition the line rather than being clamped to the
-    /// nearest edge — a clamped line at the wrong height would be a fabricated visual claim.
+    /// (nil ⇒ no fabricated partial claim). `domain` is computed ONCE by the caller (ideaDetailSheet)
+    /// and passed to BOTH the Sparkline Shape and this overlay — a single shared y-mapping, so
+    /// they can never diverge (registration fix; previously each recomputed its own domain and
+    /// disagreed whenever stop/target fell outside the spark's own min...max).
     @ViewBuilder
-    private func tradePlanOverlay(_ idea: StockSageIdea) -> some View {
+    private func tradePlanOverlay(_ idea: StockSageIdea, domain: (lo: Double, hi: Double)?) -> some View {
         if let stop = idea.advice.stopPrice, let target = idea.advice.targetPrice,
            !idea.spark.isEmpty,
-           let domain = SparkSeries.domain(idea.spark, extending: [stop, target, idea.price]) {
+           let domain {
             let entry = idea.price
             let stopY = 1 - SparkSeries.fraction(stop, in: domain)     // Sparkline draws 0→bottom, 1→top
             let targetY = 1 - SparkSeries.fraction(target, in: domain)
