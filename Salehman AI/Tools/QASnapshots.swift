@@ -165,6 +165,12 @@ enum QASnapshots {
         // histories; sample-bannered). Tall frame: the board sits below header/velocity/
         // CTA/best-opportunity/fast-lane/backtest panels — 740pt would show zero cards.
         snap(MarketsView(qaSection: .ideas), "markets_ideas", "Markets — Ideas board (seeded fixtures: strongBuy/buy/sell/crypto/⚠vol + earnings chip)", .init(width: 1000, height: 2400), in: dir)
+        // Idea-detail SHEET content, rendered inline (no .sheet presentation) via the
+        // qaDetailSymbol QA seam — NVDA is the seeded strongBuy fixture with resolvable
+        // US costs, so the Evidence gross→net fused lines render. Sheet frame caps at
+        // maxWidth 680, so 700 captures it fully unclipped.
+        snap(MarketsView(qaDetailSymbol: "NVDA"), "markets_idea_detail", "Markets — idea detail sheet content (NVDA strongBuy fixture)", .init(width: 700, height: 1600), in: dir)
+        snap(MarketsView(qaDetailSymbol: "NVDA"), "markets_idea_detail_narrow", "Markets — idea detail sheet @ 460pt — responsive / layout-break check", .init(width: 460, height: 1600), in: dir)
         // Memory is a SHEET (round-1 audit caught it floating in a 1000×700
         // frame with uncomposited margins) — capture at its natural sheet size.
         snap(MemoryView(),         "memory",       "Memory sheet", .init(width: 500, height: 620), in: dir)
