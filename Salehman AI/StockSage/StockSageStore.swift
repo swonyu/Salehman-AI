@@ -182,6 +182,27 @@ final class StockSageStore: ObservableObject {
         savePriceAlerts()
     }
 
+    /// Pure reconcile step for the new-listing badge set (L3-03, 2026-07-07 audit). Given the
+    /// CURRENT set and a batch of freshly-priced quotes, returns the set with each quote's symbol
+    /// inserted when the feed says `isNewListing == true` and removed when it says `false` —
+    /// symmetric, so a stale flag also clears once the feed stops reporting the symbol as new.
+    /// Never infers the flag: the only source of truth is `LiveQuote.isNewListing` itself.
+    /// `nonisolated static` and side-effect-free so it's unit-testable without the
+    /// `@MainActor` singleton (`mergeLiveQuotes`/`addSymbol` are its only callers).
+    nonisolated static func reconcileNewListings(
+        current: Set<String>, pricedQuotes: [String: StockSageQuoteService.LiveQuote]
+    ) -> Set<String> {
+        var result = current
+        for (sym, q) in pricedQuotes {
+            if q.isNewListing {
+                result.insert(sym)
+            } else {
+                result.remove(sym)
+            }
+        }
+        return result
+    }
+
     /// Merge freshly-fetched live quotes into the matching board rows (used by the
     /// watchlist-only monitor so those names show live prices even though the full
     /// auto-refresh is paused). Deliberately does NOT flip isSampleData/loadedFromCache or
@@ -197,6 +218,11 @@ final class StockSageStore: ObservableObject {
                 StockSageQuote(price: q.price, previousPrice: q.previousClose, marketTime: q.marketTime),
             ])
         }
+        // Thread the new-listing flag through the watchlist-only path too: refresh() was previously
+        // the ONLY writer of `newListings`, so with auto-refresh paused a genuinely new listing
+        // merged here could never get its badge.
+        let priced = quotes.filter { $0.value.price > 0 }
+        newListings = Self.reconcileNewListings(current: newListings, pricedQuotes: priced)
         // Advance freshness if these merged quotes are newer (watchlist-only path also keeps it honest).
         if let newest = quotes.values.compactMap(\.marketTime).max() {
             quoteAsOf = [quoteAsOf, newest].compactMap { $0 }.max()
@@ -267,6 +293,9 @@ final class StockSageStore: ObservableObject {
             StockSageQuote(price: q.price, previousPrice: q.previousClose),
         ])
         symbols = symbols.filter { $0.symbol.uppercased() != symbol } + [added]
+        // Thread the new-listing flag through here too (L3-03, 2026-07-07 audit) — same reconcile
+        // rule mergeLiveQuotes uses, never set without the feed itself saying isNewListing==true.
+        newListings = Self.reconcileNewListings(current: newListings, pricedQuotes: [symbol: q])
     }
 
     /// Remove a user-added ticker (no-op for curated-universe symbols).
