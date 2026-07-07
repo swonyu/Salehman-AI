@@ -4555,7 +4555,7 @@ struct MarketsView: View {
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("\(s.label) \(String(format: "%.1f", s.value * 100)) percent")
                     }
-                    Text("Correlation de-weighting and the heat cap apply at the portfolio level, not shown per-idea. " + Self.sizeMetricHelp)
+                    Text("Correlation de-weighting and the heat cap apply at the portfolio level, not shown per-idea. Each brake is shown applied to Base independently — they compound in the Deploy plan. " + Self.sizeMetricHelp)
                         .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(10)
