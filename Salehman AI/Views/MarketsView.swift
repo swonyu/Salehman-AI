@@ -5922,7 +5922,12 @@ struct MarketsView: View {
     /// from `y` when clamped/de-collided — see `clampedLabelY`/`deconflictedLabelYs`) within a
     /// `width`-wide overlay. Shared by tradePlanOverlay's stop and target lines.
     private func tradePlanLine(y: CGFloat, labelY: CGFloat, width: CGFloat, color: Color, label: String) -> some View {
-        ZStack(alignment: .leading) {
+        // .topLeading (not .leading) makes the Text's natural position top-left (top at y=0),
+        // matching the semantics clampedLabelY/deconflictedLabelYs assume: labelY is the label's
+        // vertical CENTER, so top = labelY - labelH/2. The Path is a greedy fill either way.
+        // Sanity: h=64, lh=13 (mvFont9=9+4) — bottom case labelY=57.5 → top=51, bottom=64 (fits);
+        // top case labelY=6.5 → top=0, bottom=13 (fits).
+        ZStack(alignment: .topLeading) {
             Path { p in
                 p.move(to: CGPoint(x: 0, y: y))
                 p.addLine(to: CGPoint(x: width, y: y))
@@ -5933,7 +5938,7 @@ struct MarketsView: View {
                 .foregroundStyle(color)
                 .padding(.horizontal, 3).padding(.vertical, 1)
                 .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 2))
-                .offset(x: 2, y: labelY - 7)
+                .offset(x: 2, y: labelY - tradePlanLabelHeight / 2)
         }
     }
 
