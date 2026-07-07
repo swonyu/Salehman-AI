@@ -105,6 +105,10 @@ final class StockSageStore: ObservableObject {
     private var ideasRefreshTask: Task<Void, Never>?
     @Published private(set) var ideasUpdated: Date?
     @Published private(set) var ideasError: String?
+    /// What changed vs the last FULL scan (symbol → .new/.actionChanged) — WRITTEN ONLY by
+    /// performRefreshIdeas; a partial retry or the QA seed must never touch this (see
+    /// PLAN_2026-07-07_scan_deltas.md). Absent baseline ⇒ empty (first-run honesty rule).
+    @Published private(set) var scanDeltas: [String: ScanDelta] = [:]
     /// Symbols the last analysis couldn't fetch history for (feed miss / rate-limit) —
     /// surfaced so the board never silently ranks on a partial universe.
     @Published private(set) var ideasMissing: [String] = []
@@ -377,6 +381,14 @@ final class StockSageStore: ObservableObject {
             let fired = StockSageAlerts.detect(previous: ideas, current: ranked)
             if !fired.isEmpty { alerts = Array((fired + alerts).prefix(Self.maxAlerts)) }
         }
+        // Scan deltas ("New" / "was <Action>" chips): compute vs the PRE-refresh persisted
+        // baseline, THEN persist the new scan's map as the next baseline. Only this full-scan
+        // commit writes the snapshot — retryFailedIdeas (partial) and seedQAIdeas (QA fixture)
+        // deliberately never call save() (PLAN_2026-07-07_scan_deltas.md).
+        let snapshotStore = StockSageScanSnapshotStore.shared
+        scanDeltas = StockSageScanDelta.deltas(current: ranked, previous: snapshotStore.entries)
+        let nextBaseline = Dictionary(uniqueKeysWithValues: ranked.map { ($0.symbol, $0.advice.action.rawValue) })
+        snapshotStore.save(entries: nextBaseline)
         ideas = ranked
         // FORWARD PAPER TRADING: auto-open a fake-money position for each long-actionable idea and mark
         // existing open paper trades to the fresh histories (net-of-cost). Separate store, never conflated
@@ -1352,5 +1364,10 @@ final class StockSageStore: ObservableObject {
         // Earnings warning on the buy card: ≤3 days → .imminent (StockSageEarnings severity)
         // → "⚠︎ earnings ~2d" chip + rank demotion visible on the AAPL card. In-memory only.
         earningsDates["AAPL"] = Date().addingTimeInterval(2 * 86_400)
+        // Scan deltas: reads whatever baseline is currently in StockSageScanSnapshotStore
+        // (QASnapshots.checkAndRun in-memory-seeds it via qaSeed before calling this, then
+        // restores it after capture) — this method NEVER calls save(), so the real
+        // stocksage.prevscan.v1 key is untouched (PLAN_2026-07-07_scan_deltas.md).
+        scanDeltas = StockSageScanDelta.deltas(current: ideas, previous: StockSageScanSnapshotStore.shared.entries)
     }
 }

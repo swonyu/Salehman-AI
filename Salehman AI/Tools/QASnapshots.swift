@@ -71,6 +71,15 @@ enum QASnapshots {
             // the View-menu manual capture (that stays live-state, same as seedQAIdeas above).
             let restore = neutralizeIdeaBoardPrefsForQA()
             defer { restore() }
+            // Scan-deltas seam (PLAN_2026-07-07_scan_deltas.md): seed a previous-scan baseline
+            // BEFORE seedQAIdeas so it reads a deterministic baseline — BTC-USD is ABSENT (→ its
+            // card renders "New") and AAPL's previous action was "Hold" (→ AAPL renders "was
+            // Hold"; AAPL's card is earnings+extreme+EV = 4 chips, so the delta chip is its 5th,
+            // still inside the density cap). In-memory only via StockSageScanSnapshotStore.qaSeed
+            // — never touches the real stocksage.prevscan.v1 UserDefaults key. seedQAIdeas reads
+            // this baseline but never calls save() on it.
+            let restoreScanSnapshot = seedQAScanSnapshot()
+            defer { restoreScanSnapshot() }
             // Neutral prefs BEFORE seeding so every render (fixtures included) sees them.
             await StockSageStore.shared.seedQAIdeas()
             // "Own it" awareness (ideas card/sheet held-position chip): seed ONE fake NVDA lot
@@ -193,6 +202,26 @@ enum QASnapshots {
             TradeRecord(symbol: "NVDA", side: .long, entry: 190, stop: 185, target: 200,
                         shares: 10, openedAt: now.addingTimeInterval(-86_400 * 4),
                         exitPrice: 188.5, closedAt: now.addingTimeInterval(-86_400 * 2)),  // realizedR = -0.3
+        ])
+        return { store.qaSeed(saved) }
+    }
+
+    /// Seed a deterministic previous-scan baseline (PLAN_2026-07-07_scan_deltas.md) so the
+    /// capture exercises both delta chips: BTC-USD is ABSENT from the baseline (→ "New") and
+    /// AAPL's previous action was "Hold" (→ "was Hold"). NVDA/1120.SR/7010.SR are seeded at
+    /// their OWN current fixture action so they render no delta chip (unchanged), keeping the
+    /// capture focused on the two symbols the plan calls out. In-memory REPLACE via
+    /// StockSageScanSnapshotStore.qaSeed — bypasses save(), never touches the real
+    /// stocksage.prevscan.v1 UserDefaults key.
+    private static func seedQAScanSnapshot() -> () -> Void {
+        let store = StockSageScanSnapshotStore.shared
+        let saved = store.entries
+        store.qaSeed([
+            "NVDA": "Strong Buy",
+            "AAPL": "Hold",
+            "1120.SR": "Sell",
+            "7010.SR": "Reduce",
+            // BTC-USD deliberately absent → renders "New".
         ])
         return { store.qaSeed(saved) }
     }

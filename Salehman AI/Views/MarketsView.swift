@@ -3152,6 +3152,7 @@ struct MarketsView: View {
         // reading the card, never an endorsement — neutral styling like the at-extreme chip,
         // not tinted success/danger. Aggregates every lot (multi-lot books) by symbol.
         let held = StockSagePortfolio.holding(for: idea.symbol, in: portfolio.positions)
+        let jh = StockSageJournal.history(for: idea.symbol, in: journal.trades)
         let hovered = hoveredIdeaID == idea.id
         // Per-card staleness — adds a clock badge when the board is stale, same TRIGGER as
         // watchlist signalCard's sym.isStale() pattern. The dim amount DELIBERATELY diverges:
@@ -3213,7 +3214,6 @@ struct MarketsView: View {
                 // incident-ledger). When BOTH held and traded context exist, merge into ONE
                 // combined neutral chip so the row never exceeds five chips (the recorded-
                 // acceptable density). Still neutral/display-only, never part of ranking.
-                let jh = StockSageJournal.history(for: idea.symbol, in: journal.trades)
                 if let held, let jh {
                     Text("Held · \(numString(held.shares)) sh · \(jh.count)x")
                         .font(.system(size: fontChipLabel, weight: .semibold))
@@ -3235,6 +3235,32 @@ struct MarketsView: View {
                         .modifier(IdeaChipChrome(tint: DS.Palette.surfaceStroke))
                         .help(String(format: "Your journal: %d closed trades on %@, realized %+.1fR total. Context only — not part of ranking.", jh.count, idea.symbol, jh.totalR))
                         .accessibilityLabel(String(format: "Your journal: %d closed trades on %@, realized %+.1fR total. Context only, not part of ranking.", jh.count, idea.symbol, jh.totalR))
+                }
+                // Scan-delta chip ("New" / "was <Action>", PLAN_2026-07-07_scan_deltas.md):
+                // LOW-priority — dropped when the row already has five conditional chips. Count
+                // every conditional chip actually rendered so far (staleness, earnings, floor,
+                // extreme, held/traded/combined — ONE slot regardless of which of the three
+                // renders) so the seam can never drift from what's actually on screen.
+                let chipsSoFar = [boardIsStale, !earnFlag.badge.isEmpty, floorFlag.isDeranked,
+                                  extreme != .neither, held != nil || jh != nil]
+                    .filter { $0 }.count
+                if chipsSoFar < 5, let delta = store.scanDeltas[idea.symbol] {
+                    let label: String = {
+                        switch delta {
+                        case .new: return "New"
+                        case .actionChanged(let previous): return "was \(previous)"
+                        }
+                    }()
+                    Text(label)
+                        .font(.system(size: fontChipLabel, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .modifier(IdeaChipChrome(tint: DS.Palette.surfaceStroke))
+                        .help(delta == .new
+                              ? "New on the board since the last full scan — wasn't in the ranked ideas before."
+                              : "The action changed since the last full scan.")
+                        .accessibilityLabel(delta == .new
+                              ? "New on the board since the last full scan"
+                              : label)
                 }
                 // Opportunity signals after warnings.
                 // "(gross)" label — consistent with fast-lane row.
