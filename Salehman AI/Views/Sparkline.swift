@@ -63,12 +63,18 @@ enum SparkSeries {
     }
 
     /// Whether the series' LAST value sits at the running max, min, or neither — the pure
-    /// primitive behind the "At {N}-bar high/low" chip (OSS-borrow B3, Ghostfolio holding-detail
+    /// primitive behind the "At {N}-day high/low" chip (OSS-borrow B3, Ghostfolio holding-detail
     /// min/max highlight). Degenerate-series guard: a flat series (min == max) is ALWAYS
     /// `.neither` — Ghostfolio's own guard against a flat line claiming to be both a high and a
     /// low. Equality is EXACT `==` on the raw Double, not epsilon-fuzzed: `last` is one of
     /// `values`' own elements (or excluded by the nil/short/degenerate guards below), so `==`
     /// is well-defined and an epsilon would risk false-flagging a near-high as the high itself.
+    /// CALLER CONVENTION (L1 honesty fix, 2026-07-07): the chip's `.recentExtreme` field is
+    /// computed by `StockSageStore.buildIdeas` over the RAW last-63-close window, NOT the
+    /// downsampled `spark` array this Shape draws — the downsample can skip the true extreme
+    /// (only ≤32 of up to 63 points survive), so checking the sampled series risked a false
+    /// "at high/low" claim vs the actual close history. This function itself is a pure predicate
+    /// over whatever array it's given; it is the CALLER's job to pass the honest window.
     nonisolated static func extreme(_ values: [Double]) -> Extreme {
         guard values.count >= 2, let last = values.last,
               let lo = values.min(), let hi = values.max(), hi > lo else { return .neither }

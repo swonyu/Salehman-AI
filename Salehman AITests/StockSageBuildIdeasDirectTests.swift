@@ -293,4 +293,43 @@ struct StockSageBuildIdeasDirectTests {
         let ideas = await StockSageStore.buildIdeas(defs: [indexSym], histories: ["^GSPC": h])
         #expect(ideas.isEmpty, "Index symbols must never appear as tradeable ideas")
     }
+
+    // MARK: - L1 (honesty-labels fleet, 2026-07-07): recentExtreme reads the RAW 63-close
+    // window, not the downsampled spark — proves the old downsample(suffix(63),32)-based check
+    // could report a FALSE "at high" when the true window max falls on a downsample-skipped day.
+    //
+    // Hand-derived (scratchpad python, NOT calling this code — spec-fidelity rule):
+    //   100 raw closes. Last 63 (the window buildIdeas actually checks): a true spike of 150.0
+    //   at index 5 of that window (downsample(_,32) with step=(63-1)/(32-1)=2.0 samples indices
+    //   0,2,4,6,... — index 5 is SKIPPED), ending at 120.0 (below the true 63-window max).
+    //     - Raw 63-window: max=150.0, last=120.0 → NEITHER (120 is not the true high/low).
+    //     - Downsampled spark (32 pts, index-5 spike dropped): max=120.0, last=120.0 → falsely ATHIGH.
+    //   recentExtreme must be .neither (the honest answer); recentExtremeSpan must be 63
+    //   (min(100, 63)).
+    @Test func recentExtremeReadsRawWindowNotDownsampledSpark() async {
+        var window = [Double](repeating: 100.0, count: 63)
+        window[5] = 150.0   // true 63-window max — lands on a downsample-skipped index
+        for i in 6..<62 { window[i] = 90.0 + Double(i % 5) }
+        window[62] = 120.0  // last close: below the true max, but the downsampled spark's max
+        let closes = [Double](repeating: 100.0, count: 37) + window   // 100 raw closes total
+        #expect(closes.count == 100)
+
+        let sym = equitySym("SPIKE")
+        let h = history("SPIKE", closes: closes)
+        let ideas = await StockSageStore.buildIdeas(defs: [sym], histories: ["SPIKE": h])
+        guard let idea = ideas.first else {
+            Issue.record("buildIdeas must produce an idea for a 100-bar equity history")
+            return
+        }
+
+        #expect(idea.recentExtremeSpan == 63, "span must be min(closes.count, 63) — hand-derived above")
+        #expect(idea.recentExtreme == .neither,
+                "the RAW 63-window's last close (120) is not its true max (150, at a downsample-skipped index) — must NOT report atHigh")
+
+        // Cross-check: the OLD (pre-fix) behavior — extreme() over the DOWNSAMPLED spark — would
+        // have reported atHigh here, proving this fixture actually exercises the bug L1 fixed.
+        let oldWayOverSpark = SparkSeries.extreme(idea.spark)
+        #expect(oldWayOverSpark == .atHigh,
+                "sanity check: the downsampled-spark path this fixture targets must diverge from the raw-window fix, or the fixture doesn't exercise the bug")
+    }
 }

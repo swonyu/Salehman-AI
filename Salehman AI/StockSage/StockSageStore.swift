@@ -35,14 +35,29 @@ struct StockSageIdea: Sendable, Equatable, Identifiable {
     /// and cannot substitute here). NEVER defaults to a number — nil means unknown, not neutral.
     let momentumQuality: Double?
 
+    /// Whether the LATEST close sits at the running high/low of the RAW (un-downsampled) recent
+    /// window — the "At N-day high/low" chip's honesty fix (L1, 2026-07-07): the chip used to
+    /// call `SparkSeries.extreme(spark)` on the DOWNSAMPLED spark array (≤32 of up to 63 points),
+    /// so a true high/low on a day the downsample skipped could be missed, silently making the
+    /// claim false vs the actual last-63-day window. Computed here from the RAW closes so the
+    /// displayed chip is genuinely honest about the full window it claims. nil when the window
+    /// has fewer than 2 closes (mirrors `SparkSeries.extreme`'s own guard).
+    let recentExtreme: SparkSeries.Extreme?
+    /// The actual window length `recentExtreme` was computed over — `min(closes.count, 63)`.
+    /// Carried alongside `recentExtreme` so the chip can label "At N-day high/low" with the
+    /// TRUE N (days, not downsampled bars) rather than assuming a fixed 63.
+    let recentExtremeSpan: Int?
+
     nonisolated init(symbol: String, market: String, price: Double, advice: TradeAdvice,
                      spark: [Double], dailyMove: Double? = nil, realizedVol: Double? = nil,
                      volRegime: VolRegime? = nil, generatedAt: Date? = nil,
-                     momentumQuality: Double? = nil) {
+                     momentumQuality: Double? = nil, recentExtreme: SparkSeries.Extreme? = nil,
+                     recentExtremeSpan: Int? = nil) {
         self.symbol = symbol; self.market = market; self.price = price
         self.advice = advice; self.spark = spark; self.dailyMove = dailyMove
         self.realizedVol = realizedVol; self.volRegime = volRegime; self.generatedAt = generatedAt
-        self.momentumQuality = momentumQuality
+        self.momentumQuality = momentumQuality; self.recentExtreme = recentExtreme
+        self.recentExtremeSpan = recentExtremeSpan
     }
 }
 
@@ -579,11 +594,19 @@ final class StockSageStore: ObservableObject {
                         market: sym.market, price: price, advice: advice, spark: spark),
                         closes: history.closes)
                     : nil
+                // At-the-extreme honesty fix (L1, 2026-07-07): compute over the RAW `recent`
+                // window (same array `dailyMove` uses), NOT the downsampled `spark` — a true
+                // high/low that downsample skips must not be missed. span = recent.count
+                // (min(history.closes.count, 63)) is the ACTUAL window checked, so the chip can
+                // say "At N-day high/low" with a real N instead of assuming a fixed 63.
+                let recentExtreme = SparkSeries.extreme(recent)
+                let recentExtremeSpan = recent.count
                 out.append(StockSageIdea(symbol: sym.symbol, market: sym.market,
                                          price: price, advice: advice, spark: spark,
                                          dailyMove: dailyMove, realizedVol: realizedVol,
                                          volRegime: volRegime, generatedAt: Date(),
-                                         momentumQuality: momentumQuality))
+                                         momentumQuality: momentumQuality,
+                                         recentExtreme: recentExtreme, recentExtremeSpan: recentExtremeSpan))
             }
             return out
         }.value

@@ -3144,10 +3144,14 @@ struct MarketsView: View {
         // Net-cost-floor honesty badge: surfaced inline so the user never has to open the detail sheet
         // to learn why an idea is de-ranked on the velocity board.
         let floorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
-        // At-the-extreme chip (OSS-borrow B3, Ghostfolio min/max highlight): purely descriptive
-        // fact about the shown spark series — NOT a momentum/breakout claim, so it sits with the
-        // neutral badges, not the warning/opportunity ones either side of it.
-        let extreme = SparkSeries.extreme(idea.spark)
+        // At-the-extreme chip (OSS-borrow B3, Ghostfolio min/max highlight; L1 honesty fix
+        // 2026-07-07): purely descriptive fact about the RAW last-N-day close window — NOT a
+        // momentum/breakout claim, so it sits with the neutral badges, not the warning/opportunity
+        // ones either side of it. Reads idea.recentExtreme (computed by the Store over the raw
+        // closes, not the downsampled spark) so the claim is honest about the full window, not
+        // just the ≤32 sampled points the sparkline draws.
+        let extreme = idea.recentExtreme ?? .neither
+        let extremeSpan = idea.recentExtremeSpan ?? idea.spark.count
         // "Own it" awareness (top gap, 2026-07-07 assessment): owning a name is context for
         // reading the card, never an endorsement — neutral styling like the at-extreme chip,
         // not tinted success/danger. Aggregates every lot (multi-lot books) by symbol.
@@ -3202,12 +3206,12 @@ struct MarketsView: View {
                 // At-the-extreme chip: neutral descriptive fact, not a signal — deliberately
                 // secondary/plain styling (no success/danger tint) so it never implies good/bad.
                 if extreme != .neither {
-                    Text(extreme == .atHigh ? "At \(idea.spark.count)-bar high" : "At \(idea.spark.count)-bar low")
+                    Text(extreme == .atHigh ? "At \(extremeSpan)-day high" : "At \(extremeSpan)-day low")
                         .font(.system(size: fontChipLabel, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .modifier(IdeaChipChrome(tint: DS.Palette.surfaceStroke))
-                        .help("Latest close is the highest/lowest of the last \(idea.spark.count) sampled points shown in the sparkline — context, not a buy/sell signal.")
-                        .accessibilityLabel(extreme == .atHigh ? "At the high of the shown \(idea.spark.count)-bar window" : "At the low of the shown \(idea.spark.count)-bar window")
+                        .help("Latest close is the highest/lowest of the last \(extremeSpan) daily closes — context, not a buy/sell signal.")
+                        .accessibilityLabel(extreme == .atHigh ? "At the high of the last \(extremeSpan) days" : "At the low of the last \(extremeSpan) days")
                 }
                 // "Own it" / "Your history with this name" chips (2026-07-07 fix round, issue
                 // #1): six chips garbled mid-word at 560pt ("Backtes/t" defect class — see
@@ -4867,18 +4871,20 @@ struct MarketsView: View {
                         .overlay(tradePlanOverlay(idea, domain: overlayDomain))
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("Price sparkline, trending \(trendWord), high \(adaptivePrice(idea.spark.max() ?? 0)), low \(adaptivePrice(idea.spark.min() ?? 0))")
-                    // At-the-extreme chip (OSS-borrow B3, Ghostfolio min/max highlight): same
-                    // pure predicate as the ranked card, rendered right under the chart it
-                    // describes. Neutral secondary styling — context, not a signal.
-                    let extreme = SparkSeries.extreme(idea.spark)
+                    // At-the-extreme chip (OSS-borrow B3, Ghostfolio min/max highlight; L1 honesty
+                    // fix 2026-07-07): same idea.recentExtreme predicate as the ranked card (raw
+                    // last-N-day closes, not the downsampled spark), rendered right under the
+                    // chart it describes. Neutral secondary styling — context, not a signal.
+                    let extreme = idea.recentExtreme ?? .neither
+                    let extremeSpan = idea.recentExtremeSpan ?? idea.spark.count
                     if extreme != .neither {
-                        Text(extreme == .atHigh ? "At \(idea.spark.count)-bar high" : "At \(idea.spark.count)-bar low")
+                        Text(extreme == .atHigh ? "At \(extremeSpan)-day high" : "At \(extremeSpan)-day low")
                             .font(.system(size: fontChipLabel, weight: .semibold))
                             .foregroundStyle(.secondary)
-                            .help("Latest close is the highest/lowest of the last \(idea.spark.count) sampled points shown above — context, not a buy/sell signal.")
+                            .help("Latest close is the highest/lowest of the last \(extremeSpan) daily closes — context, not a buy/sell signal.")
                             // a11y parity with the card's chip (OSS-borrow B3): same explicit
                             // label instead of relying on the raw visible text.
-                            .accessibilityLabel(extreme == .atHigh ? "At the high of the shown \(idea.spark.count)-bar window" : "At the low of the shown \(idea.spark.count)-bar window")
+                            .accessibilityLabel(extreme == .atHigh ? "At the high of the last \(extremeSpan) days" : "At the low of the last \(extremeSpan) days")
                     }
                 }
 
