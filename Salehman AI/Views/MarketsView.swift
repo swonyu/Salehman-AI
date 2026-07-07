@@ -5896,9 +5896,9 @@ struct MarketsView: View {
                     // the frame so it never renders below/above the chart, then de-collided if
                     // clamping pushed both labels to the same edge (OSS-borrow B2 fix).
                     let labelH = tradePlanLabelHeight
-                    let stopLabelY = clampedLabelY(stopY * h, height: h, labelHeight: labelH)
-                    let targetLabelY = clampedLabelY(targetY * h, height: h, labelHeight: labelH)
-                    let (stopFinalY, targetFinalY) = deconflictedLabelYs(stopLabelY, targetLabelY, labelHeight: labelH, height: h)
+                    let stopLabelY = SparkSeries.clampedLabelY(stopY * h, height: h, labelHeight: labelH)
+                    let targetLabelY = SparkSeries.clampedLabelY(targetY * h, height: h, labelHeight: labelH)
+                    let (stopFinalY, targetFinalY) = SparkSeries.deconflictedLabelYs(stopLabelY, targetLabelY, labelHeight: labelH, height: h)
                     tradePlanLine(y: stopY * h, labelY: stopFinalY, width: w, color: DS.Palette.dangerSoft, label: adaptivePrice(stop))
                     tradePlanLine(y: targetY * h, labelY: targetFinalY, width: w, color: DS.Palette.successSoft, label: adaptivePrice(target))
 
@@ -5940,32 +5940,6 @@ struct MarketsView: View {
     /// Approximate rendered height of a trade-plan label chip (font + vertical padding),
     /// scaling with Dynamic Type via `mvFont9` so the clamp keeps tracking real text size.
     private var tradePlanLabelHeight: CGFloat { mvFont9 + 4 }
-
-    /// Clamps a label's y-position so its chip renders fully inside [0, height] — the line
-    /// itself keeps its true fraction; only the label (drawn ~7pt above `y`, see `tradePlanLine`)
-    /// moves for legibility. OSS-borrow B2: previously an edge-fraction target's label rendered
-    /// outside the chart frame (e.g. the 7010.SR sell sheet's bottom-edge target).
-    private func clampedLabelY(_ y: CGFloat, height: CGFloat, labelHeight: CGFloat) -> CGFloat {
-        let half = labelHeight / 2
-        guard height > labelHeight else { return height / 2 }   // degenerate frame: center it
-        return min(max(y, half), height - half)
-    }
-
-    /// If clamping pushed both labels within `labelHeight` of each other, stack them: keep the
-    /// one closer to its true line position put, offset the other below/above by `labelHeight`
-    /// (still inside the frame). Avoids the two edge labels overlapping (e.g. NVDA's top-edge
-    /// cluster) after both clamp to the same edge.
-    private func deconflictedLabelYs(_ a: CGFloat, _ b: CGFloat, labelHeight: CGFloat, height: CGFloat) -> (CGFloat, CGFloat) {
-        guard abs(a - b) < labelHeight else { return (a, b) }
-        let half = labelHeight / 2
-        if a <= b {
-            let newB = min(a + labelHeight, height - half)
-            return (a, newB)
-        } else {
-            let newA = min(b + labelHeight, height - half)
-            return (newA, b)
-        }
-    }
 
     // MARK: Empty
 

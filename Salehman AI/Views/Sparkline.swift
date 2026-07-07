@@ -78,6 +78,45 @@ enum SparkSeries {
     }
 
     enum Extreme { case atHigh, atLow, neither }
+
+    // MARK: Trade-plan label placement (OSS-borrow B2/B2-fix)
+    //
+    // Pure helpers behind tradePlanOverlay's stop/target label positioning — extracted so the
+    // edge-clamping and de-collision math is unit-testable without a view. `nonisolated` for the
+    // same reason as the rest of this enum: callable from non-MainActor test/Shape contexts.
+
+    /// Clamps a label's y-position so its chip (height `labelHeight`, centered on `y`) renders
+    /// fully inside `[0, height]`. Degenerate frame (`height <= labelHeight`): centers it.
+    nonisolated static func clampedLabelY(_ y: CGFloat, height: CGFloat, labelHeight: CGFloat) -> CGFloat {
+        let half = labelHeight / 2
+        guard height > labelHeight else { return height / 2 }
+        return min(max(y, half), height - half)
+    }
+
+    /// If two already-clamped label y's are within `labelHeight` of each other (including the
+    /// degenerate case where clamping folded both onto the same edge), separate them by exactly
+    /// `labelHeight` while keeping both inside `[labelHeight/2, height - labelHeight/2]`.
+    ///
+    /// Direction-aware: the lower of the pair ("first", smaller y) stays put; the other ("second")
+    /// is pushed DOWN by `labelHeight` when there's room below, else pushed UP instead. A naive
+    /// one-directional offset (always down, then clamp) folds back onto itself when both labels
+    /// clamp to the bottom edge — `min(57.5 + 13, height-half) == 57.5`, i.e. no separation at all
+    /// (the bug this replaces). Pushing up when down has no room fixes the bottom-edge case; the
+    /// top-edge case never needed the down-push to begin with (room is always below there).
+    nonisolated static func deconflictedLabelYs(_ a: CGFloat, _ b: CGFloat, labelHeight: CGFloat, height: CGFloat) -> (CGFloat, CGFloat) {
+        guard abs(a - b) < labelHeight else { return (a, b) }
+        let half = labelHeight / 2
+        let aIsFirst = a <= b
+        let first = aIsFirst ? a : b
+        let second = aIsFirst ? b : a
+        let pushed: (CGFloat, CGFloat)
+        if second + labelHeight <= height - half {
+            pushed = (first, min(first + labelHeight, height - half))
+        } else {
+            pushed = (max(first - labelHeight, half), first)
+        }
+        return aIsFirst ? pushed : (pushed.1, pushed.0)
+    }
 }
 
 // MARK: - Sparkline (pure SwiftUI Shape)

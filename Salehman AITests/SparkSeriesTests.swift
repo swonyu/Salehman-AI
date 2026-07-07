@@ -128,6 +128,64 @@ struct SparkSeriesTests {
         #expect(SparkSeries.extreme([2, 1]) == .atLow)
     }
 
+    // MARK: - clampedLabelY / deconflictedLabelYs (fix round: bottom-edge fold-back bug)
+    // Hand-derived in /tmp/derive_b2_fix.py — never from calling these functions themselves.
+    // Bug: the old one-directional (always-push-down-then-clamp) de-collision folded back onto
+    // itself when both labels clamped to the SAME bottom edge — min(57.5+13, 57.5) == 57.5, i.e.
+    // zero separation, full overlap. Direction-aware fix pushes UP instead when there's no room
+    // below. h=64, labelHeight=13, half=6.5 throughout (matches the review's repro geometry).
+
+    @Test func clampedLabelYBounds() {
+        #expect(SparkSeries.clampedLabelY(0, height: 64, labelHeight: 13) == 6.5)
+        #expect(SparkSeries.clampedLabelY(64, height: 64, labelHeight: 13) == 57.5)
+        #expect(SparkSeries.clampedLabelY(32, height: 64, labelHeight: 13) == 32.0)
+    }
+
+    @Test func deconflictBottomEdgeBothClampToSamePoint() {
+        // Both labels clamp to the exact same bottom-edge value (57.5, 57.5) — the fold-back bug.
+        let a = SparkSeries.clampedLabelY(57.5, height: 64, labelHeight: 13)
+        let b = SparkSeries.clampedLabelY(57.5, height: 64, labelHeight: 13)
+        let (finalA, finalB) = SparkSeries.deconflictedLabelYs(a, b, labelHeight: 13, height: 64)
+        #expect(finalA == 44.5)
+        #expect(finalB == 57.5)
+        #expect(abs(finalA - finalB) == 13)
+        #expect(finalA >= 6.5 && finalA <= 57.5)
+        #expect(finalB >= 6.5 && finalB <= 57.5)
+    }
+
+    @Test func deconflictBottomEdgeReviewRepro() {
+        // The review's literal repro pair: raw y's 64.0/62.6 both clamp to the bottom edge.
+        let a = SparkSeries.clampedLabelY(64.0, height: 64, labelHeight: 13)
+        let b = SparkSeries.clampedLabelY(62.6, height: 64, labelHeight: 13)
+        let (finalA, finalB) = SparkSeries.deconflictedLabelYs(a, b, labelHeight: 13, height: 64)
+        #expect(finalA == 44.5)
+        #expect(finalB == 57.5)
+        #expect(abs(finalA - finalB) == 13)
+        #expect(finalA >= 6.5 && finalA <= 57.5)
+        #expect(finalB >= 6.5 && finalB <= 57.5)
+    }
+
+    @Test func deconflictTopEdgeMirror() {
+        // Mirror case: both labels clamp to the top edge. Top edge always had room below, so
+        // this path already worked pre-fix — kept as a regression guard.
+        let a = SparkSeries.clampedLabelY(0.0, height: 64, labelHeight: 13)
+        let b = SparkSeries.clampedLabelY(1.4, height: 64, labelHeight: 13)
+        let (finalA, finalB) = SparkSeries.deconflictedLabelYs(a, b, labelHeight: 13, height: 64)
+        #expect(finalA == 6.5)
+        #expect(finalB == 19.5)
+        #expect(abs(finalA - finalB) == 13)
+        #expect(finalA >= 6.5 && finalA <= 57.5)
+        #expect(finalB >= 6.5 && finalB <= 57.5)
+    }
+
+    @Test func deconflictMidChartNonCollidingPairUnchanged() {
+        let a = SparkSeries.clampedLabelY(20.0, height: 64, labelHeight: 13)
+        let b = SparkSeries.clampedLabelY(40.0, height: 64, labelHeight: 13)
+        let (finalA, finalB) = SparkSeries.deconflictedLabelYs(a, b, labelHeight: 13, height: 64)
+        #expect(finalA == 20.0)
+        #expect(finalB == 40.0)
+    }
+
     // Cross-checks against the shipped QA fixtures (StockSageStore.qaFixtureHistories):
     // NVDA's up250 = 50 + 0.0153·i² is strictly increasing -> ends at its max.
     // 1120.SR's down250 = 200 − 0.602·i is strictly decreasing -> ends at its min.
