@@ -4642,8 +4642,10 @@ struct MarketsView: View {
                     Spacer()
                     Text("Acct $").font(.system(size: mvFont9)).foregroundStyle(.secondary)
                     journalField("10000", text: $sizerAccount, width: 72)
+                        .accessibilityLabel("Account size in dollars")
                     Text("Risk %").font(.system(size: mvFont9)).foregroundStyle(.secondary)
                     journalField("1", text: $sizerRiskPct, width: 40)
+                        .accessibilityLabel("Risk percent per trade")
                 }
                 if let acct = parsedAccount, let rf = parsedRiskFraction,
                    let ps = StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: entry, stop: stop) {
