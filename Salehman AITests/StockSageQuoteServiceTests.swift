@@ -36,6 +36,31 @@ struct StockSageQuoteServiceParsingTests {
         #expect(q3?.previousClose == 4950 && q3?.isNewListing == false)
     }
 
+    // L3-08 (AUDIT_2026-07-07_stocksage.md): previousClose <= 0 (or non-finite) must flow through
+    // the SAME missing-previousClose path as a truly absent field — never fabricate a flat 0.00%.
+    @Test func parseChartTreatsNonPositivePreviousCloseAsMissing() {
+        // previousClose: 0 → same as absent: falls back to price, isNewListing true.
+        let zeroClose = #"{"chart":{"result":[{"meta":{"symbol":"ZERO","regularMarketPrice":88,"previousClose":0}}]}}"#
+        let qZero = StockSageQuoteService.parseChart(Data(zeroClose.utf8))
+        #expect(qZero?.previousClose == 88 && qZero?.isNewListing == true)
+
+        // previousClose: -5 (corrupt/negative) → same treatment.
+        let negClose = #"{"chart":{"result":[{"meta":{"symbol":"NEG","regularMarketPrice":30,"previousClose":-5}}]}}"#
+        let qNeg = StockSageQuoteService.parseChart(Data(negClose.utf8))
+        #expect(qNeg?.previousClose == 30 && qNeg?.isNewListing == true)
+
+        // previousClose: NaN (via a non-finite string Yahoo would never legitimately send but a
+        // corrupt payload might) → number() already rejects non-finite, exercising the same path.
+        let nanClose = #"{"chart":{"result":[{"meta":{"symbol":"NANX","regularMarketPrice":15,"previousClose":"nan"}}]}}"#
+        let qNan = StockSageQuoteService.parseChart(Data(nanClose.utf8))
+        #expect(qNan?.previousClose == 15 && qNan?.isNewListing == true)
+
+        // Regression pin: a normal positive previousClose is unaffected.
+        let normal = #"{"chart":{"result":[{"meta":{"symbol":"OK","regularMarketPrice":100,"previousClose":95}}]}}"#
+        let qOk = StockSageQuoteService.parseChart(Data(normal.utf8))
+        #expect(qOk?.previousClose == 95 && qOk?.isNewListing == false)
+    }
+
     @Test func parseHistoryRejectsNonPositiveBars() {
         // 4 bars: bar 2 has a 0 close, bar 4 has a negative low — both must be dropped so a
         // garbage price can never become latestClose → price×shares / EV / sizing.

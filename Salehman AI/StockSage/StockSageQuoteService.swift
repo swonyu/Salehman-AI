@@ -128,6 +128,8 @@ enum StockSageQuoteService {
     /// any shape it doesn't recognize (an error payload, a missing price, a
     /// zero/negative price) yields `nil` rather than throwing. Reads `previousClose`
     /// with a `chartPreviousClose` fallback (indices often carry only the latter).
+    /// A non-positive or non-finite previousClose is treated exactly like a MISSING
+    /// one (falls back to `price`, sets `isNewListing`) — never fabricated as a real 0%.
     static func parseChart(_ data: Data) -> LiveQuote? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let chart = root["chart"] as? [String: Any],
@@ -136,7 +138,12 @@ enum StockSageQuoteService {
               let symbol = meta["symbol"] as? String else { return nil }
 
         guard let price = number(meta["regularMarketPrice"]), price > 0 else { return nil }
-        let realPreviousClose = number(meta["previousClose"]) ?? number(meta["chartPreviousClose"])
+        // A non-positive previousClose (a feed row carrying 0, or corrupt negative data) is exactly
+        // as unusable as a missing one — L3-08: fabricates a flat 0.00% move / poisons %-change math
+        // instead of an honest "can't judge yet." Route it through the SAME missing-previousClose
+        // fallback rather than inventing a new sentinel.
+        let realPreviousClose = (number(meta["previousClose"]) ?? number(meta["chartPreviousClose"]))
+            .flatMap { $0 > 0 ? $0 : nil }
         // brand-new listing with no prior close → flat placeholder (isNewListing marks it as such,
         // NOT a genuine 0%-move hold signal).
         let previousClose = realPreviousClose ?? price
