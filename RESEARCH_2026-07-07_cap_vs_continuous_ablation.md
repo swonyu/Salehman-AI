@@ -69,6 +69,27 @@ monotone payoff. This is a statement about the **signal × regime**, not about t
 
 Does production's half-Kelly concentrate *enough*, or would a **continuous** stronger edge-tilt (NOT a hard cap) help — and does any of it survive a second regime + a delisting-inclusive panel? A half-Kelly-weighted rerun on the same harness is the cheap next step (the runner is reusable at `tools/cap_ablation/`).
 
+## Follow-up (same day) — half-Kelly-shaped EDGE-PROPORTIONAL sizing (run wf_29da3a16)
+
+Tested whether production's edge-proportional (half-Kelly) sizing already captures the
+concentration benefit that the flat-equal-risk base missed. Same frozen panel (no refetch), only
+the base-weight rule changed: **w_i = 0.20 · s_i / max_j(s_j)** (linear in the TSMOM edge proxy,
+capped at the shipped `StockSageKelly.maxFraction`=0.20), applied identically to both arms. Shipped
+functions still compiled verbatim; both verify lenses recompiled bit-for-bit; CONFIRMED.
+
+- Edge-weighting **lifted CONTINUOUS's own** weekly Sharpe 0.174 → **0.211** (DSR 0.998) — sizing by edge helps, as expected.
+- **Like-for-like (exposure-matched vs exposure-matched), the cap's advantage SHRANK ~25-30% but did NOT close:** CAP-1 +8.29→+6.08, CAP-2 +3.86→+3.08, CAP-3 +3.07→+2.37, CAP-5 +1.63→+1.18 bps/wk. CAP-1 (p=0.006) and CAP-3 (p=0.010) survive Bonferroni ×4; CAP-2/CAP-5 do not.
+- **Caveat on the raw headline:** the build agent's "cap advantage grew" compared this run's RAW to the prior RAW — confounded, because the prior equal-risk RAW mechanically under-deployed the small caps (CAP-1 ~2% exposure vs continuous 8%). RAW==exposure-matched this run only because the top name's 0.20 base weight always exceeds heatCap 0.08, so heat-scale binds every week and the renorm is a no-op. The honest comparison is exposure-matched↔exposure-matched (shrinkage, above).
+
+**Updated disposition:** edge-proportional sizing captures ~1/4-1/3 of the concentration benefit
+(confirming production half-Kelly captures *some* of it) but a **residual in-sample concentration
+advantage persists**. This does NOT flip the overarching read — single 2021-26 narrow-leadership
+bull, survivor-only, Kelly-*shaped* (not the shipped fStar/net-EV formula) proxy, in-sample; it does
+NOT overturn the OOS multi-regime Jagannathan-Ma/DeMiguel null, does NOT clear the change bar, stays
+owner-gated (RANKING #10). The residual is regime-consistent (narrow leadership rewards concentration),
+not proven alpha. **The now-sharper owner-scoped question:** does a concentration *tilt* (soft or hard)
+survive an OOS + multi-regime + delisting-inclusive test? That is the gate before it is anything.
+
 ## Artifacts
 
 `tools/cap_ablation/{main.swift, fetch_panel.py, panel.json}` (compiles the 3 shipped closure files verbatim; reusable). Run: wf_b63c1ee6-86c, 4 agents, 494k tokens, 0 errors.
