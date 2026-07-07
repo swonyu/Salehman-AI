@@ -4433,19 +4433,24 @@ struct MarketsView: View {
     /// per-idea bar; the footer reuses the exact established `sizeMetricHelp` wording.
     /// A stage whose input is nil is omitted entirely (nil ⇒ nothing rendered); fewer than
     /// 2 resolved stages ⇒ the whole waterfall renders nothing (no single-bar waterfall).
-    @ViewBuilder private func sizingBrakeWaterfall(_ idea: StockSageIdea) -> some View {
+    private func sizingBrakeStages(_ idea: StockSageIdea) -> [(label: String, value: Double)] {
         let a = idea.advice
-        if a.suggestedWeight > 0 {
-            var stages: [(label: String, value: Double)] = [("Base size", a.suggestedWeight)]
-            if let r = store.regime {
-                let adj = StockSageRegime.adjustedWeight(base: a.suggestedWeight, bias: r.sizingBias, cap: StockSageAdvisor.maxWeight)
-                stages.append(("Regime size", adj))
-            }
-            if let vr = idea.volRegime {
-                stages.append(("Vol-adj size", a.suggestedWeight * vr.sizingMultiplier))
-            }
-            if stages.count >= 2 {
-                let base = stages[0].value
+        guard a.suggestedWeight > 0 else { return [] }
+        var stages: [(label: String, value: Double)] = [("Base size", a.suggestedWeight)]
+        if let r = store.regime {
+            let adj = StockSageRegime.adjustedWeight(base: a.suggestedWeight, bias: r.sizingBias, cap: StockSageAdvisor.maxWeight)
+            stages.append(("Regime size", adj))
+        }
+        if let vr = idea.volRegime {
+            stages.append(("Vol-adj size", a.suggestedWeight * vr.sizingMultiplier))
+        }
+        return stages
+    }
+
+    @ViewBuilder private func sizingBrakeWaterfall(_ idea: StockSageIdea) -> some View {
+        let stages = sizingBrakeStages(idea)
+        if stages.count >= 2 {
+            let base = stages[0].value
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Sizing brakes").font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white)
                     ForEach(stages.indices, id: \.self) { i in
@@ -4473,7 +4478,6 @@ struct MarketsView: View {
                 }
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.04)))
-            }
         }
     }
 
