@@ -169,7 +169,14 @@ enum QASnapshots {
     private static func seedQAPortfolio() -> () -> Void {
         let portfolio = StockSagePortfolio.shared
         let saved = portfolio.positions
-        portfolio.qaSeed([PortfolioPosition(symbol: "NVDA", shares: 30, costBasis: 100.00)])
+        portfolio.qaSeed([
+            PortfolioPosition(symbol: "NVDA", shares: 30, costBasis: 100.00),
+            // QA-3 (2026-07-07 fix round): 1120.SR is the sell-family/bearTrend fixture — seeding
+            // a held position exercises the Held-only chip on a SHORT-plan card (NVDA/7010.SR only
+            // cover the long side). Verify 1120.SR's total conditional-chip count stays ≤
+            // IdeaChipPlan.cap after this seed — see the derivation in the fix-round report.
+            PortfolioPosition(symbol: "1120.SR", shares: 50, costBasis: 80.00),
+        ])
         return { portfolio.qaSeed(saved) }
     }
 
@@ -202,6 +209,16 @@ enum QASnapshots {
             TradeRecord(symbol: "NVDA", side: .long, entry: 190, stop: 185, target: 200,
                         shares: 10, openedAt: now.addingTimeInterval(-86_400 * 4),
                         exitPrice: 188.5, closedAt: now.addingTimeInterval(-86_400 * 2)),  // realizedR = -0.3
+            // QA-1 (2026-07-07 fix round): one hand-derived LOSING closed 7010.SR trade — long
+            // entry 100 / stop 95 / exit 98. riskPerShare = |100-95| = 5; perShare = (98-100) =
+            // -2; realizedR = -2/5 = -0.4R. Exercises the Traded-only chip on 7010.SR (the
+            // vol-brake fixture, no held position) and the brake sheet's dangerSoft negative
+            // Journal line. Keeps total seeded trades at 3 — still < the calibration
+            // minSamples=30 floor (see this function's MONEY-CRITICAL doc above); conviction
+            // stays nil (not an idea-sourced trade), so it never feeds the calibration fit.
+            TradeRecord(symbol: "7010.SR", side: .long, entry: 100, stop: 95, target: nil,
+                        shares: 20, openedAt: now.addingTimeInterval(-86_400 * 8),
+                        exitPrice: 98, closedAt: now.addingTimeInterval(-86_400 * 3)),   // realizedR = -0.4
         ])
         return { store.qaSeed(saved) }
     }
@@ -285,6 +302,11 @@ enum QASnapshots {
         // resolve, i.e. the positive-path proof for the sizing-brake waterfall (NVDA's
         // 250 bars < 273 → volRegime nil → waterfall correctly renders nothing there).
         snap(MarketsView(qaDetailSymbol: "7010.SR"), "markets_idea_detail_brake", "Markets — idea detail sheet (7010.SR vol-brake fixture: sizing waterfall positive path)", .init(width: 700, height: 1600), in: dir)
+        // QA-2 (2026-07-07 fix round): the sizing waterfall's only narrow-width surface — every
+        // other narrow snapshot uses the NVDA fixture, whose 250 bars can't resolve volRegime
+        // (see the comment above), so the waterfall itself was never checked for narrow-width
+        // wrap/clip.
+        snap(MarketsView(qaDetailSymbol: "7010.SR"), "markets_idea_detail_brake_narrow", "Markets — idea detail sheet (7010.SR vol-brake fixture) @ 460pt — the waterfall's only narrow-width surface", .init(width: 460, height: 1600), in: dir)
         // Memory is a SHEET (round-1 audit caught it floating in a 1000×700
         // frame with uncomposited margins) — capture at its natural sheet size.
         snap(MemoryView(),         "memory",       "Memory sheet", .init(width: 500, height: 620), in: dir)
