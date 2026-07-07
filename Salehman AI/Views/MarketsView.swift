@@ -3236,7 +3236,7 @@ struct MarketsView: View {
                 .help("Backtest \(idea.symbol) over 5 years")
                 .accessibilityLabel("Backtest \(idea.symbol)")
             }
-            convictionMeter(a.conviction, color: actionColor(a.action))
+            signalBlocks(a.conviction, color: actionColor(a.action))
                 // F01/F02: wording keyed on the calibration METHOD — identity must read "assumed".
                 .help(store.convictionCalibration.map { cal in
                     cal.method == .identity
@@ -3342,7 +3342,7 @@ struct MarketsView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel({ () -> String in
-            var label = "\(idea.symbol), \(a.action.rawValue), signal strength \(Int(a.conviction * 100)) percent"
+            var label = "\(idea.symbol), \(a.action.rawValue), signal strength \(Int(a.conviction * 100)) out of 100 rules-based, not a probability"
             switch earnFlag {
             case .demoted(let d):     label += ", earnings imminent in about \(d) days — demoted in the rank"
             case .approaching(let d): label += ", earnings approaching in about \(d) days"
@@ -4666,14 +4666,14 @@ struct MarketsView: View {
                 }
 
                 // Conviction meter + honesty caption
-                convictionMeter(a.conviction, color: actionColor(a.action))
+                signalBlocks(a.conviction, color: actionColor(a.action))
                     // F01/F02: wording keyed on the calibration METHOD — identity must read "assumed".
                     .help(store.convictionCalibration.map { cal in
                         cal.method == .identity
                         ? "Signal strength — a rules-based score; win-rate currently ASSUMED equal to conviction (identity floor), not measured from outcomes."
                         : "Signal strength — a rules-based score; win-rate \(cal.method == .platt ? "fitted" : "measured") from \(cal.sampleSize) realized trades."
                     } ?? "Signal strength — a rules-based score, not a probability. Estimated win-rate range ~\(StockSageExpectedValue.assumedWinBandLabel), not a forecast.")
-                Text("Signal strength \(Int(a.conviction * 100))/100 · \(a.regime.rawValue)")
+                Text("Signal strength \(Int(a.conviction * 100)) · \(a.regime.rawValue)")
                     .font(.caption).foregroundStyle(.secondary)
                 // Always-visible disclaimer: meter % must not read as P(win).
                 // One disclaimer only — the trailing clause was removed from the value
@@ -5555,6 +5555,25 @@ struct MarketsView: View {
         .frame(height: 5)
         .accessibilityElement(children: .ignore)
         .accessibilityValue("\(Int(min(max(value, 0), 1) * 100)) percent")
+    }
+
+    /// Signal strength as 5 DISCRETE ordinal blocks — a categorical rules-based rating, deliberately
+    /// NOT a continuous bar or an N/100 fraction (owner-directed 2026-07-07: a "/100" denominator
+    /// reads as P(win) — denominator neglect — which the DSR≈0 reality forbids). `value` 0…1 →
+    /// filled = round(value·5). nil is handled by the caller (the meter simply isn't rendered).
+    private func signalBlocks(_ value: Double, color: Color) -> some View {
+        let v = min(max(value, 0), 1)
+        let filled = Int((v * 5).rounded())
+        return HStack(spacing: 3) {
+            ForEach(0..<5, id: \.self) { i in
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(i < filled ? color : Color.white.opacity(0.10))
+                    .frame(height: 6)
+            }
+        }
+        .frame(height: 6)
+        .accessibilityElement(children: .ignore)
+        .accessibilityValue("\(filled) of 5 signal blocks (rules-based, not a probability)")
     }
 
     private func actionColor(_ a: TradeAdvice.Action) -> Color {
