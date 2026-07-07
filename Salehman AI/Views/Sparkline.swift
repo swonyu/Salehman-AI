@@ -28,6 +28,31 @@ enum SparkSeries {
         guard hi > lo else { return values.map { _ in 0.5 } }
         return values.map { ($0 - lo) / (hi - lo) }
     }
+
+    /// The y-domain [lo, hi] the Sparkline shape actually draws against, EXTENDED to
+    /// include `extra` prices (e.g. a stop/target that fall outside the series' own
+    /// min/max) so an overlay line can be positioned in the same normalized space the
+    /// Shape uses. Never clamps — a price outside [lo, hi] before extension is folded
+    /// into the domain, not silently pinned to the nearest edge (a mis-placed stop/target
+    /// line would be a fabricated visual claim; OSS-borrow B2).
+    /// nil when there is no meaningful range (empty series, or every point + extra identical).
+    nonisolated static func domain(_ values: [Double], extending extra: [Double] = []) -> (lo: Double, hi: Double)? {
+        var lo = values.min()
+        var hi = values.max()
+        for e in extra {
+            lo = min(lo ?? e, e)
+            hi = max(hi ?? e, e)
+        }
+        guard let lo, let hi, hi > lo else { return nil }
+        return (lo, hi)
+    }
+
+    /// Fraction (0 = bottom/lo, 1 = top/hi) of `price` within `domain`. Domain must have
+    /// hi > lo (call `domain(_:extending:)` first and guard its nil case — never derive a
+    /// domain from `price` itself, that would trivially always be in-range).
+    nonisolated static func fraction(_ price: Double, in domain: (lo: Double, hi: Double)) -> Double {
+        (price - domain.lo) / (domain.hi - domain.lo)
+    }
 }
 
 // MARK: - Sparkline (pure SwiftUI Shape)

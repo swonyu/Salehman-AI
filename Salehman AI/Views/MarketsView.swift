@@ -4779,6 +4779,7 @@ struct MarketsView: View {
                     Sparkline(values: idea.spark)
                         .stroke(sparkColor(idea.spark), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                         .frame(height: 64)
+                        .overlay(tradePlanOverlay(idea))
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("Price sparkline, trending \(trendWord), high \(adaptivePrice(idea.spark.max() ?? 0)), low \(adaptivePrice(idea.spark.min() ?? 0))")
                 }
@@ -5811,6 +5812,84 @@ struct MarketsView: View {
         if change > 0.001 { return DS.Palette.successSoft }   // up >0.1%
         if change < -0.001 { return DS.Palette.danger }       // down >0.1%
         return DS.Palette.textSecondary                        // effectively flat → neutral, not a fake "green gain"
+    }
+
+    /// OSS-borrow B2 (TradingView lightweight-charts "plot a trade" price-lines + series
+    /// markers, adapted to the detail-sheet sparkline): stop/target dashed lines, entry→stop
+    /// and entry→target translucent bands, and a last-bar marker for where the plan was
+    /// computed against. Sheet chart ONLY — the card spark is deliberately untouched (too
+    /// small for a legible overlay).
+    ///
+    /// ALL-OR-NOTHING: renders only when stop AND target AND a non-empty spark all resolve.
+    /// A partial plan (e.g. stop but no target) would draw a half-geometry that misrepresents
+    /// the plan, so it renders nothing instead — same honesty posture as the rest of the sheet
+    /// (nil ⇒ no fabricated partial claim). The Sparkline itself is a `Shape`, which
+    /// internally re-normalizes `idea.spark` to its OWN min...max; this overlay recomputes an
+    /// EXTENDED domain (via `SparkSeries.domain(_:extending:)`) that folds in stop/target so
+    /// out-of-range prices genuinely reposition the line rather than being clamped to the
+    /// nearest edge — a clamped line at the wrong height would be a fabricated visual claim.
+    @ViewBuilder
+    private func tradePlanOverlay(_ idea: StockSageIdea) -> some View {
+        if let stop = idea.advice.stopPrice, let target = idea.advice.targetPrice,
+           !idea.spark.isEmpty,
+           let domain = SparkSeries.domain(idea.spark, extending: [stop, target, idea.price]) {
+            let entry = idea.price
+            let stopY = 1 - SparkSeries.fraction(stop, in: domain)     // Sparkline draws 0→bottom, 1→top
+            let targetY = 1 - SparkSeries.fraction(target, in: domain)
+            let entryY = 1 - SparkSeries.fraction(entry, in: domain)
+            GeometryReader { geo in
+                let h = geo.size.height
+                let w = geo.size.width
+                ZStack(alignment: .topLeading) {
+                    // Translucent bands: entry→stop (danger) and entry→target (success).
+                    // Built from the actual Y values, not a long/short assumption — for a
+                    // sell-family idea stop > entry in price terms so stopY < entryY on
+                    // screen, and the band still spans exactly entry↔stop either way.
+                    Rectangle()
+                        .fill(DS.Palette.danger.opacity(0.08))
+                        .frame(width: w, height: abs(stopY - entryY) * h)
+                        .offset(y: min(stopY, entryY) * h)
+                    Rectangle()
+                        .fill(DS.Palette.success.opacity(0.08))
+                        .frame(width: w, height: abs(targetY - entryY) * h)
+                        .offset(y: min(targetY, entryY) * h)
+
+                    // Stop / target dashed lines with a compact trailing label.
+                    tradePlanLine(y: stopY * h, width: w, color: DS.Palette.dangerSoft, label: adaptivePrice(stop))
+                    tradePlanLine(y: targetY * h, width: w, color: DS.Palette.successSoft, label: adaptivePrice(target))
+
+                    // Last-bar marker: the price the plan was computed against. Help text
+                    // references the sheet's existing "computed at X ago" framing without
+                    // repeating its full sentence (that Text already renders lower in the sheet).
+                    Circle()
+                        .fill(DS.Palette.accent)
+                        .frame(width: 6, height: 6)
+                        .position(x: w, y: entryY * h)
+                        .help("Plan computed at \(adaptivePrice(entry)) (latest close) — see \u{201C}Stop & Target computed\u{201D} below.")
+                        .accessibilityLabel("Plan computed at \(adaptivePrice(entry))")
+                }
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)   // the sparkline's own accessibilityLabel above already covers high/low/trend
+        }
+    }
+
+    /// One dashed stop/target line + its trailing price label, positioned at `y` within a
+    /// `width`-wide overlay. Shared by tradePlanOverlay's stop and target lines.
+    private func tradePlanLine(y: CGFloat, width: CGFloat, color: Color, label: String) -> some View {
+        ZStack(alignment: .leading) {
+            Path { p in
+                p.move(to: CGPoint(x: 0, y: y))
+                p.addLine(to: CGPoint(x: width, y: y))
+            }
+            .stroke(color, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+            Text(label)
+                .font(.system(size: mvFont9, weight: .semibold))
+                .foregroundStyle(color)
+                .padding(.horizontal, 3).padding(.vertical, 1)
+                .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 2))
+                .offset(x: 2, y: y - 7)
+        }
     }
 
     // MARK: Empty
