@@ -13,10 +13,20 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 QA="$ROOT/qa"; SNAPS="$QA/snapshots"
-# Newest Debug build wins (DerivedData hash changes when the project moves — the old
-# hardcoded hash pointed at a build of the pre-move repo and captured stale UI).
-APP="${SALEHMAN_APP:-$(ls -dt "$HOME/Library/Developer/Xcode/DerivedData/"Salehman_AI-*"/Build/Products/Debug/Salehman AI.app" 2>/dev/null | head -1)}"
-[ -d "$APP" ] || { echo "❌ Debug app not found."; echo "   Build it first, or set SALEHMAN_APP."; exit 1; }
+# Resolve the DerivedData dir whose WorkspacePath is THIS repo's project — never by
+# mtime. "Newest .app wins" (the previous heuristic) photographed a SIBLING CHECKOUT's
+# binary on 2026-07-07: /Users/saleh/ai (another session's working copy) has its own
+# DerivedData hash, and .app DIRECTORY mtimes don't track rebuilds (the binary inside
+# changes; the bundle dir date doesn't), so a fresh gate build here still ranked older.
+if [ -z "${SALEHMAN_APP:-}" ]; then
+  for d in "$HOME/Library/Developer/Xcode/DerivedData/"Salehman_AI-*/; do
+    wp=$(plutil -extract WorkspacePath raw "$d/info.plist" 2>/dev/null)
+    if [ "$wp" = "$ROOT/Salehman AI.xcodeproj" ]; then APP="$d/Build/Products/Debug/Salehman AI.app"; break; fi
+  done
+fi
+APP="${SALEHMAN_APP:-${APP:-}}"
+[ -d "$APP" ] || { echo "❌ Debug app for $ROOT not found in DerivedData."; echo "   Build it first, or set SALEHMAN_APP."; exit 1; }
+echo "→ capturing with: $APP"
 
 mkdir -p "$QA"
 before=$(stat -f %m "$SNAPS/INDEX.md" 2>/dev/null || echo 0)
