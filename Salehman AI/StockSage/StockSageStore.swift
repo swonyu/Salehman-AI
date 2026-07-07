@@ -1250,7 +1250,14 @@ final class StockSageStore: ObservableObject {
     /// StockSageBuildIdeasDirectTests) inlined — the test target can't be imported here.
     /// Pure + nonisolated so a test can pipe them through buildIdeas without
     /// touching the shared singleton (parallel-test safe).
-    nonisolated static func qaFixtureDefs() -> [StockSageSymbol] {
+    // NOTE — deviation from spec, flagged in the final report: spec said `nonisolated`, but
+    // StockSageSymbol's hand-written init (StockSageModels.swift) has no `nonisolated` marker,
+    // so under this module's default-actor-isolation build setting it is @MainActor-isolated
+    // (unlike StockSagePriceHistory below, whose synthesized memberwise init is nonisolated for
+    // free, and unlike StockSageIdea's init at line 38 which IS explicitly marked nonisolated).
+    // Spec's two-files-only scope forbids editing StockSageModels.swift, so this stays isolated
+    // (main-actor) instead — its only caller, seedQAIdeas, is already on @MainActor.
+    static func qaFixtureDefs() -> [StockSageSymbol] {
         [
             StockSageSymbol(symbol: "NVDA",    market: "NASDAQ"),  // strongBuy, bullTrend
             StockSageSymbol(symbol: "AAPL",    market: "NASDAQ"),  // buy (+ seeded earnings warning)
