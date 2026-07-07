@@ -101,6 +101,29 @@ struct StockSageVolStabilityTests {
         #expect(VS.volStability(closes: c100) == nil)   // 100 closes should return nil
     }
 
+    // §1.A #8: an invalid (flat, vol==0) rolling window is SKIPPED (`continue`) instead of
+    // aborting the whole read (the old `return nil`), and the read still requires ≥ max(5, 60%
+    // of historyWindow=126) = 75 valid windows. Neither behavior was pinned — the other tests use
+    // all-valid series. This pins BOTH the skip and the 75-valid-window floor.
+    @Test func invalidWindowsAreSkippedAndTheMinValidWindowFloorApplies() throws {
+        // 201 constant-vol closes ⇒ 126 rolling windows, all valid. Overwrite EXACTLY 21 closes
+        // [90...110] with a constant ⇒ precisely ONE window (anchor i=110, slice closes[90...110])
+        // is fully flat ⇒ vol 0 ⇒ INVALID. The old return-nil code would abort on it; the new
+        // skip keeps the other 125 valid windows ⇒ non-nil. #require IS the discriminator.
+        var c = flatVolCloses(magnitude: 0.01, bars: 200)      // 201 closes
+        let fill = c[90]
+        for i in 90...110 { c[i] = fill }
+        let skipped = try #require(VS.volStability(closes: c)) // nil under the OLD abort-on-invalid behavior
+        #expect(skipped.sizingReliability > 0 && skipped.sizingReliability <= 1)
+
+        // Now flatten [80...200] (121 closes) ⇒ >51 windows invalid ⇒ fewer than 75 valid ⇒ the
+        // min-valid-window floor returns nil (a spotty sample, honestly refused — not fabricated).
+        var c2 = flatVolCloses(magnitude: 0.01, bars: 200)
+        let fill2 = c2[80]
+        for i in 80...200 { c2[i] = fill2 }
+        #expect(VS.volStability(closes: c2) == nil)            // <75 valid windows → nil (line-106 guard)
+    }
+
     // MARK: - Test 4: sizingReliability ∈ [0,1] and monotone non-increasing across a CoV sweep
 
     @Test func sizingReliabilityInRangeAndMonotoneNonIncreasingAcrossCoVSweep() {
