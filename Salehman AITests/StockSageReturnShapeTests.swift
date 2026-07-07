@@ -44,6 +44,21 @@ struct StockSageReturnShapeTests {
         #expect(!s.caveat.isEmpty)   // caveat-presence
     }
 
+    // DUAL-THRESHOLD discriminator (§1.A #9): isLeftTailed requires BOTH skew < −0.5 AND
+    // downside95 > 0.02. This fixture SATISFIES the skew clause but FAILS the downside clause —
+    // 37×+0.5% + 3×−1.5% gives skew ≈ −3.227 (≪ −0.5) yet downside95 ≈ 0.015 (≤ 0.02), so
+    // isLeftTailed must be FALSE. A regression to the old skew-only threshold makes it TRUE and
+    // fails HERE — this is the only test that pins the 2% downside floor. Hand-derived in
+    // derive_leftrail.swift (returnShape's exact population-variance skew + percentile).
+    @Test func strongNegativeSkewWithTinyDownsideIsNotLeftTailed() {
+        let rets = [Double](repeating: 0.005, count: 37) + [Double](repeating: -0.015, count: 3)
+        let s = try! #require(RS.returnShape(closes: closes(fromReturns: rets)))
+        #expect(s.skewness < -0.5)                    // skew clause SATISFIED (≈ −3.227)
+        #expect(s.downside95 <= 0.02)                 // downside clause FAILS (≈ 0.015)
+        #expect(abs(s.downside95 - 0.015) < 1e-6)     // exact downside pin
+        #expect(s.isLeftTailed == false)              // ⇒ dual-threshold FALSE despite the deep skew
+    }
+
     // <30 returns → nil.  (29 returns = 30 closes.)
     @Test func tooFewReturnsReturnsNil() {
         let rets29 = [Double](repeating: 0.001, count: 29)
