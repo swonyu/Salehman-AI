@@ -68,12 +68,14 @@ final class StockSageMonitor {
                 } else {
                     // Evaluate on LIVE quotes: pull a fresh snapshot before each cycle (no-ops
                     // cleanly when offline / web access is off). SCOPED to `.core` (review
-                    // round-2 finding 1, orchestrator-flagged, owner review pending): this is the
-                    // UNATTENDED background auto-cycle (~45s, indefinitely, while the app runs) —
-                    // pulling Stage 2's full 2,420-name universe on every tick risked a feed
-                    // cooldown that would take the whole app down. User-initiated refreshes
-                    // (manual button, Find-Ideas scan) are UNCHANGED and still pull the full
-                    // universe — see `StockSageStore.refresh(scope:)`'s doc comment.
+                    // round-2 finding 1, orchestrator-flagged; RATIFIED by the owner 2026-07-08 —
+                    // core+watchlist scoping, picked via question, see DEVELOPMENT_LOG.md's
+                    // Equity-2000 stage 2 ship entry): this is the UNATTENDED background
+                    // auto-cycle (~45s, indefinitely, while the app runs) — pulling Stage 2's full
+                    // 2,420-name universe on every tick risked a feed cooldown that would take the
+                    // whole app down. User-initiated refreshes (manual button, Find-Ideas scan)
+                    // are UNCHANGED and still pull the full universe — see
+                    // `StockSageStore.refresh(scope:)`'s doc comment.
                     await StockSageStore.shared.refresh(scope: .core)
                     // CONCURRENCY #2: stop() during the refresh await must not start a whole
                     // evaluation cycle for a monitor the user just turned off.

@@ -301,10 +301,16 @@ struct MarketsView: View {
             // Auto-scan the EV ideas so the board the app lands on is already populated —
             // 0 taps from open to the best move. refreshIdeas self-guards re-entry/ToolPolicy.
             if store.ideas.isEmpty { await store.refreshIdeas() }
-            // Snapshot today's money-velocity (one per UTC day) so the trend can build.
-            let snap = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration)
-            if let wk = snap.weeklyR {
-                velocityHistory.record(weeklyR: wk, bestSymbol: snap.bestSymbol, fastestSymbol: snap.fastestSymbol)
+            // Snapshot today's money-velocity (one per UTC day) so the trend can build. Skipped
+            // when the scan that just ran was cancelled mid-way (post-ship critique fleet,
+            // orchestrator-confirmed): the board is a partial snapshot in that case, and this
+            // history is DURABLE per-day storage — a cancelled-scan snapshot would poison the
+            // trend permanently, not just for this session.
+            if !store.lastScanCancelled {
+                let snap = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration)
+                if let wk = snap.weeklyR {
+                    velocityHistory.record(weeklyR: wk, bestSymbol: snap.bestSymbol, fastestSymbol: snap.fastestSymbol)
+                }
             }
         }
         .sheet(item: $selectedIdea) { ideaDetailSheet($0) }

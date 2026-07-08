@@ -139,6 +139,11 @@ final class StockSageStore: ObservableObject {
     /// shipped it dormant at n=210's single chunk); still directly exercised via
     /// `StockSageScanChunking.shouldThrottle` in tests.
     @Published private(set) var scanThrottled = false
+    /// True when the MOST RECENT `refreshIdeas()` scan was cancelled before reaching scan-end
+    /// (SCAN-END-ONCE commit never ran). Reset to false at the start of every scan. Exists so a
+    /// caller (MarketsView's tab-open `.task`) can skip recording a durable trend snapshot off a
+    /// partial/cancelled board — see the honesty-floor note at that call site.
+    @Published private(set) var lastScanCancelled = false
 
     /// Signal alerts — events (flips, stop/target crossings) detected between
     /// successive Ideas refreshes. Opt-in (off by default); a capped event log.
@@ -347,9 +352,14 @@ final class StockSageStore: ObservableObject {
     }
 
     /// Analyze the worldwide universe on real 1-year candle history and rank the
-    /// results into actionable ideas (strongest buys first). Heavy (one history
-    /// fetch per symbol), so it's user-triggered, never automatic. Non-destructive
-    /// on failure. No-op-with-reason when external access is off.
+    /// results into actionable ideas (strongest buys first). Heavy (one history fetch per
+    /// symbol). NOT purely user-triggered: MarketsView's tab-open `.task` also auto-fires this
+    /// when the board is empty (`if store.ideas.isEmpty { await store.refreshIdeas() }`), on top
+    /// of the explicit "Find ideas" button and "Retry failed" affordance — self-guards re-entry
+    /// via `isLoadingIdeas` either way. Whether that auto-trigger should still pull the FULL
+    /// n=2,420 universe on every empty-board tab-open, vs. a smaller scope, is an OPEN OWNER
+    /// QUESTION as of this writing — not resolved by this comment fix. Non-destructive on
+    /// failure. No-op-with-reason when external access is off.
     func refreshIdeas() async {
         guard !isLoadingIdeas else { return }
         if let reason = ToolPolicy.webToolsDisabledReason() {
@@ -388,6 +398,7 @@ final class StockSageStore: ObservableObject {
     private func performRefreshIdeas() async {
         ideasError = nil
         scanThrottled = false
+        lastScanCancelled = false
         let universe = trackedDefs()
         let total = universe.count
         ideasProgress = (current: 0, total: total)
@@ -406,7 +417,7 @@ final class StockSageStore: ObservableObject {
         let journalTrades = StockSageJournalStore.shared.trades   // read on the main actor before ANY await
         // Benchmark fetched ONCE up front, shared by every chunk's buildIdeas call.
         let benchmark = await StockSageQuoteService.fetchHistory("^GSPC", range: "1y")
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else { lastScanCancelled = true; return }
 
         // ALERTS FIX (review round 1): snapshot the board BEFORE the chunk loop starts
         // publishing. The loop below does `ideas = ranked` after EVERY chunk merges (so the
@@ -426,7 +437,45 @@ final class StockSageStore: ObservableObject {
                                         cache: cache, cachePriceHistories: cachePriceHistories,
                                         benchmark: benchmark, calibration: cal, journalTrades: journalTrades,
                                         onThrottle: { [weak self] in self?.scanThrottled = true })
-        guard !scan.wasCancelled else { return }
+
+        // CANCEL-01 (post-ship critique fleet, orchestrator-confirmed): hoisted ABOVE the
+        // wasCancelled guard. A cancel throws away every chunk history the scan already paid
+        // network cost for unless this best-effort save runs regardless — otherwise a same-day
+        // re-scan re-fetches everything cancel discarded (429-risk). Best-effort bytes only, no
+        // scan-identity semantics (that stays behind the guard below): the delta baseline write
+        // and alerts must NOT run on a cancelled/partial scan.
+        let historyUniverse = Set(universe.map { $0.symbol.uppercased() })
+        let historiesToSave = scan.accumulatedHistories
+        if !historiesToSave.isEmpty {
+            Task.detached { StockSageHistoryCache.from(histories: historiesToSave, universe: historyUniverse, savedAt: Date()).save() }
+        }
+
+        if scan.wasCancelled {
+            lastScanCancelled = true
+            // CANCEL NAMES COVERAGE (post-ship critique fleet, orchestrator-confirmed): a cancel
+            // can land AFTER one or more chunks already published to the board (`ideas` was set
+            // live inside runChunkedScan). Silently returning here would leave `ideasMissing`
+            // describing the OLD scan's gaps and `scanDeltas` describing a baseline the board no
+            // longer matches — a fake-honest board. INVARIANT: partial coverage is NAMED, never
+            // silently truncated. So: if anything published, run a REDUCED commit — mirror the
+            // normal path's missingAfterScan call (universe attempted THIS scan, analyzed =
+            // symbols actually on the published board, stillTracked = current tracked set) so the
+            // existing "N priced · M couldn't be fetched" banner names the un-scanned remainder,
+            // and clear scanDeltas (they'd describe the PREVIOUS baseline against a board that
+            // just changed — an empty dict is an honest absence, not a lie). Deliberately do NOT
+            // write the delta baseline, set ideasUpdated, or run alerts/paper-trade/earnings —
+            // those are SCAN-END-ONCE, full-scan-commit semantics; a cancelled scan never reaches
+            // scan-end.
+            let stillTracked = Set(trackedDefs().map { $0.symbol.uppercased() })
+            let publishedBoardSymbols = Set(scan.ranked.map { $0.symbol.uppercased() })
+            if let commit = Self.cancelledScanCommit(universe: universe.map(\.symbol),
+                                                      publishedBoardSymbols: publishedBoardSymbols,
+                                                      stillTracked: stillTracked) {
+                ideasMissing = commit.ideasMissing
+                scanDeltas = commit.scanDeltas
+            }
+            return
+        }
 
         if scan.firstChunkTotallyFailed {
             ideasError = "Couldn't reach the market feed for analysis — try again."
@@ -438,14 +487,6 @@ final class StockSageStore: ObservableObject {
         // symbol's fetch failure).
         let ranked = scan.ranked
         let accumulatedHistories = scan.accumulatedHistories
-
-        // Persist ALL histories fetched across every chunk this scan for OFFLINE net-cost
-        // validation / backtests (StockSageHistoryCache). Best-effort and DETACHED so the JSON
-        // encode runs off the main actor and never blocks the commit below; ZERO new network —
-        // it saves bytes already downloaded and otherwise discarded after buildIdeas.
-        let historyUniverse = Set(universe.map { $0.symbol.uppercased() })
-        let historiesToSave = accumulatedHistories
-        Task.detached { StockSageHistoryCache.from(histories: historiesToSave, universe: historyUniverse, savedAt: Date()).save() }
 
         // SCAN-END-ONCE (plan step 2): everything below runs exactly once, over the FULL
         // accumulated result — same order/guards as the pre-chunking single-shot scan.
@@ -635,12 +676,32 @@ final class StockSageStore: ObservableObject {
     /// `scanThrottled` banner (a partial retry throttling internally is not "the whole board's scan
     /// paused"). Retry's own semantics are otherwise UNCHANGED: merge into board, stillTracked
     /// reconcile, no snapshot write, no ideasUpdated advance (all below, exactly as before).
+    ///
+    /// CANCEL-BUTTON-DEAD-DURING-RETRY (post-ship critique fleet, orchestrator-confirmed): retained
+    /// in `ideasRefreshTask` exactly like `refreshIdeas`, so the Cancel button (which renders
+    /// whenever `isLoadingIdeas`, true for both operations) actually cancels a retry too — it was
+    /// previously a no-op mid-retry. Thin public wrapper mirrors `refreshIdeas`'s task-retention
+    /// pattern; the work lives in `performRetryFailedIdeas`.
     func retryFailedIdeas() async {
         guard !isLoadingIdeas, !ideasMissing.isEmpty else { return }
         if let reason = ToolPolicy.webToolsDisabledReason() { ideasError = reason; return }
         isLoadingIdeas = true
         defer { isLoadingIdeas = false }
+        let task = Task { await self.performRetryFailedIdeas() }
+        ideasRefreshTask = task
+        await task.value
+        ideasRefreshTask = nil
+    }
+
+    private func performRetryFailedIdeas() async {
         ideasError = nil
+        // PROGRESS-RESEED (post-ship critique fleet, orchestrator-confirmed): mirror
+        // performRefreshIdeas — without this, the previous operation's ideasProgress (e.g. a
+        // finished "2400/2400") stays visible for retry's first frames instead of reflecting the
+        // subset actually being retried.
+        let retryTotal = ideasMissing.count
+        ideasProgress = (current: 0, total: retryTotal)
+        defer { ideasProgress = nil }
         let cal = convictionCalibration                           // read on the main actor before the await hop
         let journalTrades = StockSageJournalStore.shared.trades   // read on the main actor before the await hop
         let retrySet = Set(ideasMissing.map { $0.uppercased() })
@@ -655,7 +716,23 @@ final class StockSageStore: ObservableObject {
         let scan = await runChunkedScan(defs: defs, total: defs.count, startingRanked: ideas,
                                         cache: nil, cachePriceHistories: [:],
                                         benchmark: benchmark, calibration: cal, journalTrades: journalTrades)
-        guard !scan.wasCancelled else { return }
+        if scan.wasCancelled {
+            // Same honesty rule as the full-scan cancel path: if the cancelled retry already
+            // merged some previously-missing symbols onto the board, re-name what's STILL missing
+            // instead of leaving ideasMissing describing symbols that just got fetched (which
+            // would make the "Retry failed" affordance look stuck even after it half-worked).
+            let stillTracked = Set(trackedDefs().map { $0.symbol.uppercased() })
+            let publishedBoardSymbols = Set(scan.ranked.map { $0.symbol.uppercased() })
+            if let commit = Self.cancelledScanCommit(universe: universe.map(\.symbol),
+                                                      publishedBoardSymbols: publishedBoardSymbols,
+                                                      stillTracked: stillTracked) {
+                ideasMissing = commit.ideasMissing
+                // Deliberately do NOT touch scanDeltas here — retry never wrote deltas in the
+                // first place (DEG-02/PLAN_2026-07-07_scan_deltas.md), so there is nothing to
+                // clear; clearing them would erase a valid full-scan baseline over a partial retry.
+            }
+            return
+        }
         guard !scan.accumulatedHistories.isEmpty else {
             ideasError = "Still couldn't reach those symbols — try again later."
             return
@@ -669,6 +746,10 @@ final class StockSageStore: ObservableObject {
         let analyzed = Set(merged.map { $0.symbol.uppercased() })
         ideasMissing = Self.missingAfterScan(universe: universe.map(\.symbol),
                                              analyzed: analyzed, stillTracked: stillTracked)
+        // STALE-THROTTLE-BANNER (post-ship critique fleet, orchestrator-confirmed): a retry that
+        // prices EVERYTHING previously-missing leaves the "Extended scan paused" banner rendering
+        // forever otherwise (scanThrottled is only ever cleared at a FULL scan's start).
+        if ideasMissing.isEmpty { scanThrottled = false }
         // DEG-02: deliberately NOT advancing ideasUpdated here — this path re-analyzes only the
         // FAILED subset, and ideasUpdated drives the whole board's staleness chrome (ideasIsStale
         // chip/dim + its a11y clause). Bumping it on a partial merge would reset that chrome for
@@ -689,6 +770,29 @@ final class StockSageStore: ObservableObject {
             !analyzed.contains($0.uppercased()) &&
             StockSageAllocation.assetClass($0) != "Index"
         }
+    }
+
+    /// Result of `cancelledScanCommit` — nil when a cancel published nothing (true no-op: leave
+    /// `ideasMissing`/`scanDeltas` exactly as they were before this scan started).
+    struct CancelledScanCommit: Equatable {
+        var ideasMissing: [String]
+        var scanDeltas: [String: ScanDelta]   // always [:] — named for call-site clarity, not variance
+    }
+
+    /// CANCEL NAMES COVERAGE (post-ship critique fleet, orchestrator-confirmed): the reduced,
+    /// honest commit `performRefreshIdeas` runs when a scan is cancelled AFTER at least one chunk
+    /// already published to the board. Pure over its inputs so the cancel-commit DECISION (run vs
+    /// no-op, and what it names) is unit-testable without the MainActor store. Mirrors the
+    /// normal-path call to `missingAfterScan` exactly — same three inputs, same semantics — and
+    /// always clears deltas to `[:]` (the previous baseline no longer describes the changed
+    /// board; an empty dict is an honest absence, never a stale claim). Returns nil when nothing
+    /// published (`publishedBoardSymbols` empty) — the caller must leave prior state untouched,
+    /// not overwrite it with an equally-stale "nothing missing".
+    nonisolated static func cancelledScanCommit(universe: [String], publishedBoardSymbols: Set<String>,
+                                                stillTracked: Set<String>) -> CancelledScanCommit? {
+        guard !publishedBoardSymbols.isEmpty else { return nil }
+        let missing = missingAfterScan(universe: universe, analyzed: publishedBoardSymbols, stillTracked: stillTracked)
+        return CancelledScanCommit(ideasMissing: missing, scanDeltas: [:])
     }
 
     /// Build ranked ideas off the main actor (the advisor runs every indicator over each
