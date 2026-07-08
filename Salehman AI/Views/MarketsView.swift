@@ -3175,6 +3175,18 @@ struct MarketsView: View {
         // once per render via StockSageJournal.historyBySymbol / StockSagePortfolio.holdingBySymbol.
         let held = holdingsBySymbol[idea.symbol.uppercased()]
         let jh = historyBySymbol[idea.symbol.uppercased()]
+        // PERF-5: hoisted once — the chips row and the accessibility label closure below both
+        // used to recompute these independently (near-doubling the card's cost). Same guard
+        // chains as the render sites they replace, so this is parity by construction.
+        let ev = StockSageExpectedValue.ev(for: idea, calibration: store.convictionCalibration)
+        let vel = ideaSort == .velocity
+            ? StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
+            : nil
+        let atRisk: PositionSize? = {
+            guard let stop = a.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
+                  let rp = StockSageInput.percent(sizerRiskPct) else { return nil }
+            return StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop)
+        }()
         let hovered = hoveredIdeaID == idea.id
         // Per-card staleness — adds a clock badge when the board is stale, same TRIGGER as
         // watchlist signalCard's sym.isStale() pattern. The dim amount DELIBERATELY diverges:
@@ -3295,7 +3307,7 @@ struct MarketsView: View {
                 // Opportunity signals after warnings.
                 // "(gross)" label — consistent with fast-lane row.
                 // monospacedDigit + minWidth so EV aligns across cards.
-                if let ev = StockSageExpectedValue.ev(for: idea, calibration: store.convictionCalibration) {
+                if let ev {
                     Text(String(format: "%+.2fR EV (gross)", ev.evR))
                         .font(.system(size: fontChipLabel, weight: .semibold).monospacedDigit())
                         .foregroundStyle(ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft)
@@ -3378,8 +3390,7 @@ struct MarketsView: View {
             HStack(spacing: IdeaSpace.chipGap) {
                 // When sorted by velocity, show the sort key first so the
                 // user can compare #3 vs #5 without opening the detail sheet.
-                if ideaSort == .velocity,
-                   let vel = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
+                if ideaSort == .velocity, let vel {
                     ideaMetric("Vel.", String(format: "%+.3fR/d", vel), color: DS.Palette.successSoft)
                         .help("Gross EV/day. The board ORDERS by net-adjusted growth rate (costs + variance haircuts), which can differ — two cards with similar gross Vel. may rank apart.")
                 }
@@ -3397,9 +3408,7 @@ struct MarketsView: View {
                 // same guard chain + same sizer call as bestOpportunityCard's "Size it now" line
                 // (line ~3563) so this can never diverge from the shipped sizer's math. nil on
                 // any unparseable/missing input ⇒ nothing new renders.
-                if let stop = a.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
-                   let rp = StockSageInput.percent(sizerRiskPct),
-                   let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
+                if let stop = a.stopPrice, let ps = atRisk, let acct = StockSageInput.positiveAmount(sizerAccount) {
                     ideaMetric("At risk", "\(approxAmount(ps.dollarsAtRisk, symbol: idea.symbol)) · \(ps.shares) sh", color: DS.Palette.warningSoft)
                         .help("Sizes the LOSS: a stop-out at \(adaptivePrice(stop)) costs ~\(approxAmount(ps.dollarsAtRisk, symbol: idea.symbol).dropFirst()) (\(String(format: "%.2f", ps.dollarsAtRisk / acct * 100))% of the account). Not a profit promise.")
                 }
@@ -3511,14 +3520,13 @@ struct MarketsView: View {
                 case .actionChanged(let previous): label += ", was \(previous)"
                 }
             }
-            if let ev = StockSageExpectedValue.ev(for: idea, calibration: store.convictionCalibration) {
+            if let ev {
                 label += String(format: ", %+.2fR EV gross", ev.evR)
             }
             if visibleChips.contains(.confluence) {
                 label += ", " + (a.confluenceNote ?? "three-timeframe confluence")
             }
-            if ideaSort == .velocity,
-               let vel = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
+            if ideaSort == .velocity, let vel {
                 label += String(format: ", velocity %+.3fR per day", vel)
             }
             label += ", price \(adaptivePrice(idea.price))"
@@ -3528,9 +3536,7 @@ struct MarketsView: View {
             } else if let stop = a.stopPrice {
                 label += ", stop \(adaptivePrice(stop))"
             }
-            if let stop = a.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
-               let rp = StockSageInput.percent(sizerRiskPct),
-               let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
+            if let ps = atRisk {
                 label += ", at risk \(approxAmount(ps.dollarsAtRisk, symbol: idea.symbol)), \(ps.shares) shares"
             }
             if let target = a.targetPrice {
