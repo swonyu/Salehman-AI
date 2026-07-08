@@ -446,8 +446,9 @@ final class StockSageStore: ObservableObject {
         let (closes, opens) = StockSagePaperTrader.step(
             current: store.trades, ideas: ideas, histories: histories, openDate: Date(),
             costsFor: { StockSageNetEdge.defaultCosts(forSymbol: $0) })
-        for c in closes { store.applyClose(c) }
-        for o in opens { store.add(o) }
+        // MEM-01a: one mutation + ONE UserDefaults save instead of a per-call re-encode of the
+        // whole (growing) array for every close and every open this cycle.
+        store.apply(closes: closes, opens: opens)
     }
 
     /// Re-fetch ONLY the symbols the last scan couldn't price and merge them in, re-ranking.

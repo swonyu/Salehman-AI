@@ -293,6 +293,72 @@ struct StockSagePaperTraderTests {
         #expect(store.open.count == 1 && store.closed.count == 1)
     }
 
+    // MARK: MEM-01a — batch apply(closes:opens:) end-state equivalence to the per-call loop
+    //
+    // `save()` is private with no call-count seam (adding one would be new production surface
+    // for a test-only need — not worth it for a single production call site). Verified instead:
+    // (1) END-STATE equivalence below — same `trades` array, same order, as the original loop
+    //     (`for c in closes { applyClose(c) }; for o in opens { add(o) }`), on TWO independent
+    //     stores built one each way; (2) BY CONSTRUCTION — `apply(closes:opens:)`'s body (read
+    //     in the diff) contains exactly ONE `save()` call after the mutations, vs. the loop's
+    //     one `save()` per `applyClose`/`add` invocation (N+M calls for N closes + M opens).
+
+    @Test func batchApplyEndStateMatchesTheLoopItReplaces() {
+        let (loopStore, loopDefaults, loopSuite) = isolatedStore()
+        defer { loopDefaults.removePersistentDomain(forName: loopSuite) }
+        let (batchStore, batchDefaults, batchSuite) = isolatedStore()
+        defer { batchDefaults.removePersistentDomain(forName: batchSuite) }
+
+        // Seed both stores identically: two open trades (AAA, BBB) before this "cycle".
+        let a = StockSagePaperTrader.open(from: idea("AAA", price: 100, .buy, stop: 90, target: 120), at: d(0))!
+        let b = StockSagePaperTrader.open(from: idea("BBB", price: 50, .buy, stop: 45, target: 60), at: d(0))!
+        loopStore.add(a); loopStore.add(b)
+        batchStore.add(a); batchStore.add(b)
+
+        // This cycle: AAA closes, two NEW paper trades open (CCC, DDD) — mirrors updatePaperTrades'
+        // (closes, opens) from StockSagePaperTrader.step.
+        var closedA = a; closedA.exitPrice = 118; closedA.closedAt = d(2)
+        let c = StockSagePaperTrader.open(from: idea("CCC", price: 30, .buy, stop: 27, target: 36), at: d(2))!
+        let e = StockSagePaperTrader.open(from: idea("DDD", price: 200, .buy, stop: 180, target: 240), at: d(2))!
+
+        // Old path: the loop this fix replaces.
+        for close in [closedA] { loopStore.applyClose(close) }
+        for open in [c, e] { loopStore.add(open) }
+
+        // New path: one batch call.
+        batchStore.apply(closes: [closedA], opens: [c, e])
+
+        // Same symbols, same order, same open/closed state.
+        #expect(batchStore.trades.map(\.id) == loopStore.trades.map(\.id))
+        #expect(batchStore.trades.map(\.symbol) == loopStore.trades.map(\.symbol))
+        #expect(batchStore.trades.map(\.isOpen) == loopStore.trades.map(\.isOpen))
+        #expect(batchStore.trades.count == 4)
+        // The specific end-state both must reach — hand-derived in /tmp/derive_batch_order2.swift,
+        // INCLUDING the seed step (add(a); add(b) already leaves [BBB, AAA], B before A, since
+        // each add is insert(at: 0)): seed [BBB, AAA] -> AAA replaced in place by its closed
+        // version -> [BBB, AAA(closed)] -> opens CCC then DDD each insert(at: 0) -> [DDD, CCC,
+        // BBB, AAA(closed)].
+        #expect(batchStore.trades.map(\.symbol) == ["DDD", "CCC", "BBB", "AAA"])
+        #expect(batchStore.trades.first(where: { $0.symbol == "AAA" })?.isOpen == false)
+        #expect(batchStore.trades.first(where: { $0.symbol == "BBB" })?.isOpen == true)
+        #expect(batchStore.trades.first(where: { $0.symbol == "CCC" })?.isOpen == true)
+
+        // Round-trips from UserDefaults too — the ONE save() actually persisted the full end state.
+        let reloaded = StockSagePaperTradeStore(defaults: batchDefaults, key: "stocksage.papertrades.v1")
+        #expect(reloaded.trades.count == 4)
+        #expect(reloaded.trades.first(where: { $0.symbol == "AAA" })?.isOpen == false)
+    }
+
+    @Test func batchApplyIsANoOpWhenBothListsAreEmpty() {
+        let (store, defaults, suite) = isolatedStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let a = StockSagePaperTrader.open(from: idea("AAA", price: 100, .buy, stop: 90, target: 120), at: d(0))!
+        store.add(a)
+        store.apply(closes: [], opens: [])
+        #expect(store.trades.count == 1)
+        #expect(store.trades.first?.id == a.id)
+    }
+
     // MARK: forwardStats — the FORWARD net-of-cost milestone read (DSR/PSR) on the paper record
 
     /// A CLOSED long paper trade with a chosen realized R: entry 100, stop 90 (risk 10),

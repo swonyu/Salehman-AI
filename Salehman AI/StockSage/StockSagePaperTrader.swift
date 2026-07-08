@@ -213,6 +213,25 @@ final class StockSagePaperTradeStore: ObservableObject {
         save()
     }
 
+    /// MEM-01a: batch counterpart to calling `applyClose` then `add` in a loop, one per element —
+    /// each of those calls re-encodes the WHOLE (growing) `trades` array to UserDefaults, so a
+    /// cycle with N closes + M opens paid N+M full-array encodes. This mutates `trades` once and
+    /// saves once. End state is IDENTICAL to `for c in closes { applyClose(c) }; for o in opens
+    /// { add(o) }`: closes replace in place by id (order-independent — distinct ids), opens are
+    /// each `insert(at: 0)`, which — applied in loop order — ends up REVERSED at the front
+    /// (opens = [o1,o2] inserted one at a time yields [o2,o1,...]); `opens.reversed()` replicates
+    /// that in one `insert(contentsOf:at:)`. A no-op close (id not found — mirrors applyClose's
+    /// own guard) is skipped rather than silently appended.
+    func apply(closes: [TradeRecord], opens: [TradeRecord]) {
+        guard !closes.isEmpty || !opens.isEmpty else { return }
+        for c in closes {
+            guard let i = trades.firstIndex(where: { $0.id == c.id }) else { continue }
+            trades[i] = c
+        }
+        trades.insert(contentsOf: opens.reversed(), at: 0)
+        save()
+    }
+
     func remove(_ id: UUID) { trades.removeAll { $0.id == id }; save() }
     /// Owner "clear paper history" — wipes the paper record only (the real journal is untouched).
     func reset() { trades = []; save() }
