@@ -252,6 +252,10 @@ final class StockSageMonitor {
         guard !prices.isEmpty else { return }
         let ideas = StockSageStore.shared.ideas
         guard !ideas.isEmpty else { return }
+        // ALERT-HELD-1: looked up ONCE per cycle (not per idea) — a stop-breach/target-hit push
+        // is the single most decision-relevant alert, so it should say whether the owner actually
+        // has a position on. Idea alerts ONLY — sendPriceAlert (user-set price alerts) is untouched.
+        let holdingBySymbol = StockSagePortfolio.holdingBySymbol(in: StockSagePortfolio.shared.positions)
         for idea in ideas {
             guard let price = prices[idea.symbol.uppercased()], price > 0 else { continue }
             // First sighting this session: seed the baseline rather than claim a crossing that
@@ -265,14 +269,21 @@ final class StockSageMonitor {
                 stop: idea.advice.stopPrice, target: idea.advice.targetPrice,
                 lastAlertedRecommendation: nil
             ), Self.isPushableIdeaAlert(alert) else { continue }
-            await sendIdeaAlert(alert)
+            await sendIdeaAlert(alert, held: holdingBySymbol[idea.symbol.uppercased()])
         }
     }
 
-    private func sendIdeaAlert(_ alert: StockSageAlert) async {
+    private func sendIdeaAlert(_ alert: StockSageAlert, held: AggregatedHolding?) async {
         let content = UNMutableNotificationContent()
         content.title = "\(alert.kind.rawValue): \(alert.symbol)"
-        content.body = alert.reason
+        // ALERT-HELD-1: display-text only — held context makes the single most decision-relevant
+        // push (stop breach / target hit) actionable at a glance without opening the app.
+        if let held, held.shares > 0 {
+            let shares = held.shares == held.shares.rounded() ? String(format: "%.0f", held.shares) : String(format: "%.2f", held.shares)
+            content.body = "\(alert.reason), you hold \(shares) sh"
+        } else {
+            content.body = alert.reason
+        }
         content.sound = .default
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         try? await UNUserNotificationCenter.current().add(request)
