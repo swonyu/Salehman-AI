@@ -35,6 +35,25 @@ enum StockSageScanDelta {
         }
         return out
     }
+
+    /// DEG-01: build the NEXT baseline to persist after a full scan. Starts from `ranked`
+    /// (this scan's freshly-priced results), then CARRIES FORWARD the `previous` baseline's
+    /// entry for any symbol in `missingButTracked` (still on the board, just not priced this
+    /// scan — feed miss/429). Without this, a merely-throttled symbol drops out of the
+    /// baseline and the NEXT healthy scan renders a false "New" chip for a name that was
+    /// never actually new. Case-insensitive lookup into `previous`, same convention as
+    /// `deltas` above; keys written back to the baseline use `ranked`'s original casing
+    /// (unaffected — carried-forward symbols come from `missingButTracked`, original casing
+    /// from the universe list).
+    nonisolated static func nextBaseline(ranked: [StockSageIdea], missingButTracked: [String],
+                                         previous: [String: String]) -> [String: String] {
+        var out = Dictionary(uniqueKeysWithValues: ranked.map { ($0.symbol, $0.advice.action.rawValue) })
+        let prevByUpper = Dictionary(uniqueKeysWithValues: previous.map { ($0.key.uppercased(), $0.value) })
+        for sym in missingButTracked {
+            if let prevAction = prevByUpper[sym.uppercased()] { out[sym] = prevAction }
+        }
+        return out
+    }
 }
 
 /// Persisted "previous full scan" baseline (UserDefaults JSON) — symbol → action label.

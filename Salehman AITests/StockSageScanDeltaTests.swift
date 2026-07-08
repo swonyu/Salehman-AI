@@ -58,4 +58,38 @@ struct StockSageScanDeltaTests {
         let result = StockSageScanDelta.deltas(current: current, previous: [:])
         #expect(result.isEmpty)   // absence of baseline renders nothing, never "everything is new"
     }
+
+    // MARK: - DEG-01: carry-forward baseline for missing-but-tracked symbols
+    //
+    // Hand-derived per DEG-01 (critique fleet #2): baseline {A: Buy, B: Hold}; this scan only
+    // priced A (B is missing-but-tracked — feed miss/429). Without carry-forward, B silently
+    // drops from the next baseline, so a later scan that prices B again (unchanged, still
+    // Hold) sees no previous entry for B and wrongly reports "New" — B was never new, it was
+    // merely throttled once. Expected: nextBaseline == {A: "Buy", B: "Hold"} (B's PRIOR entry
+    // carried forward unchanged, not overwritten and not dropped).
+
+    @Test func missingButTrackedSymbolCarriesForwardPriorBaseline() {
+        let previous = ["A": "Buy", "B": "Hold"]
+        let ranked = [idea("A", .buy)]              // B missing this scan (429/feed miss)
+        let missing = ["B"]                          // still tracked, just unpriced
+        let next = StockSageScanDelta.nextBaseline(ranked: ranked, missingButTracked: missing, previous: previous)
+        #expect(next == ["A": "Buy", "B": "Hold"])   // B retained from prior baseline, unchanged
+
+        // Follow-up scan: B reappears unchanged (still Hold) — must NOT be flagged "New",
+        // because the carried-forward baseline already knew about it.
+        let followUpCurrent = [idea("A", .buy), idea("B", .hold)]
+        let followUpDeltas = StockSageScanDelta.deltas(current: followUpCurrent, previous: next)
+        #expect(followUpDeltas["B"] == nil)          // no delta chip — B was never actually new
+    }
+
+    @Test func missingButTrackedSymbolWithNoPriorEntryStaysAbsent() {
+        // A symbol missing this scan that was NEVER in the previous baseline (e.g. just added
+        // to tracking, first scan throttled it) has nothing to carry forward — it simply
+        // stays absent from the next baseline, same as before this fix.
+        let previous = ["A": "Buy"]
+        let ranked = [idea("A", .buy)]
+        let missing = ["C"]                           // never seen before, unpriced this scan
+        let next = StockSageScanDelta.nextBaseline(ranked: ranked, missingButTracked: missing, previous: previous)
+        #expect(next == ["A": "Buy"])                 // C absent, not fabricated as anything
+    }
 }

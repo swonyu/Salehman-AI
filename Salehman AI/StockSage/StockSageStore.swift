@@ -397,13 +397,27 @@ final class StockSageStore: ObservableObject {
             let fired = StockSageAlerts.detect(previous: ideas, current: ranked)
             if !fired.isEmpty { alerts = Array((fired + alerts).prefix(Self.maxAlerts)) }
         }
+        // Partial success is honest success: keep the names that priced, and NAME the
+        // ones that didn't so the EV ranking isn't silently computed on a subset. Computed
+        // HERE (before the snapshot save below, DEG-01) — `analyzed`/`ideasMissing` need no
+        // new await, everything they read (`built`, `stillTracked`) already exists.
+        let analyzed = Set(built.map { $0.symbol.uppercased() })
+        // Indices are DELIBERATELY skipped by buildIdeas (not buyable) — don't report them as fetch
+        // failures, or ~17 healthy index tickers show a permanent "couldn't be fetched" with a retry
+        // button that can never clear.
+        let missing = Self.missingAfterScan(universe: universe.map(\.symbol),
+                                            analyzed: analyzed, stillTracked: stillTracked)
+        ideasMissing = missing
         // Scan deltas ("New" / "was <Action>" chips): compute vs the PRE-refresh persisted
         // baseline, THEN persist the new scan's map as the next baseline. Only this full-scan
         // commit writes the snapshot — retryFailedIdeas (partial) and seedQAIdeas (QA fixture)
         // deliberately never call save() (PLAN_2026-07-07_scan_deltas.md).
         let snapshotStore = StockSageScanSnapshotStore.shared
         scanDeltas = StockSageScanDelta.deltas(current: ranked, previous: snapshotStore.entries)
-        let nextBaseline = Dictionary(uniqueKeysWithValues: ranked.map { ($0.symbol, $0.advice.action.rawValue) })
+        // DEG-01: symbols missing-but-still-tracked (feed miss/429 THIS scan) carry their PRIOR
+        // baseline entry forward instead of dropping out — see nextBaseline's doc comment.
+        let nextBaseline = StockSageScanDelta.nextBaseline(ranked: ranked, missingButTracked: missing,
+                                                            previous: snapshotStore.entries)
         snapshotStore.save(entries: nextBaseline)
         ideas = ranked
         // FORWARD PAPER TRADING: auto-open a fake-money position for each long-actionable idea and mark
@@ -413,14 +427,6 @@ final class StockSageStore: ObservableObject {
         // Populate earnings for the top names (non-blocking) so the imminent-earnings demotion +
         // warnings fire on the boards, not only on detail-expand. Cached-once → cheap after first load.
         Task { await refreshEarningsForTopIdeas() }
-        // Partial success is honest success: keep the names that priced, and NAME the
-        // ones that didn't so the EV ranking isn't silently computed on a subset.
-        let analyzed = Set(built.map { $0.symbol.uppercased() })
-        // Indices are DELIBERATELY skipped by buildIdeas (not buyable) — don't report them as fetch
-        // failures, or ~17 healthy index tickers show a permanent "couldn't be fetched" with a retry
-        // button that can never clear.
-        ideasMissing = Self.missingAfterScan(universe: universe.map(\.symbol),
-                                             analyzed: analyzed, stillTracked: stillTracked)
         ideasUpdated = Date()
     }
 
