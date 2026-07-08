@@ -3053,7 +3053,9 @@ struct MarketsView: View {
                     }
                 }
                 Spacer()
-                if !displayedIdeas.isEmpty {   // matches what would actually be copied (post sort+filter)
+                // EXPORT-03: sample/QA-seeded prices are indistinguishable from live once pasted —
+                // hide the export entirely rather than caveat it.
+                if !displayedIdeas.isEmpty && !store.isSampleData {   // matches what would actually be copied (post sort+filter)
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(StockSageIdeasCSV.csv(displayedIdeas), forType: .string)
