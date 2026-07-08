@@ -2909,7 +2909,7 @@ struct MarketsView: View {
                         .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 12)
                 } else {
                     ideasSummaryStrip(displayedIdeas)
-                    VStack(spacing: DS.Space.sm) {
+                    LazyVStack(spacing: DS.Space.sm) {
                         ForEach(displayedIdeas) { ideaCard($0) }
                     }
                     .transition(.opacity)
