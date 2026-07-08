@@ -170,6 +170,14 @@ enum StockSageQuoteService {
         return parseHistory(data, symbol: symbol)
     }
 
+    /// Per-slot stagger inside `fetchHistories`' TaskGroup (PLAN_2026-07-08_equity2000.md
+    /// Stage 1 step 4): each task sleeps `slot index × historyPacingInterval` before firing
+    /// its request, spreading a batch's requests instead of bursting all `concurrency` of
+    /// them in the same instant. Tunable — raise it if a future universe size still draws
+    /// 429s at this spacing; applies ONLY to history fetches (`fetchQuotes` is untouched —
+    /// the plan scopes pacing to the heavier, more failure-prone bulk-history path).
+    nonisolated static let historyPacingInterval: Duration = .milliseconds(120)
+
     /// Fetch candle histories for many symbols concurrently (bounded fan-out),
     /// keyed by uppercased requested symbol. `[:]` when external access is off.
     static func fetchHistories(for symbols: [String], range: String = "1y", concurrency: Int = 6,
@@ -182,7 +190,12 @@ enum StockSageQuoteService {
         var completed = 0
         for chunk in chunks {
             let results: [StockSagePriceHistory] = await withTaskGroup(of: StockSagePriceHistory?.self) { group in
-                for symbol in chunk { group.addTask { await fetchHistory(symbol, range: range) } }
+                for (slot, symbol) in chunk.enumerated() {
+                    group.addTask {
+                        if slot > 0 { try? await Task.sleep(for: historyPacingInterval * slot) }
+                        return await fetchHistory(symbol, range: range)
+                    }
+                }
                 var acc: [StockSagePriceHistory] = []
                 for await h in group where h != nil { acc.append(h!) }
                 return acc

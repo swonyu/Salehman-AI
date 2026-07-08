@@ -128,6 +128,12 @@ final class StockSageStore: ObservableObject {
     /// Symbols the last analysis couldn't fetch history for (feed miss / rate-limit) —
     /// surfaced so the board never silently ranks on a partial universe.
     @Published private(set) var ideasMissing: [String] = []
+    /// THROTTLE FALLBACK SCAFFOLD (Stage 1, PLAN_2026-07-08_equity2000.md): true when a
+    /// chunk beyond the first returned < 30% coverage (429-storm signature) and the scan
+    /// stopped launching further chunks. Completed chunks' results stay on the board;
+    /// `ideasMissing` names the rest. At today's n=210 (single-ish chunk) this is dormant —
+    /// exercised via `StockSageScanChunking.shouldThrottle` in tests, not reachable live yet.
+    @Published private(set) var scanThrottled = false
 
     /// Signal alerts — events (flips, stop/target crossings) detected between
     /// successive Ideas refreshes. Opt-in (off by default); a capped event log.
@@ -341,67 +347,155 @@ final class StockSageStore: ObservableObject {
         defer { isLoadingIdeas = false }   // clears on EVERY path: success, feed-failure early-return, AND cancel
         let task = Task { await self.performRefreshIdeas() }
         ideasRefreshTask = task
-        // Auto-cancel after 120 s so the spinner never hangs on a pathological network stall.
-        // Cancelling the work task triggers the isCancelled guards in performRefreshIdeas; the
-        // defer above then clears isLoadingIdeas on the main actor without touching UI state here.
-        let watchdog = Task {
-            try? await Task.sleep(for: .seconds(120))
-            if !Task.isCancelled { task.cancel() }
-        }
+        // The 120s watchdog is now PER-CHUNK (armed inside performRefreshIdeas around each
+        // chunk's fetch+build) rather than one clock for the whole scan — a stall kills the
+        // current chunk, not chunks already committed. This outer task has no watchdog of its
+        // own; it simply awaits the (self-bounding) chunked work.
         await task.value                   // keep refreshIdeas awaitable so callers see populated `ideas`
-        watchdog.cancel()                  // work finished in time — disarm the watchdog
         ideasRefreshTask = nil
     }
 
     /// The heavy ideas scan, run as a cancellable child task. MainActor-isolated (inherited),
-    /// so no actor hops are added. Cancellation stops it applying stale results.
+    /// so no actor hops are added. Cancellation (from `cancelIdeasRefresh` or a chunk watchdog)
+    /// stops it applying stale results.
+    ///
+    /// CHUNKED PROGRESSIVE SCAN (PLAN_2026-07-08_equity2000.md Stage 1): `trackedDefs()` is
+    /// split into `StockSageScanChunking.chunks` (~250 wide; chunk 0 is always the array's
+    /// natural head, so the curated Saudi-first core scans and appears on the board first).
+    /// Each chunk is fetched, built, and MERGED into `ideas` independently — replace-by-symbol,
+    /// re-sorted, board published — so the board grows live instead of waiting for the whole
+    /// universe. At today's n=210 universe this is a SINGLE chunk, so the merge loop runs once
+    /// and the observable behavior is byte-identical to the pre-chunking single-shot scan.
+    /// SCAN-END-ONCE semantics (delta baseline with the DEG-01 missing-but-tracked carry-forward,
+    /// missingAfterScan, history-cache save, paper trades, earnings kick, and alert detection)
+    /// all run exactly once, after the FINAL chunk, over the accumulated full-scan result —
+    /// never per chunk. (`newListings` is untouched here, matching the pre-chunking scan —
+    /// this store's ideas path has never written it; only the separate quote-refresh path does.)
     private func performRefreshIdeas() async {
         ideasError = nil
+        scanThrottled = false
         let universe = trackedDefs()
         let total = universe.count
         ideasProgress = (current: 0, total: total)
         defer { ideasProgress = nil }   // clear on EVERY exit (success + the cancel/feed-failure early-returns), not just success
-        // Fetch the benchmark (^GSPC) in parallel so each idea can be scored on relative
-        // strength vs the index; nil on failure → ideas degrade gracefully to absolute signals.
-        async let benchmarkTask = StockSageQuoteService.fetchHistory("^GSPC", range: "1y")
-        let histories = await StockSageQuoteService.fetchHistories(for: universe.map(\.symbol), onProgress: { [weak self] n in
-            self?.ideasProgress = (current: n, total: total)
-        })
-        let benchmark = await benchmarkTask
+
+        let cache = StockSageHistoryCache.load()   // loaded ONCE at scan start (plan step 3)
+        let cal = convictionCalibration                           // read on the main actor before ANY await
+        let journalTrades = StockSageJournalStore.shared.trades   // read on the main actor before ANY await
+        // Benchmark fetched ONCE up front, shared by every chunk's buildIdeas call.
+        let benchmark = await StockSageQuoteService.fetchHistory("^GSPC", range: "1y")
         guard !Task.isCancelled else { return }
 
-        guard !histories.isEmpty else {
+        let chunks = StockSageScanChunking.chunks(universe)
+        var accumulatedHistories: [String: StockSagePriceHistory] = [:]
+        var ranked: [StockSageIdea] = []
+        var firstChunkTotallyFailed = false
+
+        for (chunkIndex, chunkDefs) in chunks.enumerated() {
+            guard !Task.isCancelled else { break }
+
+            // CACHE-AWARE SKIP (plan step 3): serve today's-already-fresh symbols from disk,
+            // fetch only the rest. `cache == nil` (no cache yet) ⇒ everyone fetches, same as before.
+            let symbols = chunkDefs.map(\.symbol)
+            let (fromCache, toFetch) = StockSageScanChunking.partitionByCacheFreshness(symbols: symbols, cache: cache)
+            let cachePriceHistories = cache?.priceHistories() ?? [:]
+            var cachedHistories: [String: StockSagePriceHistory] = [:]
+            for sym in fromCache {
+                if let h = cachePriceHistories[sym.uppercased()] { cachedHistories[sym.uppercased()] = h }
+            }
+
+            // PER-CHUNK 120s watchdog: races this chunk's fetch+build against a timer. A timeout
+            // cancels the chunk's own child task (not the whole scan) — completed chunks before
+            // it stay committed; this chunk's (and every later chunk's) symbols land in
+            // ideasMissing via the scan-end-once missingAfterScan derivation.
+            let priorPriced = accumulatedHistories.count + cachedHistories.count   // this chunk's cache hits already "priced", not fetched
+            let chunkWork = Task { () -> (histories: [String: StockSagePriceHistory], built: [StockSageIdea]) in
+                let fetched = await StockSageQuoteService.fetchHistories(for: toFetch, onProgress: { [weak self] n in
+                    self?.ideasProgress = (current: priorPriced + n, total: total)
+                })
+                let merged = cachedHistories.merging(fetched) { _, new in new }
+                guard !merged.isEmpty else { return (merged, []) }
+                let built = await Self.buildIdeas(defs: chunkDefs, histories: merged, benchmark: benchmark,
+                                                  calibration: cal, journalTrades: journalTrades)
+                return (merged, built)
+            }
+            let chunkWatchdog = Task {
+                try? await Task.sleep(for: .seconds(120))
+                if !Task.isCancelled { chunkWork.cancel() }
+            }
+            let (chunkHistories, built) = await chunkWork.value
+            chunkWatchdog.cancel()
+            let chunkTimedOut = chunkWork.isCancelled
+
+            let attempted = symbols.count
+            let priced = chunkHistories.count
+
+            if chunkIndex == 0 {
+                // Legacy total-failure path — the FIRST chunk's coverage-guard/empty-feed bail
+                // is the pre-chunking behavior verbatim: a fully-failed first chunk aborts the
+                // whole scan (nothing to show, nothing to merge).
+                guard !chunkHistories.isEmpty else {
+                    firstChunkTotallyFailed = true
+                    break
+                }
+            } else if StockSageScanChunking.shouldThrottle(chunkIndex: chunkIndex, priced: priced, attempted: attempted) {
+                // THROTTLE FALLBACK SCAFFOLD (plan step 5): a later chunk cratered (<30%
+                // coverage, the 429-storm signature) — stop launching further chunks. This
+                // chunk's own partial results still merge below (partial success is honest
+                // success); only chunks AFTER this one never launch.
+                scanThrottled = true
+            }
+
+            accumulatedHistories.merge(chunkHistories) { _, new in new }
+            ideasProgress = (current: accumulatedHistories.count, total: total)
+
+            if !built.isEmpty {
+                // MERGE (retryFailedIdeas' precedent): replace-by-symbol, then re-sort. The
+                // post-await stillTracked reconcile runs once, at scan end, over the final `ranked`.
+                let newSyms = Set(built.map { $0.symbol.uppercased() })
+                ranked = (ranked.filter { !newSyms.contains($0.symbol.uppercased()) } + built)
+                    .sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
+                ideas = ranked   // publish — board grows live as each chunk merges in
+            }
+
+            if chunkTimedOut || (chunkIndex > 0 && scanThrottled) { break }
+        }
+
+        if firstChunkTotallyFailed {
             ideasError = "Couldn't reach the market feed for analysis — try again."
             return
         }
-        // Persist the just-fetched histories for OFFLINE net-cost validation / backtests
-        // (StockSageHistoryCache). Best-effort and DETACHED so the JSON encode runs off the
-        // main actor and never blocks buildIdeas; ZERO new network — it saves bytes already
-        // downloaded here and otherwise discarded after buildIdeas. Seeds the sim only, not
-        // the live board, so nothing user-visible changes.
-        let historyUniverse = Set(universe.map { $0.symbol.uppercased() })
-        Task.detached { StockSageHistoryCache.from(histories: histories, universe: historyUniverse, savedAt: Date()).save() }
-        let cal = convictionCalibration                           // read on the main actor before the await hop
-        let journalTrades = StockSageJournalStore.shared.trades   // read on the main actor before the await hop
-        let built = await Self.buildIdeas(defs: universe, histories: histories, benchmark: benchmark,
-                                          calibration: cal, journalTrades: journalTrades)
         guard !Task.isCancelled else { return }
+        // A watchdog timeout or throttle trip needs no branch here — either way, everything
+        // below runs over whatever chunks DID complete: "stop launching more chunks" is not
+        // "discard what we have" (partial success is honest success, same as any individual
+        // symbol's fetch failure).
+
+        // Persist ALL histories fetched across every chunk this scan for OFFLINE net-cost
+        // validation / backtests (StockSageHistoryCache). Best-effort and DETACHED so the JSON
+        // encode runs off the main actor and never blocks the commit below; ZERO new network —
+        // it saves bytes already downloaded and otherwise discarded after buildIdeas.
+        let historyUniverse = Set(universe.map { $0.symbol.uppercased() })
+        let historiesToSave = accumulatedHistories
+        Task.detached { StockSageHistoryCache.from(histories: historiesToSave, universe: historyUniverse, savedAt: Date()).save() }
+
+        // SCAN-END-ONCE (plan step 2): everything below runs exactly once, over the FULL
+        // accumulated result — same order/guards as the pre-chunking single-shot scan.
+        //
         // Re-reconcile vs the CURRENT tracked set (mirror refresh() at the liveFiltered step): a
-        // removeSymbol() that landed DURING the await must win, else the pre-await `universe` snapshot
-        // resurrects the dropped ticker into ranked ideas AND the capital allocator (a stale $ size).
+        // removeSymbol() that landed DURING any chunk's await must win, else a pre-await
+        // snapshot resurrects a dropped ticker into ranked ideas AND the capital allocator.
         let stillTracked = Set(trackedDefs().map { $0.symbol.uppercased() })
-        let ranked = built.filter { stillTracked.contains($0.symbol.uppercased()) }
+        let finalRanked = ranked.filter { stillTracked.contains($0.symbol.uppercased()) }
             .sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
-        // Detect alert events vs the PREVIOUS snapshot before replacing it.
+        // Detect alert events vs the PREVIOUS snapshot before replacing it — once, vs the full board.
         if alertsEnabled, !ideas.isEmpty {
-            let fired = StockSageAlerts.detect(previous: ideas, current: ranked)
+            let fired = StockSageAlerts.detect(previous: ideas, current: finalRanked)
             if !fired.isEmpty { alerts = Array((fired + alerts).prefix(Self.maxAlerts)) }
         }
-        // Partial success is honest success: keep the names that priced, and NAME the
-        // ones that didn't so the EV ranking isn't silently computed on a subset. Computed
-        // HERE (before the snapshot save below, DEG-01) — `analyzed`/`ideasMissing` need no
-        // new await, everything they read (`built`, `stillTracked`) already exists.
-        let analyzed = Set(built.map { $0.symbol.uppercased() })
+        // Partial success is honest success: keep the names that priced, and NAME the ones that
+        // didn't so the EV ranking isn't silently computed on a subset.
+        let analyzed = Set(finalRanked.map { $0.symbol.uppercased() })
         // Indices are DELIBERATELY skipped by buildIdeas (not buyable) — don't report them as fetch
         // failures, or ~17 healthy index tickers show a permanent "couldn't be fetched" with a retry
         // button that can never clear.
@@ -413,17 +507,17 @@ final class StockSageStore: ObservableObject {
         // commit writes the snapshot — retryFailedIdeas (partial) and seedQAIdeas (QA fixture)
         // deliberately never call save() (PLAN_2026-07-07_scan_deltas.md).
         let snapshotStore = StockSageScanSnapshotStore.shared
-        scanDeltas = StockSageScanDelta.deltas(current: ranked, previous: snapshotStore.entries)
+        scanDeltas = StockSageScanDelta.deltas(current: finalRanked, previous: snapshotStore.entries)
         // DEG-01: symbols missing-but-still-tracked (feed miss/429 THIS scan) carry their PRIOR
         // baseline entry forward instead of dropping out — see nextBaseline's doc comment.
-        let nextBaseline = StockSageScanDelta.nextBaseline(ranked: ranked, missingButTracked: missing,
+        let nextBaseline = StockSageScanDelta.nextBaseline(ranked: finalRanked, missingButTracked: missing,
                                                             previous: snapshotStore.entries)
         snapshotStore.save(entries: nextBaseline)
-        ideas = ranked
+        ideas = finalRanked
         // FORWARD PAPER TRADING: auto-open a fake-money position for each long-actionable idea and mark
         // existing open paper trades to the fresh histories (net-of-cost). Separate store, never conflated
         // with the real journal; does NOT feed win-rate calibration (F01/F02). Best-effort, synchronous.
-        updatePaperTrades(ideas: ranked, histories: histories)
+        updatePaperTrades(ideas: finalRanked, histories: accumulatedHistories)
         // Populate earnings for the top names (non-blocking) so the imminent-earnings demotion +
         // warnings fire on the boards, not only on detail-expand. Cached-once → cheap after first load.
         Task { await refreshEarningsForTopIdeas() }
