@@ -3598,7 +3598,7 @@ struct MarketsView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel({ () -> String in
-            var label = "\(idea.symbol), \(a.action.rawValue), signal strength \(Int(a.conviction * 100)) out of 100 rules-based, not a probability"
+            var label = "\(idea.symbol), \(a.action.rawValue), signal strength: \(Self.signalBlockCount(a.conviction)) of 5 signal blocks, rules-based, not a probability"
             switch earnFlag {
             case .demoted(let d):     label += ", earnings imminent in about \(d) days — demoted in the rank"
             case .approaching(let d): label += ", earnings approaching in about \(d) days"
@@ -3787,7 +3787,7 @@ struct MarketsView: View {
             // caveat are folded in here so VoiceOver hears them (the .accessibilityLabel below
             // collapses the Button to one leaf, silencing the inner per-Text labels).
             let orderLabel: String = {
-                var s = "Best opportunity: \(idea.symbol), \(idea.advice.action.rawValue), estimated EV \(String(format: "%.2f", ev.evR)) R, entry \(adaptivePrice(idea.price))"
+                var s = "Best opportunity: \(idea.symbol), \(idea.advice.action.rawValue), estimated EV \(String(format: "%.2f", ev.evR)) R gross, entry \(adaptivePrice(idea.price))"
                 if let stop = idea.advice.stopPrice { s += ", stop \(adaptivePrice(stop))" }
                 if let target = idea.advice.targetPrice { s += ", target \(adaptivePrice(target))" }
                 if let ep = store.earnings[idea.symbol.uppercased()], ep.isWarning {
@@ -4188,7 +4188,7 @@ struct MarketsView: View {
                 return ("Set account to size — add one in the position sizer below.", false)
             }()
             let accessibilityText: String = {
-                var s = "Do this now: \(idea.symbol), \(idea.advice.action.rawValue), estimated EV \(String(format: "%.2f", ev.evR)) R, entry \(adaptivePrice(idea.price))"
+                var s = "Do this now: \(idea.symbol), \(idea.advice.action.rawValue), estimated EV \(String(format: "%.2f", ev.evR)) R gross, entry \(adaptivePrice(idea.price))"
                 if let stop = idea.advice.stopPrice { s += ", stop \(adaptivePrice(stop))" }
                 if let variance { s += String(format: ", typical 24-hour range plus or minus %.1f percent", variance) }
                 return s
