@@ -784,7 +784,25 @@ enum StockSageExpectedValue {
     nonisolated static func expectedWeeklyR(_ ideas: [StockSageIdea], maxConcurrent: Int = 3, tradingDays: Double = 5,
                                             holds: VelocityHoldDays = .defaults,
                                             calibration: StockSageConvictionCalibration? = nil) -> Double? {
-        let vels = fastLane(ideas, holds: holds, calibration: calibration).prefix(Swift.max(0, maxConcurrent)).compactMap { velocity(for: $0, holds: holds, calibration: calibration) }
+        expectedWeeklyR(lane: fastLane(ideas, holds: holds, calibration: calibration), ideas: ideas,
+                        maxConcurrent: maxConcurrent, tradingDays: tradingDays, holds: holds, calibration: calibration)
+    }
+
+    /// BIND-ONCE variant: identical body to `expectedWeeklyR` above, but takes an ALREADY-COMPUTED
+    /// `fastLane(...)` result instead of re-deriving it — for a caller (e.g. a SwiftUI body) that
+    /// already has the lane bound from a prior call with the SAME `ideas`/`holds`/`calibration`
+    /// (and, when the lane was earnings/liquidity-aware, the SAME `earnings`/`liquidity` too — the
+    /// caller is responsible for that match; this function trusts `lane` as given, same contract
+    /// `fastLaneByClass`'s PERF-STRIP replacement already established). `ideas` is still required
+    /// (unchanged) because `fastLaneConcentration` below re-derives ITS OWN lane from `ideas` for
+    /// the concentration check — concentration is evaluated over `ideas` post-earnings/liquidity
+    /// filtering at ITS OWN call, not blindly assumed identical to the passed `lane`'s provenance.
+    /// Byte-identical output to the `ideas`-only overload whenever `lane == fastLane(ideas, holds:
+    /// calibration:)` (proven by `StockSagePerfProbeTests.dedupedFastLaneFamilyMatchesDirectCallsAt2400Scale`).
+    nonisolated static func expectedWeeklyR(lane: [StockSageIdea], ideas: [StockSageIdea], maxConcurrent: Int = 3,
+                                            tradingDays: Double = 5, holds: VelocityHoldDays = .defaults,
+                                            calibration: StockSageConvictionCalibration? = nil) -> Double? {
+        let vels = lane.prefix(Swift.max(0, maxConcurrent)).compactMap { velocity(for: $0, holds: holds, calibration: calibration) }
         guard !vels.isEmpty else { return nil }
         // If the top-N fast-lane setups are all one asset class, they tend to move together —
         // summing their velocities as if independent overstates the real weekly R by counting
@@ -806,7 +824,22 @@ enum StockSageExpectedValue {
                                                calibration: StockSageConvictionCalibration? = nil,
                                                earnings: [String: EarningsProximity] = [:],
                                                liquidity: [String: LiquidityProfile] = [:]) -> Double? {
-        let vels = fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity)
+        netExpectedWeeklyR(lane: fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity),
+                           ideas: ideas, maxConcurrent: maxConcurrent, tradingDays: tradingDays, holds: holds,
+                           calibration: calibration, earnings: earnings, liquidity: liquidity)
+    }
+
+    /// BIND-ONCE variant of `netExpectedWeeklyR` — see `expectedWeeklyR(lane:ideas:...)`'s doc for
+    /// the contract (caller supplies an already-computed, earnings/liquidity-aware `fastLane(...)`
+    /// result with matching `ideas`/`holds`/`calibration`/`earnings`/`liquidity`). Byte-identical
+    /// to the `ideas`-only overload under that match.
+    nonisolated static func netExpectedWeeklyR(lane: [StockSageIdea], ideas: [StockSageIdea], maxConcurrent: Int = 3,
+                                               tradingDays: Double = 5,
+                                               holds: VelocityHoldDays = .defaults,
+                                               calibration: StockSageConvictionCalibration? = nil,
+                                               earnings: [String: EarningsProximity] = [:],
+                                               liquidity: [String: LiquidityProfile] = [:]) -> Double? {
+        let vels = lane
             .prefix(Swift.max(0, maxConcurrent))
             .compactMap { netVelocity(for: $0, holds: holds, calibration: calibration) }
         guard !vels.isEmpty else { return nil }
@@ -873,7 +906,17 @@ enum StockSageExpectedValue {
     /// extra variance, which `cryptoRiskScaler` sizes DOWN for.
     nonisolated static func tradingDaysForLane(_ ideas: [StockSageIdea], holds: VelocityHoldDays = .defaults,
                                                calibration: StockSageConvictionCalibration? = nil) -> Double {
-        let lane = fastLane(ideas, holds: holds, calibration: calibration)
+        tradingDaysForLane(lane: fastLane(ideas, holds: holds, calibration: calibration))
+    }
+
+    /// BIND-ONCE variant: identical body, but takes an already-computed `fastLane(...)` result.
+    /// ORDER- and MEMBERSHIP-INSENSITIVE for this function specifically (it only reads `.count`
+    /// and an asset-class `.filter{}.count` — earnings/liquidity dicts don't change fastLane's
+    /// MEMBERSHIP, only its ranking order, so a lane the caller computed WITH earnings/liquidity
+    /// gives the identical crypto-share fraction as one computed without). Byte-identical to the
+    /// `ideas`-only overload (proven by
+    /// `StockSagePerfProbeTests.dedupedFastLaneFamilyMatchesDirectCallsAt2400Scale`).
+    nonisolated static func tradingDaysForLane(lane: [StockSageIdea]) -> Double {
         guard !lane.isEmpty else { return 5 }
         let crypto = lane.filter { StockSageAllocation.assetClass($0.symbol) == "Crypto" }.count
         return (5 + 2 * Double(crypto) / Double(lane.count)).rounded()
@@ -1018,7 +1061,19 @@ enum StockSageExpectedValue {
                                                   liquidity: [String: LiquidityProfile] = [:]) -> FastLaneConcentration? {
         // Same earnings/liquidity demotions as the displayed lane — the "top 3 are all X"
         // warning must analyze the SAME top-3 the strip shows, or the warning lies.
-        let top = Array(fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity).prefix(Swift.max(0, topN)))
+        fastLaneConcentration(lane: fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity), topN: topN)
+    }
+
+    /// BIND-ONCE variant: identical body, but takes an already-computed `fastLane(...)` result
+    /// instead of re-deriving it. ORDER-SENSITIVE — the caller's `lane` must be the SAME
+    /// earnings/liquidity-aware fastLane(ideas, holds, calibration, earnings, liquidity) call this
+    /// function's other overload would make internally (membership is earnings/liquidity-
+    /// INVARIANT — those dicts only re-rank, never exclude — but `.prefix(topN)` IS order-sensitive,
+    /// so a lane computed WITHOUT earnings/liquidity here would silently analyze the wrong top-N).
+    /// Byte-identical to the `ideas`-only overload whenever that match holds (proven by
+    /// `StockSagePerfProbeTests.dedupedFastLaneFamilyMatchesDirectCallsAt2400Scale`).
+    nonisolated static func fastLaneConcentration(lane: [StockSageIdea], topN: Int = 3) -> FastLaneConcentration? {
+        let top = Array(lane.prefix(Swift.max(0, topN)))
         guard top.count >= 2 else { return nil }
         let counts = Dictionary(grouping: top.map { StockSageAllocation.assetClass($0.symbol) }, by: { $0 })
             .mapValues(\.count)

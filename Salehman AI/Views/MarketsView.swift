@@ -1959,12 +1959,19 @@ struct MarketsView: View {
     /// Shared tooltip for the two weekly-R display sites: the existing F03/F44 gross label + the
     /// Item-A turnover disclosure (assumed re-cycles) + the coded refuse-list policy line.
     /// LABEL-ONLY — the weekly number itself stays GROSS (netting is owner-gated F03/F44).
-    private func weeklyGrossHelp(_ base: String) -> String {
+    /// `tradingDays`: reuses an already-computed `tradingDaysForLane(...)` value when the caller
+    /// has one (both call sites do — this is just the `tradingDays:` MULTIPLIER argument
+    /// `weeklyTurnoverNote` already accepted as a parameter, not a lane re-derivation; its OWN
+    /// internal `assumedWeeklyRoundTrips` still computes its own non-earnings/liquidity-aware
+    /// fastLane pass, deliberately left untouched — that pass is `.prefix`-order-sensitive and
+    /// NOT provably identical to the caller's earnings/liquidity-aware `lane`, so deduping it
+    /// would risk a silently wrong turnover count; nil defaults to the pre-existing derivation
+    /// so no call site is required to change).
+    private func weeklyGrossHelp(_ base: String, tradingDays: Double? = nil) -> String {
         var s = base
+        let days = tradingDays ?? StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration)
         if let note = StockSageExpectedValue.weeklyTurnoverNote(
-            store.ideas,
-            tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration),
-            holds: velocityHolds, calibration: store.convictionCalibration) {
+            store.ideas, tradingDays: days, holds: velocityHolds, calibration: store.convictionCalibration) {
             s += "\n\n" + note
         }
         s += "\n\n" + StockSageRefuseList.policyNote
@@ -4162,7 +4169,9 @@ struct MarketsView: View {
                          equity: lane.filter { StockSageAllocation.assetClass($0.symbol) == "Equity" })
             // PERF-STRIP: computed once, reused below — was recomputed (each a full fastLane pass)
             // at every one of its 3 call sites in this view with byte-identical arguments.
-            let tradingDays = StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration)
+            // BIND-ONCE (post-ship perf probe): now sourced from the `lane:` overload, which
+            // takes the `lane` already bound above instead of re-deriving fastLane a 4th time.
+            let tradingDays = StockSageExpectedValue.tradingDaysForLane(lane: lane)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Image(systemName: "hare.fill").font(.system(size: mvFont11)).foregroundStyle(DS.Palette.accent)
@@ -4205,14 +4214,14 @@ struct MarketsView: View {
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, tradingDays: tradingDays, holds: velocityHolds, calibration: store.convictionCalibration) {
+                if let wk = StockSageExpectedValue.expectedWeeklyR(lane: lane, ideas: store.ideas, tradingDays: tradingDays, holds: velocityHolds, calibration: store.convictionCalibration) {
                     // F03/F44: gross label + floor-demotion caveat (the weekly sum never excludes
                     // floor-demoted ideas; the per-row floor badges below DO mark them).
                     Text(String(format: "≈ %+.1fR/week gross, before costs, if you run the top %d — estimate, high variance, assumes you take and re-cycle these. Not a promise.", wk, Swift.min(3, lane.count)))
                         .font(.system(size: mvFont9, weight: .medium))
                         .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
-                        .help(weeklyGrossHelp("Gross, before costs — sums the top fast-lane GROSS velocities. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income."))
-                    if let netWk = StockSageExpectedValue.netExpectedWeeklyR(store.ideas, tradingDays: tradingDays, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity) {
+                        .help(weeklyGrossHelp("Gross, before costs — sums the top fast-lane GROSS velocities. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income.", tradingDays: tradingDays))
+                    if let netWk = StockSageExpectedValue.netExpectedWeeklyR(lane: lane, ideas: store.ideas, tradingDays: tradingDays, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity) {
                         Text(String(format: "   ↳ %+.1fR/week net (after est. frictions)", netWk))
                             .font(.system(size: mvFont8)).foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
                     }
@@ -4228,7 +4237,7 @@ struct MarketsView: View {
                             .help("Gross, before costs — weekly R × the dollar value of 1R. Can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. NOT income.")
                     }
                 }
-                if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity), conc.isConcentrated {
+                if let conc = StockSageExpectedValue.fastLaneConcentration(lane: lane), conc.isConcentrated {
                     Text("⚠︎ Your top \(conc.total) fastest are all \(conc.dominantClass) — likely correlated; that's closer to ONE bet than \(conc.total). Size all \(conc.total) TOGETHER at 1-2% total risk, not per symbol.")
                         .font(.system(size: mvFont9, weight: .medium))
                         .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
