@@ -3254,11 +3254,20 @@ struct MarketsView: View {
                            holdingsBySymbol: [String: AggregatedHolding],
                            historyBySymbol: [String: (count: Int, totalR: Double, rDefinedCount: Int)]) -> some View {
         let a = idea.advice
+        let snapshot = StockSageDecisionSnapshotBuilder.build(
+            idea: idea,
+            holds: velocityHolds,
+            calibration: store.convictionCalibration,
+            earnings: store.earnings,
+            liquidity: store.liquidity,
+            account: parsedAccount ?? 10_000,
+            riskFraction: parsedRiskFraction ?? 0.01,
+            regime: store.regime)
+        let cardVM = snapshot.cardViewModel
+        let earningsBadge = cardVM.warningBadges.first(where: { $0.contains("earnings") })
+        let hasFloorWarning = cardVM.warningBadges.contains("below net-cost floor")
         // Legible reason for the earnings-aware rank: a chip when earnings are imminent/approaching.
         let earnFlag = StockSageExpectedValue.earningsRankFlag(for: idea, earnings: store.earnings)
-        // Net-cost-floor honesty badge: surfaced inline so the user never has to open the detail sheet
-        // to learn why an idea is de-ranked on the velocity board.
-        let floorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
         // At-the-extreme chip (OSS-borrow B3, Ghostfolio min/max highlight; L1 honesty fix
         // 2026-07-07): purely descriptive fact about the RAW last-N-day close window — NOT a
         // momentum/breakout claim, so it sits with the neutral badges, not the warning/opportunity
@@ -3307,7 +3316,7 @@ struct MarketsView: View {
         // computations, one of which didn't even see confluence/extreme as
         // droppable).
         let visibleChips = IdeaChipPlan.visibleChips(
-            stale: boardIsStale, earnings: !earnFlag.badge.isEmpty, floor: floorFlag.isDeranked,
+            stale: boardIsStale, earnings: earningsBadge != nil, floor: hasFloorWarning,
             heldOrTraded: held != nil || jh != nil, delta: store.scanDeltas[idea.symbol] != nil,
             extreme: extreme != .neither, confluence: a.timeframeAligned)
         return VStack(alignment: .leading, spacing: IdeaSpace.stack) {
@@ -3334,7 +3343,7 @@ struct MarketsView: View {
                 }
                 // Risk warnings first: earnings and floor before EV.
                 if visibleChips.contains(.earnings) {
-                    Text(earnFlag.badge)
+                    Text(earningsBadge ?? earnFlag.badge)
                         .font(.system(size: fontChipLabel, weight: .semibold))
                         .foregroundStyle(earnFlag.isDemoted ? DS.Palette.warningSoft : .secondary)
                         .modifier(IdeaChipChrome(tint: earnFlag.isDemoted ? DS.Palette.warningSoft : DS.Palette.surfaceStroke))
@@ -3411,8 +3420,8 @@ struct MarketsView: View {
                 // Opportunity signals after warnings.
                 // "(gross)" label — consistent with fast-lane row.
                 // monospacedDigit + minWidth so EV aligns across cards.
-                if let ev {
-                    Text(String(format: "%+.2fR EV (gross)", ev.evR))
+                if let ev, let evText = cardVM.evText {
+                    Text(evText)
                         .font(.system(size: fontChipLabel, weight: .semibold).monospacedDigit())
                         .foregroundStyle(ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft)
                         .modifier(IdeaChipChrome(tint: ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft))
@@ -3540,7 +3549,7 @@ struct MarketsView: View {
                 if let mq = idea.momentumQuality {
                     let mqHot   = mq >= 2.0 / 3.0
                     let mqMixed = mq >= 1.0 / 3.0
-                    let mqColor = mqHot ? DS.Palette.successSoft : mqMixed ? DS.Palette.warningSoft : DS.Palette.danger
+                    let mqColor = mqHot ? DS.Palette.successSoft : mqMixed ? DS.Palette.warningSoft : DS.Palette.dangerSoft
                     let mqLabel = mqHot ? "hot" : mqMixed ? "mixed" : "cold"
                     HStack(spacing: 3) {
                         Circle().fill(mqColor).frame(width: 5, height: 5)
@@ -3605,7 +3614,7 @@ struct MarketsView: View {
             // visible strings/help wording. Gates now come from `visibleChips` — the SAME list
             // the render site above built — so this can never claim a chip the card dropped for
             // density (the bug this fix closes: two independently hand-copied computations).
-            if visibleChips.contains(.floor) { label += ", below net-cost floor, de-ranked" }
+            if hasFloorWarning { label += ", below net-cost floor, de-ranked" }
             if visibleChips.contains(.extreme) {
                 label += extreme == .atHigh ? ", at \(extremeSpan)-day high" : ", at \(extremeSpan)-day low"
             }
@@ -3624,8 +3633,8 @@ struct MarketsView: View {
                 case .actionChanged(let previous): label += ", was \(previous)"
                 }
             }
-            if let ev {
-                label += String(format: ", %+.2fR EV gross", ev.evR)
+            if let evText = cardVM.evText, ev != nil {
+                label += ", " + evText.replacingOccurrences(of: " (gross)", with: " gross")
             }
             if visibleChips.contains(.confluence) {
                 label += ", " + (a.confluenceNote ?? "three-timeframe confluence")
@@ -3731,12 +3740,12 @@ struct MarketsView: View {
                 ForEach(Array(store.alerts.prefix(12).enumerated()), id: \.offset) { _, alert in
                     HStack(spacing: DS.Space.sm) {
                         Image(systemName: alertIcon(alert.kind))
-                            .font(.system(size: mvFont11)).foregroundStyle(alert.isWarning ? DS.Palette.danger : DS.Palette.successSoft)
+                            .font(.system(size: mvFont11)).foregroundStyle(alert.isWarning ? DS.Palette.dangerSoft : DS.Palette.successSoft)
                             .frame(width: 14)
                         Text(alert.symbol).font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white)
                             .frame(width: 64, alignment: .leading).lineLimit(1)
                         Text(alert.kind.rawValue).font(.caption2)
-                            .foregroundStyle(alert.isWarning ? DS.Palette.danger : DS.Palette.successSoft)
+                            .foregroundStyle(alert.isWarning ? DS.Palette.dangerSoft : DS.Palette.successSoft)
                             .frame(width: 86, alignment: .leading)
                         Text(alert.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                         Spacer(minLength: 0)
@@ -3821,9 +3830,9 @@ struct MarketsView: View {
                     if let ep = store.earnings[idea.symbol.uppercased()], ep.isWarning {
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "calendar.badge.exclamationmark").font(.system(size: mvFont11))
-                                .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
+                                .foregroundStyle(ep.severity == .imminent ? DS.Palette.dangerSoft : DS.Palette.warningSoft)
                             Text(ep.note).font(.caption2)
-                                .foregroundStyle(ep.severity == .imminent ? DS.Palette.danger : DS.Palette.warningSoft)
+                                .foregroundStyle(ep.severity == .imminent ? DS.Palette.dangerSoft : DS.Palette.warningSoft)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .accessibilityHidden(true)  // folded into orderLabel above so VoiceOver reads it once
@@ -4036,7 +4045,7 @@ struct MarketsView: View {
                                 if let ep = store.earnings[sym.uppercased()], ep.isWarning {
                                     let badge = ep.severity == .imminent ? "⚠︎ earnings ~\(ep.daysUntil)d" : "earnings ~\(ep.daysUntil)d"
                                     Text(badge).font(.system(size: mvFont8))
-                                        .foregroundStyle(ep.severity == .imminent ? DS.Palette.warningSoft : .secondary)
+                                        .foregroundStyle(ep.severity == .imminent ? DS.Palette.dangerSoft : .secondary)
                                 }
                             }
                         }
@@ -4046,7 +4055,7 @@ struct MarketsView: View {
                                 if let ep = store.earnings[sym.uppercased()], ep.isWarning {
                                     let badge = ep.severity == .imminent ? "⚠︎ earnings ~\(ep.daysUntil)d" : "earnings ~\(ep.daysUntil)d"
                                     Text(badge).font(.system(size: mvFont8))
-                                        .foregroundStyle(ep.severity == .imminent ? DS.Palette.warningSoft : .secondary)
+                                        .foregroundStyle(ep.severity == .imminent ? DS.Palette.dangerSoft : .secondary)
                                 }
                             }
                         }
@@ -4373,7 +4382,7 @@ struct MarketsView: View {
                     if let mq = idea.momentumQuality {
                         let mqHot   = mq >= 2.0 / 3.0
                         let mqMixed = mq >= 1.0 / 3.0
-                        let mqColor = mqHot ? DS.Palette.successSoft : mqMixed ? DS.Palette.warningSoft : DS.Palette.danger
+                        let mqColor = mqHot ? DS.Palette.successSoft : mqMixed ? DS.Palette.warningSoft : DS.Palette.dangerSoft
                         let mqLabel = mqHot ? "hot" : mqMixed ? "mixed" : "cold"
                         HStack(spacing: 3) {
                             Circle().fill(mqColor).frame(width: 5, height: 5)
@@ -4473,8 +4482,8 @@ struct MarketsView: View {
                                color: BacktestVerdict.metricColor(positive: s.avgR >= 0, significant: s.isSignificant))
                     ideaMetric("Total R", String(format: "%+.0f", s.totalR),
                                color: BacktestVerdict.metricColor(positive: s.totalR >= 0, significant: s.isSignificant))
-                    ideaMetric("Worst-name DD", String(format: "−%.0fR", s.worstDrawdownR), color: DS.Palette.danger)
-                    ideaMetric("Pooled DD (eq-wt)", String(format: "−%.0fR", s.pooledDrawdownR), color: DS.Palette.danger)
+                    ideaMetric("Worst-name DD", String(format: "−%.0fR", s.worstDrawdownR), color: DS.Palette.dangerSoft)
+                    ideaMetric("Pooled DD (eq-wt)", String(format: "−%.0fR", s.pooledDrawdownR), color: DS.Palette.dangerSoft)
                         .help("Equal-weight pooled proxy: all trades across all names, sorted chronologically, cumulative-R worst peak-to-trough. Ignores position sizing and concurrency — not a true sized-portfolio drawdown. Typically larger than worst single-name DD because losses across symbols stack in time.")
                     ideaMetric("Profit.", "\(s.symbolsProfitable)/\(s.symbolsWithTrades)")
                     Spacer(minLength: 0)
@@ -4659,7 +4668,7 @@ struct MarketsView: View {
                             }
                         }
                         .font(.caption2)
-                        .foregroundStyle(d.isRedFlag ? DS.Palette.danger : .secondary)
+                        .foregroundStyle(d.isRedFlag ? DS.Palette.dangerSoft : .secondary)
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel(d.isAvgR <= 0
                             ? String(format: "No in-sample edge. In sample %+.2f R, out of sample %+.2f R.%@",
@@ -4877,7 +4886,7 @@ struct MarketsView: View {
                             .map { "• " + $0.verdict }.joined(separator: "\n")
                         Text("⚠︎ " + gap.verdict)
                             .font(.system(size: mvFont9))
-                            .foregroundStyle(gap.exceedsAccount ? DS.Palette.danger : DS.Palette.warningSoft)
+                            .foregroundStyle(gap.exceedsAccount ? DS.Palette.dangerSoft : DS.Palette.warningSoft)
                             .fixedSize(horizontal: false, vertical: true)
                             .help(ladder.isEmpty ? StockSageGapRisk.caveat : StockSageGapRisk.caveat + "\n\n" + ladder)
                             .accessibilityLabel("Gap risk warning. " + gap.verdict)
@@ -5085,6 +5094,18 @@ struct MarketsView: View {
 
     private func ideaDetailSheet(_ idea: StockSageIdea) -> some View {
         let a = idea.advice
+        let snapshot = StockSageDecisionSnapshotBuilder.build(
+            idea: idea,
+            holds: velocityHolds,
+            calibration: store.convictionCalibration,
+            earnings: store.earnings,
+            liquidity: store.liquidity,
+            account: parsedAccount ?? 10_000,
+            riskFraction: parsedRiskFraction ?? 0.01,
+            regime: store.regime)
+        let detailVM = snapshot.detailViewModel
+        let hasEarningsWarning = detailVM.warningBadges.contains(where: { $0.contains("earnings") })
+        let hasFloorWarning = detailVM.warningBadges.contains("below net-cost floor")
         // Hoist riskFlags for the chips row and CTA bar: shared in ideaDetailSheet only.
         // fullPlanText(for:) recomputes its own riskFlags from the same store inputs so the
         // card context-menu "Copy trade plan" path works with no sheet alive.
@@ -5203,7 +5224,8 @@ struct MarketsView: View {
                 if a.action == .buy || a.action == .strongBuy {
                     // Earnings severity warning above the gate for buy-family.
                     // Keep ep.isWarning guard — purely a position move, not a logic change.
-                    if let ep = store.earnings[idea.symbol.uppercased()], ep.isWarning {
+                    if hasEarningsWarning,
+                       let ep = store.earnings[idea.symbol.uppercased()], ep.isWarning {
                         earningsWarningRow(ep)
                     }
 
@@ -5525,7 +5547,7 @@ struct MarketsView: View {
                     // below the 0.005R/day floor. The idea is de-ranked on the velocity board; this badge
                     // surfaces the reason so the re-ordering is transparent and auditable.
                     let vFloorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
-                    if vFloorFlag.isDeranked {
+                    if hasFloorWarning && vFloorFlag.isDeranked {
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "exclamationmark.circle").font(.system(size: mvFont11)).foregroundStyle(DS.Palette.warningSoft)
                             Text(vFloorFlag.badge + String(format: " — net EV/day after frictions is under %.3fR/day; de-ranked on the velocity board.", StockSageExpectedValue.minNetEVPerDayFloor))
@@ -6508,7 +6530,7 @@ struct BestOpportunityActionCard: View {
                     HStack(spacing: DS.Space.sm) {
                         Text(entryText).font(.system(size: mvFont13, weight: .semibold, design: .rounded)).foregroundStyle(.white)
                         if let stopText {
-                            Text(stopText).font(.system(size: mvFont13, weight: .semibold, design: .rounded)).foregroundStyle(DS.Palette.danger)
+                            Text(stopText).font(.system(size: mvFont13, weight: .semibold, design: .rounded)).foregroundStyle(DS.Palette.dangerSoft)
                         }
                         Spacer(minLength: 0)
                     }

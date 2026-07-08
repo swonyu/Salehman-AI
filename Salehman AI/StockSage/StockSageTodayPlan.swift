@@ -107,7 +107,6 @@ enum StockSageTodayPlan {
                                          journalTrades: [TradeRecord] = [],
                                          max: Int = 3) -> [TodayActionPlan] {
         let rf = Swift.max(0, riskFraction ?? 0)
-        let gateRiskFraction = rf > 0 ? rf : 0.01   // same fallback `build` uses — the gate can't disagree
         let lane = StockSageExpectedValue.fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity)
         let holdingsBySymbol = StockSagePortfolio.holdingBySymbol(in: positions)
         let historyBySymbol = StockSageJournal.historyBySymbol(in: journalTrades)
@@ -121,40 +120,32 @@ enum StockSageTodayPlan {
                   let v = StockSageExpectedValue.velocity(for: idea, holds: holds, calibration: calibration)
             else { continue }
             let entry = idea.price
-            // Capture resolvedNetRR BEFORE the ?? gross collapse so rrIsNet is accurate —
-            // true only when netRR resolved non-nil. The ?? gross fallback must never be
-            // labeled "Net reward:risk" to avoid mislabeling a gross value as net.
-            let resolvedNetRR: Double? = StockSageNetEdge.netRR(symbol: idea.symbol, entry: entry, stop: stop, target: target)
-            let rr: Double? = {
-                let risk = abs(entry - stop)
-                guard risk > 0 else { return nil }
-                let gross = abs(target - entry) / risk
-                // Same NET reward:risk source of truth `build` uses, so a plan in this list can't
-                // clear the gate here and then block in the single-idea copy, or vice versa.
-                // (No financing threading here: `fastLane()` is buy-family only via
-                // `velocityRankKey`'s explicit guard — financing would always be 0.)
-                return resolvedNetRR ?? gross
-            }()
-            let gate = StockSageTradeGate.evaluate(hasStop: true, rewardToRisk: rr, riskFraction: gateRiskFraction,
-                                                   daysToEarnings: earnings[idea.symbol.uppercased()]?.daysUntil,
-                                                   rrIsNet: resolvedNetRR != nil)
+            let snap = StockSageDecisionSnapshotBuilder.build(
+                idea: idea,
+                holds: holds,
+                calibration: calibration,
+                earnings: earnings,
+                liquidity: liquidity,
+                account: account,
+                riskFraction: riskFraction
+            )
             var shares: Int? = nil
             var dollarsAtRisk: Double? = nil
-            if let acct = account, acct > 0, rf > 0,
-               let ps = StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: entry, stop: stop) {
-                shares = ps.shares; dollarsAtRisk = ps.dollarsAtRisk
+            if rf > 0, let ps = snap.positionSize {
+                shares = ps.shares
+                dollarsAtRisk = ps.dollarsAtRisk
             }
             // fastLane() ranks by a demotion-adjusted key (velocityRankKey) but does NOT filter
             // out below-floor/low-conviction ideas — they just sink in the ordering. So a row in
             // this top-N list CAN still be one of them; surface the SAME flags the main ideas
             // board already shows (netCostFloorFlag/isLowConviction) so the reason a plan ranked
             // where it did — or a caution about trusting it — is never hidden here.
-            let floorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: holds, calibration: calibration)
-            let lowConviction = StockSageExpectedValue.isLowConviction(idea)
+            let floorFlag = snap.floorFlag
+            let lowConviction = snap.rankReasons.contains(.lowConviction)
             let heldShares = holdingsBySymbol[idea.symbol.uppercased()]?.shares
             let closedTradeCount = historyBySymbol[idea.symbol.uppercased()]?.count
             out.append(TodayActionPlan(symbol: idea.symbol, velocity: v, entry: entry, stop: stop, target: target,
-                                       shares: shares, dollarsAtRisk: dollarsAtRisk, gate: gate,
+                                       shares: shares, dollarsAtRisk: dollarsAtRisk, gate: snap.gate,
                                        isCrypto: idea.symbol.uppercased().hasSuffix("-USD"),
                                        netCostFloorFlag: floorFlag, isLowConviction: lowConviction,
                                        heldShares: heldShares, closedTradeCount: closedTradeCount))

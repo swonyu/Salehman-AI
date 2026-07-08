@@ -38,6 +38,7 @@ Verify: `ls -la .claude/skills/` shows the symlinks, and each resolves to a
 
 ### Domain + workflow (how the ideas card works and how change moves through it)
 - **stocksage-mental-model** — the idea pipeline hop-by-hop, the frozen contracts, where every displayed number comes from.
+- **ideas-card-full-review** — the top-level "review and improve" orchestrator: shipped-state audit → triage → local fixes or wave handoff → verification → visual QA.
 - **wave-cycle** — the critique → triage → spec → implement → adversarial-verify → gate → ship → visual-QA methodology (ideas-board waves 1–12).
 - **shipping-changes** — the merge pipeline + per-change chores (build/test gate, DEVELOPMENT_LOG, SOURCE_BUNDLE regen, MARKETS_TAB_MAP, branch→CI→ff-merge).
 - **debugging-guide** — verdict-first log reading, the narrowing ladder, the known traps.
@@ -77,9 +78,11 @@ pass then de-duplicated the owner-gate registry (canonical copy now ONLY in
 were `git mv`'d into `skills/` (history + executable bit preserved) and are
 symlinked from `.claude/skills/` like everything else, and the retired
 `stocksage-engine` dir was DELETED outright — its content lives in
-`stocksage-mental-model` §7, no tombstone remains. The library stands at
-**19 skills**, all canonical in `skills/`.
-Verify: `ls skills/` (19 dirs) and `git log --oneline | grep 0171621`.
+`stocksage-mental-model` §7, no tombstone remains. On 2026-07-08,
+`ideas-card-full-review` was added as the top-level full-pass skill for
+"review and improve" asks on the shipped ideas surface. The library stands at
+**20 skills**, all canonical in `skills/`.
+Verify: `ls skills/` (20 dirs) and `git log --oneline | grep 0171621`.
 
 ## Provenance and maintenance
 

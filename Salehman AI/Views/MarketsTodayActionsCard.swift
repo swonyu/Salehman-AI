@@ -82,7 +82,7 @@ struct MarketsTodayActionsCard: View {
                         .frame(width: 16, alignment: .leading)
                     Text(plan.symbol).font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white)
-                        .strikethrough(blocked, color: DS.Palette.danger)
+                        .strikethrough(blocked, color: DS.Palette.dangerSoft)
                     if plan.isCrypto {
                         Text("24/7").font(.system(size: font8)).foregroundStyle(DS.Palette.warningSoft)
                     }
