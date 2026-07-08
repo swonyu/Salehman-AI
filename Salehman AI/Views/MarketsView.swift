@@ -5085,9 +5085,10 @@ struct MarketsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                // ── 6. Plan numerics (labels: "Base size" / "Regime size" + .help) ─
-                // Spacing reduced to 14 (was 20) — 6 metrics (Price/Stop/Target/Base/Regime/Vol-adj)
-                // need ~427pt with 6-figure crypto prices; at scale≈0.9 they fit in ~392pt available.
+                // ── 6. Plan numerics (Price/Stop/Target/Base size only — F2 dedup) ─
+                // Regime size / Vol-adj DROPPED from this row (see comment below the Base-size
+                // metric) — they duplicate the sizingBrakeWaterfall rendered directly under this
+                // HStack. Spacing 14 kept for the remaining 4 metrics with 6-figure crypto prices.
                 HStack(spacing: 14) {
                     ideaMetric("Price", adaptivePrice(idea.price))
                     if let s = a.stopPrice {
@@ -5106,23 +5107,17 @@ struct MarketsView: View {
                         ideaMetric("Base size", String(format: "%.1f%%", a.suggestedWeight * 100), color: DS.Palette.accent)
                             .help(Self.sizeMetricHelp)
                     }
-                    if a.suggestedWeight > 0, let r = store.regime {
-                        let adj = StockSageRegime.adjustedWeight(base: a.suggestedWeight, bias: r.sizingBias, cap: StockSageAdvisor.maxWeight)
-                        // Green ONLY when the regime CUTS size (de-risking). An up-size
-                        // is neutral — bigger is not "safer".
-                        // "Regime size" gains .help clarifying the pipeline stage.
-                        ideaMetric("Regime size", String(format: "%.1f%%", adj * 100),
-                                   color: adj < a.suggestedWeight ? DS.Palette.successSoft : DS.Palette.accent)
-                            .help("Regime size = base half-Kelly × regime bias. The Deploy-capital plan then applies: vol-targeting shrink for high-vol names → per-symbol vol-regime brake → correlation de-weighting → heat cap. (Deploy plan is authoritative.)")
-                    }
-                    // Vol-adj: same conditional as the idea card (identical <0.85 gate and value formula).
-                    // Shows only when the vol-regime brake materially cuts size (>15% cut) — same rule
-                    // as the card so the two surfaces can't disagree. Order: Base → Regime → Vol-adj.
-                    if a.suggestedWeight > 0, let vr = idea.volRegime, vr.sizingMultiplier < 0.85 {
-                        ideaMetric("Vol-adj", String(format: "%.1f%%", a.suggestedWeight * vr.sizingMultiplier * 100),
-                                   color: DS.Palette.warningSoft)
-                            .help("Vol-adj size = base half-Kelly × vol-regime brake (current vol elevated vs history). Deploy plan is authoritative — it applies: vol-targeting shrink → per-symbol vol-regime brake → correlation de-weighting → heat cap.")
-                    }
+                    // F2 dedup (critique fleet #1): "Regime size" / "Vol-adj" metrics dropped from
+                    // this row — the sizingBrakeWaterfall directly below renders the SAME two figures
+                    // (from the identical StockSageRegime.adjustedWeight / idea.volRegime calls) as
+                    // soon as ≥2 stages resolve, and is strictly more informative (labeled chain,
+                    // not two disconnected numbers). Nil-gating equivalence verified: the row's Regime
+                    // gate (a.suggestedWeight>0, store.regime) is identical to the waterfall's; the
+                    // row's Vol-adj gate additionally requires sizingMultiplier<0.85 (waterfall has no
+                    // such threshold) — a STRICT SUBSET, so whenever the row's Vol-adj would have
+                    // rendered, the waterfall's Vol-adj stage already resolves too. Dropping the row
+                    // loses nothing. Regime-size caveat text below now free-floats but still applies
+                    // whenever the waterfall's Regime stage is showing.
                     Spacer(minLength: 0)
                 }
                 // Regime-size caveat directly under the plan-numerics metrics row — it explains the
