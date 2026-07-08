@@ -5239,16 +5239,13 @@ struct MarketsView: View {
                 }
                 if let stop = a.stopPrice, let target = a.targetPrice,
                    let ev = StockSageExpectedValue.ev(conviction: a.conviction, entry: idea.price, stop: stop, target: target, calibration: store.convictionCalibration) {
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "dollarsign.circle.fill").font(.system(size: mvFont11))
-                            .foregroundStyle(ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft)
-                        Text(String(format: "Est. EV %+.2fR per trade (gross) (~%.0f%% est. win × %.1f:1) — estimate, not a forecast.",
-                                    ev.evR, ev.winProbEstimate * 100, ev.rewardR))
-                            .font(.caption2)
-                            .foregroundStyle(ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .help(StockSageExpectedValue.caveat)
-                    }
+                    // F3 dedup (critique fleet #1): the standalone "Est. EV … (gross)" sentence
+                    // printed the same ev.evR the ledger's Gross-expectancy row below prints —
+                    // deleted. Its unique content (the "~N% est. win × R:R" annotation) now lives
+                    // in the ledger row's label instead (see ledgerRow call below); the estimate
+                    // caveat (.help(StockSageExpectedValue.caveat)) moved onto that row too so it
+                    // isn't lost. The calibration chip stays exactly where it was, adjacent to the
+                    // ledger.
                     // Always-visible measured/fitted/assumed tag directly under the EV line.
                     // F01/F02: the chip keys on the calibration METHOD (identity → "assumed"); nil-safe.
                     HStack(spacing: 6) {
@@ -5278,15 +5275,22 @@ struct MarketsView: View {
                             let financingNote = StockSageExpectedValue.financingNoteSuffix(rate: finRate, days: finDays)
                             let deductionLabel = "Round-trip costs (~\(Int(costs.roundTripBps))bps \(costs.assetClass))\(financingNote)"
                             let netColor = netR < 0 ? DS.Palette.dangerSoft : DS.Palette.successSoft
+                            // F3 dedup: Gross-expectancy row label carries the "(~N% est. win ×
+                            // R:R)" annotation the deleted standalone EV sentence used to print —
+                            // its only content the ledger didn't already have. Same .help caveat
+                            // that sentence carried, moved onto this row so it isn't lost.
+                            let grossLabel = String(format: "Gross expectancy (~%.0f%% est. win × %.1f:1)",
+                                                     ev.winProbEstimate * 100, ev.rewardR)
                             VStack(alignment: .leading, spacing: 3) {
-                                ledgerRow("Gross expectancy", String(format: "%+.2fR", ev.evR), color: .white)
+                                ledgerRow(grossLabel, String(format: "%+.2fR", ev.evR), color: .white)
+                                    .help(StockSageExpectedValue.caveat)
                                 ledgerRow(deductionLabel, String(format: "−%.2fR", ev.evR - netR), color: DS.Palette.textSecondary)
                                 ledgerRow("Net expectancy", String(format: "%+.2fR", netR), color: netColor)
                             }
                             .padding(.top, 2)
                             .accessibilityElement(children: .ignore)
-                            .accessibilityLabel(String(format: "Gross expectancy %+.2fR, minus %@, net expectancy %+.2fR",
-                                                       ev.evR, deductionLabel, netR))
+                            .accessibilityLabel(String(format: "Gross expectancy %+.2fR (~%.0f%% estimated win rate times %.1f to 1 reward to risk), minus %@, net expectancy %+.2fR",
+                                                       ev.evR, ev.winProbEstimate * 100, ev.rewardR, deductionLabel, netR))
                         }
                     }
                 }
