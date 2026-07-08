@@ -279,8 +279,11 @@ final class StockSageMonitor {
         // ALERT-HELD-1: display-text only — held context makes the single most decision-relevant
         // push (stop breach / target hit) actionable at a glance without opening the app.
         if let held, held.shares > 0 {
-            let shares = held.shares == held.shares.rounded() ? String(format: "%.0f", held.shares) : String(format: "%.2f", held.shares)
-            content.body = "\(alert.reason), you hold \(shares) sh"
+            // Whole shares → %.0f; fractional → adaptive so a tiny crypto lot (0.001 BTC)
+            // never renders as "0.00 sh"; em-dash append (reasons end with a period).
+            let shares = held.shares == held.shares.rounded() ? String(format: "%.0f", held.shares)
+                : (held.shares >= 0.01 ? String(format: "%.2f", held.shares) : String(format: "%.4f", held.shares))
+            content.body = "\(alert.reason) — you hold \(shares) sh"
         } else {
             content.body = alert.reason
         }
