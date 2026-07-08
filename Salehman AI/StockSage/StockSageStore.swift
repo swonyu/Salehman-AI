@@ -49,16 +49,26 @@ struct StockSageIdea: Sendable, Equatable, Identifiable {
     /// TRUE N (days, not downsampled bars) rather than assuming a fixed 63.
     let recentExtremeSpan: Int?
 
+    /// The price history's OWN last-bar date (`history.dates.last`) — distinct from `generatedAt`,
+    /// which is `Date()` (build wall-clock time) EVEN when the price came from `cachedHistories`
+    /// (same-UTC-day cache reuse — `partitionByCacheFreshness`/`isCacheFreshForToday`, a deliberate
+    /// 429-avoidance POLICY, untouched here). On a weekend/offline that cache's last bar can be days
+    /// old while `generatedAt` still reads "just now", so a cache-served idea rendered as a fresh
+    /// live quote (honesty-floor gap). nil ⇒ unknown (older/test-built ideas with no history) —
+    /// never flagged stale off missing data (HONESTY_FLOOR: unknown renders nothing). Purely a
+    /// freshness LABEL — does not change the cache-reuse policy or any stop/target/RR format.
+    let priceAsOf: Date?
+
     nonisolated init(symbol: String, market: String, price: Double, advice: TradeAdvice,
                      spark: [Double], dailyMove: Double? = nil, realizedVol: Double? = nil,
                      volRegime: VolRegime? = nil, generatedAt: Date? = nil,
                      momentumQuality: Double? = nil, recentExtreme: SparkSeries.Extreme? = nil,
-                     recentExtremeSpan: Int? = nil) {
+                     recentExtremeSpan: Int? = nil, priceAsOf: Date? = nil) {
         self.symbol = symbol; self.market = market; self.price = price
         self.advice = advice; self.spark = spark; self.dailyMove = dailyMove
         self.realizedVol = realizedVol; self.volRegime = volRegime; self.generatedAt = generatedAt
         self.momentumQuality = momentumQuality; self.recentExtreme = recentExtreme
-        self.recentExtremeSpan = recentExtremeSpan
+        self.recentExtremeSpan = recentExtremeSpan; self.priceAsOf = priceAsOf
     }
 }
 
@@ -957,12 +967,17 @@ final class StockSageStore: ObservableObject {
                 // say "At N-day high/low" with a real N instead of assuming a fixed 63.
                 let recentExtreme = SparkSeries.extreme(recent)
                 let recentExtremeSpan = recent.count
+                // Price-staleness label (round-3 honesty hunt): the LAST BAR's own date, whether
+                // that bar came from a fresh fetch or a same-UTC-day cache reuse — distinct from
+                // `generatedAt` below, which is always "now" regardless of where the price came from.
+                let priceAsOf = history.dates.last
                 out.append(StockSageIdea(symbol: sym.symbol, market: sym.market,
                                          price: price, advice: advice, spark: spark,
                                          dailyMove: dailyMove, realizedVol: realizedVol,
                                          volRegime: volRegime, generatedAt: Date(),
                                          momentumQuality: momentumQuality,
-                                         recentExtreme: recentExtreme, recentExtremeSpan: recentExtremeSpan))
+                                         recentExtreme: recentExtreme, recentExtremeSpan: recentExtremeSpan,
+                                         priceAsOf: priceAsOf))
             }
             return out
         }.value

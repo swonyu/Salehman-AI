@@ -792,7 +792,9 @@ struct MarketsView: View {
         let noQuote = !store.isSampleData && !store.loadedFromCache && currentPrice(a.symbol) == nil
         return HStack(spacing: 10) {
             Text(a.symbol).font(.system(size: mvFont13, weight: .bold, design: .rounded)).foregroundStyle(.white)
-            Text("\(a.direction.symbol) \(a.target.formatted())").font(.caption).foregroundStyle(.secondary)
+            // ALERT-FMT-1 (round-3 honesty hunt): was bare `.formatted()`, diverging from the
+            // shared adaptive formatter every other card/board/sheet uses — this row now matches.
+            Text("\(a.direction.symbol) \(adaptivePrice(a.target))").font(.caption).foregroundStyle(.secondary)
             Spacer()
             if a.triggeredAt != nil {
                 Text("triggered").font(.caption2.weight(.semibold)).foregroundStyle(DS.Palette.warningSoft)
@@ -3306,8 +3308,10 @@ struct MarketsView: View {
         // board-level `store.ideasIsStale` — during a streaming scan `ideasUpdated` only
         // advances at the very end, so the old board-level key wore the stale badge on cards
         // that were just freshly merged in. Same >4h threshold, same Self.cardIsStale the
-        // detail sheet's DEG-03 as-of cue reads generatedAt from.
-        let boardIsStale = Self.cardIsStale(generatedAt: idea.generatedAt, now: Date())
+        // detail sheet's DEG-03 as-of cue reads generatedAt from. Round-3: also flags a
+        // cache-served idea whose price bar (`priceAsOf`) is not from today, even when
+        // `generatedAt` itself is fresh (cache-served-as-fresh honesty gap).
+        let boardIsStale = Self.cardIsStale(generatedAt: idea.generatedAt, now: Date(), priceAsOf: idea.priceAsOf)
         // QA-4+F1 (density rework): ONE seam for which conditional chips are
         // visible — see IdeaChipPlan's doc for the priority order + why the
         // action badge/EV chip stay uncounted. Computed once per card; both the
@@ -5367,12 +5371,25 @@ struct MarketsView: View {
                 // staleness context. Render whenever generatedAt resolves — nil generatedAt
                 // (older/test-built ideas) → no note, never a fabricated timestamp — with the
                 // Stop & Target clause (exact wording preserved) only when both prices exist.
+                // Round-3: when the PRICE itself isn't from today (cache-served on a
+                // weekend/offline — see StockSageIdea.priceAsOf), swap in a "not live" wording
+                // instead of the analysis-time clause, so the sheet never implies a just-now
+                // live quote for a stale cached price. nil priceAsOf ⇒ unknown, falls through to
+                // the existing analysis-time wording unchanged (never a false "not live" label).
                 if let generatedAt = idea.generatedAt {
+                    let staleAsOf: Date? = {
+                        guard let priceAsOf = idea.priceAsOf,
+                              StockSageScanChunking.utcDayKey(priceAsOf) != StockSageScanChunking.utcDayKey(Date())
+                        else { return nil }
+                        return priceAsOf
+                    }()
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "clock.badge.exclamationmark").font(.system(size: mvFont11)).foregroundStyle(.secondary)
-                        Text(a.stopPrice != nil && a.targetPrice != nil
-                             ? "Stop & Target computed at \(generatedAt.formatted(.relative(presentation: .named))) — recalculate before entry."
-                             : "Analyzed \(generatedAt.formatted(.relative(presentation: .named))).")
+                        Text(staleAsOf.map { "Price as of \($0.formatted(.relative(presentation: .named))) — not live." }
+                             ?? (a.stopPrice != nil && a.targetPrice != nil
+                                ? "Stop & Target computed at \(generatedAt.formatted(.relative(presentation: .named))) — recalculate before entry."
+                                : "Analyzed \(generatedAt.formatted(.relative(presentation: .named))).")
+                        )
                             .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -6221,17 +6238,30 @@ struct MarketsView: View {
         return Int((v * 5).rounded())
     }
 
-    /// Per-card staleness predicate (POST2420-COPY item 1): whether THIS idea's own
-    /// `generatedAt` is over 4h old — same threshold as `StockSageStore.ideasIsStale`, but
-    /// keyed on the card's own analysis time instead of the board-level `ideasUpdated` (which
-    /// only advances when the WHOLE scan commits). During a streaming scan, a freshly-merged
-    /// card's `generatedAt` is recent even though `ideasUpdated` hasn't moved yet — so this
-    /// predicate stops a just-scanned card from wearing the stale badge mid-scan. nil
-    /// `generatedAt` (older/test-built ideas, mirrors the DEG-03 as-of cue's nil handling above)
-    /// → not stale (never a false badge off missing data).
-    static func cardIsStale(generatedAt: Date?, now: Date) -> Bool {
-        guard let generatedAt else { return false }
-        return now.timeIntervalSince(generatedAt) > 4 * 3600
+    /// Per-card staleness predicate (POST2420-COPY item 1; extended round-3 honesty hunt for
+    /// `priceAsOf`): stale if EITHER the analysis is over 4h old (`generatedAt`, same threshold
+    /// as `StockSageStore.ideasIsStale`, keyed on the card's own analysis time instead of the
+    /// board-level `ideasUpdated` — which only advances when the WHOLE scan commits, so during a
+    /// streaming scan a freshly-merged card's `generatedAt` is recent even though `ideasUpdated`
+    /// hasn't moved) OR the underlying PRICE is not live/current — a cache-served idea
+    /// (`partitionByCacheFreshness`/`isCacheFreshForToday`, a same-UTC-day 429-avoidance reuse
+    /// left untouched by this predicate) whose price bar is not from TODAY (UTC), e.g. a
+    /// weekend/offline cache hit whose last bar is days old even though `generatedAt` reads
+    /// "just now". Reuses the SAME UTC-day bucketing `StockSageScanChunking.utcDayKey` already
+    /// defines, so "today" means the same thing everywhere in the engine. nil `generatedAt` or
+    /// nil `priceAsOf` (older/test-built ideas, mirrors the DEG-03 as-of cue's nil handling
+    /// below) → that axis alone never flags stale (HONESTY_FLOOR: unknown renders nothing, never
+    /// a false badge).
+    static func cardIsStale(generatedAt: Date?, now: Date, priceAsOf: Date? = nil) -> Bool {
+        let analysisStale: Bool = {
+            guard let generatedAt else { return false }
+            return now.timeIntervalSince(generatedAt) > 4 * 3600
+        }()
+        let priceStale: Bool = {
+            guard let priceAsOf else { return false }
+            return StockSageScanChunking.utcDayKey(priceAsOf) != StockSageScanChunking.utcDayKey(now)
+        }()
+        return analysisStale || priceStale
     }
 
     private func signalBlocks(_ value: Double, color: Color) -> some View {

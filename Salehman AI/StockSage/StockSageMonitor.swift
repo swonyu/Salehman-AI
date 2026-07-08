@@ -304,8 +304,13 @@ final class StockSageMonitor {
 
     private func sendPriceAlert(_ alert: PriceAlert, price: Double) async {
         let content = UNMutableNotificationContent()
-        content.title = "Price alert: \(alert.symbol) \(alert.direction.symbol) \(alert.target.formatted())"
-        content.body = "Now \(price.formatted())."
+        // ALERT-FMT-1 (round-3 honesty hunt): was bare `.formatted()` (locale grouping, dropped
+        // trailing zeros, full float precision) — the ONE alert surface ALERT-FMT-1 missed when it
+        // unified the idea-alert path onto the shared adaptive formatter. Same
+        // `StockSageCurrency.adaptivePrice` every board/card/sheet already renders, so this push's
+        // numbers match what the user sees everywhere else in the app.
+        content.title = "Price alert: \(alert.symbol) \(alert.direction.symbol) \(StockSageCurrency.adaptivePrice(alert.target))"
+        content.body = "Now \(StockSageCurrency.adaptivePrice(price))."
         content.sound = .default
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         try? await UNUserNotificationCenter.current().add(request)
