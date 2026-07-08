@@ -894,6 +894,12 @@ struct MarketsView: View {
         return String(format: "%.6f", v)                          // sub-cent → show real magnitude
     }
 
+    /// L10N-01: thin alias onto StockSageCurrency.approxAmount (pure, tested there) — keeps
+    /// call sites below unchanged in shape.
+    private func approxAmount(_ v: Double, symbol: String) -> String {
+        StockSageCurrency.approxAmount(v, symbol: symbol)
+    }
+
     /// CCY→USD rates for every currency held (direct CCYUSD=X, else inverse 1/USDCCY=X; USD = 1).
     private var fxRatesToUSD: [String: Double] {
         var rates: [String: Double] = ["USD": 1]
@@ -3382,8 +3388,8 @@ struct MarketsView: View {
                 if let stop = a.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                    let rp = StockSageInput.percent(sizerRiskPct),
                    let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
-                    ideaMetric("At risk", String(format: "≈$%.0f · %d sh", ps.dollarsAtRisk, ps.shares), color: DS.Palette.warningSoft)
-                        .help("Sizes the LOSS: a stop-out at \(adaptivePrice(stop)) costs ~$\(String(format: "%.0f", ps.dollarsAtRisk)) (\(String(format: "%.2f", ps.dollarsAtRisk / acct * 100))% of the account). Not a profit promise.")
+                    ideaMetric("At risk", "\(approxAmount(ps.dollarsAtRisk, symbol: idea.symbol)) · \(ps.shares) sh", color: DS.Palette.warningSoft)
+                        .help("Sizes the LOSS: a stop-out at \(adaptivePrice(stop)) costs ~\(approxAmount(ps.dollarsAtRisk, symbol: idea.symbol).dropFirst()) (\(String(format: "%.2f", ps.dollarsAtRisk / acct * 100))% of the account). Not a profit promise.")
                 }
                 if let target = a.targetPrice {
                     ideaMetric("Target", adaptivePrice(target), color: DS.Palette.successSoft)
@@ -3513,7 +3519,7 @@ struct MarketsView: View {
             if let stop = a.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                let rp = StockSageInput.percent(sizerRiskPct),
                let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
-                label += String(format: ", at risk ≈$%.0f, %d shares", ps.dollarsAtRisk, ps.shares)
+                label += ", at risk \(approxAmount(ps.dollarsAtRisk, symbol: idea.symbol)), \(ps.shares) shares"
             }
             if let target = a.targetPrice {
                 label += ", target \(adaptivePrice(target))"

@@ -82,6 +82,15 @@ enum StockSageCurrency {
         return currencyForSuffix[suffix] ?? suffix
     }
 
+    /// L10N-01: format a figure in a SYMBOL's own quote currency (not converted) so it never
+    /// misreads as USD. USD keeps the familiar "≈$188" prefix; any other currency renders
+    /// "≈188 SAR"-style (code suffix) — a 1120.SR risk number in raw SAR shown with a bare "$"
+    /// misreads ~3.75× (SAR/USD).
+    nonisolated static func approxAmount(_ v: Double, symbol: String) -> String {
+        let ccy = currencyForSymbol(symbol)
+        return ccy == "USD" ? String(format: "≈$%.0f", v) : String(format: "≈%.0f %@", v, ccy)
+    }
+
     private nonisolated static let currencyForSuffix: [String: String] = [
         "SR": "SAR", "L": "GBP", "DE": "EUR", "PA": "EUR", "T": "JPY", "HK": "HKD",
         "SS": "CNY", "KS": "KRW", "NS": "INR", "AX": "AUD", "SA": "BRL", "TO": "CAD",

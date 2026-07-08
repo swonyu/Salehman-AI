@@ -77,6 +77,23 @@ struct StockSageCurrencyTests {
         #expect(CC.currencyForSymbol("BTC-USD") == "USD")    // crypto unaffected
     }
 
+    // MARK: - L10N-01: approxAmount currency-suffix rendering
+    //
+    // Hand-derived per L10N-01 (critique fleet #2): a figure in a symbol's own quote currency
+    // must not always render with "$" — a 1120.SR risk number in raw SAR read as USD misreads
+    // ~3.75× (SAR/USD). USD keeps the "≈$" prefix form; every other currency uses a code suffix.
+
+    @Test func approxAmountKeepsDollarPrefixForUSDSymbols() {
+        #expect(CC.approxAmount(188, symbol: "AAPL") == "≈$188")
+        #expect(CC.approxAmount(188.4, symbol: "BTC-USD") == "≈$188")   // crypto → USD, rounds to whole
+    }
+
+    @Test func approxAmountUsesCurrencyCodeSuffixForNonUSDSymbols() {
+        #expect(CC.approxAmount(188, symbol: "1120.SR") == "≈188 SAR")  // the exact misread case
+        #expect(CC.approxAmount(400, symbol: "BP.L") == "≈400 GBP")
+        #expect(CC.approxAmount(1000, symbol: "7203.T") == "≈1000 JPY")
+    }
+
     @Test func guardsNothingConvertible() {
         #expect(CC.breakdown(holdings: [], ratesToBase: ["EUR": 1.1], base: "USD") == nil)
         #expect(CC.breakdown(holdings: [(100, "JPY")], ratesToBase: [:], base: "USD") == nil)
