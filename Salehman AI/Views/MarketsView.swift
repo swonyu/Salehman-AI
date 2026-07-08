@@ -5210,13 +5210,17 @@ struct MarketsView: View {
                         Text(rr.note).font(.caption2).foregroundStyle(c).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                // Stop/Target are fixed numbers against the quote at generatedAt — the market has
-                // moved since, and R:R has silently drifted. nil generatedAt (older/test-built
-                // ideas) → no note, never a fabricated timestamp.
-                if let generatedAt = idea.generatedAt, a.stopPrice != nil, a.targetPrice != nil {
+                // DEG-03: as-of cue used to be gated on stop+target, so Hold/Avoid sheets (no plan
+                // numerics) rendered scan-time claims (own-it %, extreme chip, journal) with ZERO
+                // staleness context. Render whenever generatedAt resolves — nil generatedAt
+                // (older/test-built ideas) → no note, never a fabricated timestamp — with the
+                // Stop & Target clause (exact wording preserved) only when both prices exist.
+                if let generatedAt = idea.generatedAt {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "clock.badge.exclamationmark").font(.system(size: mvFont11)).foregroundStyle(.secondary)
-                        Text("Stop & Target computed at \(generatedAt.formatted(.relative(presentation: .named))) — recalculate before entry.")
+                        Text(a.stopPrice != nil && a.targetPrice != nil
+                             ? "Stop & Target computed at \(generatedAt.formatted(.relative(presentation: .named))) — recalculate before entry."
+                             : "Analyzed \(generatedAt.formatted(.relative(presentation: .named))).")
                             .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
