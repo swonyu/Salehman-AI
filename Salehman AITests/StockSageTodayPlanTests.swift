@@ -47,4 +47,27 @@ struct StockSageTodayPlanTests {
         #expect(plan.contains("Don't take this trade"))   // gate blocks on no stop
         #expect(!plan.contains("shares"))                 // no account → no size line
     }
+
+    // MARK: - TODAY-PARITY: held-position context (defaulted absent, held → present)
+
+    @Test func heldContextAbsentWithoutPositions() {
+        let i = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        // Defaulted `positions: []` — existing callers/tests byte-unchanged, no holds line.
+        let plan = StockSageTodayPlan.build(idea: i, ev: StockSageExpectedValue.ev(for: i),
+                                            account: 10_000, riskFraction: 0.01)
+        #expect(!plan.contains("holds"))
+        #expect(StockSagePortfolio.holding(for: "AAPL", in: []) == nil)   // pins the absent case
+    }
+
+    @Test func heldContextPresentWhenPositionsResolveViaStockSagePortfolioHolding() {
+        let i = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        let positions = [PortfolioPosition(symbol: "AAPL", shares: 30, costBasis: 90)]
+        let plan = StockSageTodayPlan.build(idea: i, ev: StockSageExpectedValue.ev(for: i),
+                                            account: 10_000, riskFraction: 0.01, positions: positions)
+        // Pinned against the SAME source-of-truth StockSagePortfolio.holding call, not a
+        // re-derivation — can't silently diverge from the ideas board's own held-shares math.
+        let expectedShares = StockSagePortfolio.holding(for: "AAPL", in: positions)?.shares
+        #expect(expectedShares == 30)
+        #expect(plan.contains("holds 30 sh"))
+    }
 }

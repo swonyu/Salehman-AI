@@ -3778,7 +3778,10 @@ struct MarketsView: View {
                         account: StockSageInput.positiveAmount(sizerAccount),
                         riskFraction: StockSageInput.percent(sizerRiskPct).map { $0 / 100 },
                         daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
-                        isSample: store.isSampleData)
+                        isSample: store.isSampleData,
+                        // TODAY-PARITY: same held-position awareness rankedActions/the ideas
+                        // board's Held chip already carry — display-only.
+                        positions: portfolio.positions)
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(plan, forType: .string)
                 } label: {
@@ -4104,7 +4107,10 @@ struct MarketsView: View {
                         account: StockSageInput.positiveAmount(sizerAccount),
                         riskFraction: StockSageInput.percent(sizerRiskPct).map { $0 / 100 },
                         daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
-                        isSample: store.isSampleData)
+                        isSample: store.isSampleData,
+                        // TODAY-PARITY: same held-position awareness rankedActions/the ideas
+                        // board's Held chip already carry — display-only.
+                        positions: portfolio.positions)
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(plan, forType: .string)
                 },

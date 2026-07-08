@@ -11,9 +11,14 @@ import Foundation
 enum StockSageTodayPlan {
     /// Build the plan text for one idea (typically the best opportunity). Returns a
     /// multi-line checklist. `account`/`riskFraction` add the concrete share size when set.
+    /// `positions` (TODAY-PARITY, defaulted `[]` — existing callers/tests byte-unchanged) adds
+    /// held-position context via `StockSagePortfolio.holding(for:in:)` — the same "you already
+    /// hold N sh" awareness the ranked list (`rankedActions`) and the ideas board's Held chip
+    /// already carry. Display-only: never affects the gate, size, or EV math.
     nonisolated static func build(idea: StockSageIdea, ev: ExpectedValue?,
                                   account: Double?, riskFraction: Double?,
-                                  daysToEarnings: Int? = nil, isSample: Bool = false) -> String {
+                                  daysToEarnings: Int? = nil, isSample: Bool = false,
+                                  positions: [PortfolioPosition] = []) -> String {
         let a = idea.advice
         let entry = idea.price
         let rf = Swift.max(0, riskFraction ?? 0)
@@ -57,6 +62,12 @@ enum StockSageTodayPlan {
             if let acct = account, acct > 0, rf > 0,
                let ps = StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: entry, stop: s) {
                 size = " — \(ps.shares) shares ≈ \(Int(ps.dollarsAtRisk.rounded())) at risk (\(Int(ps.pctOfAccount.rounded()))% of acct)"
+            }
+            // TODAY-PARITY: pasted into a broker without knowing you already hold the name
+            // silently stacks new risk on an existing position — same rationale as the ranked
+            // list's "holds N sh" suffix (rankedActions/copyAllText above).
+            if let held = StockSagePortfolio.holding(for: idea.symbol, in: positions) {
+                size += " | holds \(numShares(held.shares)) sh"
             }
             lines.append("\(n). Entry ~\(fmt(entry)), stop \(fmt(s))"
                 + (a.targetPrice.map { ", target \(fmt($0))" } ?? "") + size); n += 1
