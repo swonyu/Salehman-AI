@@ -3916,6 +3916,9 @@ struct MarketsView: View {
             weeklyR: rawSummary.weeklyR)
         // Whether a Brake WOULD have shown had risk % been set — gates the explicit nil-state below.
         let hadBrakeContent = rawSummary.worstRunLosses != nil
+        // PERF-MVCARD: computed once, reused at both the visual warning below and the a11y-label
+        // closure that folds it in — was computed twice (byte-identical args) per render.
+        let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity)
         if s.hasContent {
             VStack(alignment: .leading, spacing: 6) {
             Button {
@@ -3957,8 +3960,13 @@ struct MarketsView: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    if let acct = StockSageInput.positiveAmount(sizerAccount), let rp = StockSageInput.percent(sizerRiskPct),
-                       let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), holds: velocityHolds, calibration: store.convictionCalibration) {
+                    // PERF-MVCARD: expectedWeeklyDollars's body is exactly `wkR * account * riskFraction`
+                    // once its guards pass — `s.weeklyR` IS that wkR by construction (summary()'s own
+                    // weeklyR field is expectedWeeklyR(ideas, tradingDaysForLane(ideas, holds, calibration),
+                    // holds, calibration), called here with the same ideas/holds/calibration), so this
+                    // avoids a second full fastLane + fastLaneConcentration recompute.
+                    if let wk = s.weeklyR, let acct = StockSageInput.positiveAmount(sizerAccount), let rp = StockSageInput.percent(sizerRiskPct) {
+                        let usd = wk * acct * (rp / 100)
                         Text(String(format: "≈ +$%.0f/week at $%.0f acct, %.1f%% risk — %@", usd, acct, rp, MoneyVelocityCopy.weeklyDollars))
                             .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)   // neutral: an estimate, not a realized gain
@@ -4005,7 +4013,7 @@ struct MarketsView: View {
                             .font(.system(size: mvFont10, weight: .semibold))
                             .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
-                    if let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity), conc.isConcentrated {
+                    if let conc, conc.isConcentrated {
                         Text("⚠︎ Fast lane is concentrated — your top \(conc.total) fastest are all \(conc.dominantClass); that's closer to one bet, not \(conc.total). Diversify or size them as one.")
                             .font(.system(size: mvFont10, weight: .semibold))
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
@@ -4030,7 +4038,7 @@ struct MarketsView: View {
                     return ""
                 }())
                 + ({ () -> String in
-                    guard let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity), conc.isConcentrated else { return "" }
+                    guard let conc, conc.isConcentrated else { return "" }
                     return ". Velocity warning: the fastest \(conc.total) ideas are all \(conc.dominantClass), concentration risk; size them as one bet."
                 }()))
             .help(StockSageGlossary.moneyVelocityHelp)
