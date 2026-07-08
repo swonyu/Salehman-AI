@@ -38,4 +38,24 @@ struct StockSageQAFixtureIdeasTests {
         let sr7010 = idea("7010.SR")
         #expect(sr7010?.advice.rationale.contains { $0.contains("⚠") } == true)
     }
+
+    // priceAsOf must land on TODAY's UTC day for every fixture idea, so the QA capture renders a
+    // fresh-scan board (no price-staleness badge). Epoch-anchored fixture dates (1970) tripped
+    // cardIsStale's price-freshness axis on every card — this pins the recent-dating fix.
+    @Test func qaFixtureIdeasCarryATodayPriceAsOfSoTheBoardIsNotStale() async {
+        let ideas = await StockSageStore.buildIdeas(defs: StockSageStore.qaFixtureDefs(),
+                                                    histories: StockSageStore.qaFixtureHistories())
+        #expect(ideas.count == 5)
+        let todayKey = StockSageScanChunking.utcDayKey(Date())
+        for idea in ideas {
+            guard let asOf = idea.priceAsOf else {
+                Issue.record("\(idea.symbol) has nil priceAsOf — fixture history dropped its dates")
+                continue
+            }
+            #expect(StockSageScanChunking.utcDayKey(asOf) == todayKey)   // last bar dated today
+            // The exact predicate the board badge / detail cue key on — must read NOT stale.
+            #expect(MarketsView.cardIsStale(generatedAt: idea.generatedAt, now: Date(),
+                                            priceAsOf: idea.priceAsOf) == false)
+        }
+    }
 }

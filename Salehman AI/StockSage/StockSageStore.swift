@@ -1756,7 +1756,14 @@ final class StockSageStore: ObservableObject {
 
     nonisolated static func qaFixtureHistories() -> [String: StockSagePriceHistory] {
         func hist(_ sym: String, _ closes: [Double]) -> StockSagePriceHistory {
-            let dates = closes.enumerated().map { Date(timeIntervalSince1970: Double($0.offset) * 86_400) }
+            // Date the bars so the LAST close lands on today (one bar per prior day). Deterministic
+            // in rendered output — the fixture prices are fixed and the sparkline uses only closes,
+            // but priceAsOf (= dates.last) must read as TODAY so the QA board shows a fresh scan,
+            // not a stale-everything board. Epoch-anchored dates (1970) made every fixture card
+            // trip cardIsStale's price-freshness axis (added 2026-07-08) — a false stale badge on a
+            // board meant to represent the normal fresh-scan case.
+            let base = Date().addingTimeInterval(-Double(max(0, closes.count - 1)) * 86_400)
+            let dates = closes.enumerated().map { base.addingTimeInterval(Double($0.offset) * 86_400) }
             return StockSagePriceHistory(symbol: sym, dates: dates,
                 opens: closes, highs: closes.map { $0 * 1.005 }, lows: closes.map { $0 * 0.995 },
                 closes: closes, volumes: closes.map { _ in 100_000 })
