@@ -5663,6 +5663,24 @@ struct MarketsView: View {
                     }
                 }
 
+                // Cluster-check result computed ONCE here and reused by both hasContextContent
+                // and the child render below (~5782) — the FORMER "buy/strongBuy ⇒ renders" clause
+                // over-approximated: checkDated returns nil whenever the portfolio has no OTHER
+                // dated-return holdings to compare against (e.g. an empty portfolio), so the child
+                // silently rendered nothing while the header still showed (orphan "Context" header,
+                // audit 2026-07-08). Sharing this one optional means the predicate and the child
+                // can never diverge again.
+                let clusterResult: (check: ClusterCheck, skipped: Int)? = {
+                    guard a.action == .buy || a.action == .strongBuy else { return nil }
+                    let candDated = store.precheckDatedReturns[idea.symbol.uppercased()] ?? []
+                    let heldDated = portfolio.positions.compactMap { p -> (symbol: String, returns: [(date: Date, ret: Double)])? in
+                        guard let dr = store.precheckDatedReturns[p.symbol.uppercased()], !dr.isEmpty else { return nil }
+                        return (p.symbol, dr)
+                    }
+                    return StockSageClusterCheck.checkDated(
+                        candidate: idea.symbol, candidateReturns: candDated, holdings: heldDated)
+                }()
+
                 // ── 10. "Context" labeled section ────────────────────────────────
                 // Gate the Divider+header on whether at least one child will actually render.
                 // Derived from the real child guards:
@@ -5670,7 +5688,7 @@ struct MarketsView: View {
                 //   • asset-class risk note: StockSageGlossary.assetClassRiskNote(symbol) != nil
                 //   • portfolio precheck: precheck[symbol]?.verdict != .noHoldings
                 //   • what-if concentration: !portfolio.positions.isEmpty
-                //   • cluster check: buy/strongBuy action (inner nil-guard handled by child)
+                //   • cluster check: clusterResult != nil (SAME optional the child renders from)
                 //   • liquidity: liquidity[symbol] != nil
                 //   • seasonality: seasonality[symbol] != nil (inner stat/samples guard in child)
                 let hasContextContent: Bool = {
@@ -5680,7 +5698,7 @@ struct MarketsView: View {
                     if StockSageGlossary.assetClassRiskNote(for: idea.symbol) != nil { return true }
                     if let pc = store.precheck[sym], pc.verdict != .noHoldings { return true }
                     if !portfolio.positions.isEmpty { return true }
-                    if a.action == .buy || a.action == .strongBuy { return true }
+                    if clusterResult != nil { return true }
                     if store.liquidity[sym] != nil { return true }
                     if store.seasonality[sym] != nil { return true }
                     return false
@@ -5769,14 +5787,12 @@ struct MarketsView: View {
                 // days is UNKNOWN and skipped; with no scorable pair nothing renders (honest
                 // unknown — never a fabricated coefficient).
                 if a.action == .buy || a.action == .strongBuy {
-                    let candDated = store.precheckDatedReturns[idea.symbol.uppercased()] ?? []
                     let heldDated = portfolio.positions.compactMap { p -> (symbol: String, returns: [(date: Date, ret: Double)])? in
                         guard let dr = store.precheckDatedReturns[p.symbol.uppercased()], !dr.isEmpty else { return nil }
                         return (p.symbol, dr)
                     }
                     let missingSeries = portfolio.positions.count - heldDated.count
-                    if let (cc, overlapSkipped) = StockSageClusterCheck.checkDated(
-                        candidate: idea.symbol, candidateReturns: candDated, holdings: heldDated) {
+                    if let (cc, overlapSkipped) = clusterResult {
                         // Show the verdict either way: a warning when it concentrates,
                         // an affirmation when it genuinely diversifies the checked subset.
                         // Suppress the green affirmation when holdings were skipped (no fetched

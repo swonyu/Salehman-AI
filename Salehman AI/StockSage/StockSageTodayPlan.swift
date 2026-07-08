@@ -172,7 +172,14 @@ enum StockSageTodayPlan {
             // context the on-screen row does — acting on this line without knowing you already
             // hold the name silently stacks new risk on an existing position.
             if let held = p.heldShares { line += " | holds \(numShares(held)) sh" }
-            line += " | \(p.gate.decision.rawValue)" + (p.gate.decision == .blocked ? " — DO NOT TRADE" : "")
+            // F04-parity: mirror MarketsView.swift's sheet copy-plan wording VERBATIM (~5064-5065)
+            // instead of fabricating a verdict from an unsupplied risk % — all export/board/sheet
+            // surfaces must agree on the exact same honest phrasing.
+            if let gate = p.gate {
+                line += " | \(gate.decision.rawValue)" + (gate.decision == .blocked ? " — DO NOT TRADE" : "")
+            } else {
+                line += " | Pre-trade gate: not evaluated — enter risk % to see the verdict."
+            }
             if p.netCostFloorFlag.isDeranked { line += " | ⚠ below net-cost floor" }
             if p.isLowConviction { line += " | ⚠ low conviction" }
             lines.append(line)
@@ -205,7 +212,10 @@ struct TodayActionPlan: Sendable, Equatable, Identifiable {
     let target: Double
     let shares: Int?
     let dollarsAtRisk: Double?
-    let gate: TradeGateVerdict
+    /// nil ⇒ gate not evaluated — no real risk % was supplied (mirrors
+    /// StockSageDecisionSnapshot.gate's honest-nil; F04-parity, 2nd-read hunt 2026-07-08). Never a
+    /// fabricated CLEAR/CAUTION/BLOCKED verdict conjured from a silent `?? 0.01` default.
+    let gate: TradeGateVerdict?
     let isCrypto: Bool     // symbol.hasSuffix("-USD") — the existing crypto predicate, shown upfront
     /// Same de-rank flag the main ideas/velocity boards already show (`StockSageExpectedValue.
     /// netCostFloorFlag`) — `fastLane()` demotes but does NOT exclude below-floor ideas from its

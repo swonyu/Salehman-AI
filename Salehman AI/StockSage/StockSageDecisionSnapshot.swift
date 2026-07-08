@@ -38,7 +38,11 @@ struct StockSageDecisionSnapshot: Sendable, Equatable {
     let liquidityProfile: LiquidityProfile?
 
     // Risk + execution checks
-    let gate: TradeGateVerdict
+    // nil ⇒ gate not evaluated (no real risk % supplied) — honest, never a fabricated verdict.
+    // F04 reached the detail-sheet/copy-plan surfaces (parsedRiskFraction guards there) but not
+    // this shared snapshot, which silently defaulted to `?? 0.01` and always produced a verdict
+    // (2nd-read hunt, 2026-07-08).
+    let gate: TradeGateVerdict?
     let positionSize: PositionSize?
 
     // Explainability summary
@@ -112,6 +116,7 @@ struct StockSageDecisionSnapshot: Sendable, Equatable {
     }
 
     private var gateBadge: String {
+        guard let gate else { return "set risk %" }
         switch gate.decision {
         case .clear: return "CLEAR"
         case .caution: return "CAUTION"
@@ -197,20 +202,28 @@ enum StockSageDecisionSnapshotBuilder {
             return abs(target - idea.price) / risk
         }()
 
-        let gateRisk = Swift.max(0, riskFraction ?? 0.01)
         let earningsFlag = StockSageExpectedValue.earningsRankFlag(for: idea, earnings: earnings)
         let floorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: holds, calibration: calibration)
         let liq = liquidity[idea.symbol.uppercased()]
 
-        let gate = StockSageTradeGate.evaluate(
-            hasStop: idea.advice.stopPrice != nil,
-            rewardToRisk: rrForGate,
-            riskFraction: gateRisk,
-            maxRiskFraction: maxRiskFraction,
-            maxCorrelation: nil,
-            daysToEarnings: earnings[idea.symbol.uppercased()]?.daysUntil,
-            rrIsNet: netRR != nil
-        )
+        // F04-parity (2nd-read hunt, 2026-07-08): the detail sheet/copy-plan already refuse to
+        // fabricate a verdict when no real risk % was typed (guarded on `parsedRiskFraction`,
+        // MarketsView.swift ~5054/~5935) — this shared builder was the one surface still defaulting
+        // an unsupplied riskFraction to `?? 0.01` and always producing a CLEAR/CAUTION/BLOCKED
+        // verdict. Evaluate ONLY when riskFraction is a real positive value; otherwise the gate is
+        // honestly nil ("not evaluated"), matching the detail sheet's "set risk %" wording.
+        let gate: TradeGateVerdict? = {
+            guard let rf = riskFraction, rf > 0 else { return nil }
+            return StockSageTradeGate.evaluate(
+                hasStop: idea.advice.stopPrice != nil,
+                rewardToRisk: rrForGate,
+                riskFraction: rf,
+                maxRiskFraction: maxRiskFraction,
+                maxCorrelation: nil,
+                daysToEarnings: earnings[idea.symbol.uppercased()]?.daysUntil,
+                rrIsNet: netRR != nil
+            )
+        }()
 
         let size: PositionSize? = {
             guard let account, account > 0,

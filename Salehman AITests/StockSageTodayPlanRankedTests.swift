@@ -82,13 +82,13 @@ struct StockSageTodayPlanRankedTests {
             // rrIsNet:true iff netRR resolved (non-nil) — mirrors rankedActions' own logic post-wave-11
             let expected = StockSageTradeGate.evaluate(hasStop: true, rewardToRisk: rr, riskFraction: 0.01,
                                                        rrIsNet: resolvedNetRR != nil)
-            #expect(p.gate == expected)
+            #expect(p.gate == expected)   // riskFraction: 0.01 supplied ⇒ gate is non-nil
             // Value pin (not just the plumbing mirror): the decision itself is hand-derived .clear.
             // A netRR 3.873294, B netRR 4.750799 (both ≥2 → positive-skew PASS; derive_gate_decision.swift);
             // riskFraction 0.01 ≤ 0.02 cap PASS; hasStop PASS; corr/earnings nil (no check) ⇒ no warn/fail ⇒ .clear.
             // Catches the failure a pure mirror can't: if rankedActions AND this call shared the same wrong rr,
             // `p.gate == expected` would still pass while the decision was wrong.
-            #expect(p.gate.decision == .clear)
+            #expect(p.gate?.decision == .clear)
         }
     }
 
@@ -99,7 +99,7 @@ struct StockSageTodayPlanRankedTests {
                      clearIdea("C", conviction: 0.85, riskAbs: 4, rewardAbs: 18)]
         let plans = StockSageTodayPlan.rankedActions(ideas, account: 10_000, riskFraction: 0.05)
         #expect(!plans.isEmpty)
-        for p in plans { #expect(p.gate.decision == .blocked) }
+        for p in plans { #expect(p.gate?.decision == .blocked) }   // riskFraction: 0.05 supplied ⇒ gate is non-nil
         let text = StockSageTodayPlan.copyAllText(plans)
         #expect(text.contains("DO NOT TRADE"))
         for p in plans { #expect(text.contains(p.symbol)) }
@@ -310,6 +310,24 @@ struct StockSageTodayPlanRankedTests {
         // B has neither a position nor a closed trade — must stay nil, not zero (no fabricated 0).
         #expect(b?.heldShares == nil)
         #expect(b?.closedTradeCount == nil)
+    }
+
+    // F04-parity (2nd-read hunt, 2026-07-08): nil riskFraction must NOT fabricate a gate verdict
+    // (the old `?? 0.01` default inside StockSageDecisionSnapshotBuilder always produced one) —
+    // the plan's gate is honestly nil, the row badge/copy text must say so, never CLEAR/CAUTION/
+    // BLOCKED conjured from an unrequested 1% risk.
+    @Test func rankedActionGateIsNilWhenRiskFractionNotSuppliedAndCopyTextSaysNotEvaluated() {
+        let ideas = [clearIdea("A"), clearIdea("B", conviction: 0.9, riskAbs: 3, rewardAbs: 15)]
+        let plans = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: nil)
+        #expect(!plans.isEmpty)
+        for p in plans { #expect(p.gate == nil) }
+        let text = StockSageTodayPlan.copyAllText(plans)
+        // Verbatim wording match with the sheet's copy-plan (MarketsView.swift ~5064-5065) — all
+        // surfaces must agree on the exact same honest phrasing.
+        #expect(text.contains("Pre-trade gate: not evaluated — enter risk % to see the verdict."))
+        #expect(!text.contains("Clear to trade"))
+        #expect(!text.contains("Proceed with caution"))
+        #expect(!text.contains("Don't take this trade"))
     }
 
     @Test func copyAllTextAppendsHoldsSuffixOnlyWhenHeldSharesResolves() {

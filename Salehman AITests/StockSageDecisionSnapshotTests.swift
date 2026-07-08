@@ -50,7 +50,37 @@ struct StockSageDecisionSnapshotTests {
             riskFraction: 0.01,
             rrIsNet: true
         )
-        #expect(snap.gate == expectedGate)
+        #expect(snap.gate == expectedGate)   // riskFraction: 0.01 supplied above ⇒ gate is non-nil
+    }
+
+    // F04-parity (2nd-read hunt, 2026-07-08): the detail sheet and copy-plan already refuse to
+    // fabricate a verdict when no real risk % was typed — this builder was still silently
+    // defaulting an unsupplied riskFraction to `?? 0.01` and always producing a CLEAR/CAUTION/
+    // BLOCKED verdict via StockSageTradeGate.evaluate. The gate must now be honestly nil.
+    @Test func snapshotGateIsNilWhenRiskFractionIsNotSupplied() {
+        let idea = SageFix.idea("MSFT", conviction: 0.85, action: .strongBuy, rr: 2.0, price: 100, riskDistance: 10)
+
+        let noRisk = StockSageDecisionSnapshotBuilder.build(idea: idea)
+        #expect(noRisk.gate == nil)
+
+        let zeroRisk = StockSageDecisionSnapshotBuilder.build(idea: idea, riskFraction: 0)
+        #expect(zeroRisk.gate == nil)
+
+        let negativeRisk = StockSageDecisionSnapshotBuilder.build(idea: idea, riskFraction: -0.01)
+        #expect(negativeRisk.gate == nil)
+
+        // A real positive risk % still produces an actual verdict (not swallowed by the fix) —
+        // mirrors the engine call directly rather than hardcoding a decision, matching
+        // snapshotGateAndSizingMatchEngineSeams' own pattern above.
+        let withRisk = StockSageDecisionSnapshotBuilder.build(idea: idea, riskFraction: 0.01)
+        #expect(withRisk.gate != nil)
+        let expectedWithRiskGate = StockSageTradeGate.evaluate(
+            hasStop: true,
+            rewardToRisk: withRisk.netRR,
+            riskFraction: 0.01,
+            rrIsNet: true
+        )
+        #expect(withRisk.gate == expectedWithRiskGate)
     }
 
     @Test func snapshotAddsRegimeBannedReasonForBuyInCrisis() {

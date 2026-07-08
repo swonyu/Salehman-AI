@@ -74,7 +74,7 @@ struct MarketsTodayActionsCard: View {
 
     @ViewBuilder
     private func row(_ rank: Int, _ plan: TodayActionPlan) -> some View {
-        let blocked = plan.gate.decision == .blocked
+        let blocked = plan.gate?.decision == .blocked
         Button { onSelectSymbol(plan.symbol) } label: {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: DS.Space.sm) {
@@ -122,16 +122,16 @@ struct MarketsTodayActionsCard: View {
                     }
                     Spacer(minLength: 0)
                 }
-                if blocked {
-                    Text("DO NOT TRADE — \(plan.gate.checks.first(where: { $0.level == .fail })?.label ?? "gate failed")")
+                if blocked, let gate = plan.gate {
+                    Text("DO NOT TRADE — \(gate.checks.first(where: { $0.level == .fail })?.label ?? "gate failed")")
                         .font(.system(size: font8, weight: .semibold)).foregroundStyle(DS.Palette.dangerSoft)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 // Caution: show the first warn reason as a visible secondary line for sighted users
                 // (the a11y label already carries this, but sighted users had no way to see the reason
                 // without a tooltip). lineLimit(1) keeps the row tight; '+N more' if several warns.
-                if plan.gate.decision == .caution {
-                    let warns = plan.gate.checks.filter { $0.level == .warn }
+                if let gate = plan.gate, gate.decision == .caution {
+                    let warns = gate.checks.filter { $0.level == .warn }
                     if let first = warns.first {
                         let more = warns.count > 1 ? " +\(warns.count - 1) more" : ""
                         Text("⚠ \(first.label)\(more)")
@@ -162,16 +162,23 @@ struct MarketsTodayActionsCard: View {
             // board's own a11y phrasing (MarketsView ideaCard label builder).
             if let held = plan.heldShares { label += ", you hold \(numShares(held)) shares" }
             if let closed = plan.closedTradeCount { label += ", \(closed) closed trades in your journal" }
-            label += ". \(plan.gate.decision.rawValue)."
-            // TODAY-A11Y-01: mirror the visible "DO NOT TRADE — {reason}" line (~120) — the
-            // bare "Do not trade." spoke no reason while caution rows below DO speak theirs.
-            if blocked {
-                let failLabel = plan.gate.checks.first(where: { $0.level == .fail })?.label ?? "gate failed"
-                label += " Do not trade — \(failLabel)."
-            }
-            if plan.gate.decision == .caution,
-               let warn = plan.gate.checks.first(where: { $0.level == .warn }) {
-                label += " Caution: \(warn.label)."
+            // F04-parity: nil gate ⇒ risk % wasn't supplied — mirror the sheet chip's a11y wording
+            // ("Pre-trade gate: risk percent not set", MarketsView.swift ~5993) instead of forcing
+            // a verdict sentence with no verdict to report.
+            if let gate = plan.gate {
+                label += ". \(gate.decision.rawValue)."
+                // TODAY-A11Y-01: mirror the visible "DO NOT TRADE — {reason}" line (~120) — the
+                // bare "Do not trade." spoke no reason while caution rows below DO speak theirs.
+                if blocked {
+                    let failLabel = gate.checks.first(where: { $0.level == .fail })?.label ?? "gate failed"
+                    label += " Do not trade — \(failLabel)."
+                }
+                if gate.decision == .caution,
+                   let warn = gate.checks.first(where: { $0.level == .warn }) {
+                    label += " Caution: \(warn.label)."
+                }
+            } else {
+                label += ". Pre-trade gate: risk percent not set."
             }
             label += " Tap for the plan."
             return label
@@ -179,21 +186,32 @@ struct MarketsTodayActionsCard: View {
     }
 
     @ViewBuilder
-    private func gateBadge(_ gate: TradeGateVerdict) -> some View {
-        let color: Color = gate.decision == .clear ? DS.Palette.successSoft
-            : (gate.decision == .caution ? DS.Palette.warningSoft : DS.Palette.dangerSoft)
-        let label = gate.decision == .clear ? "CLEAR" : (gate.decision == .caution ? "CAUTION" : "BLOCKED")
-        // Build a .help string from the warn/fail check labels so sighted users can hover-reveal
-        // the gate reason without opening the detail sheet.
-        let reasonLabels = gate.checks.filter { $0.level == .warn || $0.level == .fail }.map(\.label)
-        let helpText: String = {
-            if reasonLabels.isEmpty { return "\(label) gate verdict." }
-            return "\(label): \(reasonLabels.joined(separator: " · "))"
-        }()
-        Text(label)
-            .font(.system(size: font8, weight: .bold)).foregroundStyle(color)
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(color.opacity(0.15), in: Capsule())
-            .help(helpText)
+    private func gateBadge(_ gate: TradeGateVerdict?) -> some View {
+        // F04-parity: nil ⇒ gate not evaluated (no real risk % supplied) — the neutral "set risk %"
+        // badge mirrors the sheet's pinned-bar chip (MarketsView.swift ~5986-5993) instead of
+        // fabricating a CLEAR/CAUTION/BLOCKED verdict from a silently-defaulted risk fraction.
+        if let gate {
+            let color: Color = gate.decision == .clear ? DS.Palette.successSoft
+                : (gate.decision == .caution ? DS.Palette.warningSoft : DS.Palette.dangerSoft)
+            let label = gate.decision == .clear ? "CLEAR" : (gate.decision == .caution ? "CAUTION" : "BLOCKED")
+            // Build a .help string from the warn/fail check labels so sighted users can hover-reveal
+            // the gate reason without opening the detail sheet.
+            let reasonLabels = gate.checks.filter { $0.level == .warn || $0.level == .fail }.map(\.label)
+            let helpText: String = {
+                if reasonLabels.isEmpty { return "\(label) gate verdict." }
+                return "\(label): \(reasonLabels.joined(separator: " · "))"
+            }()
+            Text(label)
+                .font(.system(size: font8, weight: .bold)).foregroundStyle(color)
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(color.opacity(0.15), in: Capsule())
+                .help(helpText)
+        } else {
+            Text("SET RISK %")
+                .font(.system(size: font8, weight: .bold)).foregroundStyle(DS.Palette.textSecondary)
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(DS.Palette.textSecondary.opacity(0.15), in: Capsule())
+                .help("Enter risk % to see the pre-trade gate verdict.")
+        }
     }
 }

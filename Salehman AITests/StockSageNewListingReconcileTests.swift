@@ -57,6 +57,30 @@ struct StockSageNewListingReconcileTests {
         #expect(result.isEmpty)
     }
 
+    // FIX (2nd-read hunt, 2026-07-08): refresh(scope:)'s newListings assignment previously used
+    // `.subtracting(scopedKeys)` — wrongly dropping the flag for an in-scope symbol the feed
+    // THROTTLED/MISSED this cycle (present in scopedKeys, absent from quotes.keys), fabricating a
+    // "+0.0%" flat tile instead of "N/A (new)". It now reads `reconcileNewListings(current:
+    // pricedQuotes: quotes)` directly — this test hand-derives the exact three-way scenario the
+    // fix must resolve: a throttled user-added new listing (in scopedKeys, NOT in quotes.keys)
+    // KEEPS its flag; a re-priced non-new symbol (in quotes.keys, isNewListing==false) LOSES it;
+    // an out-of-scope symbol (not in quotes.keys, e.g. a .core tick skipping a .full-only name)
+    // KEEPS it (preserves the existing equity-2000 scoped-refresh carry-forward).
+    @Test func throttledUserNewListingKeepsFlagWhileRepricedAndOutOfScopeResolveCorrectly() {
+        let current: Set<String> = ["THROTTLED_NEW", "REPRICED_NOW_ORDINARY", "OUT_OF_SCOPE_NEW"]
+        // This cycle's `quotes` — THROTTLED_NEW and OUT_OF_SCOPE_NEW are both absent (neither was
+        // fetched: one throttled by the feed despite being in scope, the other never in scope this
+        // cycle). Only REPRICED_NOW_ORDINARY was actually fetched, and the feed now reports it as
+        // no longer new.
+        let quotes: [String: StockSageQuoteService.LiveQuote] = [
+            "REPRICED_NOW_ORDINARY": quote("REPRICED_NOW_ORDINARY", isNewListing: false),
+        ]
+        let result = Store.reconcileNewListings(current: current, pricedQuotes: quotes)
+        #expect(result.contains("THROTTLED_NEW"))          // throttled in-scope symbol: flag survives
+        #expect(!result.contains("REPRICED_NOW_ORDINARY"))  // actually re-priced non-new: flag clears
+        #expect(result.contains("OUT_OF_SCOPE_NEW"))         // out-of-scope symbol: flag survives
+    }
+
     @Test func mixedBatchReconcilesEachSymbolIndependently() {
         // One batch, three symbols, three different starting states — each must resolve on its
         // own flag, matching the per-quote loop in mergeLiveQuotes/addSymbol.

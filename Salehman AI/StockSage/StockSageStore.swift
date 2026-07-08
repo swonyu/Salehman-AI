@@ -1359,6 +1359,11 @@ final class StockSageStore: ObservableObject {
         let fingerprint = symbols.sorted().joined(separator: ",")
         guard laneCorrelationFingerprint != fingerprint else { return }
         guard ToolPolicy.webToolsDisabledReason() == nil else { return }
+        // Membership just changed (fingerprint guard above passed) — clear the stale value BEFORE
+        // the await so the view falls back to the honest "Correlation — fetching…" placeholder
+        // during the in-flight window instead of showing the OLD symbol set's number (which can
+        // even invert the hedge-quality qualifier band). Mirrors the empty-side clear at L1356.
+        laneCorrelationValue = nil
         let histories = await StockSageQuoteService.fetchHistories(for: symbols)
         guard !Task.isCancelled else { return }
         let result = StockSageExpectedValue.laneCorrelation(
@@ -1647,8 +1652,14 @@ final class StockSageStore: ObservableObject {
         // (scopedKeys) — flags for out-of-scope rows the cycle didn't attempt carry forward,
         // else every ~45s .core tick wipes the catalogExtra rows' new-listing honesty badges
         // (review round-3 finding 2; same honesty lineage as audit L3-01).
-        newListings = Set(quotes.filter { $0.value.isNewListing }.keys)
-            .union(newListings.subtracting(scopedKeys))
+        // FIX (2nd-read hunt, 2026-07-08): was `.subtracting(scopedKeys)`, which wrongly dropped
+        // the flag for an in-scope symbol the feed simply THROTTLED/MISSED this cycle (present in
+        // scopedKeys, absent from quotes.keys — e.g. a user-added new listing preserved via
+        // preservedUserRows) — its tile fabricated a flat "+0.0%" instead of staying "N/A (new)".
+        // reconcileNewListings only clears a flag for a symbol THIS cycle actually re-priced
+        // (present in quotes with isNewListing==false); anything absent from quotes.keys — whether
+        // throttled-in-scope or genuinely out-of-scope — carries its flag forward untouched.
+        newListings = Self.reconcileNewListings(current: newListings, pricedQuotes: quotes)
         replaceAll(committed, isSample: false)
         lastUpdated = Date()
         // Newest MARKET time across the priced quotes — the banner uses this (not fetch time) to
