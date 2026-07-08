@@ -3264,8 +3264,10 @@ struct MarketsView: View {
             riskFraction: parsedRiskFraction ?? 0.01,
             regime: store.regime)
         let cardVM = snapshot.cardViewModel
-        let earningsBadge = cardVM.warningBadges.first(where: { $0.contains("earnings") })
-        let hasFloorWarning = cardVM.warningBadges.contains("below net-cost floor")
+        let earningsBadge = cardVM.hasEarningsWarning
+            ? cardVM.warningBadges.first(where: { $0.contains("earnings") })
+            : nil
+        let hasFloorWarning = cardVM.hasFloorWarning
         // Legible reason for the earnings-aware rank: a chip when earnings are imminent/approaching.
         let earnFlag = StockSageExpectedValue.earningsRankFlag(for: idea, earnings: store.earnings)
         // At-the-extreme chip (OSS-borrow B3, Ghostfolio min/max highlight; L1 honesty fix
@@ -5104,8 +5106,8 @@ struct MarketsView: View {
             riskFraction: parsedRiskFraction ?? 0.01,
             regime: store.regime)
         let detailVM = snapshot.detailViewModel
-        let hasEarningsWarning = detailVM.warningBadges.contains(where: { $0.contains("earnings") })
-        let hasFloorWarning = detailVM.warningBadges.contains("below net-cost floor")
+        let hasEarningsWarning = detailVM.hasEarningsWarning
+        let hasFloorWarning = detailVM.hasFloorWarning
         // Hoist riskFlags for the chips row and CTA bar: shared in ideaDetailSheet only.
         // fullPlanText(for:) recomputes its own riskFlags from the same store inputs so the
         // card context-menu "Copy trade plan" path works with no sheet alive.

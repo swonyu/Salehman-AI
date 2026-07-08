@@ -93,6 +93,8 @@ struct StockSageDecisionSnapshotTests {
         #expect(card.velocityText == detail.velocityText)
         #expect(card.netVelocityText == detail.netVelocityText)
         #expect(card.gateBadge == detail.gateBadge)
+        #expect(card.hasEarningsWarning == detail.hasEarningsWarning)
+        #expect(card.hasFloorWarning == detail.hasFloorWarning)
         #expect(card.warningBadges == detail.warningBadges)
         #expect(card.calibrationTitle == detail.calibrationTitle)
         #expect(card.calibrationHelp == detail.calibrationHelp)
@@ -110,9 +112,11 @@ struct StockSageDecisionSnapshotTests {
         #expect(card.warningBadges.contains("low conviction"))
         #expect(card.warningBadges.contains("thin liquidity"))
         #expect(card.warningBadges.contains(where: { $0.contains("earnings") }))
+        #expect(card.hasEarningsWarning)
         #expect(detail.rankReasonCodes.contains("lowConviction"))
         #expect(detail.rankReasonCodes.contains("earningsImminent"))
         #expect(detail.rankReasonCodes.contains("liquidityThin"))
+        #expect(detail.hasEarningsWarning)
     }
 
     @Test func adaptersMirrorNetCostFloorWarningFromSnapshotFlag() {
@@ -124,7 +128,9 @@ struct StockSageDecisionSnapshotTests {
         let expectsFloorWarning = snap.floorFlag.isDeranked
 
         #expect(card.warningBadges.contains("below net-cost floor") == expectsFloorWarning)
+        #expect(card.hasFloorWarning == expectsFloorWarning)
         #expect(detail.warningBadges.contains("below net-cost floor") == expectsFloorWarning)
+        #expect(detail.hasFloorWarning == expectsFloorWarning)
         #expect(detail.rankReasonCodes.contains("belowNetCostFloor") == expectsFloorWarning)
     }
 }

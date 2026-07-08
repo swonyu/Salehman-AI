@@ -58,6 +58,8 @@ struct StockSageDecisionSnapshot: Sendable, Equatable {
             velocityText: velocityGross.map { String(format: "%+.3fR/day gross", $0) },
             netVelocityText: netVelocity.map { String(format: "%+.3fR/day net", $0) },
             gateBadge: gateBadge,
+            hasEarningsWarning: hasEarningsWarning,
+            hasFloorWarning: hasFloorWarning,
             warningBadges: warningBadges,
             calibrationTitle: calibrationTitle,
             calibrationHelp: calibrationHelp
@@ -72,11 +74,24 @@ struct StockSageDecisionSnapshot: Sendable, Equatable {
             velocityText: velocityGross.map { String(format: "%+.3fR/day gross", $0) },
             netVelocityText: netVelocity.map { String(format: "%+.3fR/day net", $0) },
             gateBadge: gateBadge,
+            hasEarningsWarning: hasEarningsWarning,
+            hasFloorWarning: hasFloorWarning,
             warningBadges: warningBadges,
             rankReasonCodes: rankReasons.map(\.rawValue),
             calibrationTitle: calibrationTitle,
             calibrationHelp: calibrationHelp
         )
+    }
+
+    private var hasEarningsWarning: Bool {
+        switch earningsFlag {
+        case .demoted, .approaching: return true
+        case .clear, .unknown: return false
+        }
+    }
+
+    private var hasFloorWarning: Bool {
+        floorFlag.isDeranked
     }
 
     private var gateBadge: String {
@@ -117,6 +132,8 @@ struct IdeaCardViewModel: Sendable, Equatable {
     let velocityText: String?
     let netVelocityText: String?
     let gateBadge: String
+    let hasEarningsWarning: Bool
+    let hasFloorWarning: Bool
     let warningBadges: [String]
     let calibrationTitle: String
     let calibrationHelp: String
@@ -129,6 +146,8 @@ struct IdeaDetailViewModel: Sendable, Equatable {
     let velocityText: String?
     let netVelocityText: String?
     let gateBadge: String
+    let hasEarningsWarning: Bool
+    let hasFloorWarning: Bool
     let warningBadges: [String]
     let rankReasonCodes: [String]
     let calibrationTitle: String
