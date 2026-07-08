@@ -132,11 +132,12 @@ final class StockSageStore: ObservableObject {
     /// Symbols the last analysis couldn't fetch history for (feed miss / rate-limit) —
     /// surfaced so the board never silently ranks on a partial universe.
     @Published private(set) var ideasMissing: [String] = []
-    /// THROTTLE FALLBACK SCAFFOLD (Stage 1, PLAN_2026-07-08_equity2000.md): true when a
-    /// chunk beyond the first returned < 30% coverage (429-storm signature) and the scan
-    /// stopped launching further chunks. Completed chunks' results stay on the board;
-    /// `ideasMissing` names the rest. At today's n=210 (single-ish chunk) this is dormant —
-    /// exercised via `StockSageScanChunking.shouldThrottle` in tests, not reachable live yet.
+    /// THROTTLE FALLBACK (Stage 1/2, PLAN_2026-07-08_equity2000.md): true when a chunk beyond
+    /// the first returned < 30% coverage (429-storm signature) and the scan stopped launching
+    /// further chunks. Completed chunks' results stay on the board; `ideasMissing` names the
+    /// rest. Post-Stage-2's ~10-chunk 2,420-name universe, this is live-reachable (Stage 1
+    /// shipped it dormant at n=210's single chunk); still directly exercised via
+    /// `StockSageScanChunking.shouldThrottle` in tests.
     @Published private(set) var scanThrottled = false
 
     /// Signal alerts — events (flips, stop/target crossings) detected between
@@ -363,13 +364,14 @@ final class StockSageStore: ObservableObject {
     /// so no actor hops are added. Cancellation (from `cancelIdeasRefresh` or a chunk watchdog)
     /// stops it applying stale results.
     ///
-    /// CHUNKED PROGRESSIVE SCAN (PLAN_2026-07-08_equity2000.md Stage 1): `trackedDefs()` is
-    /// split into `StockSageScanChunking.chunks` (~250 wide; chunk 0 is always the array's
-    /// natural head, so the curated Saudi-first core scans and appears on the board first).
-    /// Each chunk is fetched, built, and MERGED into `ideas` independently — replace-by-symbol,
-    /// re-sorted, board published — so the board grows live instead of waiting for the whole
-    /// universe. At today's n=210 universe this is a SINGLE chunk, so the merge loop runs once
-    /// and the observable behavior is byte-identical to the pre-chunking single-shot scan.
+    /// CHUNKED PROGRESSIVE SCAN (Stage 1) + UNIVERSE PROMOTION (Stage 2), both
+    /// PLAN_2026-07-08_equity2000.md: `trackedDefs()` is split into `StockSageScanChunking.chunks`
+    /// (~250 wide; chunk 0 is always the array's natural head, so the curated Saudi-first core
+    /// scans and appears on the board first). Each chunk is fetched, built, and MERGED into
+    /// `ideas` independently — replace-by-symbol, re-sorted, board published — so the board
+    /// grows live instead of waiting for the whole universe. Post-Stage-2 the universe is 2,420
+    /// names (~10 chunks); the merge loop that was single-shot-equivalent at Stage 1's n=210 now
+    /// runs its full multi-chunk streaming path live.
     /// SCAN-END-ONCE semantics (delta baseline with the DEG-01 missing-but-tracked carry-forward,
     /// missingAfterScan, history-cache save, paper trades, earnings kick, and alert detection)
     /// all run exactly once, after the FINAL chunk, over the accumulated full-scan result —

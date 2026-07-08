@@ -247,6 +247,48 @@ struct StockSageUniverseTests {
             #expect(tickers.contains(t))
         }
     }
+
+    // PLAN_2026-07-08_equity2000.md Stage 2 tests below — hand-derived independently of the
+    // implementation (two independent standalone-script extractions of the source literals,
+    // NOT a call into `StockSageUniverse`; see the derivation transcript in the ship report):
+    // groups = 210 tickers (Stage 1's documented n=210, unchanged), catalogExtra = 2,210
+    // tickers, ZERO symbols shared between the two lists today → worldwide.count = 210 + 2,210
+    // = 2,420 exactly. Pinned as that exact derived sum (not a re-typed magic number: the
+    // 210/2,210/2,420 arithmetic is shown inline) AND bounded > 2,300 so a silent group-loss
+    // regression (e.g. a future edit that drops a whole `groups` or `catalogExtra` block) fails
+    // loudly even if someone "fixes" the exact pin without noticing the loss.
+    @Test func worldwideIsPromotedToTheFullTwoThousandFourHundredTwentyNameUniverse() {
+        let groupsCount = 210          // Stage 1 n=210, hand-verified unchanged by this promotion
+        let catalogExtraCount = 2_210  // hand-counted from the source literal, see derivation script
+        let expected = groupsCount + catalogExtraCount   // zero cross-list overlap today
+        #expect(expected == 2_420)
+        #expect(StockSageUniverse.worldwide.count == expected)
+        #expect(StockSageUniverse.worldwide.count > 2_300)   // regression guard: silent group loss
+    }
+
+    // Dedup regression-catcher: whatever `worldwide`'s build does, the RESULT must never contain
+    // two entries for the same uppercased symbol — this is the invariant a broken dedup (e.g. a
+    // future edit that drops the `seen.insert(...).inserted` guard) would violate immediately,
+    // regardless of which specific symbols happen to collide. (No real symbol is shared between
+    // `groups` and `catalogExtra` today — verified by hand-derivation above — so a same-file,
+    // synthetic-collision unit test isn't reachable: `groups`/`catalogExtra` are `private`,
+    // invisible even to `@testable import`. This is the closest honest equivalent: it fails the
+    // moment a real collision is introduced AND dedup breaks, and fails today if dedup already
+    // silently produced a duplicate.)
+    @Test func worldwideHasNoDuplicateSymbolsAfterPromotion() {
+        let upper = StockSageUniverse.worldwide.map { $0.symbol.uppercased() }
+        #expect(Set(upper).count == upper.count)
+    }
+
+    // Order invariant: the FIRST chunk (Stage 1's chunking) and the live banner both depend on
+    // `groups` coming first in the build — Aramco/Saudi-first must survive the promotion exactly
+    // as it did pre-promotion (already covered indirectly by `leadsWithSaudiAndCoversEveryContinent`
+    // above; this test names the invariant explicitly against the NEW 2,420-name universe so a
+    // future reordering of `build(groups) + build(catalogExtra)` fails a test that says why).
+    @Test func worldwideFirstElementIsStillAramcoPostPromotion() {
+        #expect(StockSageUniverse.worldwide.first?.symbol == "2222.SR")
+        #expect(StockSageUniverse.worldwide.count == 2_420)
+    }
 }
 
 // MARK: - User watchlist symbol validation (pure)

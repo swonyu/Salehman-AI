@@ -2,17 +2,17 @@ import Foundation
 
 // MARK: - Chunked progressive scan — pure infrastructure (PLAN_2026-07-08_equity2000.md Stage 1)
 //
-// Stage 1 keeps the analyzed universe at n=210 (behaviour-preserving) but switches
-// performRefreshIdeas from one single-shot fetch+build+publish to a chunked
-// fetch→build→merge→publish loop, so Stage 2's universe promotion (~2,400 names) can
-// stream results onto a live board instead of a single multi-minute block. At n=210 a
-// single 250-wide chunk covers the whole universe — this file is exercised directly by
-// tests; the store wiring is dormant-equivalent at today's universe size.
+// Stage 1 (shipped n=210, behaviour-preserving) switched performRefreshIdeas from one
+// single-shot fetch+build+publish to a chunked fetch→build→merge→publish loop, so Stage 2's
+// universe promotion (worldwide now 2,420 names, groups+catalogExtra) streams results onto a
+// live board instead of a single multi-minute block. NOW that Stage 2 has landed, the analyzed
+// universe (`StockSageUniverse.worldwide`) is 2,420 names — ~10 chunks at the 250-wide size
+// below, not the single Stage-1-era chunk.
 
 nonisolated enum StockSageScanChunking {
-    /// Symbols per chunk. `~250` per the plan — large enough that today's n=210 universe
-    /// is ONE chunk (byte-identical scan shape to the pre-chunking store), small enough
-    /// that Stage 2's ~2,400-name universe streams in ~10 chunks.
+    /// Symbols per chunk. `~250` per the plan — was large enough that Stage 1's n=210 universe
+    /// was ONE chunk (byte-identical scan shape to the pre-chunking store); post-Stage-2's
+    /// 2,420-name universe streams in ~10 chunks.
     static let chunkSize = 250
 
     /// Split `defs` into ordered, contiguous, non-overlapping chunks of at most `size`

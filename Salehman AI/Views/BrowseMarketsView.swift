@@ -2,12 +2,13 @@ import SwiftUI
 
 // MARK: - Browse all markets
 //
-// The discovery surface over the full `StockSageUniverse.catalog` (analyzed core +
-// long-tail). Sectioned by market group, searchable, asset-class filterable, with
-// one-tap add. The add path lazily fetches a SINGLE quote (store.addSymbol) — so the
-// directory scales independently of the bulk history feed: browsing costs nothing,
-// only an explicit add touches the network. Honest: catalog symbols are searchable-but-
-// not-scanned until you add them to your watchlist.
+// The discovery surface over the full `StockSageUniverse.catalog` — post-equity-2000-promotion
+// (PLAN_2026-07-08_equity2000.md Stage 2) this is the SAME ~2,400-name set as `worldwide`, the
+// analyzed universe (no separate un-scanned long-tail remains). Sectioned by market group,
+// searchable, asset-class filterable, with one-tap add-to-watchlist (a UI/tracking action
+// distinct from the scan itself). The add path lazily fetches a SINGLE quote (store.addSymbol)
+// for immediate board display — the bulk history/ideas scan covers the full catalog regardless
+// of whether a symbol has been individually added.
 
 struct BrowseMarketsView: View {
     @ObservedObject var store: StockSageStore

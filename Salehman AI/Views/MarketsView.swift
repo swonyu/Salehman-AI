@@ -3026,7 +3026,7 @@ struct MarketsView: View {
                     .font(.system(size: mvFont18)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Trade ideas").font(.system(size: mvFont15, weight: .semibold)).foregroundStyle(.white)
-                    Text("Rules-based what / when / how-much across the \(StockSageUniverse.worldwide.count)-name analyzed core, on 1-year history.")
+                    Text("Rules-based what / when / how-much across the ~2,400-name analyzed universe (≈2,330 equities), on 1-year history.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     // Honesty: say plainly whether the EV/win numbers below are measured, fitted, or
                     // assumed — right where they're read. F01/F02: keyed on the calibration METHOD,
@@ -3117,6 +3117,7 @@ struct MarketsView: View {
                     .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
                 }
                 .buttonStyle(LuxPressStyle()).disabled(store.isLoadingIdeas)
+                .help("First scan of the day covers ~2,400 names and takes several minutes — results stream in as they complete.")
             }
             if let when = store.ideasUpdated {
                 Text(store.ideasIsStale
