@@ -139,7 +139,9 @@ struct MarketsTodayActionsCard: View {
         }
         .buttonStyle(LuxPressStyle())
         .accessibilityLabel({
-            var label = "Number \(rank): \(plan.symbol), \(String(format: "%+.3f", plan.velocity)) R per day"
+            // TODAY-A11Y-02: mirror the visible "%+.3fR/day gross" label (~89) — the spoken
+            // label dropped "gross", which is the honesty-floor's required net/gross qualifier.
+            var label = "Number \(rank): \(plan.symbol), \(String(format: "%+.3f", plan.velocity)) R per day gross"
             if plan.isCrypto { label += ", 24/7 crypto" }
             if plan.netCostFloorFlag.isDeranked { label += ", below net-cost floor" }
             if plan.isLowConviction { label += ", low conviction" }
