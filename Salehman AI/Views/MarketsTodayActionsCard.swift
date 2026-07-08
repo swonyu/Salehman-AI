@@ -150,7 +150,12 @@ struct MarketsTodayActionsCard: View {
                 label += ", \(sh) shares, about $\(Int(dr.rounded())) at risk"
             }
             label += ". \(plan.gate.decision.rawValue)."
-            if blocked { label += " Do not trade." }
+            // TODAY-A11Y-01: mirror the visible "DO NOT TRADE — {reason}" line (~120) — the
+            // bare "Do not trade." spoke no reason while caution rows below DO speak theirs.
+            if blocked {
+                let failLabel = plan.gate.checks.first(where: { $0.level == .fail })?.label ?? "gate failed"
+                label += " Do not trade — \(failLabel)."
+            }
             if plan.gate.decision == .caution,
                let warn = plan.gate.checks.first(where: { $0.level == .warn }) {
                 label += " Caution: \(warn.label)."
