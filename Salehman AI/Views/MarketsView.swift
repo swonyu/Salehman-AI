@@ -5899,7 +5899,12 @@ struct MarketsView: View {
             if let last = lastSheetSymbol, last != idea.symbol {
                 try? await Task.sleep(for: .milliseconds(300))
             }
-            guard !Task.isCancelled else { return }
+            // NAV-1: closing the sheet DURING the 300ms sleep doesn't cancel this task on some
+            // dismissal paths (the sheet's own onChange resets lastSheetSymbol to nil, but
+            // .task(id:) cancellation isn't guaranteed to race ahead of it) — without the
+            // selectedIdea != nil check, the surviving task could overwrite that nil-reset right
+            // back to this symbol, leaving the debounce state pointing at a sheet that's closed.
+            guard !Task.isCancelled, selectedIdea != nil else { return }
             // Record the symbol only AFTER surviving cancellation — a cancelled step must not
             // write a stale lastSheetSymbol that could mis-trigger (or skip) the next debounce.
             lastSheetSymbol = idea.symbol
