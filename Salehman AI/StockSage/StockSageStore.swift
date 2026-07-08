@@ -486,7 +486,11 @@ final class StockSageStore: ObservableObject {
         let analyzed = Set(merged.map { $0.symbol.uppercased() })
         ideasMissing = Self.missingAfterScan(universe: universe.map(\.symbol),
                                              analyzed: analyzed, stillTracked: stillTracked)
-        ideasUpdated = Date()
+        // DEG-02: deliberately NOT advancing ideasUpdated here — this path re-analyzes only the
+        // FAILED subset, and ideasUpdated drives the whole board's staleness chrome (ideasIsStale
+        // chip/dim + its a11y clause). Bumping it on a partial merge would reset that chrome for
+        // every card, including ones untouched by this retry. The retried cards' own
+        // idea.generatedAt still carries their individual freshness.
     }
 
     /// CONCURRENCY #3: the "couldn't be fetched" list, derived from ONE pre-await `universe`
