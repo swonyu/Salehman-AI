@@ -492,6 +492,15 @@ struct MarketsView: View {
         }
     }
 
+    /// True when the Deploy-capital plan carries NO regime disclosure and should — i.e. the
+    /// allocator's regime step (`regime.map { adjustedWeight } ?? suggestedFraction`) silently
+    /// skipped the risk-off/on brake because the regime was never gauged, or the gauge is old
+    /// enough to be untrustworthy. Pure/testable: nil regime OR stale regime → true; a fresh,
+    /// present regime → false (the allocator's own caveat already discloses that case).
+    static func regimeWarningNeeded(regime: MarketRegime?, isStale: Bool) -> Bool {
+        regime == nil || isStale
+    }
+
     private var header: some View {
         HStack(alignment: .center, spacing: DS.Space.sm) {
             ZStack {
@@ -3957,6 +3966,18 @@ struct MarketsView: View {
                             ideaMetric("Cap scale", String(format: "%.0f%%", plan.scaleApplied * 100), color: DS.Palette.warningSoft)
                         }
                     }
+                    // Honesty-disclosure gap fix: the allocator's regime step silently no-ops when
+                    // regime is nil (intentional graceful-degradation — see allocate()'s
+                    // `regime.map { ... } ?? k.suggestedFraction`), and its own caveat only mentions
+                    // regime sizing when a regime IS present. An ungauged/stale plan otherwise ships
+                    // with NO on-screen signal that it is carrying zero risk-off/on brake.
+                    if Self.regimeWarningNeeded(regime: store.regime, isStale: store.regimeIsStale) {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: mvFont11)).foregroundStyle(DS.Palette.warningSoft)
+                            Text("⚠︎ Regime not gauged — this plan applies no risk-off/on brake; tap Gauge for a plan sized to the tape.")
+                                .font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                     ForEach(plan.positions) { p in
                         HStack(spacing: 12) {
                             Text(p.symbol).font(.system(size: mvFont13, weight: .bold, design: .rounded)).foregroundStyle(.white)
@@ -3977,6 +3998,9 @@ struct MarketsView: View {
                                     "\(p.symbol): \(p.shares) sh · \(String(format: "%.2f%%", p.riskFraction * 100)) risk · \(String(format: "$%.0f", p.dollarsAtRisk)) at risk · \(String(format: "$%.0f", p.notional)) notional · EV \(String(format: "%+.2fR (gross)", p.evR))"
                                 }
                                 + [plan.caveat]
+                                + (Self.regimeWarningNeeded(regime: store.regime, isStale: store.regimeIsStale)
+                                   ? ["⚠︎ Regime not gauged — this plan applies no risk-off/on brake; tap Gauge for a plan sized to the tape."]
+                                   : [])
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
                         } label: {
@@ -4001,7 +4025,7 @@ struct MarketsView: View {
     // fitted calibration when one exists, else the conservative linear prior). The "Deploy capital"
     // plan layers on top: regime sizing bias, per-symbol vol-regime brake, correlation de-weighting,
     // and the total-heat cap — those are the genuine additions the Deploy plan makes.
-    private static let sizeMetricHelp = "Size uses the calibrated win-prob when a journal or backtest calibration is fitted (the same win-rate shown in the EV chip), or the conservative ~\(StockSageExpectedValue.assumedWinBandLabel) prior otherwise. The ‘Deploy capital’ plan is the one to act on — it applies: vol-targeting shrink for high-vol names → per-symbol vol-regime brake → correlation de-weighting → heat cap on top."
+    private static let sizeMetricHelp = "Size uses the calibrated win-prob when a journal or backtest calibration is fitted (the same win-rate shown in the EV chip), or the conservative ~\(StockSageExpectedValue.assumedWinBandLabel) prior otherwise. The ‘Deploy capital’ plan is the one to act on — it applies: regime sizing bias → vol-targeting shrink for high-vol names → per-symbol vol-regime brake → correlation de-weighting → heat cap on top."
 
     // Honest "are these EV numbers measured, fitted, or assumed?" chip — reused on every EV-headline
     // surface. F01/F02 (2026-07-02): keys on the calibration's METHOD, never on `calibration != nil`
