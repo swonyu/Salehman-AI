@@ -634,7 +634,13 @@ struct MarketsView: View {
                     Image(systemName: "bell.badge.fill").font(.system(size: mvFont18)).foregroundStyle(DS.Palette.accent)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Strong-signal alerts").font(.system(size: mvFont15, weight: .semibold)).foregroundStyle(.white)
-                        Text("Get a Mac notification when a Strong Buy or Strong Sell appears.")
+                        // POST2420-COPY item 5: at the post-promotion ~2,420-name universe, an
+                        // unqualified "appears" reads as "anywhere in the analyzed universe" —
+                        // the monitor's unattended background cycle is scoped to
+                        // StockSageUniverse.core (~210) + the user's watchlist (StockSageMonitor's
+                        // runCycle, owner-ratified core+watchlist scoping), not the full universe.
+                        // Interpolated so it can't drift from the live count.
+                        Text("Get a Mac notification when a Strong Buy or Strong Sell appears among the \(StockSageUniverse.core.count)-name curated core + your watchlist.")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
@@ -647,7 +653,7 @@ struct MarketsView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Watch only my watchlist").font(.system(size: mvFont12, weight: .medium)).foregroundStyle(.white.opacity(0.9))
                         Text(store.userSymbols.isEmpty
-                             ? "Add tickers to your watchlist to use this — alerts currently scan the full core."
+                             ? "Add tickers to your watchlist to use this — alerts scan the curated \(StockSageUniverse.core.count)-name core + your watchlist — not the full \(StockSageUniverse.worldwide.count)-name analyzed universe (that runs on Find ideas)."
                              : "Alerts scan only your \(store.userSymbols.count) watchlist name\(store.userSymbols.count == 1 ? "" : "s") (faster). The full board won't auto-refresh — tap Refresh for it.")
                             .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
@@ -3140,29 +3146,71 @@ struct MarketsView: View {
                 }
                 .buttonStyle(LuxPressStyle()).disabled(store.isLoadingIdeas)
                 .help("First scan of the day covers ~2,400 names and takes several minutes — results stream in as they complete.")
+                // POST2420-COPY item 7: this button is the ONLY progress indicator for the
+                // minutes-long scan — give it an explicit label + a value that tracks "N of M"
+                // as ideasProgress updates, so VoiceOver's value-change announcements carry the
+                // live count instead of relying on the synthesized label alone.
+                .accessibilityLabel(store.isLoadingIdeas ? "Scanning ideas" : "Find ideas")
+                .accessibilityValue(store.isLoadingIdeas
+                                     ? (store.ideasProgress.map { "\($0.current) of \($0.total)" } ?? "")
+                                     : "")
+            }
+            // POST2420-COPY item 4: the "takes several minutes" expectation above previously
+            // lived ONLY in a hover .help — invisible unless the user happens to hover the
+            // button. Surface it as a small factual line near the progress counter for the
+            // whole duration of a FULL scan (never a retry — a retry's `ideasProgress.total`
+            // is `ideasMissing.count`, always well under the full universe size). Interpolates
+            // the live universe count, never a literal, so it can't drift from
+            // StockSageUniverse.worldwide as the universe grows.
+            if store.isLoadingIdeas, let p = store.ideasProgress, p.total >= StockSageUniverse.worldwide.count {
+                Text("Scanning the \(StockSageUniverse.worldwide.count)-name universe — first scan of the day takes several minutes; results stream in as they complete.")
+                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if let when = store.ideasUpdated {
-                Text(store.ideasIsStale
-                     ? "⚠︎ Analyzed \(when.formatted(.relative(presentation: .named))) — over 4h old; re-scan for current ideas · ranked by \(ideaSort.label.lowercased())"
-                     : "Analyzed \(Self.timeFormatter.string(from: when)) · ranked by \(ideaSort.label.lowercased())")
-                    .font(.caption2).foregroundStyle(store.ideasIsStale ? DS.Palette.warningSoft : .secondary)
+                // POST2420-COPY item 1(b): a re-scan already in progress must never instruct
+                // the user to start one — `store.ideasIsStale` is keyed on `ideasUpdated`,
+                // which only advances when the WHOLE scan commits, so mid-scan it can still
+                // read stale from the PRIOR scan while a fresh one streams in. Factual
+                // in-progress form instead of the "re-scan for current ideas" call-to-action.
+                Text(store.isLoadingIdeas
+                     ? "Last full analysis \(when.formatted(.relative(presentation: .named))) — re-scan in progress, results streaming in · ranked by \(ideaSort.label.lowercased())"
+                     : (store.ideasIsStale
+                        ? "⚠︎ Analyzed \(when.formatted(.relative(presentation: .named))) — over 4h old; re-scan for current ideas · ranked by \(ideaSort.label.lowercased())"
+                        : "Analyzed \(Self.timeFormatter.string(from: when)) · ranked by \(ideaSort.label.lowercased())"))
+                    .font(.caption2).foregroundStyle(store.isLoadingIdeas ? .secondary : (store.ideasIsStale ? DS.Palette.warningSoft : .secondary))
                     .fixedSize(horizontal: false, vertical: true)
             }
             if store.scanThrottled {
-                Text("Extended scan paused — feed throttling; completed results are shown.")
+                // POST2420-COPY item 2: "paused" was false — a throttle trip permanently ends
+                // the scan run (recovery is the "Retry failed" button below, not an automatic
+                // resume). Item 6: this banner appears mid-scan with no VoiceOver announcement
+                // by default — made one accessibility element with its text as the label so a
+                // screen reader user landing here hears the full sentence, and the .onChange
+                // below (attached to ideasHeader's outer VStack) posts an announcement the
+                // instant scanThrottled flips true, so a VoiceOver user doesn't have to be
+                // focused here already to learn the scan stopped.
+                Text("Scan stopped early — feed throttling; results for the names already scanned are shown. Use “Retry failed” below or re-run Find ideas.")
                     .font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Scan stopped early — feed throttling. Results for the names already scanned are shown. Use Retry failed below or re-run Find ideas.")
             }
             if !store.ideasMissing.isEmpty {
                 let miss = store.ideasMissing
                 HStack(alignment: .top, spacing: 6) {
-                    Text("⚠︎ \(store.ideas.count) priced · \(miss.count) couldn't be fetched (\(miss.prefix(3).joined(separator: ", "))\(miss.count > 3 ? "…" : "")) — ranking covers only what loaded.")
+                    // POST2420-COPY item 3: `missingAfterScan` (the source of `ideasMissing`) can't
+                    // currently distinguish "fetched but failed" from "never attempted" — after a
+                    // throttle trip most of a ~2,420-name universe's misses are the latter (the scan
+                    // stopped before reaching them), so "couldn't be fetched" overclaimed an attempt
+                    // that didn't happen. "not analyzed this scan" is honest for both cases without
+                    // adding attempted-set bookkeeping.
+                    Text("⚠︎ \(store.ideas.count) priced · \(miss.count) not analyzed this scan (\(miss.prefix(3).joined(separator: ", "))\(miss.count > 3 ? "…" : "")) — ranking covers only what loaded.")
                         .font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 4)
                     Button { Task { await store.retryFailedIdeas() } } label: {
                         Text("Retry failed").font(.caption2.weight(.semibold)).foregroundStyle(DS.Palette.accent)
                     }
                     .buttonStyle(.plain).disabled(store.isLoadingIdeas)
-                    .accessibilityLabel("Retry fetching the \(miss.count) symbols that failed")
+                    .accessibilityLabel("Retry analyzing the \(miss.count) symbols not analyzed this scan")
                 }
             }
             if let err = store.ideasError {
@@ -3182,6 +3230,24 @@ struct MarketsView: View {
         )
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+        // POST2420-COPY item 6: VoiceOver never learned a throttle trip stopped the scan unless
+        // already focused on the banner — post an announcement the instant scanThrottled flips
+        // true (false→true only; a retry that resets it back to false says nothing here, the
+        // banner disappearing is enough).
+        .onChange(of: store.scanThrottled) { old, new in
+            guard !old, new else { return }
+            AccessibilityNotification.Announcement(
+                "Scan stopped early due to feed throttling. Results for the names already scanned are shown."
+            ).post()
+        }
+        // POST2420-COPY item 7: the only progress indicator for the minutes-long scan is the
+        // disabled Find-Ideas button — post a completion announcement on isLoadingIdeas
+        // true→false so a VoiceOver user who stepped away from the button still learns the
+        // scan ended, mirroring the throttle announcement's true-edge-only gate above.
+        .onChange(of: store.isLoadingIdeas) { old, new in
+            guard old, !new else { return }
+            AccessibilityNotification.Announcement("Ideas scan finished.").post()
+        }
     }
 
     private func ideaCard(_ idea: StockSageIdea,
@@ -3227,7 +3293,12 @@ struct MarketsView: View {
         // must clear 4.5:1), while watchlist signalCard still dims to the older 0.55 (legacy,
         // sub-AA on its own .secondary text — a known gap, tracked as its own DEFERRED
         // follow-up; different surface, own wave, no watchlist code touched here).
-        let boardIsStale = store.ideasIsStale
+        // POST2420-COPY item 1: keyed on THIS card's own `generatedAt` (>4h), not the
+        // board-level `store.ideasIsStale` — during a streaming scan `ideasUpdated` only
+        // advances at the very end, so the old board-level key wore the stale badge on cards
+        // that were just freshly merged in. Same >4h threshold, same Self.cardIsStale the
+        // detail sheet's DEG-03 as-of cue reads generatedAt from.
+        let boardIsStale = Self.cardIsStale(generatedAt: idea.generatedAt, now: Date())
         // QA-4+F1 (density rework): ONE seam for which conditional chips are
         // visible — see IdeaChipPlan's doc for the priority order + why the
         // action badge/EV chip stay uncounted. Computed once per card; both the
@@ -3258,8 +3329,8 @@ struct MarketsView: View {
                 if visibleChips.contains(.stale) {
                     Image(systemName: "clock.badge.exclamationmark")
                         .font(.system(size: mvFont10)).foregroundStyle(DS.Palette.warningSoft)
-                        .help("Board is over 4h old — tap Refresh for current ideas")
-                        .accessibilityLabel("Board data is stale — over 4 hours old")
+                        .help("This idea's analysis is over 4h old — tap Refresh for a current read")
+                        .accessibilityLabel("This idea's analysis is stale — over 4 hours old")
                 }
                 // Risk warnings first: earnings and floor before EV.
                 if visibleChips.contains(.earnings) {
@@ -3527,7 +3598,7 @@ struct MarketsView: View {
             // The explicit label on a .combine element REPLACES the synthesized child labels,
             // so the staleness clock badge's own accessibilityLabel is never spoken — convey
             // it here (the opacity dimming is invisible to VoiceOver too).
-            if boardIsStale { label += ", board data is over 4 hours old" }
+            if boardIsStale { label += ", this idea's analysis is over 4 hours old" }
             // A11Y-01 (2026-07-07 fix round; QA-4+F1 2026-07-07 fix round): every remaining
             // badge/chip/metric below this element is also silenced by .combine — mirror EACH
             // render condition above in the SAME order they appear on screen, reusing the
@@ -6132,6 +6203,19 @@ struct MarketsView: View {
     static func signalBlockCount(_ value: Double) -> Int {
         let v = min(max(value, 0), 1)
         return Int((v * 5).rounded())
+    }
+
+    /// Per-card staleness predicate (POST2420-COPY item 1): whether THIS idea's own
+    /// `generatedAt` is over 4h old — same threshold as `StockSageStore.ideasIsStale`, but
+    /// keyed on the card's own analysis time instead of the board-level `ideasUpdated` (which
+    /// only advances when the WHOLE scan commits). During a streaming scan, a freshly-merged
+    /// card's `generatedAt` is recent even though `ideasUpdated` hasn't moved yet — so this
+    /// predicate stops a just-scanned card from wearing the stale badge mid-scan. nil
+    /// `generatedAt` (older/test-built ideas, mirrors the DEG-03 as-of cue's nil handling above)
+    /// → not stale (never a false badge off missing data).
+    static func cardIsStale(generatedAt: Date?, now: Date) -> Bool {
+        guard let generatedAt else { return false }
+        return now.timeIntervalSince(generatedAt) > 4 * 3600
     }
 
     private func signalBlocks(_ value: Double, color: Color) -> some View {

@@ -23,7 +23,9 @@ final class StockSageMonitor {
     private(set) var isRunning = false
     /// When this UserDefaults flag is set AND the user has a non-empty watchlist, the loop
     /// scans ONLY the watchlist (fetching just those quotes) instead of pulling the whole
-    /// ~250-name core every cycle. Shared with the Markets toggle's @AppStorage key.
+    /// ~210-name core every cycle (StockSageUniverse.core, post equity-2000 promotion —
+    /// was described as ~250 pre-promotion; corrected 2026-07-08). Shared with the Markets
+    /// toggle's @AppStorage key.
     static let watchlistOnlyKey = "marketsWatchlistOnly"
     /// The last strong recommendation fired per symbol, so we don't re-spam the
     /// SAME alert every cycle (only a NEW or CHANGED strong signal notifies).
