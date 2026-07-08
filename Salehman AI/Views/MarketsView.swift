@@ -4290,7 +4290,11 @@ struct MarketsView: View {
             holds: velocityHolds,
             calibration: store.convictionCalibration,
             earnings: store.earnings,
-            liquidity: store.liquidity)
+            liquidity: store.liquidity,
+            // TODAY-PARITY: same held/journal awareness the ideas board's Held/Traded chips
+            // already carry — display-only (see TodayActionPlan.heldShares doc).
+            positions: portfolio.positions,
+            journalTrades: journal.trades)
         MarketsTodayActionsCard(plans: plans, isSampleData: store.isSampleData) { symbol in
             if let idea = store.ideas.first(where: { $0.symbol == symbol }) { selectedIdea = idea }
         }

@@ -105,7 +105,7 @@ extension StockSagePortfolio {
     /// uppercased by `add()`, but this defends a caller that isn't). Returns nil when the
     /// symbol isn't held or every matching lot has zero/invalid shares (avoids a
     /// divide-by-zero weighted average).
-    static func holding(for symbol: String, in positions: [PortfolioPosition]) -> AggregatedHolding? {
+    nonisolated static func holding(for symbol: String, in positions: [PortfolioPosition]) -> AggregatedHolding? {
         let target = symbol.uppercased()
         let lots = positions.filter { $0.symbol.uppercased() == target && $0.shares > 0 }
         guard !lots.isEmpty else { return nil }
@@ -120,7 +120,10 @@ extension StockSagePortfolio {
     /// across many symbols each render. `holding(for:in:)` stays the semantic source of truth;
     /// this is a batch-lookup convenience keyed the same way (uppercased symbol), proven identical
     /// by StockSagePortfolioTests.holdingBySymbolMatchesHoldingForEverySymbol.
-    static func holdingBySymbol(in positions: [PortfolioPosition]) -> [String: AggregatedHolding] {
+    /// TODAY-PARITY: marked `nonisolated` — pure over `Sendable` value types, no actor-state
+    /// access, exact same reasoning as the sibling `StockSageJournal.historyBySymbol` — so
+    /// `StockSageTodayPlan.rankedActions` (itself `nonisolated`) can call it directly.
+    nonisolated static func holdingBySymbol(in positions: [PortfolioPosition]) -> [String: AggregatedHolding] {
         var lotsBySymbol: [String: [PortfolioPosition]] = [:]
         for p in positions where p.shares > 0 {
             lotsBySymbol[p.symbol.uppercased(), default: []].append(p)

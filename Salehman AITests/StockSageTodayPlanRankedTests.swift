@@ -280,4 +280,46 @@ struct StockSageTodayPlanRankedTests {
     @Test func emptyIdeasProducesEmptyPlanList() {
         #expect(StockSageTodayPlan.rankedActions([], account: nil, riskFraction: nil).isEmpty)
     }
+
+    // MARK: - TODAY-PARITY: held/journal display context (defaulted nil, populated = dict value)
+
+    @Test func heldSharesAndClosedTradeCountDefaultToNilWithoutPositionsOrJournal() {
+        let ideas = [clearIdea("A"), clearIdea("B", conviction: 0.9, riskAbs: 3, rewardAbs: 15)]
+        let plans = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: nil)
+        #expect(!plans.isEmpty)
+        for p in plans { #expect(p.heldShares == nil && p.closedTradeCount == nil) }
+    }
+
+    @Test func heldSharesAndClosedTradeCountPopulateFromTheSameBatchHelpersTheBoardUses() {
+        let ideas = [clearIdea("A"), clearIdea("B", conviction: 0.9, riskAbs: 3, rewardAbs: 15)]
+        let positions = [PortfolioPosition(symbol: "A", shares: 30, costBasis: 90)]
+        let closedTrade = TradeRecord(symbol: "A", side: .long, entry: 100, stop: 95, target: 120,
+                                      shares: 10, openedAt: Date(timeIntervalSince1970: 0),
+                                      exitPrice: 110, closedAt: Date(timeIntervalSince1970: 100))
+        let plans = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: nil,
+                                                      positions: positions, journalTrades: [closedTrade])
+        let a = plans.first { $0.symbol == "A" }
+        let b = plans.first { $0.symbol == "B" }
+        // Pinned against the SAME source-of-truth dicts the ideas board builds — not a
+        // re-derivation, so this can't silently diverge from StockSagePortfolio.holdingBySymbol /
+        // StockSageJournal.historyBySymbol.
+        let expectedHeld = StockSagePortfolio.holdingBySymbol(in: positions)["A"]?.shares
+        let expectedClosed = StockSageJournal.historyBySymbol(in: [closedTrade])["A"]?.count
+        #expect(a?.heldShares == expectedHeld)
+        #expect(a?.closedTradeCount == expectedClosed)
+        // B has neither a position nor a closed trade — must stay nil, not zero (no fabricated 0).
+        #expect(b?.heldShares == nil)
+        #expect(b?.closedTradeCount == nil)
+    }
+
+    @Test func copyAllTextAppendsHoldsSuffixOnlyWhenHeldSharesResolves() {
+        let ideas = [clearIdea("A"), clearIdea("B", conviction: 0.9, riskAbs: 3, rewardAbs: 15)]
+        let positions = [PortfolioPosition(symbol: "A", shares: 30, costBasis: 90)]
+        let plans = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: nil, positions: positions)
+        let text = StockSageTodayPlan.copyAllText(plans)
+        #expect(text.contains("holds 30 sh"))
+        // B is not held — its line must not claim a holding.
+        let bLine = text.split(separator: "\n").first { $0.contains(". B") }
+        #expect(bLine.map { !$0.contains("holds") } ?? false)
+    }
 }

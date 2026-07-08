@@ -83,15 +83,23 @@ enum StockSageTodayPlan {
     /// `calibration`/`earnings` are optional pass-throughs to the same-named engines so the
     /// gate and the number can't disagree with the rest of the board; both default to "none",
     /// i.e. the uncalibrated linear prior and no earnings demotion.
+    /// `positions`/`journalTrades` (TODAY-PARITY, defaulted `[]` — existing callers/tests
+    /// byte-unchanged) populate each plan's optional `heldShares`/`closedTradeCount` via the
+    /// SAME batch helpers the ideas board uses (`StockSagePortfolio.holdingBySymbol` /
+    /// `StockSageJournal.historyBySymbol`) — display-only, no effect on ranking/sizing/gate.
     nonisolated static func rankedActions(_ ideas: [StockSageIdea], account: Double?, riskFraction: Double?,
                                          holds: VelocityHoldDays = .defaults,
                                          calibration: StockSageConvictionCalibration? = nil,
                                          earnings: [String: EarningsProximity] = [:],
                                          liquidity: [String: LiquidityProfile] = [:],
+                                         positions: [PortfolioPosition] = [],
+                                         journalTrades: [TradeRecord] = [],
                                          max: Int = 3) -> [TodayActionPlan] {
         let rf = Swift.max(0, riskFraction ?? 0)
         let gateRiskFraction = rf > 0 ? rf : 0.01   // same fallback `build` uses — the gate can't disagree
         let lane = StockSageExpectedValue.fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity)
+        let holdingsBySymbol = StockSagePortfolio.holdingBySymbol(in: positions)
+        let historyBySymbol = StockSageJournal.historyBySymbol(in: journalTrades)
         var out: [TodayActionPlan] = []
         for idea in lane {
             guard out.count < Swift.max(0, max) else { break }
@@ -132,10 +140,13 @@ enum StockSageTodayPlan {
             // where it did — or a caution about trusting it — is never hidden here.
             let floorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: holds, calibration: calibration)
             let lowConviction = StockSageExpectedValue.isLowConviction(idea)
+            let heldShares = holdingsBySymbol[idea.symbol.uppercased()]?.shares
+            let closedTradeCount = historyBySymbol[idea.symbol.uppercased()]?.count
             out.append(TodayActionPlan(symbol: idea.symbol, velocity: v, entry: entry, stop: stop, target: target,
                                        shares: shares, dollarsAtRisk: dollarsAtRisk, gate: gate,
                                        isCrypto: idea.symbol.uppercased().hasSuffix("-USD"),
-                                       netCostFloorFlag: floorFlag, isLowConviction: lowConviction))
+                                       netCostFloorFlag: floorFlag, isLowConviction: lowConviction,
+                                       heldShares: heldShares, closedTradeCount: closedTradeCount))
         }
         return out
     }
@@ -155,6 +166,10 @@ enum StockSageTodayPlan {
             if let sh = p.shares, let dr = p.dollarsAtRisk {
                 line += " | \(sh) sh (≈$\(Int(dr.rounded())) at risk)"
             }
+            // EXPORT-01 precedent: the exported checklist carries the same doubling-hazard
+            // context the on-screen row does — acting on this line without knowing you already
+            // hold the name silently stacks new risk on an existing position.
+            if let held = p.heldShares { line += " | holds \(numShares(held)) sh" }
             line += " | \(p.gate.decision.rawValue)" + (p.gate.decision == .blocked ? " — DO NOT TRADE" : "")
             if p.netCostFloorFlag.isDeranked { line += " | ⚠ below net-cost floor" }
             if p.isLowConviction { line += " | ⚠ low conviction" }
@@ -173,6 +188,13 @@ enum StockSageTodayPlan {
         if a >= 1 || a == 0 { return String(format: "%.2f", v) }
         if a >= 0.01 { return String(format: "%.4f", v) }
         return String(format: "%.6f", v)   // sub-cent → show real magnitude
+    }
+
+    /// Share-count formatter matching `MarketsView.numString` — %.0f, not `String(Int(d))`,
+    /// because `Int(Double)` TRAPS past `Int.max` and a persisted pathological share count
+    /// would crash on export the same way it would crash the board's own render.
+    private nonisolated static func numShares(_ d: Double) -> String {
+        d == d.rounded() ? String(format: "%.0f", d) : String(format: "%.2f", d)
     }
 }
 
@@ -198,5 +220,14 @@ struct TodayActionPlan: Sendable, Equatable, Identifiable {
     /// Same low-conviction demotion the rank-key math already applies internally
     /// (`StockSageExpectedValue.isLowConviction`) — again demoted, not excluded, from `fastLane()`.
     var isLowConviction: Bool = false
+    /// TODAY-PARITY: shares already held of this symbol, aggregated across lots
+    /// (`StockSagePortfolio.holdingBySymbol`) — the same held-position awareness the ideas board's
+    /// "Held · N sh" chip already shows. DISPLAY-ONLY: never feeds ranking, sizing, or the gate.
+    /// nil when `rankedActions` wasn't given `positions` (existing callers/tests unaffected).
+    var heldShares: Double? = nil
+    /// TODAY-PARITY: closed-trade count for this symbol from the journal
+    /// (`StockSageJournal.historyBySymbol`) — same display-only awareness as `heldShares`.
+    /// nil when `rankedActions` wasn't given `journalTrades`.
+    var closedTradeCount: Int? = nil
     nonisolated var id: String { symbol }
 }

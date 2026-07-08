@@ -32,6 +32,12 @@ struct MarketsTodayActionsCard: View {
         return String(format: "%.6f", v)
     }
 
+    /// Share-count formatter matching `MarketsView.numString` / `StockSageTodayPlan.numShares` —
+    /// %.0f, not `String(Int(d))` (`Int(Double)` traps past `Int.max`).
+    private func numShares(_ d: Double) -> String {
+        d == d.rounded() ? String(format: "%.0f", d) : String(format: "%.2f", d)
+    }
+
     var body: some View {
         // Matches fastLaneStrip's own "≥2 to be worth a board" threshold — a single ranked
         // action isn't a ranked LIST, and bestOpportunityCard already covers the lone-idea case.
@@ -108,7 +114,13 @@ struct MarketsTodayActionsCard: View {
                         .font(.system(size: font9)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     if let sh = plan.shares, let dr = plan.dollarsAtRisk {
-                        Text("· \(sh) sh (≈$\(Int(dr.rounded())) at risk)")
+                        // TODAY-PARITY: "· holds N sh" appended when a position is already held —
+                        // acting on this row without that context silently stacks new risk on an
+                        // existing position (the ideas board's Held chip exists for exactly this).
+                        // One short suffix max (compact-row discipline) — closedTradeCount is
+                        // lower-value here and carried only in the a11y label below.
+                        let heldSuffix = plan.heldShares.map { " · holds \(numShares($0)) sh" } ?? ""
+                        Text("· \(sh) sh (≈$\(Int(dr.rounded())) at risk)\(heldSuffix)")
                             .font(.system(size: font9)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
@@ -151,6 +163,11 @@ struct MarketsTodayActionsCard: View {
             if let sh = plan.shares, let dr = plan.dollarsAtRisk {
                 label += ", \(sh) shares, about $\(Int(dr.rounded())) at risk"
             }
+            // TODAY-PARITY a11y: the compact visible row only ever shows "holds N sh" (one
+            // suffix max); VoiceOver carries the full held/journal context, matching the ideas
+            // board's own a11y phrasing (MarketsView ideaCard label builder).
+            if let held = plan.heldShares { label += ", you hold \(numShares(held)) shares" }
+            if let closed = plan.closedTradeCount { label += ", \(closed) closed trades in your journal" }
             label += ". \(plan.gate.decision.rawValue)."
             // TODAY-A11Y-01: mirror the visible "DO NOT TRADE — {reason}" line (~120) — the
             // bare "Do not trade." spoke no reason while caution rows below DO speak theirs.
