@@ -4917,6 +4917,24 @@ struct MarketsView: View {
         if store.isSampleData {
             plan = "⚠ SAMPLE DATA — illustrative prices, NOT live quotes. Re-price before any order.\n" + plan
         }
+        // EXPORT-01: mirror the sheet's Held/Journal context lines (same formats, same call sites)
+        // so a pasted plan doesn't invite doubling a position the owner already holds. Only append
+        // when they resolve — no line when nil, exactly like the sheet.
+        if let held = StockSagePortfolio.holding(for: idea.symbol, in: portfolio.positions) {
+            let pct = held.unrealizedPct(vs: idea.price)
+            var line = "Held: \(numString(held.shares)) sh @ \(adaptivePrice(held.costBasis)) (avg cost)"
+            if let pct {
+                let up = pct >= 0
+                line += " · \(up ? "+" : "")\(String(format: "%.1f", pct))% vs avg cost"
+            }
+            plan += "\n" + line
+        }
+        if let jh = StockSageJournal.history(for: idea.symbol, in: journal.trades) {
+            let up = jh.totalR >= 0
+            plan += "\n" + String(format: "Journal: %d closed on this name · realized %@%.1fR total%@",
+                                   jh.count, up ? "+" : "", jh.totalR,
+                                   jh.rDefinedCount != jh.count ? " (R defined on \(jh.rDefinedCount))" : "")
+        }
         return plan
     }
 
