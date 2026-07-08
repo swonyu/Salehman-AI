@@ -305,8 +305,10 @@ struct MarketsView: View {
             // when the scan that just ran was cancelled mid-way (post-ship critique fleet,
             // orchestrator-confirmed): the board is a partial snapshot in that case, and this
             // history is DURABLE per-day storage — a cancelled-scan snapshot would poison the
-            // trend permanently, not just for this session.
-            if !store.lastScanCancelled {
+            // trend permanently, not just for this session. Round-H: a THROTTLED scan (extended
+            // universe scan aborted early on a 429-storm signature — store.scanThrottled) is ALSO
+            // a partial board with the SAME poisoning risk, so it gets the same skip.
+            if !store.lastScanCancelled && !store.scanThrottled {
                 let snap = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration)
                 if let wk = snap.weeklyR {
                     velocityHistory.record(weeklyR: wk, bestSymbol: snap.bestSymbol, fastestSymbol: snap.fastestSymbol)
@@ -3799,6 +3801,12 @@ struct MarketsView: View {
     @ViewBuilder private var bestOpportunityCard: some View {
         if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration) {
             let idea = best.idea, ev = best.ev
+            // Round-H: this card presents a sized, placeable order (Entry/Stop/Target + "Size it
+            // now") off `idea.price`, which can be a cache-served prior-UTC-day close even when
+            // the scan itself just ran — same gap the board card (`Self.cardIsStale`) and detail
+            // sheet (`Self.staleAsOfPrice`) already close. Computed once, reused by the visible
+            // line below and folded into orderLabel for VoiceOver.
+            let staleAsOf = Self.staleAsOfPrice(idea.priceAsOf, now: Date())
             // Spoken full order (precomputed OUTSIDE the ViewBuilder so the multi-clause concat does
             // not tip the card body over the type-checker budget). Earnings warning and over-size
             // caveat are folded in here so VoiceOver hears them (the .accessibilityLabel below
@@ -3807,6 +3815,9 @@ struct MarketsView: View {
                 var s = "Best opportunity: \(idea.symbol), \(idea.advice.action.rawValue), estimated EV \(String(format: "%.2f", ev.evR)) R gross, entry \(adaptivePrice(idea.price))"
                 if let stop = idea.advice.stopPrice { s += ", stop \(adaptivePrice(stop))" }
                 if let target = idea.advice.targetPrice { s += ", target \(adaptivePrice(target))" }
+                if let staleAsOf {
+                    s += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering."
+                }
                 if let ep = store.earnings[idea.symbol.uppercased()], ep.isWarning {
                     s += ". Earnings risk: \(ep.note)"
                 }
@@ -3872,6 +3883,17 @@ struct MarketsView: View {
                         }
                         Spacer(minLength: 0)
                     }
+                    // Round-H: the Entry/Stop/Target above and "Size it now" below are a
+                    // placeable order — flag it when idea.price is off a stale (prior-UTC-day)
+                    // cache price, same wording as the detail sheet's DEG-03 cue.
+                    if let staleAsOf {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "clock.badge.exclamationmark").font(.system(size: mvFont11)).foregroundStyle(DS.Palette.warningSoft)
+                            Text("⚠︎ Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering.")
+                                .font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                        }
+                        .accessibilityHidden(true)  // folded into orderLabel above so VoiceOver reads it once
+                    }
                     if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                        let rp = StockSageInput.percent(sizerRiskPct),
                        let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
@@ -3900,7 +3922,9 @@ struct MarketsView: View {
                         isSample: store.isSampleData,
                         // TODAY-PARITY: same held-position awareness rankedActions/the ideas
                         // board's Held chip already carry — display-only.
-                        positions: portfolio.positions)
+                        positions: portfolio.positions,
+                        // Round-H: flags a cache-stale price in the copied plan itself.
+                        priceAsOf: idea.priceAsOf)
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(plan, forType: .string)
                 } label: {
@@ -4196,6 +4220,9 @@ struct MarketsView: View {
             let idea = best.idea, ev = best.ev
             let isCrypto = StockSageAllocation.assetClass(idea.symbol) == "Crypto"
             let variance: Double? = isCrypto ? StockSageExpectedValue.dailyVariancePct(annualizedVol: idea.realizedVol) : nil
+            // Round-H: same stale-price gap as bestOpportunityCard — this CTA renders the
+            // identical sized/placeable order globally, not just on the Ideas tab.
+            let staleAsOf = Self.staleAsOfPrice(idea.priceAsOf, now: Date())
             let sizeInfo: (text: String, isWarning: Bool) = {
                 if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                    let rp = StockSageInput.percent(sizerRiskPct),
@@ -4208,6 +4235,9 @@ struct MarketsView: View {
                 var s = "Do this now: \(idea.symbol), \(idea.advice.action.rawValue), estimated EV \(String(format: "%.2f", ev.evR)) R gross, entry \(adaptivePrice(idea.price))"
                 if let stop = idea.advice.stopPrice { s += ", stop \(adaptivePrice(stop))" }
                 if let variance { s += String(format: ", typical 24-hour range plus or minus %.1f percent", variance) }
+                if let staleAsOf {
+                    s += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering."
+                }
                 return s
             }()
             BestOpportunityActionCard(
@@ -4223,6 +4253,7 @@ struct MarketsView: View {
                 evText: String(format: "EV %+.2fR (gross)", ev.evR),
                 caveatText: MoneyVelocityCopy.bestOpportunity,
                 varianceText: variance.map { String(format: "Typical 24h range ±%.1f%% — size down for 24/7.", $0) },
+                staleAsOfText: staleAsOf.map { "⚠︎ Price as of \($0.formatted(.relative(presentation: .named))) — not live; re-price before ordering." },
                 accessibilityText: accessibilityText,
                 onTap: { selectedIdea = idea },
                 onCopy: {
@@ -4237,7 +4268,9 @@ struct MarketsView: View {
                         isSample: store.isSampleData,
                         // TODAY-PARITY: same held-position awareness rankedActions/the ideas
                         // board's Held chip already carry — display-only.
-                        positions: portfolio.positions)
+                        positions: portfolio.positions,
+                        // Round-H: flags a cache-stale price in the copied plan itself.
+                        priceAsOf: idea.priceAsOf)
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(plan, forType: .string)
                 },
@@ -5397,12 +5430,7 @@ struct MarketsView: View {
                 // live quote for a stale cached price. nil priceAsOf ⇒ unknown, falls through to
                 // the existing analysis-time wording unchanged (never a false "not live" label).
                 if let generatedAt = idea.generatedAt {
-                    let staleAsOf: Date? = {
-                        guard let priceAsOf = idea.priceAsOf,
-                              StockSageScanChunking.utcDayKey(priceAsOf) != StockSageScanChunking.utcDayKey(Date())
-                        else { return nil }
-                        return priceAsOf
-                    }()
+                    let staleAsOf = Self.staleAsOfPrice(idea.priceAsOf, now: Date())
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "clock.badge.exclamationmark").font(.system(size: mvFont11)).foregroundStyle(.secondary)
                         Text(staleAsOf.map { "Price as of \($0.formatted(.relative(presentation: .named))) — not live." }
@@ -6284,6 +6312,18 @@ struct MarketsView: View {
         return analysisStale || priceStale
     }
 
+    /// Round-H: the PRICE-only half of `cardIsStale` — same utcDayKey mismatch the detail
+    /// sheet's DEG-03 "not live" cue already computes inline (~5406-5411), factored out so
+    /// `bestOpportunityCard`/`bestOpportunityCTA` can reuse the identical check instead of a
+    /// third hand-copied closure. Returns `priceAsOf` itself (for the label's date) when stale,
+    /// nil otherwise — including when `priceAsOf` itself is nil (HONESTY_FLOOR: unknown never
+    /// flags stale).
+    static func staleAsOfPrice(_ priceAsOf: Date?, now: Date) -> Date? {
+        guard let priceAsOf, StockSageScanChunking.utcDayKey(priceAsOf) != StockSageScanChunking.utcDayKey(now)
+        else { return nil }
+        return priceAsOf
+    }
+
     private func signalBlocks(_ value: Double, color: Color) -> some View {
         let filled = Self.signalBlockCount(value)
         return HStack(spacing: 3) {
@@ -6545,6 +6585,11 @@ struct BestOpportunityActionCard: View {
     let evText: String           // "EV +0.62R"
     let caveatText: String       // MoneyVelocityCopy.bestOpportunity — the honesty tail
     let varianceText: String?    // crypto-only 24h range line; nil for equities
+    /// Round-H: non-nil ⇒ entry/stop/size above are off a stale (prior-UTC-day) cache price —
+    /// pre-formatted "⚠︎ Price as of … — not live; re-price before ordering." line, or nil when
+    /// the price is live/unknown (HONESTY_FLOOR: unknown never flags stale). Defaulted nil so
+    /// any other construction site stays valid without threading it through.
+    var staleAsOfText: String? = nil
     let accessibilityText: String
     let onTap: () -> Void
     let onCopy: () -> Void
@@ -6577,6 +6622,12 @@ struct BestOpportunityActionCard: View {
                             Text(stopText).font(.system(size: mvFont13, weight: .semibold, design: .rounded)).foregroundStyle(DS.Palette.dangerSoft)
                         }
                         Spacer(minLength: 0)
+                    }
+                    // Round-H: entryText/sizeText above are a placeable order — flag it when
+                    // off a stale (prior-UTC-day) cache price, same wording as the detail sheet.
+                    if let staleAsOfText {
+                        Text(staleAsOfText)
+                            .font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                     }
                     Text(sizeText)
                         .font(.system(size: mvFont9, weight: .medium))

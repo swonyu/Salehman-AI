@@ -40,6 +40,32 @@ struct StockSageTodayPlanTests {
         #expect(!live.uppercased().contains("SAMPLE"))
     }
 
+    // Round-H: a live scan (isSample == false) can still be served off a same-UTC-day cache
+    // whose price bar is from a PRIOR trading day — the copied plan is the one artifact pasted
+    // into a broker, so it must carry the SAME staleness warning the board card/detail sheet
+    // already show, independent of isSample.
+    @Test func staleCachePriceIsFlaggedInTheCopiedPlanIndependentOfIsSample() {
+        let i = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        let priorDay = Calendar(identifier: .gregorian).date(byAdding: .day, value: -3, to: Date())!
+        let stale = StockSageTodayPlan.build(idea: i, ev: StockSageExpectedValue.ev(for: i),
+                                             account: 10_000, riskFraction: 0.01,
+                                             isSample: false, priceAsOf: priorDay)
+        #expect(stale.uppercased().contains("PRICE NOT LIVE"))
+        #expect(stale.lowercased().contains("re-price"))
+        #expect(!stale.uppercased().contains("SAMPLE"))   // isSample stayed false — no SAMPLE line
+
+        // Same-UTC-day priceAsOf → no warning.
+        let sameDay = StockSageTodayPlan.build(idea: i, ev: StockSageExpectedValue.ev(for: i),
+                                               account: 10_000, riskFraction: 0.01,
+                                               isSample: false, priceAsOf: Date())
+        #expect(!sameDay.uppercased().contains("PRICE NOT LIVE"))
+
+        // nil priceAsOf (default, existing callers) → no warning, never a false badge.
+        let nilAsOf = StockSageTodayPlan.build(idea: i, ev: StockSageExpectedValue.ev(for: i),
+                                               account: 10_000, riskFraction: 0.01)
+        #expect(!nilAsOf.uppercased().contains("PRICE NOT LIVE"))
+    }
+
     @Test func noStopWarnsAndGateBlocks() {
         let i = idea("X", conviction: 0.9, stop: nil, target: nil)
         // F04-parity (2nd-read hunt, 2026-07-08): riskFraction must be supplied for the gate to
