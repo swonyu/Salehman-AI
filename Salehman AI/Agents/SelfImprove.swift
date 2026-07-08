@@ -23,7 +23,9 @@ enum SelfImprove {
     // again on the next move/rename (the exact failure a9b99be caused). The robust
     // mechanism is the `self_improve_project_root` UserDefaults override below;
     // treat this constant as a dev-only fallback, not the source of truth.
-    nonisolated static let defaultRoot = "/Users/saleh/Desktop/Salehman AI"
+    // Repointed again 2026-07-08: repo moved 2026-07-05 ~/Desktop/Salehman AI →
+    // ~/Salehman-AI — exactly the dangle the FRAGILE note above predicted.
+    nonisolated static let defaultRoot = "/Users/saleh/Salehman-AI"
 
     nonisolated static var projectRoot: String {
         UserDefaults.standard.string(forKey: "self_improve_project_root") ?? defaultRoot

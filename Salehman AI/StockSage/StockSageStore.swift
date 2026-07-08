@@ -1605,6 +1605,19 @@ final class StockSageStore: ObservableObject {
     /// (ideas/earningsDates are not written to disk; paper-trading/alerts/monitor untouched).
     func seedQAIdeas() async {
         seedSampleData()   // honest labeling: whole board = sample, isSampleData = true
+        // Provenance honesty (2026-07-08): the --qa launch may already have loaded the disk
+        // cache (loadedFromCache=true) before this seed replaces the board with fixtures, and
+        // MarketsView.headerSubtitle checks loadedFromCache BEFORE isSampleData — so QA frames
+        // rendered "Last-good (cached) as of … · refresh for live" directly above the "Sample
+        // data" banner: cached provenance claimed for sample prices. Clear both so the header
+        // falls through to the honest "⚠︎ SAMPLE prices (not real)" branch. In-memory only,
+        // deliberately NO restore closure (unlike seedQAPortfolio/seedQAJournal, whose fixture
+        // CONTENT could leak into the owner's persisted state via a later save()): these two
+        // flags are never persisted anywhere, and this seam is reachable only from the
+        // capture-only --qa process, which qa.sh quits right after captureAll() returns —
+        // the same reason `ideas` below is fixture-replaced without a restore.
+        loadedFromCache = false
+        cacheSavedAt = nil
         let built = await Self.buildIdeas(defs: Self.qaFixtureDefs(),
                                           histories: Self.qaFixtureHistories(),
                                           benchmark: nil,          // no RS term → deterministic

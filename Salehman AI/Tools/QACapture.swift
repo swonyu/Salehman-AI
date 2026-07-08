@@ -25,13 +25,11 @@ import AppKit
 @MainActor
 enum QACapture {
 
-    static var qaDir: URL {
-        if let custom = ProcessInfo.processInfo.environment["QA_SNAPSHOT_DIR"] {
-            return URL(fileURLWithPath: custom, isDirectory: true)
-        }
-        return URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("Desktop/Salehman AI/qa", isDirectory: true)
-    }
+    /// Shared repo-root resolution (`QADir.resolved`) — the former self-contained
+    /// copy here kept resolving the dead ~/Desktop location after the 2026-07-05
+    /// repo move. The TRIGGERS stay independent of QASnapshots (see header);
+    /// the directory they resolve must not be.
+    static var qaDir: URL { QADir.resolved }
 
     // (Offscreen per-view rendering lives in QASnapshots.snap — the hosted
     // NSHostingView path. This file owns only what QASnapshots can't do:

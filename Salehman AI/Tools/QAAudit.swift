@@ -59,15 +59,12 @@ enum QAAudit {
         // grey, a copy-paste slip into the wrong dict; it made the gate flap.)
     ]
 
-    /// Same repo-root resolution as `QASnapshots.qaDir` (kept self-contained
-    /// so the two files never block on each other's in-flight edits).
-    static var defaultQADir: URL {
-        if let custom = ProcessInfo.processInfo.environment["QA_SNAPSHOT_DIR"] {
-            return URL(fileURLWithPath: custom, isDirectory: true)
-        }
-        return URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("Desktop/Salehman AI/qa", isDirectory: true)
-    }
+    /// Same repo-root resolution as `QASnapshots.qaDir` — both delegate to the
+    /// shared `QADir.resolved`. This used to be a self-contained copy; it drifted
+    /// on the 2026-07-05 repo move (still resolving the dead ~/Desktop copy while
+    /// captures landed in the live repo), which silently disabled the baseline
+    /// tripwire until 2026-07-08. Never fork this resolution again.
+    static var defaultQADir: URL { QADir.resolved }
 
     /// Convenience entry points for menu items / launch hooks.
     static func runDefault() {

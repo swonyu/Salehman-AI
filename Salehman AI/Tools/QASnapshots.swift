@@ -23,12 +23,20 @@ import AppKit
 /// Limits (by design): `ImageRenderer` draws static view trees — no hover,
 /// focus, or sheet states. Those stay covered by the UI-test flows; this
 /// harness is for LAYOUT/STYLE eyes.
-@MainActor
-enum QASnapshots {
-
+/// SINGLE source of truth for the `<repo>/qa` directory. `QASnapshots`,
+/// `QAAudit`, and `QACapture` ALL resolve through here. They used to carry
+/// per-file copies ("kept self-contained so the files never block on each
+/// other's in-flight edits") — that split is exactly what broke on the
+/// 2026-07-05 repo move: only QASnapshots' copy was repointed, so captures
+/// landed in the live repo while baseline adoption (QAAudit) wrote/read the
+/// dead Desktop copy and the pixel-diff tripwire silently compared against
+/// nothing. Same-module files block each other at compile time anyway, so
+/// the self-contained copies bought nothing. QADirResolutionTests pins this.
+enum QADir {
     /// Repo root: this is a personal app pinned to the owner's machine layout
-    /// (same assumption the training scripts make). Overridable for safety.
-    private static var qaDir: URL {
+    /// (same assumption the training scripts make). Overridable for safety
+    /// via `QA_SNAPSHOT_DIR`.
+    static var resolved: URL {
         if let custom = ProcessInfo.processInfo.environment["QA_SNAPSHOT_DIR"] {
             return URL(fileURLWithPath: custom, isDirectory: true)
         }
@@ -37,6 +45,13 @@ enum QASnapshots {
         return URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent("Salehman-AI/qa", isDirectory: true)
     }
+}
+
+@MainActor
+enum QASnapshots {
+
+    /// Shared repo-root resolution — see `QADir.resolved`.
+    private static var qaDir: URL { QADir.resolved }
 
     /// Launch hook: capture if `qa/SNAPSHOT_REQUEST` is present. The request
     /// file is consumed AFTER a successful capture — a launch that quits

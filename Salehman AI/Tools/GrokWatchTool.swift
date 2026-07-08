@@ -17,7 +17,7 @@ enum GrokWatchTool {
             options: .skipsHiddenFiles
         ).filter({ $0.pathExtension == "log" }),
               !files.isEmpty else {
-            return "No Grok session logs found in ~/grok_sessions/ — start a session first with:\n  cd \"/Users/saleh/Desktop/Salehman AI\" && python3 tools/grok_terminal_bridge.py --auto --yolo --cwd \"$PWD\" \"<task>\""
+            return "No Grok session logs found in ~/grok_sessions/ — start a session first with:\n  cd \"/Users/saleh/Salehman-AI\" && python3 tools/grok_terminal_bridge.py --auto --yolo --cwd \"$PWD\" \"<task>\""
         }
 
         let sorted = files.sorted {

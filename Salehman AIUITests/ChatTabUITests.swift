@@ -169,8 +169,11 @@ nonisolated final class ChatTabUITests: XCTestCase {
     /// regression gate (blank render / canvas colour change → test fails).
     @MainActor
     func testCaptureQASnapshotsMenuProducesFiles() throws {
+        // Must match QADir.resolved (QASnapshots.swift) — repo moved 2026-07-05
+        // to ~/Salehman-AI; the UITest target can't import the app's internals,
+        // so this literal is pinned to the same path QADirResolutionTests pins.
         let repoRoot = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Desktop/Salehman AI")
+            .appendingPathComponent("Salehman-AI")
         let qaDir = repoRoot.appendingPathComponent("qa")
         let snapshotsDir = qaDir.appendingPathComponent("snapshots")
         let requestFile = qaDir.appendingPathComponent("SNAPSHOT_REQUEST")

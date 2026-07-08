@@ -173,7 +173,10 @@ final class CodeWorkspace: ObservableObject {
     /// Default project when none was saved — the owner's Salehman AI repo if it
     /// exists, so the Code tab opens to a real project instead of an empty prompt.
     private static func defaultProjectPath() -> String? {
-        [NSHomeDirectory() + "/Desktop/Salehman AI", NSHomeDirectory() + "/Salehman AI"]
+        // Live repo FIRST: it moved 2026-07-05 (~/Desktop/Salehman AI → ~/Salehman-AI)
+        // and the dead Desktop copy still exists on disk — with Desktop listed first,
+        // this "first existing path" pick silently opened the dead copy.
+        [NSHomeDirectory() + "/Salehman-AI", NSHomeDirectory() + "/Desktop/Salehman AI"]
             .first { FileManager.default.fileExists(atPath: $0) }
     }
 
