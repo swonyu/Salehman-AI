@@ -4953,6 +4953,16 @@ struct MarketsView: View {
                         .stroke(sparkColor(idea.spark), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                         .frame(height: 64)
                         .overlay(tradePlanOverlay(idea, domain: overlayDomain))
+                        // L4 dedup (critique fleet #1): the trade-plan overlay itself is
+                        // .accessibilityHidden + .allowsHitTesting(false), so its own .help was
+                        // dead (never hit-testable) and its .accessibilityLabel was dead (never
+                        // reachable by VoiceOver) — both deleted from tradePlanOverlay. .help moved
+                        // here, onto this hit-testable container, gated on overlayDomain != nil (the
+                        // overlay's own all-or-nothing render condition) so the tooltip never claims
+                        // an overlay that isn't drawn.
+                        .help(overlayDomain != nil
+                              ? "Trade plan overlay: stop/target lines and the latest-close marker — see \u{201C}Stop & Target computed\u{201D} below."
+                              : "")
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("Price sparkline, trending \(trendWord), high \(adaptivePrice(idea.spark.max() ?? 0)), low \(adaptivePrice(idea.spark.min() ?? 0))")
                     // At-the-extreme chip (OSS-borrow B3, Ghostfolio min/max highlight; L1 honesty
@@ -6084,15 +6094,15 @@ struct MarketsView: View {
                     tradePlanLine(y: stopY * h, labelY: stopFinalY, width: w, color: DS.Palette.dangerSoft, label: adaptivePrice(stop))
                     tradePlanLine(y: targetY * h, labelY: targetFinalY, width: w, color: DS.Palette.successSoft, label: adaptivePrice(target))
 
-                    // Last-bar marker: the price the plan was computed against. Help text
-                    // references the sheet's existing "computed at X ago" framing without
-                    // repeating its full sentence (that Text already renders lower in the sheet).
+                    // Last-bar marker: the price the plan was computed against.
+                    // L4 dedup (critique fleet #1): this whole overlay is .accessibilityHidden +
+                    // .allowsHitTesting(false) below, so a .help/.accessibilityLabel here was dead
+                    // (never hit-testable, never VoiceOver-reachable) — deleted. Coverage moved to
+                    // the Sparkline container's .help (the hit-testable parent).
                     Circle()
                         .fill(DS.Palette.accent)
                         .frame(width: 6, height: 6)
                         .position(x: w, y: entryY * h)
-                        .help("Plan computed at \(adaptivePrice(entry)) (latest close) — see \u{201C}Stop & Target computed\u{201D} below.")
-                        .accessibilityLabel("Plan computed at \(adaptivePrice(entry))")
                 }
             }
             .allowsHitTesting(false)
