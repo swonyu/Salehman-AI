@@ -91,6 +91,19 @@ enum StockSageCurrency {
         return ccy == "USD" ? String(format: "≈$%.0f", v) : String(format: "≈%.0f %@", v, ccy)
     }
 
+    /// ALERT-FMT-1: single shared adaptive price formatter — was quadruplicated byte-identically
+    /// across `MarketsView.adaptivePrice`, `MarketsTodayActionsCard.adaptivePrice`,
+    /// `StockSageTodayPlan.fmt`, and `StockSageTradePlan.adaptivePrice`. A SUB-DOLLAR value never
+    /// rounds to "0.00" (a $0.0023 micro-cap/coin basis shows "0.0023") and two nearby sub-dollar
+    /// levels never collapse to the same string (DOGE-USD stop 0.099 / target 0.104 must NOT both
+    /// read "0.10", which bare `%.2f` does). ≥ $1 (or exactly 0) keeps the familiar 2 dp.
+    nonisolated static func adaptivePrice(_ v: Double) -> String {
+        let a = abs(v)
+        if a >= 1 || a == 0 { return String(format: "%.2f", v) }
+        if a >= 0.01 { return String(format: "%.4f", v) }
+        return String(format: "%.6f", v)                          // sub-cent → show real magnitude
+    }
+
     private nonisolated static let currencyForSuffix: [String: String] = [
         "SR": "SAR", "L": "GBP", "DE": "EUR", "PA": "EUR", "T": "JPY", "HK": "HKD",
         "SS": "CNY", "KS": "KRW", "NS": "INR", "AX": "AUD", "SA": "BRL", "TO": "CAD",

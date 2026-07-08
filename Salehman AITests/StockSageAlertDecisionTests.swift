@@ -81,4 +81,29 @@ struct StockSageAlertDecisionTests {
                             stop: 90, target: 120, lastAlertedRecommendation: nil)
         #expect(a?.kind == .stopBreach)
     }
+
+    // MARK: - ALERT-FMT-1: alert reason text uses the shared 3-tier adaptive formatter, not bare %.2f
+    //
+    // DOGE-USD-class fixture: stop 0.099, target 0.104 — hand-derived standalone
+    // (`swift /tmp/derive_alert_reason.swift`, not by calling `evaluate`):
+    //   adaptive: "DOGE-USD hit its stop (0.0980 ≤ 0.0990) — the setup is invalidated; risk is realized."
+    //   bare %.2f (pre-fix): "DOGE-USD hit its stop (0.10 ≤ 0.10) — ..." — stop and price read IDENTICAL.
+
+    @Test func stopBreachReasonUsesAdaptiveTierNotBareTwoDecimals() {
+        // Long stop at 0.099: crossed DOWN through it (0.101 -> 0.098).
+        let a = AD.evaluate(symbol: "DOGE-USD", recommendation: .buy, price: 0.098, priorPrice: 0.101,
+                            stop: 0.099, target: 0.104, lastAlertedRecommendation: nil)
+        #expect(a?.kind == .stopBreach)
+        #expect(a?.reason == "DOGE-USD hit its stop (0.0980 ≤ 0.0990) — the setup is invalidated; risk is realized.")
+        // Distinct strings for price vs stop — the bare-%.2f collision ("0.10 ≤ 0.10") is gone.
+        #expect(a?.reason.contains("0.10 ≤ 0.10") == false)
+    }
+
+    @Test func targetHitReasonUsesAdaptiveTierNotBareTwoDecimals() {
+        // Long target at 0.104: crossed UP through it (0.102 -> 0.105).
+        let a = AD.evaluate(symbol: "DOGE-USD", recommendation: .buy, price: 0.105, priorPrice: 0.102,
+                            stop: 0.099, target: 0.104, lastAlertedRecommendation: nil)
+        #expect(a?.kind == .targetHit)
+        #expect(a?.reason == "DOGE-USD reached its target (0.1050 ≥ 0.1040) — consider taking profit or trailing the stop.")
+    }
 }

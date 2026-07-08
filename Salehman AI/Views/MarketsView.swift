@@ -885,14 +885,9 @@ struct MarketsView: View {
         StockSageCurrency.majorUnitValue(symbol: symbol, rawValue: perShare * shares)
     }
 
-    /// Format a price/cost so a SUB-DOLLAR value never rounds to "0.00" and reads as a free position
-    /// (a $0.0023 micro-cap/coin basis must show "0.0023", not "0.00"). ≥ $1 keeps the familiar 2 dp.
-    private func adaptivePrice(_ v: Double) -> String {
-        let a = abs(v)
-        if a >= 1 || a == 0 { return String(format: "%.2f", v) }
-        if a >= 0.01 { return String(format: "%.4f", v) }
-        return String(format: "%.6f", v)                          // sub-cent → show real magnitude
-    }
+    /// ALERT-FMT-1: thin alias onto the single shared formatter (`StockSageCurrency.adaptivePrice`,
+    /// pure, tested there) — keeps call sites below unchanged in shape.
+    private func adaptivePrice(_ v: Double) -> String { StockSageCurrency.adaptivePrice(v) }
 
     /// L10N-01: thin alias onto StockSageCurrency.approxAmount (pure, tested there) — keeps
     /// call sites below unchanged in shape.

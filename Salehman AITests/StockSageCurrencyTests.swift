@@ -121,4 +121,34 @@ struct StockSageCurrencyTests {
         #expect(b.concentration == nil)
         #expect(!b.hasFXRisk)
     }
+
+    // MARK: - ALERT-FMT-1: shared adaptive price formatter (3-tier)
+    //
+    // Hand-derived from the SPEC shared by all four former duplicate sites (MarketsView,
+    // MarketsTodayActionsCard, StockSageTodayPlan, StockSageTradePlan — now aliases onto this):
+    // |v| >= 1 or == 0 -> %.2f ; |v| >= 0.01 -> %.4f ; else -> %.6f. Derived standalone via
+    // `swift /tmp/derive_adaptive_price.swift` (not by calling this function):
+    //   0.104 -> "0.1040", 0.099 -> "0.0990" (bare %.2f collapses BOTH to "0.10" — the bug
+    //   ALERT-FMT-1 fixes: a DOGE-USD-class stop/target pair reading identical in an alert push).
+
+    @Test func adaptivePriceSubDollarTierKeepsDogeStopAndTargetDistinct() {
+        // The exact hand-derived case named in the finding.
+        #expect(StockSageCurrency.adaptivePrice(0.104) == "0.1040")
+        #expect(StockSageCurrency.adaptivePrice(0.099) == "0.0990")
+        // Bare %.2f (the pre-fix behavior) collapses both to the same string — confirms the bug
+        // this formatter exists to avoid, without re-deriving from the implementation.
+        #expect(String(format: "%.2f", 0.104) == "0.10")
+        #expect(String(format: "%.2f", 0.099) == "0.10")
+        #expect(StockSageCurrency.adaptivePrice(0.104) != StockSageCurrency.adaptivePrice(0.099))
+    }
+
+    @Test func adaptivePriceTierBoundaries() {
+        #expect(StockSageCurrency.adaptivePrice(0.0) == "0.00")        // == 0 → 2dp tier
+        #expect(StockSageCurrency.adaptivePrice(1.0) == "1.00")        // >= 1 → 2dp tier
+        #expect(StockSageCurrency.adaptivePrice(188.4) == "188.40")    // >= 1 → 2dp tier
+        #expect(StockSageCurrency.adaptivePrice(0.9999) == "0.9999")   // < 1, >= 0.01 → 4dp tier
+        #expect(StockSageCurrency.adaptivePrice(0.01) == "0.0100")     // boundary of 4dp tier (inclusive)
+        #expect(StockSageCurrency.adaptivePrice(0.0099) == "0.009900") // just under 0.01 → 6dp tier
+        #expect(StockSageCurrency.adaptivePrice(-0.104) == "-0.1040")  // sign preserved, tier by magnitude
+    }
 }

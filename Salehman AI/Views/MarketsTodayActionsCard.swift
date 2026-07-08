@@ -22,15 +22,9 @@ struct MarketsTodayActionsCard: View {
     @ScaledMetric(relativeTo: .caption2) private var font8: CGFloat = 8
     @ScaledMetric(relativeTo: .caption2) private var font9: CGFloat = 9
 
-    /// Adaptive price formatter mirroring `MarketsView.adaptivePrice(_:)` — %.2f for ≥$1,
-    /// %.4f for sub-dollar, %.6f for sub-cent. Prevents entry/stop from collapsing to the same
-    /// 2dp string for sub-dollar crypto (DOGE-USD, ADA-USD) in the analyzed core.
-    private func adaptivePrice(_ v: Double) -> String {
-        let a = abs(v)
-        if a >= 1 || a == 0 { return String(format: "%.2f", v) }
-        if a >= 0.01 { return String(format: "%.4f", v) }
-        return String(format: "%.6f", v)
-    }
+    /// ALERT-FMT-1: thin alias onto the single shared formatter (`StockSageCurrency.adaptivePrice`,
+    /// pure, tested there) — keeps call sites below unchanged in shape.
+    private func adaptivePrice(_ v: Double) -> String { StockSageCurrency.adaptivePrice(v) }
 
     /// Share-count formatter matching `MarketsView.numString` / `StockSageTodayPlan.numShares` —
     /// %.0f, not `String(Int(d))` (`Int(Double)` traps past `Int.max`).

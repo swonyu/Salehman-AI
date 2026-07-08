@@ -190,16 +190,9 @@ enum StockSageTodayPlan {
         return lines.joined(separator: "\n")
     }
 
-    /// Adaptive price formatter matching `MarketsTodayActionsCard.adaptivePrice` and
-    /// `MarketsView.adaptivePrice` — %.2f for ≥$1 (or zero), %.4f for sub-dollar, %.6f
-    /// for sub-cent. Prevents entry/stop from collapsing to identical strings for
-    /// DOGE-class prices (e.g. entry 0.104 and stop 0.099 both rounding to "0.10").
-    private nonisolated static func fmt(_ v: Double) -> String {
-        let a = abs(v)
-        if a >= 1 || a == 0 { return String(format: "%.2f", v) }
-        if a >= 0.01 { return String(format: "%.4f", v) }
-        return String(format: "%.6f", v)   // sub-cent → show real magnitude
-    }
+    /// ALERT-FMT-1: thin alias onto the single shared formatter (`StockSageCurrency.adaptivePrice`,
+    /// pure, tested there) — keeps call sites below unchanged in shape.
+    private nonisolated static func fmt(_ v: Double) -> String { StockSageCurrency.adaptivePrice(v) }
 
     /// Share-count formatter matching `MarketsView.numString` — %.0f, not `String(Int(d))`,
     /// because `Int(Double)` TRAPS past `Int.max` and a persisted pathological share count

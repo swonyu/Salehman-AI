@@ -15,15 +15,10 @@ enum StockSageTradePlan {
     // lines to adaptivePrice and relabeled the Action line, so the nil path is NOT
     // byte-identical to pre-wave-8 output for sub-$1 prices / the conviction wording.
 
-    // Replicates MarketsView.adaptivePrice exactly: ≥$1 or zero → 2dp; ≥$0.01 → 4dp;
-    // sub-cent → 6dp. Keeps the pasted broker note consistent with what the sheet shows.
+    // ALERT-FMT-1: thin alias onto the single shared formatter (StockSageCurrency.adaptivePrice,
+    // pure, tested there) — keeps the pasted broker note consistent with what the sheet shows.
     // nonisolated so it can be called from the nonisolated text() function.
-    nonisolated private static func adaptivePrice(_ v: Double) -> String {
-        let a = abs(v)
-        if a >= 1 || a == 0 { return String(format: "%.2f", v) }
-        if a >= 0.01 { return String(format: "%.4f", v) }
-        return String(format: "%.6f", v)
-    }
+    nonisolated private static func adaptivePrice(_ v: Double) -> String { StockSageCurrency.adaptivePrice(v) }
 
     nonisolated static func text(symbol: String, market: String, price: Double,
                                  advice: TradeAdvice, rewardRisk: RewardRisk?,

@@ -73,5 +73,9 @@ enum StockSageAlertDecision {
                               reason: "\(symbol): new \(recommendation.rawValue) signal — check the plan before acting.")
     }
 
-    private nonisolated static func fmt(_ v: Double) -> String { String(format: "%.2f", v) }
+    /// ALERT-FMT-1: was bare %.2f — every board/card surface uses the 3-tier adaptive formatter,
+    /// so a sub-dollar stop/target pair (DOGE-USD: stop 0.099, target 0.104) collapsed to
+    /// identical "0.10" push text. Routed through the shared formatter (StockSageCurrency,
+    /// pure, tested there) so alert text matches what the board/sheet already show.
+    private nonisolated static func fmt(_ v: Double) -> String { StockSageCurrency.adaptivePrice(v) }
 }
