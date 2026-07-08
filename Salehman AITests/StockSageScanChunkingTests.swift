@@ -168,6 +168,67 @@ struct StockSageScanChunkingTests {
         #expect(merged == current)   // an empty (e.g. totally-failed) chunk leaves the board untouched
     }
 
+    // MARK: 2b. preScanBoard semantic — alerts must key off the state BEFORE the chunk loop's
+    // mid-scan publishes, not the state AFTER (review round 1, finding 1: mid-loop `ideas =
+    // ranked` publishes overwrote the pre-scan board before StockSageAlerts.detect ran, so
+    // detect(new, new) never fired and alerts went dead). `performRefreshIdeas` is private and
+    // network/disk-bound (StockSageQuoteService, StockSageHistoryCache, StockSageJournalStore.shared)
+    // — no store seam exists to drive it directly in a unit test — so this test pins the
+    // composition it relies on instead: build the SAME two snapshots `performRefreshIdeas` would
+    // (`preScanBoard` = board before any chunk merges; the chunk-loop's own mid-scan publish
+    // state = board after chunk 1 merges but before chunk 2 runs) and shows the alert only fires
+    // when `detect` is given the TRUE pre-scan snapshot as `previous`, not the mid-loop one.
+    @Test func alertsFireAcrossAChunkedScanOnlyWhenComparedToThePreScanSnapshot() {
+        func idea(_ symbol: String, _ action: TradeAdvice.Action, price: Double = 100) -> StockSageIdea {
+            StockSageIdea(symbol: symbol, market: symbol, price: price,
+                         advice: TradeAdvice(action: action, conviction: 0.6, regime: .range,
+                                            rationale: [], stopPrice: nil, targetPrice: nil,
+                                            suggestedWeight: 0.05, caveat: "x"),
+                         spark: [])
+        }
+        // Board BEFORE this scan starts: AAPL was .hold last scan.
+        let preScanBoard = [idea("AAPL", .hold)]
+
+        // Chunk 1 merges in a flip to .strongBuy — this is the mid-loop publish
+        // (`ideas = ranked` inside the loop) that the bug compared `previous` against.
+        var midLoopBoard = preScanBoard
+        midLoopBoard = StockSageScanChunking.mergeChunk(current: midLoopBoard, newlyBuilt: [idea("AAPL", .strongBuy)],
+                                                        rankScore: StockSageStore.rankScore)
+        // Chunk 2 (a different symbol) doesn't touch AAPL again — mirrors a multi-chunk scan
+        // where AAPL priced in an early chunk and stays untouched for the rest of the scan.
+        let finalRanked = StockSageScanChunking.mergeChunk(current: midLoopBoard, newlyBuilt: [idea("MSFT", .hold)],
+                                                           rankScore: StockSageStore.rankScore)
+
+        // THE BUG (pre-fix shape): comparing finalRanked to the ALREADY-PUBLISHED midLoopBoard/
+        // finalRanked itself — both snapshots already show AAPL as .strongBuy, so no crossing.
+        let buggyAlerts = StockSageAlerts.detect(previous: midLoopBoard, current: finalRanked)
+        #expect(buggyAlerts.isEmpty)   // demonstrates why the bug went silent: detect(new, new)
+
+        // THE FIX: comparing finalRanked to preScanBoard (captured BEFORE any chunk merge)
+        // correctly sees the .hold → .strongBuy crossing and fires.
+        let fixedAlerts = StockSageAlerts.detect(previous: preScanBoard, current: finalRanked)
+        #expect(fixedAlerts.count == 1)
+        #expect(fixedAlerts.first?.kind == .flipBullish)
+        #expect(fixedAlerts.first?.symbol == "AAPL")
+    }
+
+    @Test func alertsSkippedOnFirstEverScanWhenPreScanBoardIsEmpty() {
+        // First-ever-scan guard: `alertsEnabled && !preScanBoard.isEmpty` in performRefreshIdeas.
+        // An empty pre-scan board (never scanned before) must produce no alerts — there's nothing
+        // to have "crossed" from. Modeled here as detect(previous: [], current:) returning empty,
+        // the same guard the store's `!preScanBoard.isEmpty` short-circuits before ever calling.
+        func idea(_ symbol: String, _ action: TradeAdvice.Action) -> StockSageIdea {
+            StockSageIdea(symbol: symbol, market: symbol, price: 100,
+                         advice: TradeAdvice(action: action, conviction: 0.6, regime: .range,
+                                            rationale: [], stopPrice: nil, targetPrice: nil,
+                                            suggestedWeight: 0.05, caveat: "x"),
+                         spark: [])
+        }
+        let finalRanked = StockSageScanChunking.mergeChunk(current: [], newlyBuilt: [idea("AAPL", .strongBuy)],
+                                                           rankScore: StockSageStore.rankScore)
+        #expect(StockSageAlerts.detect(previous: [], current: finalRanked).isEmpty)
+    }
+
     // MARK: 3. Staleness-partition — same-day cached vs stale
 
     /// Build a minimal HistoryCache with one entry whose newest bar date is `newestBar`.

@@ -85,14 +85,16 @@ nonisolated enum StockSageScanChunking {
         return (fromCache, toFetch)
     }
 
-    // MARK: Chunk merge (retryFailedIdeas' precedent, shared so the chunked scan and the retry
-    // path can never drift apart)
+    // MARK: Chunk merge (shared by BOTH the chunked scan's per-chunk loop AND
+    // StockSageStore.retryFailedIdeas — review round 1, finding 5: retryFailedIdeas now calls
+    // this directly instead of re-implementing the same replace-by-symbol-then-resort inline,
+    // so the two paths literally cannot drift apart — one function, two call sites.)
 
     /// Merge one chunk's freshly-built ideas into the running board: REPLACE any existing entry
-    /// for the same symbol (case-insensitive), then re-sort by `rankScore`. This is exactly
-    /// `retryFailedIdeas`' tested merge shape, extracted so the chunked progressive scan reuses
-    /// it verbatim instead of re-implementing it inline. Pure — `rankScore` is injected so this
-    /// stays independent of `StockSageStore`.
+    /// for the same symbol (case-insensitive), then re-sort by `rankScore`. Pure — `rankScore`
+    /// is injected so this stays independent of `StockSageStore`. Callers that need additional
+    /// filtering (e.g. `retryFailedIdeas`'s `stillTracked` reconcile) apply it AFTER this
+    /// returns — this function only ever does the replace-and-resort, nothing tracked-set-aware.
     nonisolated static func mergeChunk(current: [StockSageIdea], newlyBuilt: [StockSageIdea],
                                        rankScore: (TradeAdvice) -> Double) -> [StockSageIdea] {
         guard !newlyBuilt.isEmpty else { return current }

@@ -115,7 +115,11 @@ final class StockSageStore: ObservableObject {
     // Advice/ideas — the advisor run across the universe on real candle history.
     @Published private(set) var ideas: [StockSageIdea] = []
     @Published private(set) var isLoadingIdeas = false
-    /// Live fetch progress during refreshIdeas: (completed, total) symbol count. nil when idle.
+    /// Live fetch progress during refreshIdeas: (current, total) symbol count. nil when idle.
+    /// UNIT: `current` counts symbols ATTEMPTED so far (cache-served + fetch-attempted,
+    /// hit or miss) — NOT symbols successfully priced. Monotonically non-decreasing within a
+    /// scan by construction (see `performRefreshIdeas`'s `attemptedSoFar`/`priorAttempted`);
+    /// do not feed a priced-only count into this without re-checking that invariant.
     @Published private(set) var ideasProgress: (current: Int, total: Int)?
     /// In-flight ideas-refresh task, retained so the UI can cancel it (backlog #12).
     private var ideasRefreshTask: Task<Void, Never>?
@@ -379,17 +383,38 @@ final class StockSageStore: ObservableObject {
         ideasProgress = (current: 0, total: total)
         defer { ideasProgress = nil }   // clear on EVERY exit (success + the cancel/feed-failure early-returns), not just success
 
-        let cache = StockSageHistoryCache.load()   // loaded ONCE at scan start (plan step 3)
+        // PERF FIX (review round 1): `.load()` decodes the whole multi-MB on-disk JSON cache
+        // synchronously — hoisted into a detached task so that decode runs off the MainActor
+        // instead of blocking it once per scan. `nonisolated static func`, so no actor hop is
+        // needed to call it from a detached context. Same one-load-per-scan cadence as before.
+        let cache = await Task.detached { StockSageHistoryCache.load() }.value
+        // Reconstructed ONCE here (was rebuilt from `cache?.priceHistories()` inside the chunk
+        // loop on every iteration — an O(chunks) re-decode of the same dictionary for a value
+        // that never changes across chunks within one scan).
+        let cachePriceHistories = cache?.priceHistories() ?? [:]
         let cal = convictionCalibration                           // read on the main actor before ANY await
         let journalTrades = StockSageJournalStore.shared.trades   // read on the main actor before ANY await
         // Benchmark fetched ONCE up front, shared by every chunk's buildIdeas call.
         let benchmark = await StockSageQuoteService.fetchHistory("^GSPC", range: "1y")
         guard !Task.isCancelled else { return }
 
+        // ALERTS FIX (review round 1): snapshot the board BEFORE the chunk loop starts
+        // publishing. The loop below does `ideas = ranked` after EVERY chunk merges (so the
+        // board grows live) — if alert-detect compared against `ideas` read AFTER the loop, it
+        // would be comparing the final board to itself (detect(new, new) never fires; alerts
+        // went dead). `preScanBoard` is the one-and-only "previous" for this scan, taken before
+        // any chunk publish. The first-ever-scan skip guard below keys on `!preScanBoard.isEmpty`
+        // (not `!ideas.isEmpty`, which by scan-end has already been overwritten) — same "don't
+        // alert on the very first population" semantics as the legacy single-shot scan.
+        let preScanBoard = ideas
+
         let chunks = StockSageScanChunking.chunks(universe)
         var accumulatedHistories: [String: StockSagePriceHistory] = [:]
         var ranked: [StockSageIdea] = []
         var firstChunkTotallyFailed = false
+        // Running "attempted" total across completed chunks — same unit `ideasProgress.current`
+        // is displayed in (see priorAttempted's doc comment below); NOT the priced count.
+        var attemptedSoFar = 0
 
         for (chunkIndex, chunkDefs) in chunks.enumerated() {
             guard !Task.isCancelled else { break }
@@ -398,7 +423,6 @@ final class StockSageStore: ObservableObject {
             // fetch only the rest. `cache == nil` (no cache yet) ⇒ everyone fetches, same as before.
             let symbols = chunkDefs.map(\.symbol)
             let (fromCache, toFetch) = StockSageScanChunking.partitionByCacheFreshness(symbols: symbols, cache: cache)
-            let cachePriceHistories = cache?.priceHistories() ?? [:]
             var cachedHistories: [String: StockSagePriceHistory] = [:]
             for sym in fromCache {
                 if let h = cachePriceHistories[sym.uppercased()] { cachedHistories[sym.uppercased()] = h }
@@ -408,10 +432,20 @@ final class StockSageStore: ObservableObject {
             // cancels the chunk's own child task (not the whole scan) — completed chunks before
             // it stay committed; this chunk's (and every later chunk's) symbols land in
             // ideasMissing via the scan-end-once missingAfterScan derivation.
-            let priorPriced = accumulatedHistories.count + cachedHistories.count   // this chunk's cache hits already "priced", not fetched
+            //
+            // PROGRESS UNIT (review round 1 fix): `ideasProgress.current` counts symbols
+            // ATTEMPTED so far, not symbols successfully priced — `fetchHistories`'s onProgress
+            // fires per attempted batch regardless of hits/misses (`completed += chunk.count`),
+            // so mixing it with a priced-only count (as the post-merge update below used to do
+            // via `accumulatedHistories.count`) could step the counter BACKWARD the moment a
+            // chunk had any fetch misses. `priorAttempted` is this chunk's starting point in the
+            // same attempted-units space: every earlier chunk's full `symbols.count` (whether
+            // served from cache or fetched, all of it was "accounted for") plus this chunk's own
+            // cache hits (already known, not going through the fetch progress callback).
+            let priorAttempted = attemptedSoFar + cachedHistories.count
             let chunkWork = Task { () -> (histories: [String: StockSagePriceHistory], built: [StockSageIdea]) in
                 let fetched = await StockSageQuoteService.fetchHistories(for: toFetch, onProgress: { [weak self] n in
-                    self?.ideasProgress = (current: priorPriced + n, total: total)
+                    self?.ideasProgress = (current: priorAttempted + n, total: total)
                 })
                 let merged = cachedHistories.merging(fetched) { _, new in new }
                 guard !merged.isEmpty else { return (merged, []) }
@@ -423,9 +457,28 @@ final class StockSageStore: ObservableObject {
                 try? await Task.sleep(for: .seconds(120))
                 if !Task.isCancelled { chunkWork.cancel() }
             }
+            // CANCEL FIX (review round 1): `chunkWork` is an UNSTRUCTURED Task — Swift does not
+            // preemptively tear it down when the parent scan task is cancelled, it only flips
+            // the flag `chunkWork` would see if it checked `Task.isCancelled` itself (it doesn't;
+            // fetchHistories/buildIdeas run to completion regardless). Forward the parent's
+            // cancellation into the chunk explicitly so a mid-chunk `cancelIdeasRefresh()` stops
+            // the fetch/build promptly instead of silently finishing a chunk nobody wants.
+            if Task.isCancelled { chunkWork.cancel() }
             let (chunkHistories, built) = await chunkWork.value
             chunkWatchdog.cancel()
             let chunkTimedOut = chunkWork.isCancelled
+
+            // Re-check AFTER the await, BEFORE any merge/publish: cancellation can also land
+            // WHILE we were awaiting chunkWork (not just before it started). Matches the legacy
+            // single-shot scan's shape — one `guard !Task.isCancelled` right after the awaited
+            // fetch+build, before `ideas`/`ideasMissing`/anything else is touched — so a
+            // cancelled scan NEVER commits a half-built chunk and never runs the scan-end
+            // reconcile tail (stillTracked filter, alert detect, snapshot save) on a partial
+            // result. `ideasProgress` still clears via the outer `defer`; `isLoadingIdeas` clears
+            // via `refreshIdeas`'s defer. The board is left exactly as the LAST fully-committed
+            // chunk (or the pre-scan snapshot, if cancelled before chunk 0 finished) — the same
+            // "last consistent state" contract the pre-chunking scan gave a mid-fetch cancel.
+            guard !Task.isCancelled else { return }
 
             let attempted = symbols.count
             let priced = chunkHistories.count
@@ -447,7 +500,8 @@ final class StockSageStore: ObservableObject {
             }
 
             accumulatedHistories.merge(chunkHistories) { _, new in new }
-            ideasProgress = (current: accumulatedHistories.count, total: total)
+            attemptedSoFar += attempted   // whole chunk now accounted for, hit or miss
+            ideasProgress = (current: attemptedSoFar, total: total)   // same attempted-unit space as priorAttempted above
 
             if !built.isEmpty {
                 // MERGE (retryFailedIdeas' precedent, shared via StockSageScanChunking.mergeChunk):
@@ -487,9 +541,11 @@ final class StockSageStore: ObservableObject {
         let stillTracked = Set(trackedDefs().map { $0.symbol.uppercased() })
         let finalRanked = ranked.filter { stillTracked.contains($0.symbol.uppercased()) }
             .sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
-        // Detect alert events vs the PREVIOUS snapshot before replacing it — once, vs the full board.
-        if alertsEnabled, !ideas.isEmpty {
-            let fired = StockSageAlerts.detect(previous: ideas, current: finalRanked)
+        // Detect alert events vs the PRE-SCAN snapshot (taken before the loop's mid-scan
+        // publishes) — once, vs the full board. Using `ideas` here would compare the
+        // just-published finalRanked to itself (see preScanBoard's doc comment above).
+        if alertsEnabled, !preScanBoard.isEmpty {
+            let fired = StockSageAlerts.detect(previous: preScanBoard, current: finalRanked)
             if !fired.isEmpty { alerts = Array((fired + alerts).prefix(Self.maxAlerts)) }
         }
         // Partial success is honest success: keep the names that priced, and NAME the ones that
@@ -569,12 +625,20 @@ final class StockSageStore: ObservableObject {
         }
         let built = await Self.buildIdeas(defs: defs, histories: histories, benchmark: benchmark,
                                           calibration: cal, journalTrades: journalTrades)
-        let newSyms = Set(built.map { $0.symbol.uppercased() })
+        // MERGE (review round 1, finding 5): now routed through the SAME
+        // StockSageScanChunking.mergeChunk the chunked scan uses, so "shared so the chunked
+        // scan and the retry path can never drift apart" (mergeChunk's own doc comment) is
+        // actually true instead of aspirational. Byte-identical to the prior inline
+        // replace-by-symbol-then-resort — mergeChunk's `built.isEmpty` early return is a no-op
+        // here because the `stillTracked` filter + re-sort below still runs unconditionally
+        // afterward, exactly like the pre-this-change code always did (this call site does its
+        // OWN stillTracked filtering; mergeChunk stays a pure symbol-replace-and-resort step
+        // with no tracked-set awareness, same contract the chunked scan relies on).
+        let replaced = StockSageScanChunking.mergeChunk(current: ideas, newlyBuilt: built, rankScore: Self.rankScore)
         // Re-reconcile vs the current tracked set (mirror refreshIdeas): a removeSymbol() during the
         // retry await must not resurrect the dropped ticker via the pre-await `defs`/`built`.
         let stillTracked = Set(trackedDefs().map { $0.symbol.uppercased() })
-        let merged = (ideas.filter { !newSyms.contains($0.symbol.uppercased()) } + built)
-            .filter { stillTracked.contains($0.symbol.uppercased()) }
+        let merged = replaced.filter { stillTracked.contains($0.symbol.uppercased()) }
             .sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
         ideas = merged
         let analyzed = Set(merged.map { $0.symbol.uppercased() })
