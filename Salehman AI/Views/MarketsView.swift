@@ -3125,6 +3125,10 @@ struct MarketsView: View {
                     .font(.caption2).foregroundStyle(store.ideasIsStale ? DS.Palette.warningSoft : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if store.scanThrottled {
+                Text("Extended scan paused — feed throttling; completed results are shown.")
+                    .font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+            }
             if !store.ideasMissing.isEmpty {
                 let miss = store.ideasMissing
                 HStack(alignment: .top, spacing: 6) {
