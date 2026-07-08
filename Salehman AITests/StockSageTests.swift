@@ -289,6 +289,71 @@ struct StockSageUniverseTests {
         #expect(StockSageUniverse.worldwide.first?.symbol == "2222.SR")
         #expect(StockSageUniverse.worldwide.count == 2_420)
     }
+
+    // Review round-2 finding 2: the Markets ideas-header literal ("≈2,330 equities") was WRONG
+    // and, being a literal, would regress the moment the universe changes again. The fix
+    // interpolates `MarketsView.worldwideEquityCount`, a `static let` computed ONCE as
+    // `worldwide.filter { StockSageAllocation.assetClass($0.symbol) == "Equity" } .count`. That
+    // property is `private` (no test seam into MarketsView), so this test instead pins the
+    // ARITHMETIC INVARIANT the interpolation depends on: `assetClass`'s classifier is a pure
+    // string-prefix/suffix rule (`^` prefix ⇒ Index, `=X` suffix ⇒ Forex, `-USD` suffix ⇒ Crypto,
+    // else Equity — StockSageAllocation.swift L27-33) — re-implemented HERE independently (never
+    // calling `assetClass` itself, per spec-fidelity) so "equities = worldwide minus the other
+    // three classes, counted by the same rule" is verified two ways, not asserted by fiat.
+    @Test func worldwideEquityCountMatchesTheClassifierRuleAppliedIndependently() {
+        let all = StockSageUniverse.worldwide.map(\.symbol)
+        var indices = 0, forex = 0, crypto = 0, equities = 0
+        for raw in all {
+            let s = raw.uppercased()
+            if s.hasPrefix("^") { indices += 1 }
+            else if s.hasSuffix("=X") { forex += 1 }
+            else if s.hasSuffix("-USD") { crypto += 1 }
+            else { equities += 1 }
+        }
+        // Arithmetic self-consistency: every name lands in exactly one bucket.
+        #expect(indices + forex + crypto + equities == all.count)
+        // The independently-counted equity bucket must equal what the classifier itself
+        // (StockSageAllocation.assetClass, called here ONLY for this cross-check, not to derive
+        // the expected value) reports over the same universe — this is the exact computation
+        // MarketsView.worldwideEquityCount performs.
+        let viaClassifier = StockSageUniverse.worldwide.filter { StockSageAllocation.assetClass($0.symbol) == "Equity" }.count
+        #expect(equities == viaClassifier)
+        // Regression guard: the OLD wrong literal was ≈2,330; the reviewer's recount was ≈2,370.
+        // Bound (not an exact pin — the universe can grow) so a silent classifier/universe change
+        // that swings the count far from the reviewed ballpark fails loudly.
+        #expect(viaClassifier > 2_300 && viaClassifier < 2_420)
+    }
+
+    // Review round-2 finding 1: the monitor's UNATTENDED background auto-cycle now scopes to
+    // `StockSageUniverse.core` (the groups-derived curated set) instead of the full 2,420-name
+    // `worldwide`, to avoid pulling the whole promoted universe unpaced every ~45s. `core` is a
+    // genuine PURE public seam (unlike `StockSageStore.trackedDefs(scope:)`, which is `private`
+    // and MainActor-bound — no seam exists for the watchlist-append half of the composition, so
+    // per WHIPPYX that half is documented, not re-tested: it's `trackedDefs`'s pre-existing
+    // append-loop, unchanged by this fix). This test pins what IS directly testable: `core`'s own
+    // composition — the exact base set the monitor's scoped cycle now builds from.
+    @Test func coreIsTheGroupsDerivedCuratedSubsetOfWorldwide() {
+        let core = StockSageUniverse.core
+        let worldwide = StockSageUniverse.worldwide
+        // Non-empty and genuinely smaller — the whole point of the scoping fix (finding 1) is
+        // that the background cycle's pull shrinks vs the full universe.
+        #expect(!core.isEmpty)
+        #expect(core.count < worldwide.count)
+        // Saudi-first invariant (owner directive) holds for the scoped core too — Aramco must
+        // still be first in the monitor's OWN pull, not just in the full worldwide array.
+        #expect(core.first?.symbol == "2222.SR")
+        // `core` must be a strict SUBSET of `worldwide` (every core symbol is also analyzed by
+        // the full scan) — the monitor's scoped cycle must never introduce a symbol the full
+        // scan/board doesn't already know about.
+        let worldwideSymbols = Set(worldwide.map { $0.symbol.uppercased() })
+        #expect(core.allSatisfy { worldwideSymbols.contains($0.symbol.uppercased()) })
+        // `core` must NOT contain catalogExtra-only names — spot-check a known long-tail-only
+        // ticker (from the "US Tech & Growth" catalogExtra block) that is absent from `groups`.
+        #expect(!core.contains { $0.symbol == "SNOW" })
+        // No internal duplicates (mirrors worldwideHasNoDuplicateSymbolsAfterPromotion above).
+        let upper = core.map { $0.symbol.uppercased() }
+        #expect(Set(upper).count == upper.count)
+    }
 }
 
 // MARK: - User watchlist symbol validation (pure)

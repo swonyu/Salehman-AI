@@ -8,6 +8,15 @@ import AppKit   // NSPasteboard for the trade-plan copy
 /// (sample seed until a live feed lands — honestly flagged). Sections not yet
 /// built show a clear "coming soon".
 struct MarketsView: View {
+    /// Equity count within `StockSageUniverse.worldwide`, computed ONCE (review round-2 finding
+    /// 2: the header's old "≈2,330 equities" literal was wrong — the classifier-consistent recount
+    /// is ≈2,370 — AND a literal regresses the auto-updating copy the moment the universe changes
+    /// again). A `static let` (not a per-render computed property) — `MarketsView` is a `View`
+    /// struct SwiftUI recreates on every body evaluation; filtering all 2,420 names on each render
+    /// would be pure waste for a number that only changes when the universe itself does.
+    private static let worldwideEquityCount = StockSageUniverse.worldwide
+        .filter { StockSageAllocation.assetClass($0.symbol) == "Equity" }.count
+
     @State private var section: MarketSection
     @AppStorage("marketsWatchSort") private var sort: MarketSort = .feed
     @State private var showBrowseMarkets = false
@@ -3026,7 +3035,7 @@ struct MarketsView: View {
                     .font(.system(size: mvFont18)).foregroundStyle(DS.Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Trade ideas").font(.system(size: mvFont15, weight: .semibold)).foregroundStyle(.white)
-                    Text("Rules-based what / when / how-much across the ~2,400-name analyzed universe (≈2,330 equities), on 1-year history.")
+                    Text("Rules-based what / when / how-much across the \(StockSageUniverse.worldwide.count)-name analyzed universe (\(Self.worldwideEquityCount) equities), on 1-year history.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     // Honesty: say plainly whether the EV/win numbers below are measured, fitted, or
                     // assumed — right where they're read. F01/F02: keyed on the calibration METHOD,

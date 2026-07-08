@@ -293,14 +293,19 @@ enum StockSageUniverse {
     // (friendly market label, tickers). Explicitly typed so the big literals
     // type-check cheaply (Swift's inference chokes on a bare tuple-array).
     //
-    // TWO tiers, deliberately separated for the feed's sake:
-    //   • `groups`       — the ANALYZED CORE: history-fetched + live-quoted in bulk
-    //                      (board, ideas ranking, heatmap, allocation). Kept to a
-    //                      liquid, recognizable set so a manual refresh stays sane.
-    //   • `catalogExtra` — DISCOVERY long-tail: searchable + one-tap addable, but NOT
-    //                      bulk-fetched. Adding one fetches just that single quote.
-    // Together they form `catalog`, the searchable directory behind the add-ticker box —
-    // so the owner can find effectively any liquid stock without hammering the feed.
+    // TWO source tiers, kept as separate literals for provenance/labeling, but as of the
+    // equity-2000 promotion (PLAN_2026-07-08_equity2000.md Stage 2, 2026-07-08) BOTH are
+    // bulk-fetched/analyzed — the pre-promotion "catalogExtra is searchable-only, never
+    // bulk-fetched" split no longer holds:
+    //   • `groups`       — the curated Saudi-first CORE (~210 names). Still `worldwide[0]`'s
+    //                      source, still what `StockSageUniverse.core`/`marketCount` key off
+    //                      of, and still the monitor's own background-cycle scope (review
+    //                      round-2 finding 1) — but no longer the WHOLE analyzed universe.
+    //   • `catalogExtra` — the ~2,210-name discovery long-tail. PROMOTED: now bulk-fetched and
+    //                      scanned exactly like `groups` (both feed `worldwide` — see its own
+    //                      doc comment below), not just searchable/one-tap-addable.
+    // Together they form `worldwide`/`catalog` (identical, deduped groups-first) — the full
+    // 2,420-name analyzed + searchable universe.
 
     private static let groups: [(label: String, tickers: [String])] = [
         // ── Home market first (owner directive: Aramco / Tadawul leads the universe) ──
@@ -363,8 +368,9 @@ enum StockSageUniverse {
         ("₿ Crypto (24/7)",        ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "BNB-USD", "ADA-USD", "DOGE-USD", "AVAX-USD", "DOT-USD", "LINK-USD"]),
     ]
 
-    // Discovery long-tail — searchable + addable, NOT bulk-fetched. Real, liquid Yahoo
-    // tickers; if one ever fails to price on add, the add box says so honestly.
+    // Discovery long-tail — PROMOTED (Stage 2, 2026-07-08): now bulk-fetched/analyzed exactly
+    // like `groups` (see the header comment above `groups`), not just searchable/addable.
+    // Real, liquid Yahoo tickers; if one ever fails to price, the caller says so honestly.
     private static let catalogExtra: [(label: String, tickers: [String])] = [
         ("🇺🇸 US Tech & Growth",   ["GOOG", "MRVL", "ON", "MCHP", "NXPI", "SNOW", "PLTR", "CRWD", "DDOG", "ZS", "NET", "WDAY", "TEAM", "DELL", "HPQ", "UBER", "ABNB", "COIN", "SQ", "PYPL", "SHOP", "MDB", "DOCU", "ROKU", "PINS"]),
         ("🇺🇸 US Financials+",     ["SPGI", "MCO", "ICE", "CME", "COF", "USB", "PNC", "TFC", "BX", "KKR", "APO", "MET", "PRU", "AIG", "TRV"]),
@@ -432,6 +438,16 @@ enum StockSageUniverse {
     /// universe size is already shown separately — this stays the honest count of curated,
     /// always-live-quoted groupings, not a claim about catalogExtra's group structure.
     static let marketCount: Int = groups.count
+
+    /// The curated Saudi-first CORE only (`groups`, pre-promotion's whole universe) — no dedup
+    /// needed (`groups` alone has no cross-list collisions to resolve, unlike `worldwide`/`catalog`
+    /// which also merge in `catalogExtra`). Exposed for the monitor's background auto-cycle
+    /// (StockSageMonitor review round-2 finding 1): scoping the ~45s unattended loop to this
+    /// ~210-name core + the user's watchlist, instead of Stage 2's full 2,420-name `worldwide`,
+    /// avoids pulling the whole promoted universe unpaced on every cycle (feed-cooldown risk).
+    /// User-initiated paths (the manual refresh button, the Find-Ideas scan) are UNCHANGED and
+    /// still use `worldwide` — this accessor exists only for the background-cycle scope.
+    static let core: [StockSageSymbol] = build(groups)
 
     /// The full searchable directory: now IDENTICAL to `worldwide` post-promotion (both are
     /// groups+catalogExtra deduped groups-first) — kept as a distinct name because callers use

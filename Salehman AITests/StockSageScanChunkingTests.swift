@@ -135,6 +135,68 @@ struct StockSageScanChunkingTests {
         }
     }
 
+    // MARK: 2a. Retry-chunking equivalence (review round-2 finding 3): retryFailedIdeas now
+    // shares `runChunkedScan` with performRefreshIdeas instead of an un-chunked single-shot
+    // hammer over the whole missing-symbol subset. `runChunkedScan` (private, MainActor-bound)
+    // has no test seam, same as `performRefreshIdeas` (see the preScanBoard test's comment
+    // above) — so this pins the ARCHITECTURE invariant the shared loop relies on: chunking the
+    // retry subset and merging chunk-by-chunk into the EXISTING board (retry's `startingRanked:
+    // ideas`, not an empty board — the key difference vs the full-scan shape already covered
+    // above) produces the SAME result as the OLD single-shot retry (one buildIdeas call over the
+    // whole missing subset, merged once via mergeChunk) at n≤250 missing symbols.
+    @Test func chunkedRetryEqualsOldSingleShotRetryMergeAtNUnder250() async {
+        // Board already has 2 unrelated priced ideas on it (what retryFailedIdeas starts from).
+        func existingIdea(_ symbol: String) -> StockSageIdea {
+            StockSageIdea(symbol: symbol, market: symbol, price: 100,
+                         advice: TradeAdvice(action: .hold, conviction: 0.1, regime: .range,
+                                            rationale: [], stopPrice: nil, targetPrice: nil,
+                                            suggestedWeight: 0, caveat: "x"),
+                         spark: [])
+        }
+        let existingBoard = [existingIdea("SPY"), existingIdea("QQQ")]
+
+        // 6 previously-missing symbols being retried, 3 up + 3 down (same fixture shape as the
+        // full-scan equivalence test above).
+        let missingSymbols = ["UP1", "UP2", "UP3", "DOWN1", "DOWN2", "DOWN3"]
+        var histories: [String: StockSagePriceHistory] = [:]
+        for s in ["UP1", "UP2", "UP3"] { histories[s] = trendingHistory(s, slope: 0.6) }
+        for s in ["DOWN1", "DOWN2", "DOWN3"] { histories[s] = trendingHistory(s, slope: -0.6) }
+        let defs = missingSymbols.map { equitySym($0) }
+
+        // OLD single-shot retry: one buildIdeas call over the WHOLE missing subset, merged once.
+        let oldBuilt = await StockSageStore.buildIdeas(defs: defs, histories: histories)
+        let oldReplaced = StockSageScanChunking.mergeChunk(current: existingBoard, newlyBuilt: oldBuilt,
+                                                            rankScore: StockSageStore.rankScore)
+        let oldMerged = oldReplaced.sorted { StockSageStore.rankScore($0.advice) > StockSageStore.rankScore($1.advice) }
+        #expect(oldMerged.count == 8)   // 2 existing + 6 retried (WHIPPYX: hard count first)
+
+        // NEW chunked retry: split the missing subset into 2 chunks of 3, buildIdeas per chunk,
+        // merge each into the STARTING board (existingBoard) — exactly runChunkedScan's shape
+        // when called with startingRanked: ideas.
+        let chunks = StockSageScanChunking.chunks(defs, size: 3)
+        #expect(chunks.count == 2)
+        var chunkedMerged = existingBoard
+        for chunk in chunks {
+            let built = await StockSageStore.buildIdeas(defs: chunk, histories: histories)
+            chunkedMerged = StockSageScanChunking.mergeChunk(current: chunkedMerged, newlyBuilt: built,
+                                                             rankScore: StockSageStore.rankScore)
+        }
+        chunkedMerged = chunkedMerged.sorted { StockSageStore.rankScore($0.advice) > StockSageStore.rankScore($1.advice) }
+        #expect(chunkedMerged.count == 8)
+
+        // Equivalence: same symbols (existing + retried), same order, same advice per symbol —
+        // the shared chunk loop produces the identical result the old un-chunked retry did.
+        #expect(chunkedMerged.map(\.symbol) == oldMerged.map(\.symbol))
+        for (a, b) in zip(chunkedMerged, oldMerged) {
+            #expect(a.symbol == b.symbol)
+            #expect(a.advice.action == b.advice.action)
+            #expect(abs(a.advice.conviction - b.advice.conviction) < 1e-9)
+        }
+        // The 2 pre-existing board rows survived untouched (retry only replaces the retried symbols).
+        #expect(chunkedMerged.contains { $0.symbol == "SPY" })
+        #expect(chunkedMerged.contains { $0.symbol == "QQQ" })
+    }
+
     @Test func mergeChunkReplacesBySymbolCaseInsensitive() {
         func idea(_ symbol: String, _ action: TradeAdvice.Action, conviction: Double = 0.5) -> StockSageIdea {
             StockSageIdea(symbol: symbol, market: symbol, price: 100,
