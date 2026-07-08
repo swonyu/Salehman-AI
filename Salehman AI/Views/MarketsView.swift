@@ -4214,7 +4214,14 @@ struct MarketsView: View {
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                if let wk = StockSageExpectedValue.expectedWeeklyR(lane: lane, ideas: store.ideas, tradingDays: tradingDays, holds: velocityHolds, calibration: store.convictionCalibration) {
+                // REVERT (review round, 2026-07-08): the BIND-ONCE dedupe previously passed this
+                // strip's earnings/liquidity-AWARE `lane` into GROSS expectedWeeklyR — silently
+                // executing the PARKED owner-gated L4-2 decision (F03/F44 surface; the map's own
+                // "GROSS expectedWeeklyR stays undemoted-lane" invariant). Reverted to the
+                // ideas-only unaware overload; `tradingDays: tradingDays` stays (order- and
+                // membership-insensitive per tradingDaysForLane(lane:)'s own doc, so reusing the
+                // already-bound value here is still byte-identical, no owner-gate exposure).
+                if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, tradingDays: tradingDays, holds: velocityHolds, calibration: store.convictionCalibration) {
                     // F03/F44: gross label + floor-demotion caveat (the weekly sum never excludes
                     // floor-demoted ideas; the per-row floor badges below DO mark them).
                     Text(String(format: "≈ %+.1fR/week gross, before costs, if you run the top %d — estimate, high variance, assumes you take and re-cycle these. Not a promise.", wk, Swift.min(3, lane.count)))

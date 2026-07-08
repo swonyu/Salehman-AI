@@ -797,8 +797,14 @@ enum StockSageExpectedValue {
     /// (unchanged) because `fastLaneConcentration` below re-derives ITS OWN lane from `ideas` for
     /// the concentration check — concentration is evaluated over `ideas` post-earnings/liquidity
     /// filtering at ITS OWN call, not blindly assumed identical to the passed `lane`'s provenance.
-    /// Byte-identical output to the `ideas`-only overload whenever `lane == fastLane(ideas, holds:
-    /// calibration:)` (proven by `StockSagePerfProbeTests.dedupedFastLaneFamilyMatchesDirectCallsAt2400Scale`).
+    /// Equivalence to the `ideas`-only overload holds BY CONSTRUCTION whenever `lane ==
+    /// fastLane(ideas, holds:calibration:)`: the `ideas`-only overload's body IS `expectedWeeklyR(lane:
+    /// fastLane(ideas, ...), ideas: ideas, ...)` — it delegates to this function, so the two share one
+    /// body and cannot diverge (this is a `same-body-different-entrypoint` equivalence, not an
+    /// independently-verified one; `StockSagePerfProbeTests.dedupedFastLaneFamilyMatchesDirectCallsAt2400Scale`
+    /// exercises the delegation but, because both call paths run identical code, cannot catch a body
+    /// mutation — see `expectedWeeklyRLaneOverloadMatchesHandDerivedPin` for a hand-derived value pin
+    /// that does).
     nonisolated static func expectedWeeklyR(lane: [StockSageIdea], ideas: [StockSageIdea], maxConcurrent: Int = 3,
                                             tradingDays: Double = 5, holds: VelocityHoldDays = .defaults,
                                             calibration: StockSageConvictionCalibration? = nil) -> Double? {
@@ -831,8 +837,11 @@ enum StockSageExpectedValue {
 
     /// BIND-ONCE variant of `netExpectedWeeklyR` — see `expectedWeeklyR(lane:ideas:...)`'s doc for
     /// the contract (caller supplies an already-computed, earnings/liquidity-aware `fastLane(...)`
-    /// result with matching `ideas`/`holds`/`calibration`/`earnings`/`liquidity`). Byte-identical
-    /// to the `ideas`-only overload under that match.
+    /// result with matching `ideas`/`holds`/`calibration`/`earnings`/`liquidity`). Equivalence to
+    /// the `ideas`-only overload under that match holds BY CONSTRUCTION (the `ideas`-only overload's
+    /// body delegates to this function — same body, not an independently-verified match; see
+    /// `expectedWeeklyR(lane:ideas:...)`'s doc for why the existing dedup-proof test cannot catch a
+    /// body mutation here either).
     nonisolated static func netExpectedWeeklyR(lane: [StockSageIdea], ideas: [StockSageIdea], maxConcurrent: Int = 3,
                                                tradingDays: Double = 5,
                                                holds: VelocityHoldDays = .defaults,
@@ -913,9 +922,11 @@ enum StockSageExpectedValue {
     /// ORDER- and MEMBERSHIP-INSENSITIVE for this function specifically (it only reads `.count`
     /// and an asset-class `.filter{}.count` — earnings/liquidity dicts don't change fastLane's
     /// MEMBERSHIP, only its ranking order, so a lane the caller computed WITH earnings/liquidity
-    /// gives the identical crypto-share fraction as one computed without). Byte-identical to the
-    /// `ideas`-only overload (proven by
-    /// `StockSagePerfProbeTests.dedupedFastLaneFamilyMatchesDirectCallsAt2400Scale`).
+    /// gives the identical crypto-share fraction as one computed without). Equivalence to the
+    /// `ideas`-only overload holds BY CONSTRUCTION — its body is `tradingDaysForLane(lane:
+    /// fastLane(ideas, ...))`, i.e. it delegates here, so the two share one body and cannot diverge.
+    /// `StockSagePerfProbeTests.dedupedFastLaneFamilyMatchesDirectCallsAt2400Scale` exercises the
+    /// delegation but, running identical code on both sides, cannot catch a body mutation.
     nonisolated static func tradingDaysForLane(lane: [StockSageIdea]) -> Double {
         guard !lane.isEmpty else { return 5 }
         let crypto = lane.filter { StockSageAllocation.assetClass($0.symbol) == "Crypto" }.count
@@ -1070,8 +1081,11 @@ enum StockSageExpectedValue {
     /// function's other overload would make internally (membership is earnings/liquidity-
     /// INVARIANT — those dicts only re-rank, never exclude — but `.prefix(topN)` IS order-sensitive,
     /// so a lane computed WITHOUT earnings/liquidity here would silently analyze the wrong top-N).
-    /// Byte-identical to the `ideas`-only overload whenever that match holds (proven by
-    /// `StockSagePerfProbeTests.dedupedFastLaneFamilyMatchesDirectCallsAt2400Scale`).
+    /// Equivalence to the `ideas`-only overload holds BY CONSTRUCTION whenever that lane match
+    /// holds — its body is `fastLaneConcentration(lane: fastLane(ideas, ...), topN: topN)`, i.e. it
+    /// delegates here, so the two share one body and cannot diverge.
+    /// `StockSagePerfProbeTests.dedupedFastLaneFamilyMatchesDirectCallsAt2400Scale` exercises the
+    /// delegation but, running identical code on both sides, cannot catch a body mutation.
     nonisolated static func fastLaneConcentration(lane: [StockSageIdea], topN: Int = 3) -> FastLaneConcentration? {
         let top = Array(lane.prefix(Swift.max(0, topN)))
         guard top.count >= 2 else { return nil }

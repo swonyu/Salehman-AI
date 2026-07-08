@@ -243,16 +243,31 @@ struct StockSagePerfProbeTests {
         _ = StockSageCapitalAllocator.allocate(ideas: ideas, account: account, calibration: calibration, regime: nil)
 
         // fastLaneStrip — BIND-ONCE: `lane` computed once, `tradingDays` computed once via the
-        // lane: overload, then expectedWeeklyR/netExpectedWeeklyR/fastLaneConcentration all reuse
-        // `lane` instead of re-deriving fastLane. 6 internal fastLane passes → 1.
+        // lane: overload, then netExpectedWeeklyR/fastLaneConcentration reuse `lane` — 3 internal
+        // fastLane passes → 1. `expectedWeeklyR` (GROSS) is DELIBERATELY NOT deduped here: passing
+        // the earnings/liquidity-AWARE `lane` into it would execute the PARKED owner-gated L4-2
+        // decision (F03/F44 surface — the map's own "GROSS expectedWeeklyR stays undemoted-lane"
+        // invariant). Reverted to the `ideas:`-only unaware overload, mirroring MarketsView's own
+        // revert — this is now an EXTRA (unaware) fastLane pass, not a dedupe.
         let lane = StockSageExpectedValue.fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity)
         let tradingDays = StockSageExpectedValue.tradingDaysForLane(lane: lane)
-        _ = StockSageExpectedValue.expectedWeeklyR(lane: lane, ideas: ideas, tradingDays: tradingDays, holds: holds, calibration: calibration)
+        _ = StockSageExpectedValue.expectedWeeklyR(ideas, tradingDays: tradingDays, holds: holds, calibration: calibration)
         _ = StockSageExpectedValue.netExpectedWeeklyR(lane: lane, ideas: ideas, tradingDays: tradingDays, holds: holds, calibration: calibration,
                                                        earnings: earnings, liquidity: liquidity)
         _ = StockSageExpectedValue.fastLaneConcentration(lane: lane)
         // weeklyGrossHelp's inner tradingDaysForLane call is now the ALREADY-BOUND `tradingDays`
         // above (view code passes tradingDays: to weeklyGrossHelp) — zero additional calls here.
+        //
+        // DISCLOSURE (review round, 2026-07-08): this whole-render probe still under-counts —
+        // weeklyGrossHelp's `.help(String)` sites (moneyVelocityCard's un-parameterized call AND
+        // this strip's tradingDays-parameterized call) are eagerly evaluated at body-build time
+        // (SwiftUI's non-closure `.help(String)` overload, not lazy on hover) and BOTH route through
+        // weeklyTurnoverNote → assumedWeeklyRoundTrips, which runs its OWN full, non-earnings/
+        // liquidity-aware `fastLane` pass every time — 2 more full fastLane-family passes than this
+        // harness (or the 19-20 count in the amendment below) exercises. All are ADDITIVE (push the
+        // true per-invalidation number UP, never down), so the >=50ms branch decision this probe
+        // drove cannot flip because of the omission — but the true real-world pass count is ~21-22,
+        // not 19-20.
 
         // todaysActionsCard — rankedActions is an ENGINE function (StockSageTodayPlan.swift) with
         // its own internal fastLane pass; NOT given a lane: overload (its only view call site is
@@ -355,5 +370,74 @@ struct StockSagePerfProbeTests {
             let dedupedConc = StockSageExpectedValue.fastLaneConcentration(lane: lane)
             #expect(directConc == dedupedConc, "fastLaneConcentration mismatch for \(label)")
         }
+    }
+
+    // MARK: - Hand-derived value pin (review round, 2026-07-08)
+    //
+    // `dedupedFastLaneFamilyMatchesDirectCallsAt2400Scale` above proves WIRING (the lane: overload
+    // is called with the right lane, right arg shapes) but NOT the arithmetic body, because the
+    // `ideas:`-only overload's body IS a call into the `lane:` overload — a `==` check where both
+    // sides run the identical body cannot catch a body mutation (e.g. `.prefix(3)` silently becoming
+    // `.prefix(2)`). This test pins `expectedWeeklyR(lane:)`'s actual numeric OUTPUT against a
+    // value computed independently by hand (standalone Python, no Swift, no calibration), so a body
+    // mutation shows up as a wrong number.
+    //
+    // ── Hand derivation (spec-fidelity: independent of the code under test) ──────────────────────
+    // 3 buy-family, bullTrend, equity ideas (SageFix.idea defaults: rr=2.0, price=100,
+    // riskDistance=10 ⇒ stop=90, target=120 ⇒ risk=10, reward=30 ⇒ rewardR=min(30/10,50)=2.0),
+    // conviction 0.90 / 0.70 / 0.50 (monotonically decreasing ⇒ fastLane's order == input order,
+    // no rank-key tie-break ambiguity to hand-verify). No calibration (nil) ⇒ winProbEstimate uses
+    // the linear prior: p = 0.35 + conviction·0.23.
+    //
+    //   idea 0: conviction=0.90 → p=0.35+0.90*0.23=0.5570 → evR=p*2.0-(1-p)=1.1140-0.4430=0.6710
+    //   idea 1: conviction=0.70 → p=0.35+0.70*0.23=0.5110 → evR=1.0220-0.4890=0.5330
+    //   idea 2: conviction=0.50 → p=0.35+0.50*0.23=0.4650 → evR=0.9300-0.5350=0.3950
+    //
+    // expectedHoldDays(for:): symbol has no -USD/=X/^/. suffix ⇒ Equity ⇒ base=holds.equity=12;
+    // SageFix.idea builds spark: [] ⇒ idea.dailyMove is nil and typicalDailyMove([]) needs
+    // count>=3 ⇒ nil ⇒ falls back to `base` unadjusted ⇒ hold=12.0 for all three.
+    //
+    //   velocity(for:) = evR / hold:
+    //     idea 0: 0.6710 / 12.0 = 0.055916666...
+    //     idea 1: 0.5330 / 12.0 = 0.044416666...
+    //     idea 2: 0.3950 / 12.0 = 0.032916666...
+    //   sum = 0.133250000...
+    //
+    // Net-cost floor sanity (not a rank-key hand-derivation — just confirms none of the 3 gets
+    // demoted, which would change fastLane's *membership*): US large-cap default round-trip cost is
+    // 13bps (StockSageNetEdge.defaultCosts) against a 10-point risk on a 100 price (1000bps) —
+    // negligible drag, so netEV/day ≈ grossEV/day for all three, each vastly clearing the
+    // minNetEVPerDayFloor (0.005); none is a short (side ineligible) or regime-banned (regime: nil
+    // passed everywhere in this harness ⇒ no ban branch). So fastLane's top-3 membership AND order
+    // (monotonic in conviction, hence in evR, hence in velocityRankKey's grossLG term) is exactly
+    // [idea0, idea1, idea2] — the 3 ideas built above, in that order.
+    //
+    // fastLaneConcentration(topN:3): all 3 top ideas are Equity (100% one class) ⇒ isConcentrated
+    // == true (count(3) == total(3)) ⇒ concentrationFactor = 0.70 — THE 0.70-HAIRCUT CASE.
+    //
+    // tradingDaysForLane(lane:): 0 of 3 are Crypto ⇒ (5 + 2*0/3).rounded() = 5.0.
+    //
+    // expectedWeeklyR(lane:ideas:maxConcurrent:3,...) body: vels.prefix(3).sum() * tradingDays *
+    // concentrationFactor = 0.133250000... * 5.0 * 0.70 = 0.466375000...
+    @Test func expectedWeeklyRLaneOverloadMatchesHandDerivedPin() {
+        let ideas = [
+            SageFix.idea("AAA", conviction: 0.90, action: .buy, regime: .bullTrend, rr: 2.0, price: 100.0, riskDistance: 10.0),
+            SageFix.idea("BBB", conviction: 0.70, action: .buy, regime: .bullTrend, rr: 2.0, price: 100.0, riskDistance: 10.0),
+            SageFix.idea("CCC", conviction: 0.50, action: .buy, regime: .bullTrend, rr: 2.0, price: 100.0, riskDistance: 10.0),
+        ]
+        let holds = VelocityHoldDays.defaults
+        let lane = StockSageExpectedValue.fastLane(ideas, holds: holds, calibration: nil)
+        #expect(lane.map(\.symbol) == ["AAA", "BBB", "CCC"], "fixture's fastLane order must match the hand derivation's assumed order — else the pin below proves nothing")
+
+        let conc = StockSageExpectedValue.fastLaneConcentration(lane: lane)
+        #expect(conc?.isConcentrated == true, "fixture must hit the 0.70-concentration-haircut case per the hand derivation")
+
+        let tradingDays = StockSageExpectedValue.tradingDaysForLane(lane: lane)
+        #expect(tradingDays == 5.0, "hand-derived tradingDays mismatch")
+
+        let wk = StockSageExpectedValue.expectedWeeklyR(lane: lane, ideas: ideas, tradingDays: tradingDays, holds: holds, calibration: nil)
+        let expected = 0.466375  // hand-derived above: 0.13325 * 5.0 * 0.70
+        #expect(wk != nil)
+        #expect(abs((wk ?? 0) - expected) < 1e-9, "expectedWeeklyR(lane:) diverged from the hand-derived pin: got \(String(describing: wk)), expected \(expected)")
     }
 }
