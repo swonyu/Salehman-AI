@@ -183,8 +183,16 @@ enum QAAudit {
             if let base = bitmap(at: baseURL) {
                 let (pct, heat) = diff(rep, base)
                 diffPercent = pct
+                let diffURL = snapshotsDir.appendingPathComponent("\(name)_diff.png")
                 if pct > 0.5, let heat {
-                    try? heat.write(to: snapshotsDir.appendingPathComponent("\(name)_diff.png"))
+                    try? heat.write(to: diffURL)
+                } else {
+                    // BUG FIX (2026-07-08): a surface that was >0.5% on an earlier
+                    // run (e.g. a transient) left its _diff.png behind forever once
+                    // it settled back under threshold — qa.sh kept flagging it as
+                    // "pixels moved" long after the diff was actually 0.05%. Clear
+                    // any stale heat-map the moment this run's pct drops <= 0.5.
+                    try? FileManager.default.removeItem(at: diffURL)
                 }
                 let budget = diffBudgets[name]
                 let pass = budget.map { pct <= $0 } ?? true
@@ -537,7 +545,12 @@ enum QAAudit {
 
     /// Sampled pixel diff (per-channel threshold) + red heat-map at sample
     /// resolution. Compares the overlapping region when sizes drift.
-    private static func diff(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> (Double, Data?) {
+    ///
+    /// `internal` (not `private`) so `QAAuditHeatMapTests` can drive it directly
+    /// via `@testable import` and read back the written heat-map bytes — this is
+    /// the ONLY caller-visible surface of the pixel-writing logic, so testing it
+    /// here (rather than extracting a separate helper) covers the real code path.
+    static func diff(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> (Double, Data?) {
         let w = min(a.pixelsWide, b.pixelsWide), h = min(a.pixelsHigh, b.pixelsHigh)
         let step = 3
         let sw = w / step, sh = h / step
@@ -557,11 +570,21 @@ enum QAAudit {
                 let moved = abs(ca.redComponent - cb.redComponent) > 0.05
                     || abs(ca.greenComponent - cb.greenComponent) > 0.05
                     || abs(ca.blueComponent - cb.blueComponent) > 0.05
+                // BUG FIX (2026-07-08): NSColor(red:green:blue:alpha:) is the
+                // CALIBRATED-RGB initializer. setColor() into this .deviceRGB
+                // bitmap silently no-ops a calibrated color on readback (proven:
+                // wrote r=1 calibrated red, read back r=0 g=0 b=0 a=0 — fully
+                // transparent black). Raw setPixel with an explicit 0-255 byte
+                // array writes into the bitmap's actual (device) color space, so
+                // it round-trips correctly through PNG encode + readback, and
+                // (being simplest) is preferred here over NSColor(deviceRed:...).
                 if moved {
                     changed += 1
-                    heat.setColor(NSColor(red: 1, green: 0.1, blue: 0.1, alpha: 0.9), atX: sx, y: sy)
+                    var px: [Int] = [255, 40, 40, 255] // opaque red — legible over the dark UI
+                    heat.setPixel(&px, atX: sx, y: sy)
                 } else {
-                    heat.setColor(NSColor(red: 0, green: 0, blue: 0, alpha: 0.08), atX: sx, y: sy)
+                    var px: [Int] = [0, 0, 0, 20] // faint, near-transparent marker
+                    heat.setPixel(&px, atX: sx, y: sy)
                 }
             }
         }

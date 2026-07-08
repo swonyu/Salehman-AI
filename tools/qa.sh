@@ -29,6 +29,12 @@ APP="${SALEHMAN_APP:-${APP:-}}"
 echo "→ capturing with: $APP"
 
 mkdir -p "$QA"
+# Clear stale *_diff.png before capturing (belt-and-suspenders alongside the
+# QAAudit-side delete on the pct<=0.5 branch): a snapshot renamed or dropped
+# from the baseline set would otherwise keep a heat-map from a run that no
+# longer applies, and the end-of-run listing below would flag it as "this
+# run's" regression when it's really a leftover from days ago.
+rm -f "$SNAPS"/*_diff.png 2>/dev/null || true
 before=$(stat -f %m "$SNAPS/INDEX.md" 2>/dev/null || echo 0)
 [ "${1:-}" = "--adopt" ] && touch "$QA/ADOPT_BASELINES"
 touch "$QA/SNAPSHOT_REQUEST"
