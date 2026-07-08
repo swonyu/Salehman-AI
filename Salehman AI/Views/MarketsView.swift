@@ -3264,9 +3264,7 @@ struct MarketsView: View {
             riskFraction: parsedRiskFraction ?? 0.01,
             regime: store.regime)
         let cardVM = snapshot.cardViewModel
-        let earningsBadge = cardVM.hasEarningsWarning
-            ? cardVM.warningBadges.first(where: { $0.contains("earnings") })
-            : nil
+        let earningsBadge = cardVM.earningsWarningBadge
         let hasFloorWarning = cardVM.hasFloorWarning
         // Legible reason for the earnings-aware rank: a chip when earnings are imminent/approaching.
         let earnFlag = StockSageExpectedValue.earningsRankFlag(for: idea, earnings: store.earnings)

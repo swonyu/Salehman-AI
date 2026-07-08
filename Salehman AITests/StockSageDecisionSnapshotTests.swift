@@ -93,6 +93,8 @@ struct StockSageDecisionSnapshotTests {
         #expect(card.velocityText == detail.velocityText)
         #expect(card.netVelocityText == detail.netVelocityText)
         #expect(card.gateBadge == detail.gateBadge)
+        #expect(card.earningsWarningBadge == detail.earningsWarningBadge)
+        #expect(card.floorWarningBadge == detail.floorWarningBadge)
         #expect(card.hasEarningsWarning == detail.hasEarningsWarning)
         #expect(card.hasFloorWarning == detail.hasFloorWarning)
         #expect(card.warningBadges == detail.warningBadges)
@@ -112,10 +114,12 @@ struct StockSageDecisionSnapshotTests {
         #expect(card.warningBadges.contains("low conviction"))
         #expect(card.warningBadges.contains("thin liquidity"))
         #expect(card.warningBadges.contains(where: { $0.contains("earnings") }))
+        #expect(card.earningsWarningBadge != nil)
         #expect(card.hasEarningsWarning)
         #expect(detail.rankReasonCodes.contains("lowConviction"))
         #expect(detail.rankReasonCodes.contains("earningsImminent"))
         #expect(detail.rankReasonCodes.contains("liquidityThin"))
+        #expect(detail.earningsWarningBadge != nil)
         #expect(detail.hasEarningsWarning)
     }
 
@@ -128,8 +132,10 @@ struct StockSageDecisionSnapshotTests {
         let expectsFloorWarning = snap.floorFlag.isDeranked
 
         #expect(card.warningBadges.contains("below net-cost floor") == expectsFloorWarning)
+        #expect((card.floorWarningBadge != nil) == expectsFloorWarning)
         #expect(card.hasFloorWarning == expectsFloorWarning)
         #expect(detail.warningBadges.contains("below net-cost floor") == expectsFloorWarning)
+        #expect((detail.floorWarningBadge != nil) == expectsFloorWarning)
         #expect(detail.hasFloorWarning == expectsFloorWarning)
         #expect(detail.rankReasonCodes.contains("belowNetCostFloor") == expectsFloorWarning)
     }

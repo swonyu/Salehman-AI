@@ -58,6 +58,8 @@ struct StockSageDecisionSnapshot: Sendable, Equatable {
             velocityText: velocityGross.map { String(format: "%+.3fR/day gross", $0) },
             netVelocityText: netVelocity.map { String(format: "%+.3fR/day net", $0) },
             gateBadge: gateBadge,
+            earningsWarningBadge: earningsWarningBadge,
+            floorWarningBadge: floorWarningBadge,
             hasEarningsWarning: hasEarningsWarning,
             hasFloorWarning: hasFloorWarning,
             warningBadges: warningBadges,
@@ -74,6 +76,8 @@ struct StockSageDecisionSnapshot: Sendable, Equatable {
             velocityText: velocityGross.map { String(format: "%+.3fR/day gross", $0) },
             netVelocityText: netVelocity.map { String(format: "%+.3fR/day net", $0) },
             gateBadge: gateBadge,
+            earningsWarningBadge: earningsWarningBadge,
+            floorWarningBadge: floorWarningBadge,
             hasEarningsWarning: hasEarningsWarning,
             hasFloorWarning: hasFloorWarning,
             warningBadges: warningBadges,
@@ -81,6 +85,19 @@ struct StockSageDecisionSnapshot: Sendable, Equatable {
             calibrationTitle: calibrationTitle,
             calibrationHelp: calibrationHelp
         )
+    }
+
+    private var earningsWarningBadge: String? {
+        switch earningsFlag {
+        case .demoted(let d): return "⚠︎ earnings ~\(d)d"
+        case .approaching(let d): return "earnings ~\(d)d"
+        case .clear, .unknown: return nil
+        }
+    }
+
+    private var floorWarningBadge: String? {
+        if case .belowFloor = floorFlag { return "below net-cost floor" }
+        return nil
     }
 
     private var hasEarningsWarning: Bool {
@@ -104,20 +121,8 @@ struct StockSageDecisionSnapshot: Sendable, Equatable {
 
     private var warningBadges: [String] {
         var out: [String] = []
-        let earningsBadge: String = {
-            switch earningsFlag {
-            case .demoted(let d): return "⚠︎ earnings ~\(d)d"
-            case .approaching(let d): return "earnings ~\(d)d"
-            case .clear, .unknown: return ""
-            }
-        }()
-        if !earningsBadge.isEmpty { out.append(earningsBadge) }
-
-        let floorBadge: String = {
-            if case .belowFloor = floorFlag { return "below net-cost floor" }
-            return ""
-        }()
-        if !floorBadge.isEmpty { out.append(floorBadge) }
+        if let earningsWarningBadge { out.append(earningsWarningBadge) }
+        if let floorWarningBadge { out.append(floorWarningBadge) }
 
         if rankReasons.contains(.lowConviction) { out.append("low conviction") }
         if liquidityProfile?.tier == .thin { out.append("thin liquidity") }
@@ -132,6 +137,8 @@ struct IdeaCardViewModel: Sendable, Equatable {
     let velocityText: String?
     let netVelocityText: String?
     let gateBadge: String
+    let earningsWarningBadge: String?
+    let floorWarningBadge: String?
     let hasEarningsWarning: Bool
     let hasFloorWarning: Bool
     let warningBadges: [String]
@@ -146,6 +153,8 @@ struct IdeaDetailViewModel: Sendable, Equatable {
     let velocityText: String?
     let netVelocityText: String?
     let gateBadge: String
+    let earningsWarningBadge: String?
+    let floorWarningBadge: String?
     let hasEarningsWarning: Bool
     let hasFloorWarning: Bool
     let warningBadges: [String]
