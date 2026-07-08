@@ -91,4 +91,25 @@ struct StockSageInputTests {
         #expect(I.percent("2,5", max: 3) == 2.5)             // and it still respects the cap (2.5 ≤ 3)
         #expect(I.percent("2,5", max: 2) == nil)             // 2.5 > 2 → rejected (proves it's read as 2.5)
     }
+
+    // MARK: - Non-decimal notations Foundation's Double()/Int() silently accept must be rejected
+    // (siblings of "abc"/"1.2.3" above). Double("0x64") == 100.0 in Swift — verified via
+    // /tmp/derive_input_shape.swift: percent("0x64") would otherwise PASS the ≤100 cap as a
+    // fabricated 100% risk fraction. The shape guard (^[+-]?\d*\.?\d+$) rejects hex/binary/octal/
+    // exponent notations BEFORE Double()/Int() ever sees them.
+    @Test func rejectsHexAndOtherNonDecimalNotations() {
+        #expect(I.percent("0x64") == nil)                    // Double("0x64") == 100.0 — would PASS the cap
+        #expect(I.positiveAmount("0x10") == nil)              // Double("0x10") == 16.0
+        #expect(I.positiveAmount("0x1p4") == nil)             // Double("0x1p4") == 16.0 (hex float w/ exponent)
+        #expect(I.positiveAmount("0X1F") == nil)              // uppercase hex prefix
+        #expect(I.positiveAmount("0x2710") == nil)            // Double("0x2710") == 10000.0
+    }
+
+    // MARK: - clean() trims newlines too, not just whitespace (a broker/clipboard paste with a
+    // trailing "\n" must not silently blank an otherwise-valid number). Guard runs AFTER the trim.
+    @Test func trimsTrailingNewlineNotJustWhitespace() {
+        #expect(I.positiveAmount("10000\n") == 10000)
+        #expect(I.positiveAmount("10,000\n") == 10000)
+        #expect(I.positiveAmount("\n2,5\n") == 2.5)          // newline both sides + Saudi decimal-comma
+    }
 }

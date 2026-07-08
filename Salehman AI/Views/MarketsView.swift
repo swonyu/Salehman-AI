@@ -2269,13 +2269,19 @@ struct MarketsView: View {
     // MARK: Kelly position sizer
 
     private var kellySizerPanel: some View {
-        // Sanitize free-text inputs: Double("inf") / Double("1e999") parse to +infinity and pass the
-        // > 0 check — guard .isFinite to avoid "Allocate $ inf" (matches StockSagePositionSizer guard).
-        let acct = Double(kellyAccount).flatMap { $0.isFinite ? $0 : nil } ?? 0
-        let payoff = Double(kellyPayoff).flatMap { $0.isFinite ? $0 : nil } ?? 0
-        let k = StockSageKelly.compute(winRate: (Double(kellyWinRate) ?? 0) / 100,
-                                       payoffRatio: payoff,
-                                       accountSize: acct)
+        // FIX 1 (round-g): route through the comma-aware StockSageInput seam — the same one the
+        // account-position sizer already uses (parsedAccount, F04 comment above) — instead of raw
+        // Double(…) ?? 0. A decimal-comma "2,5"/"1,5"/"10,000" (Saudi/EU) previously parsed to nil
+        // at every field and silently computed Kelly on 0/0/0, rendering a fabricated "no positive
+        // edge" verdict from a pure parse failure. nil on ANY field ⇒ render an honest hint, never
+        // compute on a fabricated 0 (honesty floor).
+        let acct = StockSageInput.positiveAmount(kellyAccount)
+        let payoff = StockSageInput.positiveAmount(kellyPayoff)
+        let winPct = StockSageInput.percent(kellyWinRate)
+        let k: KellyResult? = {
+            guard let acct, let payoff, let winPct else { return nil }
+            return StockSageKelly.compute(winRate: winPct / 100, payoffRatio: payoff, accountSize: acct)
+        }()
         return VStack(alignment: .leading, spacing: DS.Space.sm) {
             HStack(spacing: DS.Space.sm) {
                 Image(systemName: "percent").font(.system(size: mvFont16)).foregroundStyle(DS.Palette.accent)
@@ -2323,18 +2329,25 @@ struct MarketsView: View {
                 .buttonStyle(.plain)
                 .help("Fill Win% and Payoff from your OWN logged trades (≥10 closed, with wins and losses) — your real edge, not a backtest.")
             }
-            HStack(spacing: 18) {
-                ideaMetric("Full Kelly", String(format: "%.1f%%", k.fullKelly * 100))
-                ideaMetric("Half", String(format: "%.1f%%", k.halfKelly * 100), color: DS.Palette.successSoft)
-                ideaMetric("Suggested", String(format: "%.1f%%", k.suggestedFraction * 100), color: DS.Palette.accent)
-                ideaMetric("Allocate $", String(format: "%.0f", k.dollarsToAllocate))
-                Spacer(minLength: 0)
+            if let k {
+                HStack(spacing: 18) {
+                    ideaMetric("Full Kelly", String(format: "%.1f%%", k.fullKelly * 100))
+                    ideaMetric("Half", String(format: "%.1f%%", k.halfKelly * 100), color: DS.Palette.successSoft)
+                    ideaMetric("Suggested", String(format: "%.1f%%", k.suggestedFraction * 100), color: DS.Palette.accent)
+                    ideaMetric("Allocate $", String(format: "%.0f", k.dollarsToAllocate))
+                    Spacer(minLength: 0)
+                }
+                Text(k.note).font(.caption2)
+                    // Note color: success only when there is an edge AND half-Kelly fits under the cap.
+                    // The "capped for safety" note has fullKelly > 0 but should render as a warning, not success.
+                    .foregroundStyle((k.fullKelly > 0 && k.halfKelly < StockSageKelly.maxFraction) ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                Text(k.caveat).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else {
+                // Honesty floor: nil input (blank, unparseable, "abc", ambiguous comma) renders a
+                // hint, never a computed 0/0/0 verdict — matches the account-sizer's nil idiom.
+                Text("Enter a valid Win %, Payoff R, and Account $ to see a Kelly suggestion.")
+                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            Text(k.note).font(.caption2)
-                // Note color: success only when there is an edge AND half-Kelly fits under the cap.
-                // The "capped for safety" note has fullKelly > 0 but should render as a warning, not success.
-                .foregroundStyle((k.fullKelly > 0 && k.halfKelly < StockSageKelly.maxFraction) ? DS.Palette.successSoft : DS.Palette.warningSoft)
-            Text(k.caveat).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(DS.Space.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -4622,19 +4635,26 @@ struct MarketsView: View {
                     }
                     // Real-edge confidence: PSR (sample/skew/fat-tail haircut) + out-of-sample decay (overfit).
                     if let psr = bt.probabilisticSharpe {
-                        // Glyph + PASS/BELOW word so the verdict survives color-blindness (successSoft and
-                        // warningSoft collapse to the same hue under deuteranopia) + a spoken a11y label.
-                        let pass = psr > 0.95
+                        // FIX 4 (round-g): gate the PASS verdict on bt.isSignificant too — mirroring
+                        // the aggregate panel's passesHonestSignificance (#8: "a PASS glyph can never
+                        // sit next to a not-meaningful verdict"). probabilisticSharpe populates at
+                        // trades≥4 and the √(n−1) scaling can clear 0.95 at tiny n, which previously
+                        // rendered a green "PASS" seal directly beside the "too small a sample to
+                        // trust" warning above. The PSR NUMBER still always shows; only the glyph/
+                        // wording is gated. Glyph + PASS/BELOW word so the verdict survives color-
+                        // blindness (successSoft/warningSoft collapse under deuteranopia) + a11y label.
+                        let pass = psr > 0.95 && bt.isSignificant
+                        let verdictWord = bt.isSignificant ? (pass ? "PASS" : "BELOW BAR") : "BELOW BAR (sample too small)"
                         HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                             Image(systemName: pass ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                                 .font(.system(size: mvFont10))
-                            Text(String(format: "Real-edge confidence (PSR): %.0f%% — %@ (P(true Sharpe > 0) after a sample/skew/fat-tail haircut; clears sample/skew bar but does NOT include the multi-name selection-bias haircut — see strategy backtest for DSR).", psr * 100, pass ? "PASS" : "BELOW BAR"))
+                            Text(String(format: "Real-edge confidence (PSR): %.0f%% — %@ (P(true Sharpe > 0) after a sample/skew/fat-tail haircut; clears sample/skew bar but does NOT include the multi-name selection-bias haircut — see strategy backtest for DSR).", psr * 100, verdictWord))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .font(.caption2)
                         .foregroundStyle(pass ? DS.Palette.successSoft : DS.Palette.warningSoft)
                         .accessibilityElement(children: .combine)
-                        .accessibilityLabel(String(format: "Real edge confidence, probabilistic Sharpe ratio %.0f percent, %@ the 95 percent sample/skew bar.", psr * 100, pass ? "passes" : "below"))
+                        .accessibilityLabel(String(format: "Real edge confidence, probabilistic Sharpe ratio %.0f percent, %@.", psr * 100, verdictWord))
                         .accessibilityHint(StockSageDeflatedSharpe.caveat)
                         .help(StockSageDeflatedSharpe.caveat)
                     }
