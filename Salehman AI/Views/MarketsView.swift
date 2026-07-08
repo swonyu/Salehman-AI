@@ -4124,7 +4124,17 @@ struct MarketsView: View {
     @ViewBuilder private var fastLaneStrip: some View {
         let lane = StockSageExpectedValue.fastLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity)
         if lane.count >= 2 {
-            let split = StockSageExpectedValue.fastLaneByClass(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity)
+            // PERF-STRIP: pure filter of the already-computed `lane` above — byte-identical to
+            // calling StockSageExpectedValue.fastLaneByClass(store.ideas, ...) (its body does
+            // exactly this: fastLane(...) then filter by asset class with the SAME args), but
+            // without recomputing fastLane a second time. Does NOT touch the with/without-earnings
+            // lane distinction (owner-gated F03/F44/L4-2 territory) — this only splits ONE already-
+            // resolved lane by asset class.
+            let split = (crypto: lane.filter { StockSageAllocation.assetClass($0.symbol) == "Crypto" },
+                         equity: lane.filter { StockSageAllocation.assetClass($0.symbol) == "Equity" })
+            // PERF-STRIP: computed once, reused below — was recomputed (each a full fastLane pass)
+            // at every one of its 3 call sites in this view with byte-identical arguments.
+            let tradingDays = StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Image(systemName: "hare.fill").font(.system(size: mvFont11)).foregroundStyle(DS.Palette.accent)
@@ -4167,19 +4177,23 @@ struct MarketsView: View {
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), holds: velocityHolds, calibration: store.convictionCalibration) {
+                if let wk = StockSageExpectedValue.expectedWeeklyR(store.ideas, tradingDays: tradingDays, holds: velocityHolds, calibration: store.convictionCalibration) {
                     // F03/F44: gross label + floor-demotion caveat (the weekly sum never excludes
                     // floor-demoted ideas; the per-row floor badges below DO mark them).
                     Text(String(format: "≈ %+.1fR/week gross, before costs, if you run the top %d — estimate, high variance, assumes you take and re-cycle these. Not a promise.", wk, Swift.min(3, lane.count)))
                         .font(.system(size: mvFont9, weight: .medium))
                         .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
                         .help(weeklyGrossHelp("Gross, before costs — sums the top fast-lane GROSS velocities. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income."))
-                    if let netWk = StockSageExpectedValue.netExpectedWeeklyR(store.ideas, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity) {
+                    if let netWk = StockSageExpectedValue.netExpectedWeeklyR(store.ideas, tradingDays: tradingDays, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity) {
                         Text(String(format: "   ↳ %+.1fR/week net (after est. frictions)", netWk))
                             .font(.system(size: mvFont8)).foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
                     }
-                    if let acct = StockSageInput.positiveAmount(sizerAccount), let rp = StockSageInput.percent(sizerRiskPct),
-                       let usd = StockSageExpectedValue.expectedWeeklyDollars(store.ideas, account: acct, riskFraction: rp / 100, tradingDays: StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration), holds: velocityHolds, calibration: store.convictionCalibration) {
+                    // PERF-STRIP: expectedWeeklyDollars's body is exactly `wkR * account * riskFraction`
+                    // once its guards pass — `wk` above IS that wkR (byte-identical args: same ideas,
+                    // tradingDays, holds, calibration), so this avoids a second full fastLane recompute
+                    // for arithmetic StockSageInput already guarded (acct/rp finite and positive).
+                    if let acct = StockSageInput.positiveAmount(sizerAccount), let rp = StockSageInput.percent(sizerRiskPct) {
+                        let usd = wk * acct * (rp / 100)
                         Text(String(format: "≈ +$%.0f/week at $%.0f account, %.1f%% risk — gross, before costs; estimate, high variance, NOT income.", usd, acct, rp))
                             .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)   // neutral: estimate, not a realized gain
