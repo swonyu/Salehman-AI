@@ -1467,15 +1467,26 @@ final class StockSageStore: ObservableObject {
         // into the board instead of truncating it. `.full` refreshes: `universe` already covers
         // everything, so this is always empty — byte-identical to before.
         let scopedKeys = Set(universe.map { $0.symbol.uppercased() })
+        // User-market rows are EXCLUDED here — they already have their own preservation lane
+        // (preservedUserRows above); including them double-preserved a row added DURING the
+        // fetch await (absent from both pre-await scopedKeys and liveKeys → matched both
+        // filters → duplicate board row, persisted to the cache; review round-3 finding 1).
         let preservedOutOfScopeRows = symbols.filter {
-            !scopedKeys.contains($0.symbol.uppercased()) && !liveKeys.contains($0.symbol.uppercased())
+            $0.market != Self.userMarketLabel
+                && !scopedKeys.contains($0.symbol.uppercased())
+                && !liveKeys.contains($0.symbol.uppercased())
         }
         let committed = liveFiltered + preservedUserRows + preservedOutOfScopeRows
         // Set the new-listing honesty flags only once BOTH non-destructive bails have
         // passed (empty-feed L1162, coverage L1170) — assigning before them let a failed
         // or partial refresh wipe the flags while keeping the old rows, so a cached
         // placeholder-flat IPO row read as a genuine 0.00% move (audit L3-01, 2026-07-07).
+        // This cycle's quotes are authoritative ONLY for the symbols it actually fetched
+        // (scopedKeys) — flags for out-of-scope rows the cycle didn't attempt carry forward,
+        // else every ~45s .core tick wipes the catalogExtra rows' new-listing honesty badges
+        // (review round-3 finding 2; same honesty lineage as audit L3-01).
         newListings = Set(quotes.filter { $0.value.isNewListing }.keys)
+            .union(newListings.subtracting(scopedKeys))
         replaceAll(committed, isSample: false)
         lastUpdated = Date()
         // Newest MARKET time across the priced quotes — the banner uses this (not fetch time) to
