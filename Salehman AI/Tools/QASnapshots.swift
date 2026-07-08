@@ -291,6 +291,10 @@ enum QASnapshots {
         // histories; sample-bannered). Tall frame: the board sits below header/velocity/
         // CTA/best-opportunity/fast-lane/backtest panels — 740pt would show zero cards.
         snap(MarketsView(qaSection: .ideas), "markets_ideas", "Markets — Ideas board (seeded fixtures: strongBuy/buy/sell/crypto/⚠vol + earnings chip)", .init(width: 1000, height: 2400), in: dir)
+        // Full-height board: the 2400pt frame above cuts the last two fixture cards (1120.SR,
+        // 7010.SR) below the fold, leaving their chip states (Held-only on 1120.SR — the one
+        // context-chip form with no owned pixel) unverifiable. 3400pt reaches all five cards.
+        snap(MarketsView(qaSection: .ideas), "markets_ideas_full", "Markets — Ideas board FULL height (all five fixture cards incl. the sell-family tail)", .init(width: 1000, height: 3400), in: dir)
         // Idea-detail SHEET content, rendered inline (no .sheet presentation) via the
         // qaDetailSymbol QA seam — NVDA is the seeded strongBuy fixture with resolvable
         // US costs, so the Evidence gross→net fused lines render. Sheet frame caps at
