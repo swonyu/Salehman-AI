@@ -42,10 +42,29 @@ struct StockSageTodayPlanTests {
 
     @Test func noStopWarnsAndGateBlocks() {
         let i = idea("X", conviction: 0.9, stop: nil, target: nil)
-        let plan = StockSageTodayPlan.build(idea: i, ev: nil, account: nil, riskFraction: nil)
+        // F04-parity (2nd-read hunt, 2026-07-08): riskFraction must be supplied for the gate to
+        // evaluate at all now — this test pins "no stop → gate blocks" given a real risk %, not
+        // the honest-nil-gate path (that's rankedActionGateIsNilWhenRiskFractionNotSupplied below).
+        let plan = StockSageTodayPlan.build(idea: i, ev: nil, account: nil, riskFraction: 0.01)
         #expect(plan.lowercased().contains("no stop"))
         #expect(plan.contains("Don't take this trade"))   // gate blocks on no stop
         #expect(!plan.contains("shares"))                 // no account → no size line
+    }
+
+    // F04-parity (2nd-read hunt, 2026-07-08): nil riskFraction must NOT fabricate a gate verdict
+    // (the old `rf > 0 ? rf : 0.01` default always produced one) — mirrors
+    // rankedActionGateIsNilWhenRiskFractionNotSuppliedAndCopyTextSaysNotEvaluated in
+    // StockSageTodayPlanRankedTests.swift, but for the single-idea `build()` surface (the "Copy
+    // today's plan" button, MarketsView.swift ~3878/~4215).
+    @Test func rankedActionGateIsNilWhenRiskFractionNotSuppliedAndCopyTextSaysNotEvaluated() {
+        let i = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        let plan = StockSageTodayPlan.build(idea: i, ev: nil, account: nil, riskFraction: nil)
+        // Verbatim wording match with the sheet's copy-plan (MarketsView.swift ~5064-5065) and
+        // copyAllText — all surfaces must agree on the exact same honest phrasing.
+        #expect(plan.contains("Pre-trade gate: not evaluated — enter risk % to see the verdict."))
+        #expect(!plan.contains("Clear to trade"))
+        #expect(!plan.contains("Proceed with caution"))
+        #expect(!plan.contains("Don't take this trade"))
     }
 
     // MARK: - TODAY-PARITY: held-position context (defaulted absent, held → present)

@@ -40,9 +40,14 @@ enum StockSageTodayPlan {
             // `bestOpportunity`, which is buy-family only — financing would always be 0.)
             return resolvedNetRR ?? gross
         }()
-        let gate = StockSageTradeGate.evaluate(hasStop: a.stopPrice != nil, rewardToRisk: rr,
-                                               riskFraction: rf > 0 ? rf : 0.01, daysToEarnings: daysToEarnings,
-                                               rrIsNet: resolvedNetRR != nil)
+        // F04-parity (2nd-read hunt, 2026-07-08): was `rf > 0 ? rf : 0.01` — a blank risk % silently
+        // evaluated the gate at a fabricated 1%, printing a "Clear to trade"/etc. verdict the user
+        // never asked for. Honest-nil: no gate at all when risk % wasn't supplied.
+        let gate: TradeGateVerdict? = {
+            guard rf > 0 else { return nil }
+            return StockSageTradeGate.evaluate(hasStop: a.stopPrice != nil, rewardToRisk: rr, riskFraction: rf,
+                                               daysToEarnings: daysToEarnings, rrIsNet: resolvedNetRR != nil)
+        }()
 
         var lines = ["Today's plan — estimates, not advice. Size with a stop; risk control > signal."]
         // The copied plan is the one artifact pasted into a broker — it MUST carry the
@@ -54,8 +59,13 @@ enum StockSageTodayPlan {
         lines.append("\(n). Best bet: \(idea.symbol) (\(a.action.rawValue))"
             + (ev.map { String(format: " — est. EV %+.2fR (gross)", $0.evR) } ?? "")); n += 1
 
-        let gateExtra = (gate.fails > 0 || gate.warns > 0) ? " (\(gate.fails) fail, \(gate.warns) warn)" : ""
-        lines.append("\(n). Gate: \(gate.decision.rawValue)\(gateExtra)"); n += 1
+        if let gate {
+            let gateExtra = (gate.fails > 0 || gate.warns > 0) ? " (\(gate.fails) fail, \(gate.warns) warn)" : ""
+            lines.append("\(n). Gate: \(gate.decision.rawValue)\(gateExtra)")
+        } else {
+            lines.append("\(n). Pre-trade gate: not evaluated — enter risk % to see the verdict.")
+        }
+        n += 1
 
         if let s = a.stopPrice {
             var size = ""
