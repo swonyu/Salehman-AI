@@ -4893,6 +4893,12 @@ struct MarketsView: View {
                 plan += "\nPre-trade gate: not evaluated — enter risk % to see the verdict."
             }
         }
+        // EXPORT-02: mirror StockSageTodayPlan.copyAllText's SAMPLE-data warning — this is
+        // the OTHER artifact that gets pasted into a broker; a seed price must not be acted
+        // on as real just because this export path skipped the on-screen banner's caveat.
+        if store.isSampleData {
+            plan = "⚠ SAMPLE DATA — illustrative prices, NOT live quotes. Re-price before any order.\n" + plan
+        }
         return plan
     }
 
