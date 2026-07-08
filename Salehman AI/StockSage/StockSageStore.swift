@@ -457,14 +457,20 @@ final class StockSageStore: ObservableObject {
                 try? await Task.sleep(for: .seconds(120))
                 if !Task.isCancelled { chunkWork.cancel() }
             }
-            // CANCEL FIX (review round 1): `chunkWork` is an UNSTRUCTURED Task — Swift does not
-            // preemptively tear it down when the parent scan task is cancelled, it only flips
-            // the flag `chunkWork` would see if it checked `Task.isCancelled` itself (it doesn't;
-            // fetchHistories/buildIdeas run to completion regardless). Forward the parent's
-            // cancellation into the chunk explicitly so a mid-chunk `cancelIdeasRefresh()` stops
-            // the fetch/build promptly instead of silently finishing a chunk nobody wants.
-            if Task.isCancelled { chunkWork.cancel() }
-            let (chunkHistories, built) = await chunkWork.value
+            // CANCEL FIX (review round 2): `chunkWork` is an UNSTRUCTURED Task — parent
+            // cancellation neither tears it down nor is observable here as a point-check
+            // (this function and cancelIdeasRefresh are both MainActor-isolated: the flag
+            // cannot change between the loop-top guard and this line, and a cancel landing
+            // while parked on the await below would never have been forwarded). The
+            // cancellation HANDLER covers both interleavings: it fires immediately if the
+            // parent is already cancelled and fires on a mid-await cancel, propagating
+            // structurally into fetchHistories' task-group children (Task.sleep throws,
+            // URLSession cooperatively aborts) — restoring the legacy prompt cancel.
+            let (chunkHistories, built) = await withTaskCancellationHandler {
+                await chunkWork.value
+            } onCancel: {
+                chunkWork.cancel()
+            }
             chunkWatchdog.cancel()
             let chunkTimedOut = chunkWork.isCancelled
 
