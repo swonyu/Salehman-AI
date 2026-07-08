@@ -52,4 +52,28 @@ struct StockSageIdeasCSVTests {
         #expect(!csv.contains("\""))
         #expect(csv2.contains("\"up, then flat\""))
     }
+
+    // EXPORT-04: hand-derived row for a held/traded symbol.
+    // idea = NVDA, 200, strongBuy, conviction 0.9, stop 180, target 260, weight 0.12, regime bullTrend, rationale [].
+    // Base fields (unchanged from rankReflectsListOrderAndFieldsAreCorrect):
+    //   1,NVDA,M,200.0,Strong Buy,0.90,180.0,260.0,12.0,Bullish trend,
+    // heldShares["NVDA"] = 10 → "10.0"; closedTrades["NVDA"] = 3 → "3".
+    // Full row: 1,NVDA,M,200.0,Strong Buy,0.90,180.0,260.0,12.0,Bullish trend,,10.0,3
+    @Test func heldAndClosedTrailingColumnsPopulateFromContext() {
+        let csv = StockSageIdeasCSV.csv(
+            [idea("NVDA", 200, .strongBuy, conviction: 0.9, stop: 180, target: 260, weight: 0.12)],
+            heldShares: ["NVDA": 10],
+            closedTrades: ["NVDA": 3])
+        let rows = csv.split(separator: "\n").map(String.init)
+        #expect(rows[0].hasSuffix(",heldShares,closedTrades"))
+        #expect(rows[1] == "1,NVDA,M,200.0,Strong Buy,0.90,180.0,260.0,12.0,Bullish trend,,10.0,3")
+    }
+
+    @Test func heldAndClosedTrailingColumnsEmptyWhenUnresolved() {
+        let csv = StockSageIdeasCSV.csv([idea("AAPL", 100, .buy)])
+        // no context passed → defaults to [:] → rationale, heldShares, closedTrades all empty:
+        // 1,AAPL,M,100.0,Buy,0.50,,,5.0,Bullish trend,,,
+        let rows = csv.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        #expect(rows[1] == "1,AAPL,M,100.0,Buy,0.50,,,5.0,Bullish trend,,,")
+    }
 }

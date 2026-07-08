@@ -10,12 +10,22 @@ import Foundation
 // comma or quote inside a reason can't corrupt the file.
 enum StockSageIdeasCSV {
     nonisolated static let header =
-        "rank,symbol,market,price,action,conviction,stop,target,weightPct,regime,rationale"
+        "rank,symbol,market,price,action,conviction,stop,target,weightPct,regime,rationale,heldShares,closedTrades"
 
-    nonisolated static func csv(_ ideas: [StockSageIdea]) -> String {
+    /// EXPORT-04: optional held/journal context so the exported spreadsheet doesn't lose the
+    /// doubling flag the on-screen card/sheet already carry. Keyed by uppercased symbol, same
+    /// convention as StockSagePortfolio.holdingBySymbol / StockSageJournal.historyBySymbol —
+    /// callers pass those batch dicts straight through. Defaulted to [:] so existing
+    /// tests/callers are unchanged.
+    nonisolated static func csv(
+        _ ideas: [StockSageIdea],
+        heldShares: [String: Double] = [:],
+        closedTrades: [String: Int] = [:]
+    ) -> String {
         var rows = [header]
         for (i, idea) in ideas.enumerated() {
             let a = idea.advice
+            let sym = idea.symbol.uppercased()
             var f: [String] = []
             f.append(String(i + 1))
             f.append(idea.symbol)
@@ -30,6 +40,8 @@ enum StockSageIdeasCSV {
             f.append(String(format: "%.1f", a.suggestedWeight * 100))
             f.append(a.regime.rawValue)
             f.append(a.rationale.joined(separator: "; "))
+            f.append(heldShares[sym].map { String($0) } ?? "")
+            f.append(closedTrades[sym].map { String($0) } ?? "")
             rows.append(f.map(escape).joined(separator: ","))
         }
         return rows.joined(separator: "\n")

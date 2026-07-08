@@ -3057,8 +3057,17 @@ struct MarketsView: View {
                 // hide the export entirely rather than caveat it.
                 if !displayedIdeas.isEmpty && !store.isSampleData {   // matches what would actually be copied (post sort+filter)
                     Button {
+                        // EXPORT-04: same batch-lookup helpers round F hoisted for the board's
+                        // per-card Held/Journal lines — populates the CSV's optional trailing
+                        // heldShares/closedTrades columns so the spreadsheet keeps the doubling flag.
+                        let heldShares = StockSagePortfolio.holdingBySymbol(in: portfolio.positions)
+                            .mapValues(\.shares)
+                        let closedTrades = StockSageJournal.historyBySymbol(in: journal.trades)
+                            .mapValues(\.count)
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(StockSageIdeasCSV.csv(displayedIdeas), forType: .string)
+                        NSPasteboard.general.setString(
+                            StockSageIdeasCSV.csv(displayedIdeas, heldShares: heldShares, closedTrades: closedTrades),
+                            forType: .string)
                         ideasCopied = true
                         Task { try? await Task.sleep(for: .seconds(2)); ideasCopied = false }
                     } label: {
