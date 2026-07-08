@@ -4981,6 +4981,40 @@ struct MarketsView: View {
     // sheet button AND the card context-menu "Copy trade plan" produce the same
     // honest, full plan (with caveats, gate verdict, and net R:R) rather than
     // the card's former hand-rolled one-liner that omitted all of those.
+    private func tradeGateInputs(for idea: StockSageIdea) -> (hasStop: Bool, rewardToRisk: Double?, resolvedNetRR: Double?, daysToEarnings: Int?) {
+        let a = idea.advice
+        let resolvedNetRR: Double? = {
+            guard let stop = a.stopPrice, let target = a.targetPrice else { return nil }
+            let (finRate, finDays) = StockSageExpectedValue.financingCostInputs(for: idea)
+            return StockSageNetEdge.netRR(symbol: idea.symbol, entry: idea.price, stop: stop, target: target,
+                                          annualFinancingRate: finRate, holdDays: finDays)
+        }()
+        let rewardToRisk: Double? = {
+            guard let stop = a.stopPrice, let target = a.targetPrice else { return nil }
+            let risk = abs(idea.price - stop)
+            guard risk > 0 else { return nil }
+            let gross = abs(target - idea.price) / risk
+            return resolvedNetRR ?? gross
+        }()
+        return (
+            hasStop: a.stopPrice != nil,
+            rewardToRisk: rewardToRisk,
+            resolvedNetRR: resolvedNetRR,
+            daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil
+        )
+    }
+
+    private func tradeGateVerdict(for idea: StockSageIdea, inputs: (hasStop: Bool, rewardToRisk: Double?, resolvedNetRR: Double?, daysToEarnings: Int?)) -> TradeGateVerdict? {
+        guard let rf = parsedRiskFraction else { return nil }
+        return StockSageTradeGate.evaluate(
+            hasStop: inputs.hasStop,
+            rewardToRisk: inputs.rewardToRisk,
+            riskFraction: rf,
+            daysToEarnings: inputs.daysToEarnings,
+            rrIsNet: inputs.resolvedNetRR != nil
+        )
+    }
+
     private func fullPlanText(for idea: StockSageIdea) -> String {
         let a = idea.advice
         let riskFlags = StockSageRiskFlags.flags(
@@ -5035,27 +5069,10 @@ struct MarketsView: View {
         }
         // Gate: buy-family only, matching the on-screen gate chip (sell/reduce gets no gate line).
         if a.action == .buy || a.action == .strongBuy {
-            // Compute netRR — nil when target missing (rewardToRisk=nil → gate warns "No target").
-            // hasStop mirrors the on-screen check: a stop-less buy shows "Don't take this trade".
-            let resolvedNetRR: Double? = {
-                guard let stop = a.stopPrice, let target = a.targetPrice else { return nil }
-                return StockSageNetEdge.netRR(symbol: idea.symbol, entry: idea.price, stop: stop, target: target,
-                                              annualFinancingRate: finRate, holdDays: finDays)
-            }()
-            let netRR: Double? = {
-                guard let stop = a.stopPrice, let target = a.targetPrice else { return nil }
-                let risk = abs(idea.price - stop)
-                guard risk > 0 else { return nil }
-                let gross = abs(target - idea.price) / risk
-                return resolvedNetRR ?? gross
-            }()
+            let gateInputs = tradeGateInputs(for: idea)
             // F04: was `?? 0.01` — a typed-but-unparseable risk % silently evaluated the gate at a
             // fabricated 1%, printing a "Clear"/"Caution" verdict the user never actually asked for.
-            if let rf = parsedRiskFraction {
-                let gate = StockSageTradeGate.evaluate(
-                    hasStop: a.stopPrice != nil, rewardToRisk: netRR, riskFraction: rf,
-                    daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
-                    rrIsNet: resolvedNetRR != nil)
+            if let gate = tradeGateVerdict(for: idea, inputs: gateInputs) {
                 plan += "\nPre-trade gate: \(gate.decision.rawValue)"
                 let failLabels = gate.checks.filter { $0.level == .fail }.map(\.label)
                 let warnLabels = gate.checks.filter { $0.level == .warn }.map(\.label)
@@ -5229,33 +5246,12 @@ struct MarketsView: View {
                         earningsWarningRow(ep)
                     }
 
-                    // Track whether netRR actually resolved (non-nil from StockSageNetEdge.netRR)
-                    // so we can label the gate check "Net reward:risk (after est. costs)" accurately —
-                    // the ?? gross fallback must NOT be labeled "net". Mirrors fullPlanText(for:).
-                    let resolvedNetRR: Double? = {
-                        guard let stop = a.stopPrice, let tgt = a.targetPrice else { return nil }
-                        let (finRate, finDays) = StockSageExpectedValue.financingCostInputs(for: idea)
-                        return StockSageNetEdge.netRR(symbol: idea.symbol, entry: idea.price, stop: stop, target: tgt,
-                                                      annualFinancingRate: finRate, holdDays: finDays)
-                    }()
-                    let rr: Double? = {
-                        guard let stop = a.stopPrice, let tgt = a.targetPrice else { return nil }
-                        let risk = abs(idea.price - stop)
-                        guard risk > 0 else { return nil }
-                        let gross = abs(tgt - idea.price) / risk
-                        // Gate on NET reward:risk (after asset-class round-trip costs) so high-cost
-                        // churn that fails break-even can't read "Clear to trade". Falls back to gross.
-                        return resolvedNetRR ?? gross
-                    }()
+                    let gateInputs = tradeGateInputs(for: idea)
                     // F04: was a `?? 0.01` floor — an unparseable risk % (e.g. a typed "10,000" account
                     // is fine but a malformed risk field) silently evaluated the gate at a fabricated
                     // 1%, printing a "Clear"/"Caution" verdict the user never actually set. nil now
                     // suppresses the verdict instead of fabricating one (fullPlanText mirrors this).
-                    if let rf = parsedRiskFraction {
-                        let gate = StockSageTradeGate.evaluate(
-                            hasStop: a.stopPrice != nil, rewardToRisk: rr, riskFraction: rf,
-                            daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
-                            rrIsNet: resolvedNetRR != nil)
+                    if let gate = tradeGateVerdict(for: idea, inputs: gateInputs) {
                         tradeGateView(gate)
                     } else {
                         Text("Pre-trade gate: enter risk % to see the verdict.")
@@ -5914,29 +5910,11 @@ struct MarketsView: View {
 
                         // ── Verdict chip — buy-family only (gate doesn't exist for Hold/Avoid) ──
                         if a.action == .buy || a.action == .strongBuy {
-                            // Recomputed with the same inputs as the in-sheet gate section
-                            // (resolvedNetRR guard, rrIsNet, rf, daysToEarnings) so the chip
-                            // verdict never detaches from the full-sheet gate display.
-                            let chipNetRR: Double? = {
-                                guard let stop = a.stopPrice, let tgt = a.targetPrice else { return nil }
-                                let (finRate, finDays) = StockSageExpectedValue.financingCostInputs(for: idea)
-                                return StockSageNetEdge.netRR(symbol: idea.symbol, entry: idea.price, stop: stop, target: tgt,
-                                                              annualFinancingRate: finRate, holdDays: finDays)
-                            }()
-                            let chipRR: Double? = {
-                                guard let stop = a.stopPrice, let tgt = a.targetPrice else { return nil }
-                                let risk = abs(idea.price - stop)
-                                guard risk > 0 else { return nil }
-                                return chipNetRR ?? (abs(tgt - idea.price) / risk)
-                            }()
+                            let gateInputs = tradeGateInputs(for: idea)
                             // F04: was `?? 0.01` — an unparseable risk % silently rendered a fabricated
                             // "Clear"/"Caution" verdict in this PINNED bar the user relies on to place
                             // the trade. nil now renders an honest "set risk %" chip instead of a verdict.
-                            if let rf = parsedRiskFraction {
-                                let chipGate = StockSageTradeGate.evaluate(
-                                    hasStop: a.stopPrice != nil, rewardToRisk: chipRR, riskFraction: rf,
-                                    daysToEarnings: store.earnings[idea.symbol.uppercased()]?.daysUntil,
-                                    rrIsNet: chipNetRR != nil)
+                            if let chipGate = tradeGateVerdict(for: idea, inputs: gateInputs) {
                                 let chipColor: Color = chipGate.decision == .clear ? DS.Palette.successSoft
                                     : (chipGate.decision == .caution ? DS.Palette.warningSoft : DS.Palette.dangerSoft)
                                 let chipIcon = chipGate.decision == .clear ? "checkmark.shield.fill"
