@@ -92,4 +92,37 @@ struct StockSageScanDeltaTests {
         let next = StockSageScanDelta.nextBaseline(ranked: ranked, missingButTracked: missing, previous: previous)
         #expect(next == ["A": "Buy"])                 // C absent, not fabricated as anything
     }
+
+    // MARK: - Chunked-scan shape: delta-baseline computed ONCE over the ACCUMULATED full-scan
+    // result (PLAN_2026-07-08_equity2000.md Stage 1 §2 — "scan-end-once semantics"). These
+    // pure StockSageScanDelta calls don't know about chunks at all (deltas()/nextBaseline()
+    // take one `ranked`/`missing` snapshot) — that IS the invariant: the chunked store must
+    // feed them the ACCUMULATED result across every chunk, never call them per chunk. Fixture
+    // hand-derived in scratchpad/derive_chunked_deltabaseline.swift, simulating a 2-chunk scan
+    // where chunk 1 (A,B) fully prices and chunk 2 (C) times out/misses.
+
+    @Test func chunkedScanDeltaBaselineComputedOnceOverAccumulatedResult() {
+        let previous = ["A": "Hold", "B": "Buy", "C": "Sell"]
+        // ranked = the ACCUMULATED merge of both chunks (A re-priced Buy, B unchanged Buy);
+        // C is absent from `ranked` — it lives only in `missing` (chunk 2's timeout).
+        let ranked = [idea("A", .buy), idea("B", .buy)]
+        let missing = ["C"]
+
+        // One deltas() call over the accumulated `ranked` — not two per-chunk calls.
+        let deltas = StockSageScanDelta.deltas(current: ranked, previous: previous)
+        #expect(deltas.count == 1)
+        #expect(deltas["A"] == .actionChanged(previous: "Hold"))
+        #expect(deltas["B"] == nil)     // unchanged
+        #expect(deltas["C"] == nil)     // never entered `current` — deltas() only sees ranked
+
+        // One nextBaseline() call over the accumulated ranked + accumulated missing list.
+        let next = StockSageScanDelta.nextBaseline(ranked: ranked, missingButTracked: missing, previous: previous)
+        #expect(next == ["A": "Buy", "B": "Buy", "C": "Sell"])   // C carried forward from `previous`, unchanged
+
+        // Follow-up (3rd) scan: C reappears unchanged (still Sell) — must NOT read as "New",
+        // proving the once-at-end carry-forward genuinely survived into the persisted baseline.
+        let followUpRanked = [idea("A", .buy), idea("B", .buy), idea("C", .sell)]
+        let followUpDeltas = StockSageScanDelta.deltas(current: followUpRanked, previous: next)
+        #expect(followUpDeltas.isEmpty)
+    }
 }
