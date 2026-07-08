@@ -450,11 +450,10 @@ final class StockSageStore: ObservableObject {
             ideasProgress = (current: accumulatedHistories.count, total: total)
 
             if !built.isEmpty {
-                // MERGE (retryFailedIdeas' precedent): replace-by-symbol, then re-sort. The
-                // post-await stillTracked reconcile runs once, at scan end, over the final `ranked`.
-                let newSyms = Set(built.map { $0.symbol.uppercased() })
-                ranked = (ranked.filter { !newSyms.contains($0.symbol.uppercased()) } + built)
-                    .sorted { Self.rankScore($0.advice) > Self.rankScore($1.advice) }
+                // MERGE (retryFailedIdeas' precedent, shared via StockSageScanChunking.mergeChunk):
+                // replace-by-symbol, then re-sort. The post-await stillTracked reconcile runs once,
+                // at scan end, over the final `ranked`.
+                ranked = StockSageScanChunking.mergeChunk(current: ranked, newlyBuilt: built, rankScore: Self.rankScore)
                 ideas = ranked   // publish — board grows live as each chunk merges in
             }
 
