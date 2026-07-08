@@ -128,6 +128,26 @@ struct StockSagePortfolioAggregationTests {
         #expect(StockSagePortfolio.holding(for: "TSLA", in: positions) == nil)
     }
 
+    // PERF-4: holdingBySymbol is a batch convenience for the ideas board (one O(P) pass instead
+    // of O(P) per card); holding(for:in:) stays the semantic source of truth. This proves the
+    // dict agrees with the per-symbol function for every symbol present, including a symbol whose
+    // only lot has zero shares (must be ABSENT, matching holding(for:in:) returning nil).
+    @Test func holdingBySymbolMatchesHoldingForEverySymbol() {
+        let zeroShareLot = PortfolioPosition(symbol: "TSLA", shares: 0, costBasis: 200)
+        let positions = [
+            PortfolioPosition(symbol: "AAPL", shares: 10, costBasis: 90),
+            PortfolioPosition(symbol: "AAPL", shares: 20, costBasis: 105),
+            PortfolioPosition(symbol: "MSFT", shares: 5, costBasis: 300),
+            zeroShareLot,
+        ]
+        let dict = StockSagePortfolio.holdingBySymbol(in: positions)
+        for sym in ["AAPL", "MSFT", "TSLA"] {
+            #expect(dict[sym] == StockSagePortfolio.holding(for: sym, in: positions))
+        }
+        #expect(dict["TSLA"] == nil)   // zero-share lot → nil, same as holding(for:in:)
+        #expect(dict.count == 2)       // AAPL + MSFT only
+    }
+
     @Test func unrealizedPctPositiveCase() {
         let held = AggregatedHolding(symbol: "X", shares: 1, costBasis: 100)
         #expect(held.unrealizedPct(vs: 110) == 10.0)   // hand-derived above

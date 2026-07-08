@@ -571,6 +571,32 @@ struct StockSageJournalTests {
         #expect(StockSageJournal.history(for: "aapl", in: trades)?.count == 1)
         #expect(StockSageJournal.history(for: "AaPl", in: trades)?.count == 1)
     }
+
+    // PERF-2: historyBySymbol is a batch convenience for the ideas board (one O(T) pass instead
+    // of O(T) per card); history(for:in:) stays the semantic source of truth. This proves the
+    // dict agrees with the per-symbol function for every symbol present, including a symbol with
+    // only open trades (must be ABSENT from the dict, matching history(for:in:) returning nil).
+    @Test func historyBySymbolMatchesHistoryForEverySymbol() {
+        let open = TradeRecord(symbol: "TSLA", side: .long, entry: 200, stop: 190, target: nil,
+                               shares: 5, openedAt: Date(timeIntervalSince1970: 0))
+        let trades = [
+            tSym("AAPL", .long, entry: 190, stop: 185, shares: 10, exit: 194),     // R = +0.8
+            tSym("AAPL", .long, entry: 190, stop: 185, shares: 10, exit: 188.5),   // R = −0.3
+            tSym("MSFT", .long, entry: 100, stop: 90, shares: 1, exit: 110),
+            open,
+        ]
+        let dict = StockSageJournal.historyBySymbol(in: trades)
+        for sym in ["AAPL", "MSFT", "TSLA"] {
+            let expected = StockSageJournal.history(for: sym, in: trades)
+            let actual = dict[sym]
+            #expect(actual?.count == expected?.count)
+            #expect(actual == nil ? expected == nil : abs((actual!.totalR) - (expected!.totalR)) < 1e-9)
+            #expect(actual?.rDefinedCount == expected?.rDefinedCount)
+        }
+        // TSLA has only an open trade → nil from history(for:in:) → absent from the dict.
+        #expect(dict["TSLA"] == nil)
+        #expect(dict.count == 2)   // AAPL + MSFT only
+    }
 }
 
 /// Pins `StockSageJournalStore.qaSeed` — the QA in-memory REPLACE seam (money-critical: keeps

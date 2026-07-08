@@ -698,6 +698,23 @@ enum StockSageJournal {
         // different code path, so the cost of keeping this branch is one line.
         return (count: closed.count, totalR: total == 0 ? 0 : total, rDefinedCount: rs.count)
     }
+
+    /// Same result as `history(for:in:)`, for every symbol in `trades`, computed in one O(T) pass
+    /// instead of O(T) per symbol — for callers (the ideas board) that need this per-card across
+    /// many symbols each render. `history(for:in:)` stays the semantic source of truth (and the
+    /// per-symbol call site everywhere else); this is a batch-lookup convenience keyed the same
+    /// way (uppercased symbol), proven identical by StockSageJournalTests.historyBySymbolMatchesHistoryForEverySymbol.
+    nonisolated static func historyBySymbol(in trades: [TradeRecord]) -> [String: (count: Int, totalR: Double, rDefinedCount: Int)] {
+        var closedBySymbol: [String: [TradeRecord]] = [:]
+        for t in trades where !t.isOpen {
+            closedBySymbol[t.symbol.uppercased(), default: []].append(t)
+        }
+        return closedBySymbol.mapValues { closed in
+            let rs = closed.compactMap { $0.realizedR }
+            let total = rs.reduce(0, +)
+            return (count: closed.count, totalR: total == 0 ? 0 : total, rDefinedCount: rs.count)
+        }
+    }
 }
 
 // MARK: - Persisted journal store

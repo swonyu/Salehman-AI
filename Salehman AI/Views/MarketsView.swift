@@ -2912,8 +2912,13 @@ struct MarketsView: View {
                         .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 12)
                 } else {
                     ideasSummaryStrip(shown)
+                    // PERF-2/4: one O(trades)/O(positions) pass for the whole board instead of
+                    // one per card — StockSageJournal.history(for:in:)/StockSagePortfolio.holding(for:in:)
+                    // stay the semantic source of truth; these are the batch-lookup counterparts.
+                    let historyBySymbol = StockSageJournal.historyBySymbol(in: journal.trades)
+                    let holdingsBySymbol = StockSagePortfolio.holdingBySymbol(in: portfolio.positions)
                     LazyVStack(spacing: DS.Space.sm) {
-                        ForEach(shown) { ideaCard($0) }
+                        ForEach(shown) { ideaCard($0, holdingsBySymbol: holdingsBySymbol, historyBySymbol: historyBySymbol) }
                     }
                     .transition(.opacity)
                 }
@@ -3146,7 +3151,9 @@ struct MarketsView: View {
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
     }
 
-    private func ideaCard(_ idea: StockSageIdea) -> some View {
+    private func ideaCard(_ idea: StockSageIdea,
+                           holdingsBySymbol: [String: AggregatedHolding],
+                           historyBySymbol: [String: (count: Int, totalR: Double, rDefinedCount: Int)]) -> some View {
         let a = idea.advice
         // Legible reason for the earnings-aware rank: a chip when earnings are imminent/approaching.
         let earnFlag = StockSageExpectedValue.earningsRankFlag(for: idea, earnings: store.earnings)
@@ -3163,9 +3170,11 @@ struct MarketsView: View {
         let extremeSpan = idea.recentExtremeSpan ?? idea.spark.count
         // "Own it" awareness (top gap, 2026-07-07 assessment): owning a name is context for
         // reading the card, never an endorsement — neutral styling like the at-extreme chip,
-        // not tinted success/danger. Aggregates every lot (multi-lot books) by symbol.
-        let held = StockSagePortfolio.holding(for: idea.symbol, in: portfolio.positions)
-        let jh = StockSageJournal.history(for: idea.symbol, in: journal.trades)
+        // not tinted success/danger. Aggregates every lot (multi-lot books) by symbol. PERF-2/4:
+        // dict lookup, not a per-card O(trades)/O(positions) filter — the caller builds the dict
+        // once per render via StockSageJournal.historyBySymbol / StockSagePortfolio.holdingBySymbol.
+        let held = holdingsBySymbol[idea.symbol.uppercased()]
+        let jh = historyBySymbol[idea.symbol.uppercased()]
         let hovered = hoveredIdeaID == idea.id
         // Per-card staleness — adds a clock badge when the board is stale, same TRIGGER as
         // watchlist signalCard's sym.isStale() pattern. The dim amount DELIBERATELY diverges:

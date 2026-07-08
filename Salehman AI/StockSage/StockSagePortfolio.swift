@@ -114,4 +114,22 @@ extension StockSagePortfolio {
         let weightedCost = lots.reduce(0) { $0 + $1.shares * $1.costBasis } / totalShares
         return AggregatedHolding(symbol: target, shares: totalShares, costBasis: weightedCost)
     }
+
+    /// Same result as `holding(for:in:)`, for every symbol in `positions`, computed in one O(P)
+    /// pass instead of O(P) per symbol — for callers (the ideas board) that need this per-card
+    /// across many symbols each render. `holding(for:in:)` stays the semantic source of truth;
+    /// this is a batch-lookup convenience keyed the same way (uppercased symbol), proven identical
+    /// by StockSagePortfolioTests.holdingBySymbolMatchesHoldingForEverySymbol.
+    static func holdingBySymbol(in positions: [PortfolioPosition]) -> [String: AggregatedHolding] {
+        var lotsBySymbol: [String: [PortfolioPosition]] = [:]
+        for p in positions where p.shares > 0 {
+            lotsBySymbol[p.symbol.uppercased(), default: []].append(p)
+        }
+        return lotsBySymbol.compactMapValues { lots in
+            let totalShares = lots.reduce(0) { $0 + $1.shares }
+            guard totalShares > 0 else { return nil }
+            let weightedCost = lots.reduce(0) { $0 + $1.shares * $1.costBasis } / totalShares
+            return AggregatedHolding(symbol: lots[0].symbol.uppercased(), shares: totalShares, costBasis: weightedCost)
+        }
+    }
 }
