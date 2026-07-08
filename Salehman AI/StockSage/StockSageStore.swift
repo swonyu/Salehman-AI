@@ -438,20 +438,33 @@ final class StockSageStore: ObservableObject {
                                         benchmark: benchmark, calibration: cal, journalTrades: journalTrades,
                                         onThrottle: { [weak self] in self?.scanThrottled = true })
 
-        // CANCEL-01 (post-ship critique fleet, orchestrator-confirmed): hoisted ABOVE the
-        // wasCancelled guard. A cancel throws away every chunk history the scan already paid
-        // network cost for unless this best-effort save runs regardless — otherwise a same-day
-        // re-scan re-fetches everything cancel discarded (429-risk). Best-effort bytes only, no
-        // scan-identity semantics (that stays behind the guard below): the delta baseline write
-        // and alerts must NOT run on a cancelled/partial scan.
         let historyUniverse = Set(universe.map { $0.symbol.uppercased() })
-        let historiesToSave = scan.accumulatedHistories
-        if !historiesToSave.isEmpty {
-            Task.detached { StockSageHistoryCache.from(histories: historiesToSave, universe: historyUniverse, savedAt: Date()).save() }
-        }
 
         if scan.wasCancelled {
             lastScanCancelled = true
+            // CANCEL-01 (post-ship critique fleet, orchestrator-confirmed; round-2 fix,
+            // 2026-07-08): a cancel throws away every chunk history the scan already paid
+            // network cost for unless a best-effort save runs — otherwise a same-day re-scan
+            // re-fetches everything cancel discarded (429-risk). BUT `StockSageHistoryCache
+            // .save()` atomically REPLACES the whole on-disk file, so naively saving JUST
+            // `scan.accumulatedHistories` (e.g. ~250 entries from chunk 0) would DESTROY a
+            // same-day-fresh prior cache's other ~2,170 entries — inverting the very
+            // 429-protection this save exists for. INVARIANT: this save must never SHRINK a
+            // same-day cache. `cancelSaveDecision` (pure, tested) picks the non-destructive
+            // action: merge over the prior cache with `savedAt: now` ONLY when the prior cache
+            // is genuinely from today (every carried entry really was saved today, so the
+            // stamp stays honest); otherwise save the accumulated set alone ONLY if it can't
+            // shrink coverage (superset of the prior cache's symbols, or no prior cache); else
+            // skip the save entirely (the pre-hoist behavior). Per-entry `savedAt` (schema v2)
+            // is the complete future fix — out of scope here. Scan-identity semantics (delta
+            // baseline, alerts) stay behind the wasCancelled branch below as before.
+            if let toSave = Self.cancelSaveDecision(priorCacheSymbols: Set(cachePriceHistories.keys),
+                                                     priorCacheSavedAtDayKey: cache.map { StockSageScanChunking.utcDayKey($0.savedAt) },
+                                                     accumulated: scan.accumulatedHistories,
+                                                     priorCacheHistories: cachePriceHistories,
+                                                     nowDayKey: StockSageScanChunking.utcDayKey(Date())) {
+                Task.detached { StockSageHistoryCache.from(histories: toSave, universe: historyUniverse, savedAt: Date()).save() }
+            }
             // CANCEL NAMES COVERAGE (post-ship critique fleet, orchestrator-confirmed): a cancel
             // can land AFTER one or more chunks already published to the board (`ideas` was set
             // live inside runChunkedScan). Silently returning here would leave `ideasMissing`
@@ -487,6 +500,16 @@ final class StockSageStore: ObservableObject {
         // symbol's fetch failure).
         let ranked = scan.ranked
         let accumulatedHistories = scan.accumulatedHistories
+
+        // Persist ALL histories fetched across every chunk this scan for OFFLINE net-cost
+        // validation / backtests (StockSageHistoryCache). Best-effort and DETACHED so the JSON
+        // encode runs off the main actor and never blocks the commit below; ZERO new network —
+        // it saves bytes already downloaded and otherwise discarded after buildIdeas. Full-scan
+        // completion (this path only) means `accumulatedHistories` genuinely IS today's complete
+        // result, so an unconditional whole-file replace stays honest — unlike the cancel path
+        // above, which needs `cancelSaveDecision` to avoid shrinking a same-day cache.
+        let historiesToSave = accumulatedHistories
+        Task.detached { StockSageHistoryCache.from(histories: historiesToSave, universe: historyUniverse, savedAt: Date()).save() }
 
         // SCAN-END-ONCE (plan step 2): everything below runs exactly once, over the FULL
         // accumulated result — same order/guards as the pre-chunking single-shot scan.
@@ -793,6 +816,41 @@ final class StockSageStore: ObservableObject {
         guard !publishedBoardSymbols.isEmpty else { return nil }
         let missing = missingAfterScan(universe: universe, analyzed: publishedBoardSymbols, stillTracked: stillTracked)
         return CancelledScanCommit(ideasMissing: missing, scanDeltas: [:])
+    }
+
+    /// What a CANCELLED scan's best-effort `HistoryCache` save should write, if anything.
+    /// `StockSageHistoryCache.save()` atomically REPLACES the whole on-disk file — so a cancel
+    /// after chunk 0 of a midday re-scan (prior cache already same-day-fresh, ~2,420 entries)
+    /// blindly saving just `scan.accumulatedHistories` (~250 entries) would DESTROY the other
+    /// ~2,170 same-day-fresh entries, inverting the very 429-protection this best-effort save
+    /// exists for (`partitionByCacheFreshness` would re-fetch everything the cancel just erased).
+    /// Two honest cases:
+    /// - Prior cache is from the SAME UTC day as `now`: every one of its carried-forward entries
+    ///   genuinely WAS saved today, so merging `accumulated` OVER `priorCacheHistories` and
+    ///   stamping `savedAt: now` stays honest — `.merge` with `{ _, new in new }` lets freshly
+    ///   re-fetched symbols win over their stale-same-day counterpart.
+    /// - Prior cache is from an EARLIER day (or there is no prior cache): none of its entries are
+    ///   "saved today", so they can't be merged under a single honest `savedAt`. Save
+    ///   `accumulated` ALONE only when it is a superset of the prior cache's symbols (or there's
+    ///   no prior cache) — i.e. only when doing so can't shrink coverage. Otherwise SKIP the save
+    ///   entirely (the pre-hoist behavior): a partial cross-day accumulation is not allowed to
+    ///   evict entries the next scan's `partitionByCacheFreshness` would otherwise still be able
+    ///   to skip re-fetching — no save at all is the safe, honest default.
+    /// Per-entry `savedAt` (schema v2) is the complete fix and is intentionally NOT done here
+    /// (out of scope for this fix; see the doc comment on the call site).
+    nonisolated static func cancelSaveDecision(priorCacheSymbols: Set<String>, priorCacheSavedAtDayKey: Int?,
+                                               accumulated: [String: StockSagePriceHistory],
+                                               priorCacheHistories: [String: StockSagePriceHistory],
+                                               nowDayKey: Int) -> [String: StockSagePriceHistory]? {
+        guard !accumulated.isEmpty else { return nil }
+        if let priorDay = priorCacheSavedAtDayKey, priorDay == nowDayKey {
+            return priorCacheHistories.merging(accumulated) { _, new in new }
+        }
+        let accumulatedSymbols = Set(accumulated.keys.map { $0.uppercased() })
+        if priorCacheSymbols.isEmpty || accumulatedSymbols.isSuperset(of: priorCacheSymbols) {
+            return accumulated
+        }
+        return nil
     }
 
     /// Build ranked ideas off the main actor (the advisor runs every indicator over each

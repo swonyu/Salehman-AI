@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 @testable import Salehman_AI
 
 // MARK: - cancelledScanCommit — the reduced, honest commit a cancelled scan runs when at least
@@ -68,5 +69,86 @@ struct StockSageCancelHonestyTests {
             stillTracked: ["AAPL", "MSFT"])
         #expect(commit?.ideasMissing == [])
         #expect(commit?.scanDeltas.isEmpty == true)
+    }
+}
+
+// MARK: - cancelSaveDecision — the non-destructive CANCEL-01 fix (round-2, 2026-07-08). Pins the
+// invariant a naive "always save scan.accumulatedHistories" hoist violated: `HistoryCache.save()`
+// atomically REPLACES the whole on-disk file, so a cancel after chunk 0 of a midday re-scan must
+// never overwrite a same-day-fresh ~2,420-entry cache with a ~250-entry partial. Fixtures are
+// hand-derived symbol SETS (contents of the histories are irrelevant to the decision — only
+// which symbols are present and which day the prior cache was saved on).
+
+struct StockSageCancelSaveDecisionTests {
+
+    /// One-bar placeholder history — `cancelSaveDecision` never reads bar contents, only keys.
+    private func h(_ symbol: String) -> StockSagePriceHistory {
+        StockSagePriceHistory(symbol: symbol, dates: [Date(timeIntervalSince1970: 0)],
+                              opens: [1], highs: [1], lows: [1], closes: [1], volumes: [1])
+    }
+
+    private let today = 20_000       // utcDayKey(now) for every case below
+    private let yesterday = 19_999
+
+    @Test func sameDayCancelMergesOverThePriorCacheNeverShrinkingIt() {
+        // Prior cache saved TODAY has 3 symbols; cancel only re-fetched 1 (chunk 0 of a bigger
+        // re-scan). By hand: same-day ⇒ merge branch fires ⇒ result is prior ∪ accumulated,
+        // accumulated's value winning on overlap (AAPL is in both — `new` must survive).
+        let prior = ["AAPL": h("stale-AAPL"), "MSFT": h("MSFT"), "GOOGL": h("GOOGL")]
+        let accumulated = ["AAPL": h("fresh-AAPL")]
+        let result = StockSageStore.cancelSaveDecision(
+            priorCacheSymbols: Set(prior.keys), priorCacheSavedAtDayKey: today,
+            accumulated: accumulated, priorCacheHistories: prior, nowDayKey: today)
+        #expect(result != nil)
+        #expect(Set((result ?? [:]).keys) == ["AAPL", "MSFT", "GOOGL"])   // MSFT/GOOGL NOT shrunk away
+        #expect(result?["AAPL"]?.symbol == "fresh-AAPL")                // accumulated wins on overlap
+    }
+
+    @Test func crossDaySupersetSavesTheAccumulatedSetAlone() {
+        // Prior cache is from YESTERDAY (2 symbols); accumulated this cancelled scan is a
+        // superset (all of yesterday's symbols plus a new one) — safe to save alone under an
+        // honest `savedAt: now` stamp, since nothing carried-forward-but-unfetched is lost.
+        let prior = ["AAPL": h("AAPL"), "MSFT": h("MSFT")]
+        let accumulated = ["AAPL": h("AAPL"), "MSFT": h("MSFT"), "GOOGL": h("GOOGL")]
+        let result = StockSageStore.cancelSaveDecision(
+            priorCacheSymbols: Set(prior.keys), priorCacheSavedAtDayKey: yesterday,
+            accumulated: accumulated, priorCacheHistories: prior, nowDayKey: today)
+        #expect(result != nil)
+        #expect(Set((result ?? [:]).keys) == ["AAPL", "MSFT", "GOOGL"])
+    }
+
+    @Test func crossDayNonSupersetSkipsTheSaveEntirely() {
+        // Prior cache is from YESTERDAY (3 symbols); accumulated this cancelled scan covers only
+        // 1 of them (chunk 0 of a bigger re-scan, cancelled early) — NOT a superset, and none of
+        // yesterday's entries can be honestly re-stamped `savedAt: now` (they weren't re-fetched
+        // today). Saving accumulated alone would shrink 3→1; saving a merge would lie about
+        // freshness. The only non-destructive, non-dishonest move is: skip (pre-fix behavior).
+        let prior = ["AAPL": h("AAPL"), "MSFT": h("MSFT"), "GOOGL": h("GOOGL")]
+        let accumulated = ["AAPL": h("AAPL")]
+        let result = StockSageStore.cancelSaveDecision(
+            priorCacheSymbols: Set(prior.keys), priorCacheSavedAtDayKey: yesterday,
+            accumulated: accumulated, priorCacheHistories: prior, nowDayKey: today)
+        #expect(result == nil)
+    }
+
+    @Test func nilPriorCacheAlwaysSavesTheAccumulatedSet() {
+        // No cache on disk yet (first scan of the day / fresh install) — nothing to shrink, so
+        // the accumulated set (however partial) is always safe to save. `priorCacheSavedAtDayKey`
+        // nil mirrors `cache.map { ... }` on a nil `cache` at the real call site.
+        let accumulated = ["AAPL": h("AAPL")]
+        let result = StockSageStore.cancelSaveDecision(
+            priorCacheSymbols: [], priorCacheSavedAtDayKey: nil,
+            accumulated: accumulated, priorCacheHistories: [:], nowDayKey: today)
+        #expect(result != nil)
+        #expect(Set((result ?? [:]).keys) == ["AAPL"])
+    }
+
+    @Test func emptyAccumulatedNeverTriggersASave() {
+        // A cancel before chunk 0 ever merged (accumulatedHistories empty) must not trigger the
+        // detached save Task at all — nil signals "nothing to save", not "save an empty file".
+        let result = StockSageStore.cancelSaveDecision(
+            priorCacheSymbols: ["AAPL"], priorCacheSavedAtDayKey: today,
+            accumulated: [:], priorCacheHistories: ["AAPL": h("AAPL")], nowDayKey: today)
+        #expect(result == nil)
     }
 }
