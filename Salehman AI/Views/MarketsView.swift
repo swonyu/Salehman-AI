@@ -2904,13 +2904,16 @@ struct MarketsView: View {
                     .accessibilityLabel("Search ideas by symbol")
                     Spacer()
                 }
-                if displayedIdeas.isEmpty {
+                // Bind once — displayedIdeas re-runs a full velocity re-rank (≈3 NetEdge evals/idea
+                // + sort) on every access; the three sites below used to each call it separately.
+                let shown = displayedIdeas
+                if shown.isEmpty {
                     Text(ideasEmptyMessage)
                         .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 12)
                 } else {
-                    ideasSummaryStrip(displayedIdeas)
+                    ideasSummaryStrip(shown)
                     LazyVStack(spacing: DS.Space.sm) {
-                        ForEach(displayedIdeas) { ideaCard($0) }
+                        ForEach(shown) { ideaCard($0) }
                     }
                     .transition(.opacity)
                 }
