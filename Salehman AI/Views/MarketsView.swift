@@ -4507,7 +4507,8 @@ struct MarketsView: View {
             // TODAY-PARITY: same held/journal awareness the ideas board's Held/Traded chips
             // already carry — display-only (see TodayActionPlan.heldShares doc).
             positions: portfolio.positions,
-            journalTrades: journal.trades)
+            journalTrades: journal.trades,
+            mode: .equityExecutableFirst)
         MarketsTodayActionsCard(plans: plans, isSampleData: store.isSampleData) { symbol in
             if let idea = store.ideas.first(where: { $0.symbol == symbol }) { selectedIdea = idea }
         }
@@ -5098,6 +5099,25 @@ struct MarketsView: View {
 
     private func fullPlanText(for idea: StockSageIdea) -> String {
         let a = idea.advice
+        let gateInputs = tradeGateInputs(for: idea)
+        let copyGate: TradeGateVerdict? = {
+            guard a.action == .buy || a.action == .strongBuy else { return nil }
+            return tradeGateVerdict(for: idea, inputs: gateInputs)
+        }()
+        // EXPORT-W4-1: auto-skip blocked setups in copied plan output so a blocked idea is never
+        // exported as an actionable order checklist from the detail sheet.
+        if let gate = copyGate, gate.decision == .blocked {
+            let failLabels = gate.checks.filter { $0.level == .fail }.map(\.label)
+            let warnLabels = gate.checks.filter { $0.level == .warn }.map(\.label)
+            var blocked = "Copy plan skipped — \(idea.symbol) is currently BLOCKED by the pre-trade gate."
+            if !failLabels.isEmpty { blocked += "\nFAIL: " + failLabels.joined(separator: "; ") }
+            if !warnLabels.isEmpty { blocked += "\nWARN: " + warnLabels.joined(separator: "; ") }
+            blocked += "\nNo order plan exported. Fix the gate failures, then copy again."
+            if store.isSampleData {
+                blocked = "⚠ SAMPLE DATA — illustrative prices, NOT live quotes. Re-price before any order.\n" + blocked
+            }
+            return blocked
+        }
         let riskFlags = StockSageRiskFlags.flags(
             action: a.action, conviction: a.conviction, symbol: idea.symbol,
             earnings: store.earnings[idea.symbol.uppercased()],
@@ -5150,10 +5170,9 @@ struct MarketsView: View {
         }
         // Gate: buy-family only, matching the on-screen gate chip (sell/reduce gets no gate line).
         if a.action == .buy || a.action == .strongBuy {
-            let gateInputs = tradeGateInputs(for: idea)
             // F04: was `?? 0.01` — a typed-but-unparseable risk % silently evaluated the gate at a
             // fabricated 1%, printing a "Clear"/"Caution" verdict the user never actually asked for.
-            if let gate = tradeGateVerdict(for: idea, inputs: gateInputs) {
+            if let gate = copyGate {
                 plan += "\nPre-trade gate: \(gate.decision.rawValue)"
                 let failLabels = gate.checks.filter { $0.level == .fail }.map(\.label)
                 let warnLabels = gate.checks.filter { $0.level == .warn }.map(\.label)
@@ -5995,7 +6014,7 @@ struct MarketsView: View {
                             .overlay(Capsule().stroke(DS.Palette.surfaceStroke, lineWidth: 1))
                         }
                         .buttonStyle(LuxPressStyle())
-                        .help("Copy a clean text trade plan (entry/stop/target/R:R/size/flags/scale-out) to the clipboard")
+                        .help("Copy a clean text trade plan (entry/stop/target/R:R/size/flags/scale-out) to the clipboard. Blocked setups are auto-skipped and exported as gate-status only.")
 
                         Button { Task { await store.runBacktest(symbol: idea.symbol) } } label: {
                             HStack(spacing: 6) {

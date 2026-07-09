@@ -171,6 +171,87 @@ struct StockSageTodayPlanRankedTests {
         #expect(finRate > 0 && finDays > 0)
     }
 
+    @Test func rankedActionsCarryExecutionMetadataForRecommendationUI() {
+        let earningsDate = Calendar.current.date(byAdding: .day, value: 2, to: Date()) ?? Date()
+        let earnings = ["A": StockSageEarnings.proximity(now: Date(), earnings: earningsDate)]
+        let plans = StockSageTodayPlan.rankedActions([clearIdea("A", conviction: 0.9)],
+                                                     account: nil,
+                                                     riskFraction: 0.01,
+                                                     earnings: earnings,
+                                                     max: 1)
+        guard let first = plans.first else {
+            Issue.record("expected at least one plan")
+            return
+        }
+        #expect(first.action == .strongBuy)
+        #expect(first.regime == .bullTrend)
+        #expect(first.daysToEarnings == earnings["A"]?.daysUntil)
+    }
+
+    @Test func equityExecutableFirstPrefersClearTradableRowsOverBlockedTopVelocity() {
+        let ideas = [
+            // BLOCK: net R:R < 1 (0.99), but still positive EV at very high conviction.
+            clearIdea("BLOCK", conviction: 0.99, riskAbs: 10, rewardAbs: 9),
+            // CLEAR: valid positive-skew setup at low conviction; lower velocity than BLOCK.
+            clearIdea("CLEAR", conviction: 0.0, riskAbs: 5, rewardAbs: 10)
+        ]
+        let defaultOrder = StockSageTodayPlan.rankedActions(
+            ideas,
+            account: nil,
+            riskFraction: 0.01,
+            max: 2
+        )
+        #expect(defaultOrder.first?.symbol == "BLOCK")
+
+        let executableFirst = StockSageTodayPlan.rankedActions(
+            ideas,
+            account: nil,
+            riskFraction: 0.01,
+            mode: .equityExecutableFirst,
+            max: 2
+        )
+        #expect(executableFirst.first?.symbol == "CLEAR")
+        #expect(executableFirst.first?.gate?.decision != .blocked)
+    }
+
+    @Test func defaultRankedModeRemainsFastLaneOrdered() {
+        let ideas = [
+            clearIdea("A", conviction: 0.65, riskAbs: 4, rewardAbs: 12),
+            clearIdea("B", conviction: 0.92, riskAbs: 2, rewardAbs: 10),
+            clearIdea("C", conviction: 0.80, riskAbs: 3, rewardAbs: 12)
+        ]
+        let lane = StockSageExpectedValue.fastLane(ideas)
+        let plans = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: 0.01)
+        #expect(plans.map(\.symbol) == Array(lane.prefix(3)).map(\.symbol))
+    }
+
+    @Test func copyAllTextIncludesBlockedWarningWhenBlockedRowsPresent() {
+        let ideas = [
+            clearIdea("BLOCK", conviction: 0.99, riskAbs: 10, rewardAbs: 9),
+            clearIdea("CLEAR", conviction: 0.0, riskAbs: 5, rewardAbs: 10)
+        ]
+        let plans = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: 0.01, max: 2)
+        #expect(plans.contains { $0.gate?.decision == .blocked })
+        let text = StockSageTodayPlan.copyAllText(plans)
+        #expect(text.contains("DO NOT TRADE"))
+    }
+
+    @Test func executableOnlyFilterWouldDropBlockedRowsForCopyPathParity() {
+        let ideas = [
+            clearIdea("BLOCK", conviction: 0.99, riskAbs: 10, rewardAbs: 9),
+            clearIdea("CLEAR", conviction: 0.0, riskAbs: 5, rewardAbs: 10)
+        ]
+        let plans = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: 0.01, max: 2)
+        let filtered = plans.filter { plan in
+            guard let decision = plan.gate?.decision else { return false }
+            return decision != .blocked
+        }
+        #expect(filtered.count == 1)
+        #expect(filtered.first?.symbol == "CLEAR")
+        let text = StockSageTodayPlan.copyAllText(filtered)
+        #expect(!text.contains("DO NOT TRADE"))
+    }
+
     @Test func netRRWithFinancingMatchesHandVerifiedValueAndIsBelowNoFinancing() {
         let netRRWithFinancing = StockSageNetEdge.netRR(symbol: "SHORT", entry: 100, stop: 105, target: 85,
                                                          annualFinancingRate: 0.03, holdDays: 12)

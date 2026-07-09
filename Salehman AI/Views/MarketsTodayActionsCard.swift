@@ -18,6 +18,8 @@ struct MarketsTodayActionsCard: View {
     /// Called with the tapped row's symbol; the caller resolves it to a `StockSageIdea` (e.g.
     /// `store.ideas.first { $0.symbol == symbol }`) and opens its detail sheet.
     let onSelectSymbol: (String) -> Void
+    @ObservedObject private var paperStore = StockSagePaperTradeStore.shared
+    @State private var executableOnly = false
 
     @ScaledMetric(relativeTo: .caption2) private var font8: CGFloat = 8
     @ScaledMetric(relativeTo: .caption2) private var font9: CGFloat = 9
@@ -36,32 +38,56 @@ struct MarketsTodayActionsCard: View {
         // Matches fastLaneStrip's own "≥2 to be worth a board" threshold — a single ranked
         // action isn't a ranked LIST, and bestOpportunityCard already covers the lone-idea case.
         if plans.count >= 2 {
+            let shownPlans = executableOnly ? plans.filter(isExecutableNow(_:)) : plans
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Image(systemName: "list.number").font(.system(size: 11)).foregroundStyle(DS.Palette.accent)
                     Text("Today's plan — ranked by growth rate").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
                     Spacer()
+                    Toggle("Executable now only", isOn: $executableOnly)
+                        .toggleStyle(.switch)
+                        .font(.system(size: font8, weight: .medium))
+                        .foregroundStyle(.secondary)
                 }
-                Text("Top \(plans.count) fastest-compounding setups, sized and gated — do #1 first, unless it's blocked.")
+                Text("Top \(shownPlans.count) fastest-compounding setups, sized and gated — do #1 first, unless it's blocked.")
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text("Ranked by growth rate (log-growth at ½-Kelly) — a steady compounder can out-rank a higher-R/day but higher-variance setup. Shown R/day is raw EV, not the sort key.")
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if executableOnly {
+                    Text("Executable now includes only rows that currently clear or caution on the pre-trade gate.")
+                        .font(.system(size: 8)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
 
-                ForEach(Array(plans.enumerated()), id: \.element.id) { i, plan in
-                    row(i + 1, plan)
+                executionRecommendationPanel(shownPlans)
+                paperOutcomePanel
+
+                if shownPlans.isEmpty {
+                    Text("No executable rows at current risk settings. Lower risk %, or keep blocked rows visible.")
+                        .font(.system(size: font9, weight: .medium)).foregroundStyle(DS.Palette.warningSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ForEach(Array(shownPlans.enumerated()), id: \.element.id) { i, plan in
+                        row(i + 1, plan)
+                    }
                 }
 
                 HStack(spacing: 6) {
                     Spacer()
                     Button {
-                        let text = StockSageTodayPlan.copyAllText(plans, isSample: isSampleData)
+                        let text = StockSageTodayPlan.copyAllText(shownPlans, isSample: isSampleData)
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(text, forType: .string)
                     } label: {
-                        Label("Copy all \(plans.count)", systemImage: "doc.on.doc").font(.system(size: font9, weight: .medium))
+                        Label("Copy all \(shownPlans.count)", systemImage: "doc.on.doc").font(.system(size: font9, weight: .medium))
                     }
-                    .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+                    .buttonStyle(.plain).foregroundStyle(DS.Palette.accent).disabled(shownPlans.isEmpty)
                     .help("Copy the ranked plan — entry/stop/target, size, and each gate verdict — to the clipboard. Estimates, not advice.")
+                }
+                if let weekly = weeklyExecutedVsBlockedMetric {
+                    Text(weekly)
+                        .font(.system(size: font8))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Text("A discipline checklist, not a profit signal — clearing the gate means the trade isn't obviously reckless, not that it wins.")
                     .font(.system(size: font9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -70,6 +96,112 @@ struct MarketsTodayActionsCard: View {
             .background(DS.Palette.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.accent.opacity(0.25), lineWidth: 1))
         }
+    }
+
+    @ViewBuilder
+    private func executionRecommendationPanel(_ shownPlans: [TodayActionPlan]) -> some View {
+        if let plan = shownPlans.first(where: { $0.gate?.decision != .blocked }) ?? shownPlans.first {
+            let urgentEvent = (plan.daysToEarnings ?? Int.max) <= 3
+            let timing = StockSageExecutionTiming.sessionNote(action: plan.action, regime: plan.regime)
+            let blocked = plan.gate?.decision == .blocked
+            let color: Color = blocked ? DS.Palette.dangerSoft : (urgentEvent ? DS.Palette.warningSoft : DS.Palette.successSoft)
+            let headline: String = {
+                if blocked { return "Execution recommendation: blocked setup for #1." }
+                if urgentEvent { return "Execution recommendation: event-near setup, urgency-aware." }
+                return "Execution recommendation: patient execution for #1." 
+            }()
+            let orderText: String = {
+                if blocked { return "Do not place this order until the gate clears." }
+                if urgentEvent {
+                    return "If you still take it, a marketable near-close execution can be justified by event urgency; otherwise skip the trade."
+                }
+                return "Prefer a patient limit near the close; this is the lower-friction default for uninformed execution."
+            }()
+            VStack(alignment: .leading, spacing: 2) {
+                Text(headline)
+                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(color)
+                Text("#1 \(plan.symbol): \(orderText)")
+                    .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if let timing {
+                    Text("Timing note: \(timing)")
+                        .font(.system(size: 8)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(color.opacity(0.10), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(color.opacity(0.35), lineWidth: 1))
+        }
+    }
+
+    private func isExecutableNow(_ plan: TodayActionPlan) -> Bool {
+        guard let decision = plan.gate?.decision else { return false }
+        return decision != .blocked
+    }
+
+    @ViewBuilder
+    private var paperOutcomePanel: some View {
+        let (planned, realized, measured) = paperTodayStats
+
+        if measured > 0 {
+            let delta = realized - planned
+            let color: Color = delta >= 0 ? DS.Palette.successSoft : DS.Palette.warningSoft
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Paper today: realized vs planned (net-of-cost)")
+                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(color)
+                Text(String(format: "%d close%@ today: planned %+.2fR vs realized %+.2fR (%+.2fR)",
+                            measured, measured == 1 ? "" : "s", planned, realized, delta))
+                    .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if let fwd = paperStore.forwardStats {
+                    Text(String(format: "Forward paper DSR %.0f%% (%d closed) — %@",
+                                fwd.deflated.dsr * 100, fwd.closed,
+                                fwd.passesForwardBar ? "passes bar" : "below bar"))
+                        .font(.system(size: 8)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(color.opacity(0.10), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(color.opacity(0.35), lineWidth: 1))
+        }
+    }
+
+    private var paperTodayStats: (planned: Double, realized: Double, measured: Int) {
+        let nowDay = Int(Date().timeIntervalSince1970 / 86_400)
+        let closedToday = paperStore.trades.filter {
+            guard !$0.isOpen, let closedAt = $0.closedAt else { return false }
+            return Int(closedAt.timeIntervalSince1970 / 86_400) == nowDay
+        }
+        var planned = 0.0
+        var realized = 0.0
+        var measured = 0
+        for t in closedToday {
+            guard let rr = t.realizedR else { continue }
+            let risk = abs(t.entry - t.stop)
+            guard risk > 0, let target = t.target else { continue }
+            let plannedR: Double = t.side == .long ? (target - t.entry) / risk : (t.entry - target) / risk
+            planned += plannedR
+            realized += rr
+            measured += 1
+        }
+        return (planned, realized, measured)
+    }
+
+    private var weeklyExecutedVsBlockedMetric: String? {
+        let recent = paperStore.trades.filter {
+            guard let closedAt = $0.closedAt else { return false }
+            return closedAt >= Date().addingTimeInterval(-7 * 86_400)
+        }
+        let executed = recent.compactMap(\.realizedR)
+        let executedCount = executed.count
+        let executedTotal = executed.reduce(0, +)
+        let executedAvg = executedCount > 0 ? (executedTotal / Double(executedCount)) : 0
+        let blocked = plans.filter { $0.gate?.decision == .blocked }
+        guard executedCount > 0 || !blocked.isEmpty else { return nil }
+        let blockedPotential = blocked.reduce(0.0) { $0 + $1.velocity * 5.0 }
+        let trend = executedAvg - blockedPotential
+        let arrow = trend >= 0 ? "▲" : "▼"
+        let direction = trend >= 0 ? "improving" : "deteriorating"
+        return String(format: "7d execution vs blocked: %d closed, realized %+.2fR; currently blocked potential ~%+.2fR/week (velocity proxy). %@ %@(Δ %+.2fR).",
+                      executedCount, executedTotal, blockedPotential, arrow, direction, trend)
     }
 
     @ViewBuilder

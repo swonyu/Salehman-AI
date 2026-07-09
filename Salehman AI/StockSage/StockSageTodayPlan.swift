@@ -9,6 +9,10 @@ import Foundation
 // the gate isn't a win, it's "not obviously reckless."
 
 enum StockSageTodayPlan {
+    enum RankedMode: Sendable {
+        case fastestCompounding
+        case equityExecutableFirst
+    }
     /// Build the plan text for one idea (typically the best opportunity). Returns a
     /// multi-line checklist. `account`/`riskFraction` add the concrete share size when set.
     /// `positions` (TODAY-PARITY, defaulted `[]` — existing callers/tests byte-unchanged) adds
@@ -128,14 +132,19 @@ enum StockSageTodayPlan {
                                          liquidity: [String: LiquidityProfile] = [:],
                                          positions: [PortfolioPosition] = [],
                                          journalTrades: [TradeRecord] = [],
+                                         mode: RankedMode = .fastestCompounding,
                                          max: Int = 3) -> [TodayActionPlan] {
         let rf = Swift.max(0, riskFraction ?? 0)
+        let maxCount = Swift.max(0, max)
         let lane = StockSageExpectedValue.fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity)
+        let laneInputs: [StockSageIdea] = {
+            if case .fastestCompounding = mode { return Array(lane.prefix(maxCount)) }
+            return lane
+        }()
         let holdingsBySymbol = StockSagePortfolio.holdingBySymbol(in: positions)
         let historyBySymbol = StockSageJournal.historyBySymbol(in: journalTrades)
         var out: [TodayActionPlan] = []
-        for idea in lane {
-            guard out.count < Swift.max(0, max) else { break }
+        for idea in laneInputs {
             // fastLane() already guarantees a defined stop+target (it requires `ev(for:)` != nil,
             // which itself requires both) — re-guarded here so this composer never force-unwraps
             // an assumption about another engine's internals.
@@ -167,14 +176,47 @@ enum StockSageTodayPlan {
             let lowConviction = snap.rankReasons.contains(.lowConviction)
             let heldShares = holdingsBySymbol[idea.symbol.uppercased()]?.shares
             let closedTradeCount = historyBySymbol[idea.symbol.uppercased()]?.count
+            let daysToEarnings = earnings[idea.symbol.uppercased()]?.daysUntil
             out.append(TodayActionPlan(symbol: idea.symbol, velocity: v, entry: entry, stop: stop, target: target,
                                        shares: shares, dollarsAtRisk: dollarsAtRisk, gate: snap.gate,
                                        isCrypto: idea.symbol.uppercased().hasSuffix("-USD"),
                                        netCostFloorFlag: floorFlag, isLowConviction: lowConviction,
                                        heldShares: heldShares, closedTradeCount: closedTradeCount,
-                                       priceAsOf: idea.priceAsOf))
+                                       priceAsOf: idea.priceAsOf,
+                                       action: idea.advice.action, regime: idea.advice.regime,
+                                       daysToEarnings: daysToEarnings))
+        }
+        if case .equityExecutableFirst = mode {
+            out.sort { a, b in
+                let aKey = executablePriorityKey(for: a)
+                let bKey = executablePriorityKey(for: b)
+                if aKey != bKey { return aKey < bKey }
+                return a.symbol < b.symbol
+            }
+            if out.count > maxCount { return Array(out.prefix(maxCount)) }
         }
         return out
+    }
+
+    private nonisolated static func executablePriorityKey(for plan: TodayActionPlan)
+    -> (Int, Int, Int, Int, Int, Double) {
+        let equityBucket = plan.isCrypto ? 1 : 0
+        let gateBucket: Int = {
+            switch plan.gate?.decision {
+            case .clear: return 0
+            case .caution: return 1
+            case nil: return 2
+            case .blocked: return 3
+            }
+        }()
+        let floorBucket = plan.netCostFloorFlag.isDeranked ? 1 : 0
+        let convictionBucket = plan.isLowConviction ? 1 : 0
+        let earningsBucket: Int = {
+            guard let days = plan.daysToEarnings else { return 0 }
+            return days <= 3 ? 1 : 0
+        }()
+        // Higher velocity still matters once executable filters tie.
+        return (equityBucket, gateBucket, floorBucket, convictionBucket, earningsBucket, -plan.velocity)
     }
 
     /// "Copy all N" clipboard text for a ranked list — one line per plan (symbol, velocity,
@@ -271,5 +313,11 @@ struct TodayActionPlan: Sendable, Equatable, Identifiable {
     /// can flag a cache-stale price independent of `isSample` — same rationale as `build`'s
     /// `priceAsOf` param. nil ⇒ unknown, never a false warning.
     var priceAsOf: Date? = nil
+    /// Execution-timing input carried from the ranked idea (display-only for recommendations).
+    var action: TradeAdvice.Action = .hold
+    /// Execution-timing input carried from the ranked idea (display-only for recommendations).
+    var regime: TradeAdvice.Regime = .range
+    /// Days until the next earnings event for this symbol, when available (display-only).
+    var daysToEarnings: Int? = nil
     nonisolated var id: String { symbol }
 }
