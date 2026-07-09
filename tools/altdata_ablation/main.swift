@@ -9,6 +9,13 @@ import Foundation
 // panel.json shape: { "returns": [[Double]], "industry": [Int],
 //                     "earningsExcludedAt": { "<t>": [Int] },   // optional
 //                     "roundTripBps": Double, "labels": [String], "provenance": "..." }
+//
+// WALK-BACKWARD ROBUSTNESS MODE (env REVERSED=1; research/INDEX §5 checklist #6). Reverses the
+// panel's PERIOD ORDER — each period's cross-section (all symbols' returns at that t) stays
+// intact, only the SEQUENCE of periods flips. `earningsExcludedAt` keys remap
+// newIndex = (periodCount-1) - oldIndex so an exclusion tagged at old period t still lands on
+// the same calendar date's new position. When set, runs forward AND reversed in one process and
+// prints a FLIP-VS-HOLD comparison (see `printFlipVsHold` for the honest-interpretation guide).
 
 struct PanelJSON: Decodable {
     let returns: [[Double]]
@@ -51,7 +58,12 @@ func fullSharpe(_ xs: [Double]) -> Double? {
     return m / v.squareRoot()
 }
 
-func run(_ panel: StockSageNetCostSim.Panel, label: String) {
+// Per-config net result, kept around so a reversed run can be diffed against its forward twin.
+struct ConfigNet { let lb: Int; let hd: Int; let meanNet: Double }
+struct RunResult { let configs: [ConfigNet]; let bestOOS: Double; let bestCfg: String }
+
+@discardableResult
+func run(_ panel: StockSageNetCostSim.Panel, label: String) -> RunResult {
     // Pass 1: gather each config's net full-series Sharpe → trial variance for the DSR deflation.
     var trialSharpes: [Double] = []
     var series: [(Int,Int,[Double])] = []
@@ -70,6 +82,7 @@ func run(_ panel: StockSageNetCostSim.Panel, label: String) {
     }()
     print("\n=== \(label) · \(nTrials) configs · varTrialSharpe=\(String(format: "%.4f", varTrial)) ===")
     var bestOOS = -Double.infinity; var bestCfg = ""; var anyClears = false
+    var configs: [ConfigNet] = []
     for lb in lookbacks { for hd in holds {
         guard let sim = StockSageNetCostSim.simulate(panel, lookback: lb, hold: hd, roundTripBps: rtBps,
                                                      folds: 3, embargo: 1, trials: nTrials, varTrialSharpe: varTrial)
@@ -78,13 +91,66 @@ func run(_ panel: StockSageNetCostSim.Panel, label: String) {
         let tag = sim.netVerdictOOS == nil ? "full" : "OOS"
         if oos > bestOOS { bestOOS = oos; bestCfg = "lb=\(lb),hd=\(hd)" }
         if sim.clearsNetOfCost { anyClears = true }
+        configs.append(ConfigNet(lb: lb, hd: hd, meanNet: sim.meanNet))
         print(String(format: "  lb=%2d hd=%2d  rebals=%3d  meanGross=%+.5f meanNet=%+.5f  net-%@ DSR=%.3f  clears=%@",
                      lb, hd, sim.rebalances.count, sim.meanGross, sim.meanNet, tag, oos, sim.clearsNetOfCost ? "YES" : "no"))
     }}
     print(String(format: "  → BEST net DSR = %.3f (%@);  ANY config clears DSR>0.95: %@",
                  bestOOS, bestCfg, anyClears ? "YES" : "NO"))
+    return RunResult(configs: configs, bestOOS: bestOOS, bestCfg: bestCfg)
 }
 
-run(panelWithout, label: "WITHOUT earnings exclusion (industry-relative reversal)")
-if !excluded.isEmpty { run(panelWith, label: "WITH earnings-window exclusion (full IRRX)") }
+// Reverses period ORDER only: each column t (all symbols' returns at that date) stays intact,
+// the sequence of columns flips. earningsExcludedAt keys remap onto the same reversed axis —
+// see the WALK-BACKWARD doc comment at the top of this file for why (periodCount-1)-t is correct.
+func reversedPanel(_ panel: StockSageNetCostSim.Panel) -> StockSageNetCostSim.Panel {
+    let T = panel.periodCount
+    let revReturns = panel.returns.map { Array($0.reversed()) }
+    var revExcluded: [Int: Set<Int>] = [:]
+    for (t, syms) in panel.earningsExcludedAt { revExcluded[(T - 1) - t] = syms }
+    return StockSageNetCostSim.Panel(returns: revReturns, industry: panel.industry, earningsExcludedAt: revExcluded)
+}
+
+func printFlipVsHold(_ label: String, forward: RunResult, reversed: RunResult) {
+    print("\n=== FLIP-VS-HOLD: \(label) ===")
+    for (i, f) in forward.configs.enumerated() where i < reversed.configs.count {
+        let r = reversed.configs[i]
+        let flip = (f.meanNet > 0) != (r.meanNet > 0)
+        print(String(format: "  lb=%2d hd=%2d  forward meanNet=%+.5f  reversed meanNet=%+.5f  sign-flip=%@",
+                     f.lb, f.hd, f.meanNet, r.meanNet, flip ? "YES" : "no"))
+    }
+    print(String(format: "  BEST forward net DSR = %.3f (%@)   BEST reversed net DSR = %.3f (%@)",
+                 forward.bestOOS, forward.bestCfg, reversed.bestOOS, reversed.bestCfg))
+}
+
+let forwardWithout = run(panelWithout, label: "WITHOUT earnings exclusion (industry-relative reversal)")
+var forwardWith: RunResult? = nil
+if !excluded.isEmpty { forwardWith = run(panelWith, label: "WITH earnings-window exclusion (full IRRX)") }
 else { print("\n(no earnings-exclusion data in panel → IRRX variant skipped)") }
+
+if ProcessInfo.processInfo.environment["REVERSED"] == "1" {
+    let panelWithoutRev = reversedPanel(panelWithout)
+    let reversedWithout = run(panelWithoutRev, label: "REVERSED WITHOUT earnings exclusion")
+    var reversedWith: RunResult? = nil
+    if !excluded.isEmpty {
+        reversedWith = run(reversedPanel(panelWith), label: "REVERSED WITH earnings-window exclusion (full IRRX)")
+    }
+
+    printFlipVsHold("WITHOUT earnings exclusion", forward: forwardWithout, reversed: reversedWithout)
+    if let fw = forwardWith, let rv = reversedWith {
+        printFlipVsHold("WITH earnings-window exclusion (full IRRX)", forward: fw, reversed: rv)
+    }
+
+    print("""
+
+    INTERPRETATION GUIDE (read before trusting any flip above):
+      - Reversal breaks real market dynamics — momentum/reversal are TIME-DIRECTIONAL, so a
+        reversed-period run is not a valid alternate history, only a diagnostic.
+      - A sign-flip on an ALREADY-NULL config (clears=no both directions) adds nothing: the
+        forward result was never significant, so there is nothing for the flip to overfit.
+      - A sign-flip on a config that clears DSR>0.95 FORWARD is the meaningful case: it is
+        direct evidence that "edge" was fit to this specific temporal order, not real
+        time-directional structure — i.e., overfitting.
+      - This flag exists for FUTURE would-be positives; on a null panel it is inert commentary.
+    """)
+}
