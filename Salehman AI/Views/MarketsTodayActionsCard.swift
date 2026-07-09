@@ -182,10 +182,11 @@ struct MarketsTodayActionsCard: View {
                             measured, measured == 1 ? "" : "s", planned, realized, delta))
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let fwd = paperStore.forwardStats {
-                    Text(String(format: "Forward paper DSR %.0f%% (%d closed) — %@",
+                    Text(String(format: "Forward paper deflated Sharpe (DSR) %.0f%% (%d closed) — %@",
                                 fwd.deflated.dsr * 100, fwd.closed,
                                 fwd.passesForwardBar ? "passes bar" : "below bar"))
                         .font(.system(size: 8)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .help(StockSageDeflatedSharpe.caveat)
                 }
             }
             .padding(.horizontal, 8).padding(.vertical, 6)
@@ -317,7 +318,7 @@ struct MarketsTodayActionsCard: View {
                             text += String(format: " Scaled risk shown: %.2f%%.", scaledPct)
                             // C7b: three per-name risk numbers can now coexist on one screen —
                             // say how they relate instead of leaving the reader to reconcile.
-                            text += " How this relates: the share count on this row uses your flat base risk %; this line is the conviction/regime scaling of that base for THIS single trade; the Deploy-capital card's Risk column is the portfolio allocator's figure (half-Kelly + heat cap), a different question."
+                            text += " How this relates: the share count on this row uses your flat base risk %; this line is the conviction/regime scaling of that base for THIS single trade; the Deploy-capital card's Risk column is the PORTFOLIO-level allocation (half-Kelly + heat cap) — act on that when deploying the whole book; this line sizes THIS single trade."
                             return text
                         }())
                 }

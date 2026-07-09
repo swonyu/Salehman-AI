@@ -263,10 +263,17 @@ struct MarketsView: View {
                     // Always-visible best-move CTA (FASTMONEY_BACKLOG #3) — the single
                     // highest-EV idea as a concrete, sizeable, copyable order ticket,
                     // on EVERY section tab (unlike bestOpportunityCard, Ideas-tab only).
-                    bestOpportunityCTA
-                        .opacity(appeared ? 1 : 0)
-                        .offset(y: appeared ? 0 : 8)
-                        .animation(DS.Motion.lux.delay(0.075), value: appeared)
+                    // Hierarchy lens 2026-07-09: on the Ideas section, bestOpportunityCard is a
+                    // strict SUPERSET of this CTA (same order, same caveats, plus R:R/Win est./
+                    // Base size/Target) rendered one card below — the same ticket twice added
+                    // length, not decision content. The CTA's own doc says its purpose is the
+                    // OTHER tabs; it keeps serving them unchanged.
+                    if section != .ideas {
+                        bestOpportunityCTA
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 8)
+                            .animation(DS.Motion.lux.delay(0.075), value: appeared)
+                    }
                     sectionPicker
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 8)
@@ -3049,7 +3056,9 @@ struct MarketsView: View {
                              action: (() -> Void)? = nil) -> some View {
         let chip = HStack(spacing: DS.Space.xs) {
             Text(value).font(.system(size: mvFont11, weight: .bold)).foregroundStyle(valueColor)
+                .lineLimit(1).fixedSize()   // narrow lens 2026-07-09: "48%" split into "48"/"%" at 560pt
             Text(label).font(.system(size: mvFont10)).foregroundStyle(.secondary)
+                .lineLimit(1)
         }
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background(.white.opacity(0.05), in: Capsule())
@@ -3413,6 +3422,7 @@ struct MarketsView: View {
                 // Action badge has minWidth so EV chip aligns across cards.
                 Text(a.action.rawValue)
                     .font(.system(size: mvFont11, weight: .bold)).foregroundStyle(actionTextColor(a.action))
+                    .lineLimit(1).fixedSize()   // 440pt: "Strong Buy" must never wrap into "Strong/Buy" (narrow lens 2026-07-09)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(actionColor(a.action), in: Capsule())
                     .frame(minWidth: 74, alignment: .center)
@@ -3595,7 +3605,8 @@ struct MarketsView: View {
                     // opening the sheet. price > 0 guard matches rewardRisk()'s own pattern — a
                     // malformed zero price must not render "(inf%)"/"(nan%)".
                     let stopPct = abs(idea.price - stop) / idea.price * 100
-                    ideaMetric("Stop", "\(adaptivePrice(stop)) (\(String(format: "%.1f%%", stopPct)))", color: DS.Palette.dangerSoft)
+                    ideaMetric("Stop", adaptivePrice(stop), color: DS.Palette.dangerSoft,
+                               sub: String(format: "−%.1f%% away", stopPct), subColor: DS.Palette.dangerSoft)
                 } else if let stop = a.stopPrice {
                     ideaMetric("Stop", adaptivePrice(stop), color: DS.Palette.dangerSoft)
                 }
@@ -3880,6 +3891,11 @@ struct MarketsView: View {
             // sheet (`Self.staleAsOfPrice`) already close. Computed once, reused by the visible
             // line below and folded into orderLabel for VoiceOver.
             let staleAsOf = Self.staleAsOfPrice(idea.priceAsOf, now: Date())
+            // Gate verdict ON the prescriptive card (hierarchy lens HIGH, 2026-07-09): the card's
+            // own copied plan already prints "Gate: <verdict>" — the pixels must not be less
+            // honest than the export. Honest-nil (F04): no chip when risk % isn't set.
+            let cardGate: TradeGateVerdict? = parsedRiskFraction != nil
+                ? tradeGateVerdict(for: idea, inputs: tradeGateInputs(for: idea)) : nil
             // Spoken full order (precomputed OUTSIDE the ViewBuilder so the multi-clause concat does
             // not tip the card body over the type-checker budget). Earnings warning and over-size
             // caveat are folded in here so VoiceOver hears them (the .accessibilityLabel below
@@ -3900,6 +3916,9 @@ struct MarketsView: View {
                    ps.pctOfAccount > 100 {
                     s += ". Size warning: position exceeds account balance."
                 }
+                if let g = cardGate {
+                    s += ". Pre-trade gate: \(g.decision == .blocked ? "do not trade" : g.decision.rawValue)."
+                }
                 return s
             }()
             VStack(alignment: .leading, spacing: 6) {
@@ -3908,6 +3927,16 @@ struct MarketsView: View {
                     HStack(spacing: DS.Space.sm) {
                         Image(systemName: "bolt.fill").font(.system(size: mvFont13)).foregroundStyle(DS.Palette.accent)
                         Text("Best opportunity now").font(.system(size: mvFont12, weight: .bold)).foregroundStyle(.white)
+                        if let g = cardGate {
+                            Text(g.decision == .blocked ? "DO NOT TRADE" : g.decision.rawValue.uppercased())
+                                .font(.system(size: mvFont9, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(g.decision == .blocked ? DS.Palette.danger
+                                            : (g.decision == .caution ? DS.Palette.warningSoft.opacity(0.85) : DS.Palette.successSoft.opacity(0.85)),
+                                            in: Capsule())
+                                .lineLimit(1).fixedSize()
+                        }
                         Spacer()
                         calibrationChip   // is the green Est. EV / Win est. below measured or assumed?
                         Text(idea.advice.action.rawValue).font(.system(size: mvFont10, weight: .bold))
@@ -3916,7 +3945,11 @@ struct MarketsView: View {
                     }
                     HStack(spacing: DS.Space.sm) {
                         Text(idea.symbol).font(.system(size: mvFont16, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                        ideaMetric("Est. EV", String(format: "%+.2fR (gross)", ev.evR), color: DS.Palette.successSoft)
+                        ideaMetric("Est. EV", String(format: "%+.2fR (gross)", ev.evR),
+                                   color: DS.Palette.successSoft,
+                                   sub: StockSageExpectedValue.netEVR(for: idea, calibration: store.convictionCalibration).map { String(format: "≈%+.2fR net est.", $0) },
+                                   subColor: .secondary)
+                            .help(StockSageGlossary.explain(.ev))
                         ideaMetric("R:R (gross)", String(format: "%.1f:1", ev.rewardR))
                             .help("Gross reward:risk from entry/stop/target, before est. costs — the pre-trade gate evaluates the NET ratio; the ranked rows below flag when net R:R falls under 2:1.")
                         ideaMetric("Win est.", String(format: "~%.0f%%", ev.winProbEstimate * 100))
@@ -4055,6 +4088,16 @@ struct MarketsView: View {
                             // estimate class as the best-opp card's "Est. EV" — an unlabeled "EV"
                             // here read as a firmer number than the identical figure one card up.
                             ideaMetric("Est. EV", String(format: "%+.2fR (gross)", p.evR), color: DS.Palette.successSoft)
+                                .help(StockSageGlossary.explain(.ev))
+                            // Hierarchy lens HIGH (2026-07-09): the smaller per-card plan warns at
+                            // >100%-of-account, but THIS plan — the portfolio-level one — showed a
+                            // $15,978 notional on a $10,000 account with no flag.
+                            if p.notional > plan.account {
+                                Text("⚠︎ exceeds account")
+                                    .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
+                                    .lineLimit(1).fixedSize()
+                                    .help("This position's notional is larger than the whole account — placing it needs margin or a partial fill. The risk% column still describes only the loss at the stop, not the capital required.")
+                            }
                             Spacer(minLength: 0)
                         }
                     }
@@ -4079,6 +4122,15 @@ struct MarketsView: View {
                     }
                     Text(plan.caveat)
                         .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    // Hierarchy lens HIGH (2026-07-09): the plan's TOTAL capital requirement was
+                    // invisible — say it whenever the full deployment exceeds the account.
+                    if plan.positions.reduce(0.0, { $0 + $1.notional }) > plan.account {
+                        Text(String(format: "⚠︎ Deploying the FULL plan needs ≈$%.0f of notional on a $%.0f account (%.0f%%) — deploy partially or with margin; each line still risks only its stated %% at its stop.",
+                                    plan.positions.reduce(0.0, { $0 + $1.notional }), plan.account,
+                                    plan.positions.reduce(0.0, { $0 + $1.notional }) / plan.account * 100))
+                            .font(.system(size: mvFont9, weight: .medium)).foregroundStyle(DS.Palette.warningSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding(DS.Space.sm).frame(maxWidth: .infinity, alignment: .leading)
                 .background(DS.Palette.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
@@ -4093,7 +4145,7 @@ struct MarketsView: View {
     // fitted calibration when one exists, else the conservative linear prior). The "Deploy capital"
     // plan layers on top: regime sizing bias, per-symbol vol-regime brake, correlation de-weighting,
     // and the total-heat cap — those are the genuine additions the Deploy plan makes.
-    private static let sizeMetricHelp = "Size uses the calibrated win-prob when a journal or backtest calibration is fitted (the same win-rate shown in the EV chip), or the conservative ~\(StockSageExpectedValue.assumedWinBandLabel) prior otherwise. The ‘Deploy capital’ plan is the one to act on — it applies: regime sizing bias → vol-targeting shrink for high-vol names → per-symbol vol-regime brake → correlation de-weighting → heat cap on top."
+    private static let sizeMetricHelp = "Size uses the calibrated win-prob when a journal or backtest calibration is fitted (the same win-rate shown in the EV chip), or the conservative ~\(StockSageExpectedValue.assumedWinBandLabel) prior otherwise. The ‘Deploy capital’ plan is the PORTFOLIO-level size — act on it when allocating the whole book (it layers regime sizing bias → vol-targeting shrink → per-symbol vol-regime brake → correlation de-weighting → heat cap); this per-card Size answers the SINGLE-trade question at your flat risk %."
 
     // Honest "are these EV numbers measured, fitted, or assumed?" chip — reused on every EV-headline
     // surface. F01/F02 (2026-07-02): keys on the calibration's METHOD, never on `calibration != nil`
@@ -4199,7 +4251,7 @@ struct MarketsView: View {
                             // headline is NET — the decision-relevant number after est. frictions.
                             // Gross stays one hover away, labeled, never hidden.
                             ideaMetric("Est./week", String(format: "%+.1fR", netWk), sub: "net of est. costs, top \(s.weeklyTopCount ?? 3)", subColor: .secondary)
-                                .help(weeklyGrossHelp(String(format: "Net of estimated costs — sums the top fast-lane NET velocities%@. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income.", s.weeklyR.map { String(format: " (gross %+.1fR before costs)", $0) } ?? ""), netFigure: true))
+                                .help(weeklyGrossHelp(String(format: "1R = the amount you risk on one trade (entry→stop distance × size). Net of estimated costs — sums the top fast-lane NET velocities%@. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income.", s.weeklyR.map { String(format: " (gross %+.1fR before costs)", $0) } ?? ""), netFigure: true))
                         } else if let wk = s.weeklyR {
                             // Fallback when the net figure can't be formed: the labeled gross
                             // (F03/F44's original disposition) — never a fabricated net.
@@ -4360,6 +4412,9 @@ struct MarketsView: View {
                 if let staleAsOf {
                     s += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering."
                 }
+                if parsedRiskFraction != nil, let g = tradeGateVerdict(for: idea, inputs: tradeGateInputs(for: idea)) {
+                    s += ". Pre-trade gate: \(g.decision == .blocked ? "do not trade" : g.decision.rawValue)."
+                }
                 return s
             }()
             BestOpportunityActionCard(
@@ -4372,7 +4427,19 @@ struct MarketsView: View {
                 stopText: idea.advice.stopPrice.map { "stop \(adaptivePrice($0))" },
                 sizeText: sizeInfo.text,
                 sizeIsWarning: sizeInfo.isWarning,
-                evText: String(format: "Est. EV %+.2fR (gross)", ev.evR),   // "Est. EV" everywhere (2026-07-09 label sweep)
+                evText: String(format: "Est. EV %+.2fR (gross)", ev.evR)
+                    + (StockSageExpectedValue.netEVR(for: idea, calibration: store.convictionCalibration).map { String(format: " · ≈%+.2fR net est.", $0) } ?? ""),
+                gateLabel: {
+                    guard parsedRiskFraction != nil,
+                          let g = tradeGateVerdict(for: idea, inputs: tradeGateInputs(for: idea)) else { return nil }
+                    return g.decision == .blocked ? "DO NOT TRADE" : g.decision.rawValue.uppercased()
+                }(),
+                gateColor: {
+                    guard parsedRiskFraction != nil,
+                          let g = tradeGateVerdict(for: idea, inputs: tradeGateInputs(for: idea)) else { return .clear }
+                    return g.decision == .blocked ? DS.Palette.danger
+                         : (g.decision == .caution ? DS.Palette.warningSoft.opacity(0.85) : DS.Palette.successSoft.opacity(0.85))
+                }(),
                 caveatText: MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix,
                 varianceText: variance.map { String(format: "Typical 24h range ±%.1f%% — size down for 24/7.", $0) },
                 staleAsOfText: staleAsOf.map { "⚠︎ Price as of \($0.formatted(.relative(presentation: .named))) — not live; re-price before ordering." },
@@ -6779,6 +6846,11 @@ struct BestOpportunityActionCard: View {
     let sizeText: String         // sized line OR "Set account to size…"
     let sizeIsWarning: Bool      // true when the sized notional exceeds the account
     let evText: String           // "Est. EV +0.62R (gross)"
+    /// Hierarchy lens 2026-07-09: the pre-trade gate verdict for THIS order (pre-formatted
+    /// label, e.g. "CAUTION"/"DO NOT TRADE") + its chip color — nil when risk % isn't set
+    /// (honest-nil, F04). The most prescriptive card must not hide the app's own verdict.
+    var gateLabel: String? = nil
+    var gateColor: Color = .clear
     let caveatText: String       // MoneyVelocityCopy.bestOpportunity — the honesty tail
     let varianceText: String?    // crypto-only 24h range line; nil for equities
     /// Round-H: non-nil ⇒ entry/stop/size above are off a stale (prior-UTC-day) cache price —
@@ -6811,6 +6883,13 @@ struct BestOpportunityActionCard: View {
                             .foregroundStyle(actionTextColor)
                             .padding(.horizontal, 7).padding(.vertical, 2)
                             .background(actionColor, in: Capsule())
+                        if let gateLabel {
+                            Text(gateLabel).font(.system(size: mvFont9, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(gateColor, in: Capsule())
+                                .lineLimit(1).fixedSize()
+                        }
                     }
                     HStack(spacing: DS.Space.sm) {
                         Text(entryText).font(.system(size: mvFont13, weight: .semibold, design: .rounded)).foregroundStyle(.white)

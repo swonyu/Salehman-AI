@@ -69,7 +69,10 @@ enum StockSageGlossary {
         case .velocity:
             return "Velocity = EV ÷ typical hold = expected R per DAY. A setup that resolves faster compounds more, so it can outrank an equal-EV slower one. Built on an estimated hold — a rough assumption, not a measurement."
         case .fastLane:
-            return "The positive-EV setups that have a defined velocity (crypto/equity), ranked by EV/day. Faster turnover means more compounding cycles AND more chances to be wrong."
+            // Hierarchy lens 2026-07-09: was "ranked by EV/day" — stale since velocityRankKey
+            // moved to log-growth ordering; the Today's-plan card explains its DIFFERENT order
+            // by exactly this distinction, so the hover must not contradict it.
+            return "The positive-EV setups that have a defined velocity (crypto/equity), ORDERED by growth rate — per-day log-growth at ½-Kelly, cost-haircut — so a steady compounder can out-rank a higher-EV/day lottery setup; the displayed figure is still EV/day. Faster turnover means more compounding cycles AND more chances to be wrong."
         case .weeklyR:
             return "Sum of the top few fast-lane GROSS velocities (before round-trip costs) × ~5 trading days — an estimate of weekly R IF you take and re-cycle those setups. It can include ideas the net-cost floor demotes on the boards (the 'Fastest' pick excludes them). High variance; not a promise."
         case .weeklyDollars:
