@@ -18,9 +18,12 @@ import Combine
 //     UserDefaults key) and are NEVER mixed into the real `StockSageJournalStore`.
 //   • nil = unknown. A trade with no bars after `openedAt` stays open; nothing is fabricated.
 //
-// OWNER-GATE FENCE (F01/F02): paper outcomes do NOT feed the production
-// `StockSageStore.convictionCalibration` / `fit(fromJournal:)`. That map stays real-journal-only.
-// Wiring paper → production sizing is a separate, owner-gated decision, deliberately NOT taken here.
+// FENCE (F01/F02; framing updated 2026-07-09 after the owner gate-lift): paper outcomes do NOT
+// feed the production `StockSageStore.convictionCalibration` / `fit(fromJournal:)`. That map stays
+// real-journal-only. Wiring paper → production sizing is now an EVIDENCE-decidable change (no owner
+// gate) — but it remains deliberately NOT taken: paper fills are frictionless simulations, and the
+// honesty floor requires any calibration input to be labeled by provenance. Revisit only with a
+// measured case that paper-fill bias is bounded (e.g. vs realized-cost capture data, shipped 2026-07-09).
 //
 // BACKTEST PARITY (derive, never copy): exit selection reuses `StockSageBacktester.simulateExit`
 // (gap-honest stop fills, stop-wins-ties, `.timeStop` backstop) and the net-R convention is matched

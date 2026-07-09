@@ -37,7 +37,10 @@ print("PANEL: \(S) symbols × \(T) periods · roundTripBps=\(rtBps) · earnings-
 if let p = pj.provenance { print("PROVENANCE: \(p)") }
 
 // Horizon grid over DAILY periods (lookback/hold in trading days). 12 configs → selection haircut.
-let lookbacks = [5, 10, 21, 63]
+// 2026-07-09: grid extended to match the runs indexed in RESEARCH_2026-07-09_yahoo5y_multiyear.md
+// and the momsign harness (lb=126 rows are formable on any >=1,253-bar panel; on shorter panels the
+// runner already skips unformable configs). Committed so the repo runner reproduces the indexed grids.
+let lookbacks = [5, 10, 21, 63, 126]
 let holds = [5, 10, 21]
 
 func fullSharpe(_ xs: [Double]) -> Double? {
