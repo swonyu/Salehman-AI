@@ -122,8 +122,13 @@ struct MarketsTodayActionsCard: View {
             let timing = plan.isCrypto ? nil : StockSageExecutionTiming.sessionNote(action: plan.action, regime: plan.regime)
             let blocked = plan.gate?.decision == .blocked
             let color: Color = blocked ? DS.Palette.dangerSoft : (urgentEvent ? DS.Palette.warningSoft : DS.Palette.successSoft)
+            // F04-consistency (nilrisk-fixture QA, 2026-07-09): an UNEVALUATED gate (no risk %
+            // set) must be named, not advised over — the panel was recommending execution
+            // mechanics "for #1" on a trade whose gate never ran.
+            let gateUnevaluated = plan.gate == nil
             let headline: String = {
                 if blocked { return "Execution recommendation: blocked setup for #\(rank)." }
+                if gateUnevaluated { return "Execution notes for #\(rank) — gate not evaluated yet." }
                 if urgentEvent { return "Execution recommendation: event-near setup, urgency-aware." }
                 return "Execution recommendation for #\(rank) — order type is a trade-off."
             }()
@@ -135,6 +140,9 @@ struct MarketsTodayActionsCard: View {
             // honestly instead of prescribing the leg the research says flips here.
             let orderText: String = {
                 if blocked { return "Do not place this order until the gate clears." }
+                if gateUnevaluated {
+                    return "Enter a risk % to run the pre-trade gate BEFORE placing any order — the order-type and timing notes below apply only to a setup the gate has cleared."
+                }
                 if urgentEvent {
                     return "If you still take it, a marketable near-close execution can be justified by event urgency; otherwise skip the trade."
                 }
