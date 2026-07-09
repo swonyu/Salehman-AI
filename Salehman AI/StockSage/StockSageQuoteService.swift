@@ -352,7 +352,11 @@ enum StockSageUniverse {
         ("🇧🇷 São Paulo (B3)",     ["PETR4.SA", "VALE3.SA", "ITUB4.SA"]),
         ("🇲🇽 Mexico (BMV)",       ["AMXB.MX", "WALMEX.MX"]),
         ("🇨🇦 Toronto (TSX)",      ["RY.TO", "SHOP.TO", "ENB.TO"]),
-        ("🇨🇭 Zurich (SIX)",       ["NESN.SW", "ROG.SW", "NOVN.SW"]),
+        // ROG.SW removed 2026-07-09: persistent HTTP 404 on this service's own fetch path
+        // (retried + re-probed 5× same-day — dead on Yahoo, NOT a throttle), so it failed
+        // every live scan and only ever contributed to the "couldn't be fetched" line.
+        // Found by the (otherwise superseded) universe-1024 verification lane.
+        ("🇨🇭 Zurich (SIX)",       ["NESN.SW", "NOVN.SW"]),
         ("🇳🇱 Amsterdam (Euronext)", ["ASML.AS", "ADYEN.AS"]),
         ("🇪🇸 Madrid (BME)",       ["SAN.MC", "IBE.MC", "ITX.MC"]),
         ("🇮🇹 Milan (Borsa)",      ["ENI.MI", "ISP.MI", "RACE.MI"]),
