@@ -2727,6 +2727,10 @@ struct MarketsView: View {
         // already use, so the same field never reads as an up-move here and neutral elsewhere.
         let flat = abs(change) <= 0.05
         let up = change > 0
+        // Tabs-audit 2026-07-09: a NEW LISTING (Yahoo placeholder previousClose — real prior
+        // close unknown) rendered here as a fabricated "+0.00%" flat day while the heatmap
+        // honestly says "N/A (new)" for the SAME symbol. Mirror the heatmap's guard.
+        let isNew = store.newListings.contains(sym.symbol.uppercased())
         let hovered = hoveredSignalID == sym.id
         // Per-row freshness: a stale (weekend/holiday or stale-feed) quote is dimmed + clock-flagged so
         // its Buy/Sell + strength% isn't acted on as a live signal — matching the heatmap's treatment.
@@ -2750,15 +2754,17 @@ struct MarketsView: View {
                         .animation(DS.Motion.smooth, value: p)
                 }
                 HStack(spacing: 3) {
-                    Image(systemName: flat ? "minus" : (up ? "arrow.up.right" : "arrow.down.right")).font(.system(size: mvFont9, weight: .bold))
-                        .contentTransition(.symbolEffect(.replace))
-                        .animation(DS.Motion.smooth, value: up)
-                    Text(String(format: "%+.2f%%", change))
+                    if !isNew {
+                        Image(systemName: flat ? "minus" : (up ? "arrow.up.right" : "arrow.down.right")).font(.system(size: mvFont9, weight: .bold))
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(DS.Motion.smooth, value: up)
+                    }
+                    Text(isNew ? "N/A (new)" : String(format: "%+.2f%%", change))
                         .font(.system(size: mvFont12, weight: .medium))
                         .contentTransition(.numericText())
                         .animation(DS.Motion.smooth, value: change)
                 }
-                .foregroundStyle(flat ? Color.secondary : (up ? DS.Palette.successSoft : DS.Palette.danger))
+                .foregroundStyle(isNew ? Color.secondary : (flat ? Color.secondary : (up ? DS.Palette.successSoft : DS.Palette.danger)))
             }
             if let signal {
                 VStack(alignment: .trailing, spacing: 3) {
@@ -2798,7 +2804,10 @@ struct MarketsView: View {
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(hovered ? DS.Palette.accent.opacity(0.35) : DS.Palette.surfaceStroke, lineWidth: 1))
         .scaleEffect(hovered ? 1.008 : 1.0)
-        .opacity(stale ? 0.55 : 1)   // visually recede a stale row — not a live, actionable signal
+        // Tabs-audit 2026-07-09: 0.55 was sub-AA on this row's own secondary text — the exact
+        // gap the ideas-card comment deferred "to its own wave"; heatmap got the same fix
+        // earlier today (0.85 AA floor). Clock icon + "· stale" caption stay the primary cues.
+        .opacity(stale ? 0.85 : 1)   // visually recede a stale row (AA floor) — not a live, actionable signal
         .shadow(color: DS.Palette.accent.opacity(hovered ? 0.10 : 0), radius: 10, y: 3)
         .animation(DS.Motion.smooth, value: hovered)
         .contentShape(Rectangle())
@@ -2808,9 +2817,13 @@ struct MarketsView: View {
                 else if hoveredSignalID == sym.id { hoveredSignalID = nil }
             }
         }
-        .help(stale
-              ? "STALE: last quote \((sym.latest?.time).map { $0.formatted(.relative(presentation: .named)) } ?? "unknown") — market likely closed, not a live price. \(signal?.reason ?? "")"
-              : (signal?.reason ?? ""))
+        .help({
+            var h = stale
+                ? "STALE: last quote \((sym.latest?.time).map { $0.formatted(.relative(presentation: .named)) } ?? "unknown") — market likely closed, not a live price. \(signal?.reason ?? "")"
+                : (signal?.reason ?? "")
+            if isNew { h = "Newly listed — no prior close to compare against yet. " + h }
+            return h
+        }())
         .contextMenu {
             if sym.market == "★ My watchlist" {
                 Button(role: .destructive) { store.removeSymbol(sym.symbol) } label: {
@@ -2819,7 +2832,10 @@ struct MarketsView: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(sym.symbol), \(sym.market), \(sym.latest.map { adaptivePrice($0.price) } ?? "no price"), \(String(format: "%+.1f percent", change)), signal \(signal?.recommendation.rawValue ?? "none")\(stale ? ", stale quote — market likely closed" : "")")
+        // Tabs-audit 2026-07-09 a11y parity: speak the visible "strength N%" qualifier (its
+        // absence made a marginal 55% Buy and a 90% Buy sound identical) and the new-listing
+        // honesty state, mirroring the visibility conditions exactly.
+        .accessibilityLabel("\(sym.symbol), \(sym.market), \(sym.latest.map { adaptivePrice($0.price) } ?? "no price"), \(isNew ? "newly listed, not yet evaluated" : String(format: "%+.1f percent", change)), signal \(signal?.recommendation.rawValue ?? "none")\(signal.flatMap { $0.recommendation != .hold ? ", strength \(Int($0.confidence * 100)) percent" : nil } ?? "")\(stale ? ", stale quote — market likely closed" : "")")
     }
 
     private func recColor(_ r: StockSageRecommendation) -> Color {

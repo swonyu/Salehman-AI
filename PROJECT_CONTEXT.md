@@ -475,10 +475,27 @@ quotes; `nil`=unknown; gross vs net always distinguished).
   green (AUDIT_FINDINGS_2 #1).
 
 **Staged / unmerged (NOT on main — do not describe as shipped):**
-- Universe expansion 210→1,024 — `plans/PLAN_2026-07-03_universe_1024.md` (committed but execution-BLOCKED on
-  Yahoo-throttle verification per its §0.5). Candidate pool: `research/UNIVERSE_CANDIDATES_2026-07-03.md`
-  (1,413 live-sourced names); the verified 1,024 manifest is pending the throttle clearing.
-- Sheet-candidate navigation — staged on the held `ideas-card/ux-wave-2` branch (awaiting owner visual QA).
+- *(2026-07-09 truth pass: this section's two former entries both RESOLVED — kept here as pointers.)*
+  The universe-1024 plan was SUPERSEDED (the analyzed universe has been the equity-2000 promotion's
+  ~2,420 names since 2026-07-08 — now **2,418 all-verified** after the 2026-07-09 dead-symbol
+  removals ROG.SW + SQ; the 1,024 verified manifest shipped as a research artifact only:
+  `research/UNIVERSE_VERIFIED_2026-07-03.md`, plan marked DO-NOT-IMPLEMENT). The ux-wave-2
+  branch merged 2026-07-07 (a45ebac) after owner release + visual QA. Nothing is currently
+  staged/unmerged.
+
+**2026-07-09 state changes an external reader needs (detail: DEVELOPMENT_LOG.md entries of that date):**
+- **Owner-gate class RETIRED** (verbatim directive in `skills/gated-scope/SKILL.md` §1) — decisions
+  resolve on evidence through the pipeline; honesty floor + empirical-validation bar unchanged.
+- **TOM seasonal rank tilt** owner-activated then RATIFIED KEEP with a powered multi-year NULL in
+  hand (lane closed); tilt is direction-aware, |t|<1 noise-gated, and DISCLOSED on every crowned
+  surface (`MoneyVelocityCopy.tomTiltSuffix`).
+- **Cost table re-ratified** with a `.SR` Tadawul tier (60bps RT); weekly money headlines are
+  NET-FIRST with labeled gross; "est. costs" vocabulary unified.
+- **All four whole-array persistence stores** (paper, journal, portfolio, velocity-history) now
+  reconcile-on-save (cross-process lost-update fix, found from live data).
+- **OPEN FRONTIER research rows closable on available data are ALL CLOSED** (full-IRRX with a
+  populated earnings exclusion: NULL; TOM multi-year: NULL; cap-vs-continuous split: NULL) —
+  the engine's measured value remains risk-discipline (DSR≈0 on every axis).
 
 **Operating/discipline skill library:** `.claude/skills/` (19 skills) + `skills/` — durable session-operating
 and discipline docs (opus-operating, gated-scope, incident-ledger, testing-discipline, ablation-harness,
