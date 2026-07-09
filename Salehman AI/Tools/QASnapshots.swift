@@ -310,6 +310,21 @@ enum QASnapshots {
         // 7010.SR) below the fold, leaving their chip states (Held-only on 1120.SR — the one
         // context-chip form with no owned pixel) unverifiable. 3400pt reaches all five cards.
         snap(MarketsView(qaSection: .ideas), "markets_ideas_full", "Markets — Ideas board FULL height (all five fixture cards incl. the sell-family tail)", .init(width: 1000, height: 3400), in: dir)
+        // 2026-07-09 (window #3): the day's new branches — BLOCKED gate chips on the
+        // prescriptive cards, strike-through rows, copy auto-skip, and the honest-nil
+        // gate states — previously had only the happy CAUTION fixture in pixels; these two
+        // deterministic states make every future QA pass cover them. Same in-capture
+        // override discipline as neutralizeIdeaBoardPrefsForQA: values restored to the
+        // NEUTRAL set right after (the outer restore closure then puts the owner's own
+        // values back at the end of captureAll).
+        let qaStateDefaults = UserDefaults.standard
+        qaStateDefaults.set("3", forKey: "marketsSizerRiskPct")   // > 2% cap ⇒ every buy gate BLOCKED
+        snap(MarketsView(qaSection: .ideas), "markets_ideas_blocked", "Markets — Ideas board, risk% ABOVE the 2% cap (every gate BLOCKED: DO-NOT-TRADE chips, struck rows, copy auto-skip)", .init(width: 1000, height: 2400), in: dir)
+        qaStateDefaults.set("", forKey: "marketsSizerRiskPct")    // no inputs ⇒ honest-nil gates
+        qaStateDefaults.set("", forKey: "marketsSizerAccount")
+        snap(MarketsView(qaSection: .ideas), "markets_ideas_nilrisk", "Markets — Ideas board, no account/risk set (honest-nil gates: set-risk badges, nil-gate empty state, no fabricated verdicts)", .init(width: 1000, height: 2400), in: dir)
+        qaStateDefaults.set("1", forKey: "marketsSizerRiskPct")     // back to the neutral set
+        qaStateDefaults.set("10000", forKey: "marketsSizerAccount")
         // Idea-detail SHEET content, rendered inline (no .sheet presentation) via the
         // qaDetailSymbol QA seam — NVDA is the seeded strongBuy fixture with resolvable
         // US costs, so the Evidence gross→net fused lines render. Sheet frame caps at
