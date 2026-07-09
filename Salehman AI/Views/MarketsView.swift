@@ -4749,13 +4749,17 @@ struct MarketsView: View {
                 mode: .equityExecutableFirst, max: 1).first?.symbol
             let crownDivergenceSuffix = (todayFirstSymbol != nil && todayFirstSymbol != idea.symbol)
                 ? " Today's plan leads with \(todayFirstSymbol!) — different lens." : ""
-            let sizeInfo: (text: String, isWarning: Bool) = {
+            // Settle S1 review fix: isWarning drives the TINT (over-account OR unfundable 0-share);
+            // exceedsAccount alone keys the spoken "exceeds account balance" claim — a $0/0-share
+            // position does not exceed the balance, and summaryLine already speaks its honest
+            // "below the 1-share minimum" suffix (honesty floor: never speak a false clause).
+            let sizeInfo: (text: String, isWarning: Bool, exceedsAccount: Bool) = {
                 if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                    let rp = StockSageInput.percent(sizerRiskPct),
                    let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
-                    return (StockSagePositionSizer.summaryLine(ps, riskPct: rp), ps.pctOfAccount > 100 || ps.shares == 0)
+                    return (StockSagePositionSizer.summaryLine(ps, riskPct: rp), ps.pctOfAccount > 100 || ps.shares == 0, ps.pctOfAccount > 100)
                 }
-                return ("Set account to size — add one in the position sizer below.", false)
+                return ("Set account to size — add one in the position sizer below.", false, false)
             }()
             let accessibilityText: String = {
                 var s = "Do this now: \(idea.symbol), \(idea.advice.action.rawValue), estimated EV \(String(format: "%.2f", ev.evR)) R gross, entry \(adaptivePrice(idea.price))"
@@ -4763,12 +4767,12 @@ struct MarketsView: View {
                 // C1 wave: the size line carries the loss-not-profit honesty tail and the
                 // >100%-of-account warning tint — VoiceOver gets the same facts.
                 s += ", " + sizeInfo.text
-                if sizeInfo.isWarning { s += ". Size warning: position exceeds account balance" }
+                if sizeInfo.exceedsAccount { s += ". Size warning: position exceeds account balance" }
                 if let variance { s += String(format: ", typical 24-hour range plus or minus %.1f percent", variance) }
                 if let staleAsOf {
-                    s += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering."
+                    s += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering"
                 } else if analysisStaleOnly {
-                    s += ". Analysis over 4h old — re-scan for a current read."
+                    s += ". Analysis over 4h old — re-scan for a current read"
                 }
                 if let g = ctaGate {
                     s += ". Pre-trade gate: \(g.decision == .blocked ? "do not trade" : g.decision.rawValue)."
