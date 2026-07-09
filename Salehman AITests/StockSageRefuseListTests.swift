@@ -56,4 +56,43 @@ struct StockSageRefuseListTests {
             #expect(!note.contains(banned))
         }
     }
+
+    // MARK: - Anti-edges (L2, 2026-07-09, DISPLAY-ONLY) — verified 2026-07-03, ANY horizon
+    //
+    // Load-bearing spec numbers transcribed VERBATIM from
+    // RESEARCH_2026-07-03_candidate_edges.md lines 45-47 (never from the code under test).
+
+    @Test func antiEdgesHasExactlyThreeUniqueIdsDisjointFromAll() {
+        #expect(StockSageRefuseList.antiEdges.count == 3)
+        let antiIds = Set(StockSageRefuseList.antiEdges.map(\.id))
+        #expect(antiIds.count == 3)   // unique among themselves
+        let allIds = Set(StockSageRefuseList.all.map(\.id))
+        #expect(antiIds.isDisjoint(with: allIds))
+    }
+
+    @Test func antiEdgesCarryLoadBearingSpecNumbers() {
+        for setup in StockSageRefuseList.antiEdges {
+            #expect(setup.evidence.rangeOfCharacter(from: .decimalDigits) != nil)
+        }
+        guard let vol = StockSageRefuseList.antiEdges.first(where: { $0.id == "vol-managed-momentum" }) else {
+            Issue.record("vol-managed-momentum entry missing"); return
+        }
+        #expect(vol.evidence.contains("864"))   // line 45: "~864% leverage at the 99th pct"
+        guard let bab = StockSageRefuseList.antiEdges.first(where: { $0.id == "betting-against-beta" }) else {
+            Issue.record("betting-against-beta entry missing"); return
+        }
+        #expect(bab.evidence.contains("60bps"))   // line 46: "realistic BAB trading cost is 60bps/mo"
+        guard let max = StockSageRefuseList.antiEdges.first(where: { $0.id == "max-lottery" }) else {
+            Issue.record("max-lottery entry missing"); return
+        }
+        #expect(max.evidence.contains("6.47"))   // line 47: "median-$6.47 ... microcaps"
+    }
+
+    @Test func policyNoteSurfacesAllThreeAntiEdgeTitlesAndAnyHorizon() {
+        let note = StockSageRefuseList.policyNote
+        for setup in StockSageRefuseList.antiEdges {
+            #expect(note.contains(setup.title))
+        }
+        #expect(note.lowercased().contains("any horizon"))
+    }
 }

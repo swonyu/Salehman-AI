@@ -519,6 +519,23 @@ struct MarketsView: View {
         regime == nil || isStale
     }
 
+    /// L1 (2026-07-09, DISPLAY-ONLY): maps the Deploy-capital plan's positions + the live idea
+    /// board to the aligned spark-return series `effectiveBets` needs — the SAME series
+    /// `correlationAdjustedWeights` reads (spark-derived, suffix-aligned), so the diagnostic
+    /// describes the plan's OWN de-weighting, not a separately-modeled correlation. Pure/testable.
+    static func deployEffectiveBets(positions: [AllocatedPosition], ideas: [StockSageIdea]) -> EffectiveBets? {
+        let sparkBy: [String: [Double]] = Dictionary(ideas.map { ($0.symbol, $0.spark) }, uniquingKeysWith: { a, _ in a })
+        let symbols: [String] = positions.map(\.symbol)
+        let returns: [[Double]] = symbols.map { StockSagePortfolioAnalytics.dailyReturns(sparkBy[$0] ?? []) }
+        return StockSageCorrelationCluster.effectiveBets(symbols: symbols, returns: returns)
+    }
+
+    /// One-line caption for the effective-bets diagnostic (pinned by test — copy-plan and the
+    /// on-screen caption both call this on the SAME computed `EffectiveBets`, so they can't drift).
+    static func effectiveBetsCaption(_ eb: EffectiveBets) -> String {
+        String(format: "Effective bets ≈ %.1f of %d — correlated positions count less", eb.nEff, eb.n)
+    }
+
     private var header: some View {
         HStack(alignment: .center, spacing: DS.Space.sm) {
             ZStack {
@@ -4177,6 +4194,15 @@ struct MarketsView: View {
                     ForEach(plan.positions) { p in
                         deployPositionRow(p, planAccount: plan.account)
                     }
+                    // L1 (2026-07-09, DISPLAY-ONLY): Kish/design-effect concentration diagnostic —
+                    // the plan's own correlation de-weighting implies this number but never shows
+                    // it. Computed once, reused by the copy-plan button below (byte-identical text).
+                    let eb = plan.positions.count >= 2 ? Self.deployEffectiveBets(positions: plan.positions, ideas: store.ideas) : nil
+                    if let eb {
+                        Text(Self.effectiveBetsCaption(eb))
+                            .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            .help("Kish/design-effect: n_eff = N ÷ (1 + (N−1)·ρ̄); ρ̄ = mean pairwise correlation of the plan's positions over their shared \(eb.windowBars)-return recent window (spark-derived) — the same series the plan's correlation de-weighting reads. Sparks are downsampled (~2-day points); cross-calendar pairs understate co-movement, so treat n_eff as an OPTIMISTIC upper bound. Correlations are regime-dependent and rise in crashes (US average pairwise ~0.30–0.40 normal → >0.80 in 2008, ~0.75 Feb–Mar 2020) — a calm-window n_eff overstates crisis diversification. RESEARCH_2026-07-03_weekly_concentration.md §3b.")
+                    }
                     HStack(spacing: 6) {
                         Spacer()
                         Button {
@@ -4184,6 +4210,7 @@ struct MarketsView: View {
                                 + plan.positions.map { p in
                                     "\(p.symbol): \(p.shares) sh · \(String(format: "%.2f%%", p.riskFraction * 100)) risk · \(String(format: "$%.0f", p.dollarsAtRisk)) at risk · \(String(format: "$%.0f", p.notional)) notional · Est. EV \(String(format: "%+.2fR (gross)", p.evR))"
                                 }
+                                + (eb.map { [Self.effectiveBetsCaption($0)] } ?? [])
                                 + [plan.caveat]
                                 + (Self.regimeWarningNeeded(regime: store.regime, isStale: store.regimeIsStale)
                                    ? ["⚠︎ Regime not gauged — this plan applies no risk-off/on brake; tap Gauge for a plan sized to the tape."]
@@ -5069,8 +5096,12 @@ struct MarketsView: View {
                             : String(format: "Out of sample, kept %.0f percent of the edge. In sample %+.2f R to out of sample %+.2f R.%@",
                                      d.decayRatio * 100, d.isAvgR, d.oosAvgR, tail))
                     }
-                    // Wide ATR trail vs the fixed 2:1 exit (research: a wide trail is drawdown
-                    // control, usually not more return; tight trails lose to costs). Same entries.
+                    // L3 (2026-07-09, DISPLAY-ONLY): reframed as realized left-tail truncation
+                    // (quant_engine_II.md checklist #3) — two channels, not one comparison line.
+                    // Tail channel (headline): the robust, mechanical part — how much the wide
+                    // trail cuts the worst trade / worst drawdown / per-trade stdev, fixed→trail.
+                    // Return channel: the SAME tie-aware verdict this line replaced, folded in —
+                    // a momentum/regime bet that can be negative (Kaminski-Lo), not a free win.
                     if let trail = store.backtestTrail, bt.trades > 0, trail.trades > 0 {
                         let ddBetter = trail.maxDrawdownR < bt.maxDrawdownR - 0.05
                         let retBetter = trail.avgR > bt.avgR + 0.005
@@ -5081,14 +5112,19 @@ struct MarketsView: View {
                             ? (retBetter ? "trail wins on both" : "trail cuts drawdown, gives up some return")
                             : (retBetter ? "trail adds return at a deeper drawdown"
                                : (!ddWorse && !retWorse ? "about a wash here" : "fixed 2:1 holds up better here"))
-                        HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
-                            Image(systemName: "arrow.triangle.branch").font(.system(size: mvFont10))
-                            Text(String(format: "Wide ATR trail (3×ATR/22): avg %+.2fR, maxDD −%.1fR  vs  fixed 2:1: %+.2fR, −%.1fR — %@.",
-                                        trail.avgR, trail.maxDrawdownR, bt.avgR, bt.maxDrawdownR, verdict))
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
+                                Image(systemName: "arrow.triangle.branch").font(.system(size: mvFont10))
+                                Text(String(format: "Left-tail truncation (fixed 2:1 → trail): worst trade %+.2fR → %+.2fR · worst drawdown −%.1fR → −%.1fR · per-trade stdev %.2f → %.2f (realized, net of round-trip costs, this symbol's 5y).",
+                                            bt.worstTradeR, trail.worstTradeR, bt.maxDrawdownR, trail.maxDrawdownR, bt.stdevR, trail.stdevR))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Text(String(format: "Return effect: avg %+.2fR → %+.2fR — %@ — a momentum/regime bet that can be negative, not a free improvement.",
+                                        bt.avgR, trail.avgR, verdict))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .font(.caption2).foregroundStyle(.secondary)
-                        .help("Same entry rules, two exits. The evidence: wide trailing stops mainly cut drawdown/tail risk rather than raise return, and tight trails lose to costs. An estimate over one symbol's 5y — not a recommendation.")
+                        .help("Same entry rules, two exits, both charged the round-trip cost. Under a random walk a stop always LOWERS expected return (Kaminski-Lo) — any avg-R gain is a regime bet. The robust, mechanical part is the vol/tail cut (Han-Zhou-Zhu: left-tail truncation) — a risk-preference trade, not alpha. One symbol's 5y, whole-window (not per-regime); trade counts differ between modes. RESEARCH_2026-06-27_quant_engine_II.md checklist #3.")
                     }
                     if let u = store.underwater, !u.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {

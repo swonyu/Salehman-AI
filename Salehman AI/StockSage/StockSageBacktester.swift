@@ -65,17 +65,25 @@ struct BacktestResult: Sendable, Equatable {
     /// Trades still open when history ran out — they inflate avgR/winRate vs truly closed trades.
     /// Non-zero means the backtest result is optimistic; the UI must say so.
     let openAtEndCount: Int
+    /// Most negative single-trade R (rs.min()) — the realized left-tail, for the trail-vs-fixed
+    /// truncation display (quant_engine_II.md checklist #3). 0 when trades is empty (== .empty).
+    let worstTradeR: Double
+    /// Per-trade sample stdev of R (n−1), the SAME `sd` summarize() already computes for Sharpe —
+    /// exposed here rather than recomputed, so the two-channel display reads one number twice.
+    let stdevR: Double
 
     /// Defaulted new fields so older constructions (empty, tests) stay valid.
     nonisolated init(trades: Int, wins: Int, winRate: Double, avgR: Double, totalR: Double,
                      maxDrawdownR: Double, sharpe: Double, avgHoldBars: Double,
                      avgWinR: Double = 0, avgLossR: Double = 0, probabilisticSharpe: Double? = nil,
-                     decay: WalkForwardDecay? = nil, openAtEndCount: Int = 0) {
+                     decay: WalkForwardDecay? = nil, openAtEndCount: Int = 0,
+                     worstTradeR: Double = 0, stdevR: Double = 0) {
         self.trades = trades; self.wins = wins; self.winRate = winRate; self.avgR = avgR
         self.totalR = totalR; self.maxDrawdownR = maxDrawdownR; self.sharpe = sharpe
         self.avgHoldBars = avgHoldBars; self.avgWinR = avgWinR; self.avgLossR = avgLossR
         self.probabilisticSharpe = probabilisticSharpe
         self.decay = decay; self.openAtEndCount = openAtEndCount
+        self.worstTradeR = worstTradeR; self.stdevR = stdevR
     }
 
     /// Below this, the numbers are noise — the UI must say so.
@@ -460,6 +468,7 @@ enum StockSageBacktester {
                               avgR: avgR, totalR: totalR, maxDrawdownR: maxDD,
                               sharpe: sharpe, avgHoldBars: avgHold,
                               avgWinR: avgWinR, avgLossR: avgLossR, probabilisticSharpe: psr,
-                              decay: decay, openAtEndCount: openAtEnd)
+                              decay: decay, openAtEndCount: openAtEnd,
+                              worstTradeR: rs.min() ?? 0, stdevR: sd)
     }
 }

@@ -49,6 +49,23 @@ enum StockSageRefuseList {
                      evidence: "Published predictors decay 26% out-of-sample and 58% post-publication (McLean & Pontiff, JF; verified 3-0 ×3) — haircut 50–60% BEFORE evaluating, then demand a net-of-cost simulation."),
     ]
 
+    /// Three edges verified 2026-07-03 (RESEARCH_2026-07-03_candidate_edges.md lines 45-47) whose
+    /// PUBLISHED gross edge lives on a substrate retail cannot hold (a short leg, extreme leverage,
+    /// or a micro-cap tier where realistic round-trip costs run 10-20x the large-cap assumption) —
+    /// NOT 1-5 day setups, so kept OUT of `all` (which is test-pinned at exactly 7 and whose
+    /// `policyNote` prefix claims a 1-5 day horizon). Refused at ANY horizon instead.
+    nonisolated static let antiEdges: [RefusedSetup] = [
+        RefusedSetup(id: "vol-managed-momentum",
+                     title: "Vol-managed / vol-timing overlay on momentum (WML)",
+                     evidence: "The timing overlay is cheap and clears its own break-even, but it overlays the long-short WML factor retail cannot hold — a short leg plus up to ~864% leverage at the 99th pct of the scaled position; the long-only leverage-capped form is where most of the paper gain evaporates (Moreira-Muir; Barroso-Santa-Clara; refuted 2/3, 2026-07-03)."),
+        RefusedSetup(id: "betting-against-beta",
+                     title: "Betting-against-beta / low-volatility anomaly",
+                     evidence: "Alpha is manufactured by micro-cap equal-weighting — realistic BAB cost is 60bps/mo standard (23bps/mo even after aggressive large-cap cost mitigation) vs a post-haircut gross of only ~16-23bps/mo, so net is NEGATIVE or economically trivial; the mechanism's core lever (lever up low-beta) is also unavailable to this engine (Frazzini-Pedersen; Novy-Marx-Velikov; fence #6). Own long-leg ablation NULL (RESEARCH_2026-07-03_low_beta_ablation.md)."),
+        RefusedSetup(id: "max-lottery",
+                     title: "MAX / lottery-demand effect as a long-only avoid-screen",
+                     evidence: "The profitable leg is the SHORT leg in median-$6.47 / median-$21.5M-cap microcaps where realistic all-in round-trip costs run 100-300+bps, not the 13bps large-cap assumption; as a long-only large-cap avoid-screen both cost AND residual edge run ≈ 0 (Bali-Cakici-Whitelaw; fence #6/#7). Own large-cap ablation NULL (RESEARCH_2026-07-03_max_lottery_ablation.md)."),
+    ]
+
     /// McLean & Pontiff decay — the mandatory haircut applied to ANY published effect size before
     /// it may even be EVALUATED for this engine (refuse-list #7). Policy constants for future
     /// signal ablations, not runtime multipliers — nothing in production math reads these.
@@ -62,6 +79,8 @@ enum StockSageRefuseList {
     nonisolated static var policyNote: String {
         "REFUSED at the 1–5 day horizon (documented net-negative after retail costs): "
         + all.map(\.title).joined(separator: "; ")
+        + ". Also refused at ANY horizon (verified anti-edges, 2026-07-03 — the published edge lives on a substrate retail cannot hold): "
+        + antiEdges.map(\.title).joined(separator: "; ")
         + ". " + caveat
     }
 }

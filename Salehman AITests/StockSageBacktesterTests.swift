@@ -100,6 +100,24 @@ struct StockSageBacktesterTests {
         #expect(StockSageBacktester.summarize(Array(repeating: trade(1), count: 20)).isSignificant)
     }
 
+    // L3 (2026-07-09, DISPLAY-ONLY): worstTradeR/stdevR — the left-tail-truncation display's
+    // two new fields. R = [+2.0, −1.05, +0.5, −1.10] (derive_backtest_stats.swift): mean =
+    // 0.35/4 = 0.0875; Bessel variance = 6.531875/3 = 2.177291666...; sd = 1.475564863591793.
+    // worstTradeR = min(rs) = −1.10 exactly.
+    @Test func summarizeExposesWorstTradeAndStdevR() {
+        let r = StockSageBacktester.summarize([trade(2.0), trade(-1.05), trade(0.5), trade(-1.10)])
+        #expect(abs(r.worstTradeR - (-1.10)) < 1e-9)
+        #expect(abs(r.stdevR - 1.475564863591793) < 1e-9)
+        #expect(abs(r.sharpe - r.avgR / r.stdevR) < 1e-9)   // stdevR IS the sd sharpe already divides by
+    }
+
+    // .empty stays the sentinel — the defaulted worstTradeR/stdevR=0 fields must not perturb it.
+    // (summarizeEmptyAndSingleTradeAreSafe above already pins summarize([]) == .empty unchanged.)
+    @Test func emptySentinelCarriesZeroWorstTradeAndStdev() {
+        #expect(BacktestResult.empty.worstTradeR == 0)
+        #expect(BacktestResult.empty.stdevR == 0)
+    }
+
     private func history(_ closes: [Double]) -> StockSagePriceHistory {
         StockSagePriceHistory(
             symbol: "X",
