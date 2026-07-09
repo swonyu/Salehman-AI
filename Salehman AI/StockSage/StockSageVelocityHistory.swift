@@ -85,9 +85,16 @@ enum StockSageVelocityHistory {
 final class StockSageVelocityHistoryStore: ObservableObject {
     static let shared = StockSageVelocityHistoryStore()
     @Published private(set) var series: [VelocitySnapshot] = []
-    private let key = "velocityHistory.v1"
+    private let key: String
+    private let defaults: UserDefaults
 
-    init() { load() }
+    /// `defaults`/`key` injectable for the reconciliation tests ONLY (the paper/journal
+    /// stores' seam shape) — production uses `.shared` on `.standard`/the v1 key.
+    init(defaults: UserDefaults = .standard, key: String = "velocityHistory.v1") {
+        self.defaults = defaults
+        self.key = key
+        load()
+    }
 
     /// Record (or replace) today's snapshot (weekly-R + the day's best/fastest) and persist.
     func record(weeklyR: Double, bestSymbol: String? = nil, fastestSymbol: String? = nil) {
@@ -107,12 +114,29 @@ final class StockSageVelocityHistoryStore: ObservableObject {
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: key),
+        guard let data = defaults.data(forKey: key),
               let decoded = try? JSONDecoder().decode([VelocitySnapshot].self, from: data) else { return }
         series = decoded
     }
 
+    /// LOST-UPDATE FIX (2026-07-09, C8 — same cross-process clobber class as the paper/
+    /// journal/portfolio stores). This is the DURABLE per-day trend history the "since last
+    /// session" delta reads — a stale whole-array write from a second app instance silently
+    /// deleted other days' snapshots forever. Reconcile by DAY-KEY union: days this process
+    /// holds win (its record() is the newest scan here; both same-day snapshots are equally
+    /// valid), disk days it lacks are preserved; then re-sort and re-cap to the newest 60
+    /// exactly like record() does. No deletion API exists on this store — every save
+    /// reconciles.
     private func save() {
-        if let data = try? JSONEncoder().encode(series) { UserDefaults.standard.set(data, forKey: key) }
+        if let data = defaults.data(forKey: key),
+           let disk = try? JSONDecoder().decode([VelocitySnapshot].self, from: data) {
+            let mine = Set(series.map(\.day))
+            var merged = series
+            for d in disk where !mine.contains(d.day) { merged.append(d) }
+            merged.sort { $0.day < $1.day }
+            if merged.count > 60 { merged = Array(merged.suffix(60)) }
+            series = merged
+        }
+        if let data = try? JSONEncoder().encode(series) { defaults.set(data, forKey: key) }
     }
 }

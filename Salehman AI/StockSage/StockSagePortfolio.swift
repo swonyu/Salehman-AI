@@ -44,17 +44,35 @@ final class StockSagePortfolio: ObservableObject {
         save()
     }
 
+    // Explicit deletions bypass the reconciling save (a merged save would resurrect the
+    // removed lot from disk). Same ponytail ceiling as the paper/journal stores: a CONCURRENT
+    // process's next merged save can still resurrect it; tombstones if that ever matters.
     func remove(_ id: UUID) {
         positions.removeAll { $0.id == id }
-        save()
+        save(reconciling: false)
     }
 
     func clear() {
         positions.removeAll()
-        save()
+        save(reconciling: false)
     }
 
-    private func save() {
+    /// LOST-UPDATE FIX (2026-07-09, C8 — same cross-process clobber class as the paper/journal
+    /// stores, fixed the same day from LIVE paper-store evidence). This is the owner's REAL
+    /// position book. Lots are IMMUTABLE once added (add/remove/clear only — no in-place
+    /// edits exist), so the ONLY cross-process hazard is a stale whole-array write DROPPING
+    /// another instance's lot: reconcile by preserving foreign ids; per-id conflicts are
+    /// impossible. Deletions pass `reconciling: false`; `qaSeed` never touches disk.
+    private func save(reconciling: Bool = true) {
+        if reconciling,
+           let data = defaults.data(forKey: Self.key),
+           let disk = try? JSONDecoder().decode([PortfolioPosition].self, from: data) {
+            var mineIds = Set(positions.map(\.id))
+            for d in disk where !mineIds.contains(d.id) {
+                positions.append(d)
+                mineIds.insert(d.id)
+            }
+        }
         if let data = try? JSONEncoder().encode(positions) {
             defaults.set(data, forKey: Self.key)
         }

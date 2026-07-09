@@ -185,4 +185,34 @@ struct StockSagePortfolioAggregationTests {
         #expect(rendered == "+0.0% vs avg cost")
         #expect(!rendered.contains("+-"))
     }
+
+    // MARK: save() cross-process reconciliation (2026-07-09 C8 — the paper store's
+    // LIVE-evidenced lost-update class applied to the REAL position book. Lots are
+    // immutable once added, so the only hazard is a stale save DROPPING a foreign lot.)
+
+    @Test func foreignLotSurvivesAStaleProcessSave() {
+        let suite = "portfolio.test.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let a = StockSagePortfolio(userDefaults: defaults)
+        let b = StockSagePortfolio(userDefaults: defaults)   // second instance, loads empty
+        a.add(symbol: "AAA", shares: 10, costBasis: 100)     // process A's lot lands on disk
+        b.add(symbol: "BBB", shares: 5, costBasis: 50)       // stale B saves — pre-fix this dropped AAA
+        let final = StockSagePortfolio(userDefaults: defaults)
+        #expect(Set(final.positions.map(\.symbol)) == ["AAA", "BBB"])
+    }
+
+    @Test func removeAndClearStillDeleteDespiteTheReconcilingSave() {
+        let suite = "portfolio.test.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let a = StockSagePortfolio(userDefaults: defaults)
+        a.add(symbol: "AAA", shares: 10, costBasis: 100)
+        let id = a.positions[0].id
+        a.remove(id)
+        #expect(StockSagePortfolio(userDefaults: defaults).positions.isEmpty)
+        a.add(symbol: "AAA", shares: 10, costBasis: 100)
+        a.clear()
+        #expect(StockSagePortfolio(userDefaults: defaults).positions.isEmpty)
+    }
 }

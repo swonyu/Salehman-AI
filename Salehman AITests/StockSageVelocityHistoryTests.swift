@@ -58,4 +58,25 @@ struct StockSageVelocityHistoryTests {
         #expect(abs(t.recentAvg - 3) < 1e-9)
         #expect(abs(t.delta - 2) < 1e-9)
     }
+
+    // MARK: store save() day-key union (2026-07-09 C8 — a second app instance's stale
+    // whole-array write silently deleted other days' snapshots from the durable trend
+    // history. Union by day: this process's days win, disk-only days are preserved.)
+
+    @Test func staleProcessSaveCannotDeleteAnotherDaysSnapshot() {
+        let suite = "velocity.test.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        // Store B loads while the key is EMPTY (its memory holds no days).
+        let b = StockSageVelocityHistoryStore(defaults: defaults, key: "velocityHistory.v1")
+        // Another process then lands an OLD day's snapshot on disk.
+        let old = [VelocitySnapshot(day: "2026-07-01", weeklyR: 1.5, bestSymbol: "OLD", fastestSymbol: nil)]
+        defaults.set(try! JSONEncoder().encode(old), forKey: "velocityHistory.v1")
+        // Stale B records today and saves — pre-fix this clobbered 2026-07-01 forever.
+        b.record(weeklyR: 2.0)
+        let final = StockSageVelocityHistoryStore(defaults: defaults, key: "velocityHistory.v1")
+        #expect(final.series.contains { $0.day == "2026-07-01" && $0.weeklyR == 1.5 })
+        #expect(final.series.contains { $0.day == StockSageVelocityHistoryStore.dayKey(Date()) && $0.weeklyR == 2.0 })
+        #expect(final.series == final.series.sorted { $0.day < $1.day })   // stays day-sorted
+    }
 }
