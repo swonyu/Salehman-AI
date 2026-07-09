@@ -724,9 +724,17 @@ final class StockSageJournalStore: ObservableObject {
     static let shared = StockSageJournalStore()
 
     @Published private(set) var trades: [TradeRecord] = []
-    private let key = "stocksage.journal.v1"
+    private let key: String
+    private let defaults: UserDefaults
 
-    private init() { load() }
+    /// `defaults`/`key` injectable for the reconciliation tests ONLY (mirrors
+    /// StockSagePaperTradeStore's seam) — production is always the `.shared` singleton on
+    /// `.standard`/the v1 key; `internal` init so `@testable` can build isolated stores.
+    init(defaults: UserDefaults = .standard, key: String = "stocksage.journal.v1") {
+        self.defaults = defaults
+        self.key = key
+        load()
+    }
 
     var open: [TradeRecord] { trades.filter { $0.isOpen } }
     var closed: [TradeRecord] { trades.filter { !$0.isOpen } }
@@ -759,20 +767,44 @@ final class StockSageJournalStore: ObservableObject {
         save()
     }
 
+    // Explicit deletion — bypasses the reconciling save (a merged save would resurrect the
+    // removed trade from disk). Same ponytail ceiling as the paper store: a CONCURRENT
+    // process's next merged save can still resurrect it; tombstones if that ever matters.
     func remove(_ id: UUID) {
         trades.removeAll { $0.id == id }
-        save()
+        save(reconciling: false)
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: key),
+        guard let data = defaults.data(forKey: key),
               let decoded = try? JSONDecoder().decode([TradeRecord].self, from: data) else { return }
         trades = decoded
     }
 
-    private func save() {
+    /// LOST-UPDATE FIX (2026-07-09): identical defect class to StockSagePaperTradeStore's,
+    /// fixed the same day from LIVE paper-store evidence (double-opens + zero closes = a
+    /// second app instance clobbering the whole-array key). This journal is MONEY-CRITICAL —
+    /// it feeds `convictionCalibration` (win-prob), the drawdown brake, and every analytics
+    /// panel — so a clobbered close here silently distorts calibration with a lost REAL
+    /// outcome. Reconcile with disk before writing: per id a CLOSED record beats an open one
+    /// (a close is terminal), foreign ids (another process's adds) are preserved. Deletions
+    /// pass `reconciling: false`. `qaSeed` still bypasses save() entirely (in-memory only).
+    private func save(reconciling: Bool = true) {
+        if reconciling,
+           let data = defaults.data(forKey: key),
+           let disk = try? JSONDecoder().decode([TradeRecord].self, from: data) {
+            var mineIds = Set(trades.map(\.id))
+            for d in disk {
+                if let i = trades.firstIndex(where: { $0.id == d.id }) {
+                    if trades[i].isOpen && !d.isOpen { trades[i] = d }   // disk close wins
+                } else if !mineIds.contains(d.id) {
+                    trades.append(d)                                     // foreign trade — never drop
+                    mineIds.insert(d.id)
+                }
+            }
+        }
         if let data = try? JSONEncoder().encode(trades) {
-            UserDefaults.standard.set(data, forKey: key)
+            defaults.set(data, forKey: key)
         }
     }
 

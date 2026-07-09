@@ -667,4 +667,55 @@ struct StockSageJournalStoreQASeedTests {
                     shares: shares, openedAt: Date(timeIntervalSince1970: 0),
                     exitPrice: exit, closedAt: exit == nil ? nil : Date(timeIntervalSince1970: 100))
     }
+
+    // MARK: JournalStore save() cross-process reconciliation (2026-07-09 — the paper store's
+    // LIVE-evidenced lost-update defect, fixed in the same class here because this journal
+    // feeds calibration/brake/analytics with REAL outcomes: a clobbered close silently
+    // distorts win-prob. Two stores on ONE suite simulate two app instances.)
+
+    private func isolatedJournal() -> (a: StockSageJournalStore, defaults: UserDefaults, suite: String) {
+        let suite = "journal.test.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        return (StockSageJournalStore(defaults: defaults, key: "stocksage.journal.v1"), defaults, suite)
+    }
+
+    private func journalTrade(_ symbol: String, day: Int) -> TradeRecord {
+        TradeRecord(symbol: symbol, side: .long, entry: 100, stop: 90, target: 120, shares: 1,
+                    openedAt: Date(timeIntervalSince1970: Double(day) * 86_400))
+    }
+
+    @Test func journalStaleProcessSaveCannotResurrectAClosedTrade() {
+        let (a, defaults, suite) = isolatedJournal()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let t = journalTrade("AAA", day: 0)
+        a.add(t)
+        let b = StockSageJournalStore(defaults: defaults, key: "stocksage.journal.v1")
+        #expect(b.trades.first?.isOpen == true)
+        a.close(t.id, exitPrice: 118, at: Date(timeIntervalSince1970: 5 * 86_400))
+        b.add(journalTrade("BBB", day: 1))   // stale process writes
+        let final = StockSageJournalStore(defaults: defaults, key: "stocksage.journal.v1")
+        let aaa = final.trades.first { $0.symbol == "AAA" }
+        #expect(aaa?.isOpen == false)
+        #expect(aaa?.exitPrice == 118)
+        #expect(final.trades.contains { $0.symbol == "BBB" })
+    }
+
+    @Test func journalForeignAddsSurviveAStaleSave() {
+        let (a, defaults, suite) = isolatedJournal()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let b = StockSageJournalStore(defaults: defaults, key: "stocksage.journal.v1")   // loads empty
+        a.add(journalTrade("AAA", day: 0))
+        b.add(journalTrade("BBB", day: 1))
+        let final = StockSageJournalStore(defaults: defaults, key: "stocksage.journal.v1")
+        #expect(Set(final.trades.map(\.symbol)) == ["AAA", "BBB"])
+    }
+
+    @Test func journalRemoveStillDeletesDespiteTheReconcilingSave() {
+        let (a, defaults, suite) = isolatedJournal()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let t = journalTrade("AAA", day: 0)
+        a.add(t)
+        a.remove(t.id)
+        #expect(StockSageJournalStore(defaults: defaults, key: "stocksage.journal.v1").trades.isEmpty)
+    }
 }
