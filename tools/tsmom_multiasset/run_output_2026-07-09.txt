@@ -1,0 +1,126 @@
+PANEL ASSERTS:
+  symbolCount=16 (expect 16)
+  periodCount=2512 (expect 2512)
+  assetClass distinct=6 (expect 6): ["bond", "commodity", "fx", "intl-equity", "reit", "us-equity"]
+  labels[:8]=["SPY", "QQQ", "IWM", "EFA", "EEM", "TLT", "IEF", "LQD"] (expect ["SPY", "QQQ", "IWM", "EFA", "EEM", "TLT", "IEF", "LQD"])
+  frozenAt=2026-07-09 (expect 2026-07-09)
+PANEL ASSERTS: ALL PASS
+PREFLIGHT: edge series (n=200, seed=2) DSR=0.9999940933539617 (require >= 0.95)
+PREFLIGHT: noise series (n=200, seed=3) DSR=0.6904760142301203 (require < 0.95)
+PREFLIGHT: PASS
+PORT-VALIDATION: 9/9 EXACT-EQUAL (generic loop ≡ shipped rebalanceSeries via shipped irrxWeights)
+
+=== SIGNAL SPOT-CHECK (t=252, lb=252, skip=21 — hand-derive these from the panel JSON) ===
+  SPOTCHECK sym=SPY mom=0.1581632906 vol63=0.0773247352
+  SPOTCHECK sym=TLT mom=-0.1062522856 vol63=0.0908430803
+  SPOTCHECK sym=GLD mom=-0.0676772591 vol63=0.1040099654
+
+TRIALS ACCOUNTING: 54 selection candidates (3 arms × 3 lb × 3 hd × 2 rt); pass-1 Sharpes gathered=54; varTrialSharpe(V54)=0.0166
+
+=== PRIMARY RESULTS (trials=54) + SENSITIVITY (trials=27/rt-leg) + EQW PAIRED-DIFF ===
+  ARM=LF lb= 63 hd=21 rt=13 rebals=116 meanGross=+0.52141% meanNet=+0.50149% turn=0.307 DSR54=0.277(net-OOS) clears54=no DSR27=0.352 | EQWdiff mean(d)=-0.002470 diffDSR=0.000 diffPasses=no exp=0.61
+  ARM=LF lb= 63 hd=21 rt= 8 rebals=116 meanGross=+0.52141% meanNet=+0.50915% turn=0.307 DSR54=0.284(net-OOS) clears54=no DSR27=0.362 | EQWdiff mean(d)=-0.002395 diffDSR=0.000 diffPasses=no exp=0.61
+  ARM=LF lb= 63 hd=42 rt=13 rebals= 58 meanGross=+1.02100% meanNet=+0.99173% turn=0.450 DSR54=0.686(net-OOS) clears54=no DSR27=0.738 | EQWdiff mean(d)=-0.005052 diffDSR=0.000 diffPasses=no exp=0.59
+  ARM=LF lb= 63 hd=42 rt= 8 rebals= 58 meanGross=+1.02100% meanNet=+1.00299% turn=0.450 DSR54=0.691(net-OOS) clears54=no DSR27=0.744 | EQWdiff mean(d)=-0.004943 diffDSR=0.000 diffPasses=no exp=0.59
+  ARM=LF lb= 63 hd=63 rt=13 rebals= 38 meanGross=+1.36144% meanNet=+1.33033% turn=0.479 DSR54=0.597(net-OOS) clears54=no DSR27=0.647 | EQWdiff mean(d)=-0.009486 diffDSR=0.000 diffPasses=no exp=0.60
+  ARM=LF lb= 63 hd=63 rt= 8 rebals= 38 meanGross=+1.36144% meanNet=+1.34230% turn=0.479 DSR54=0.602(net-OOS) clears54=no DSR27=0.652 | EQWdiff mean(d)=-0.009373 diffDSR=0.000 diffPasses=no exp=0.60
+  ARM=LF lb=126 hd=21 rt=13 rebals=113 meanGross=+0.49065% meanNet=+0.47903% turn=0.179 DSR54=0.232(net-OOS) clears54=no DSR27=0.302 | EQWdiff mean(d)=-0.002887 diffDSR=0.000 diffPasses=no exp=0.64
+  ARM=LF lb=126 hd=21 rt= 8 rebals=113 meanGross=+0.49065% meanNet=+0.48350% turn=0.179 DSR54=0.236(net-OOS) clears54=no DSR27=0.308 | EQWdiff mean(d)=-0.002844 diffDSR=0.000 diffPasses=no exp=0.64
+  ARM=LF lb=126 hd=42 rt=13 rebals= 56 meanGross=+1.07172% meanNet=+1.05496% turn=0.258 DSR54=0.627(net-OOS) clears54=no DSR27=0.687 | EQWdiff mean(d)=-0.005129 diffDSR=0.000 diffPasses=no exp=0.65
+  ARM=LF lb=126 hd=42 rt= 8 rebals= 56 meanGross=+1.07172% meanNet=+1.06141% turn=0.258 DSR54=0.631(net-OOS) clears54=no DSR27=0.692 | EQWdiff mean(d)=-0.005069 diffDSR=0.000 diffPasses=no exp=0.65
+  ARM=LF lb=126 hd=63 rt=13 rebals= 37 meanGross=+1.45343% meanNet=+1.43257% turn=0.321 DSR54=0.837(net-OOS) clears54=no DSR27=0.873 | EQWdiff mean(d)=-0.009061 diffDSR=0.000 diffPasses=no exp=0.61
+  ARM=LF lb=126 hd=63 rt= 8 rebals= 37 meanGross=+1.45343% meanNet=+1.44059% turn=0.321 DSR54=0.840(net-OOS) clears54=no DSR27=0.876 | EQWdiff mean(d)=-0.008988 diffDSR=0.000 diffPasses=no exp=0.61
+  ARM=LF lb=252 hd=21 rt=13 rebals=107 meanGross=+0.51988% meanNet=+0.51153% turn=0.129 DSR54=0.873(net-OOS) clears54=no DSR27=0.922 | EQWdiff mean(d)=-0.002763 diffDSR=0.000 diffPasses=no exp=0.66
+  ARM=LF lb=252 hd=21 rt= 8 rebals=107 meanGross=+0.51988% meanNet=+0.51474% turn=0.129 DSR54=0.876(net-OOS) clears54=no DSR27=0.925 | EQWdiff mean(d)=-0.002733 diffDSR=0.000 diffPasses=no exp=0.66
+  ARM=LF lb=252 hd=42 rt=13 rebals= 53 meanGross=+0.92221% meanNet=+0.91078% turn=0.176 DSR54=0.964(net-OOS) clears54=YES DSR27=0.978 | EQWdiff mean(d)=-0.006995 diffDSR=0.000 diffPasses=no exp=0.65
+    ⚠ BETA ARTIFACT: clears54 absolute DSR but mean(netArm-netEQW) <= 0 — not incremental edge over always-long beta.
+  ARM=LF lb=252 hd=42 rt= 8 rebals= 53 meanGross=+0.92221% meanNet=+0.91518% turn=0.176 DSR54=0.965(net-OOS) clears54=YES DSR27=0.978 | EQWdiff mean(d)=-0.006956 diffDSR=0.000 diffPasses=no exp=0.65
+    ⚠ BETA ARTIFACT: clears54 absolute DSR but mean(netArm-netEQW) <= 0 — not incremental edge over always-long beta.
+  ARM=LF lb=252 hd=63 rt=13 rebals= 35 meanGross=+1.18447% meanNet=+1.16764% turn=0.259 DSR54=0.894(net-OOS) clears54=no DSR27=0.920 | EQWdiff mean(d)=-0.012345 diffDSR=0.000 diffPasses=no exp=0.64
+  ARM=LF lb=252 hd=63 rt= 8 rebals= 35 meanGross=+1.18447% meanNet=+1.17412% turn=0.259 DSR54=0.896(net-OOS) clears54=no DSR27=0.922 | EQWdiff mean(d)=-0.012287 diffDSR=0.000 diffPasses=no exp=0.64
+  ARM=LS lb= 63 hd=21 rt=13 rebals=116 meanGross=+0.29383% meanNet=+0.25404% turn=0.612 DSR54=0.038(net-OOS) clears54=no DSR27=0.066 | EQWdiff mean(d)=-0.004944 diffDSR=0.000 diffPasses=no
+  ARM=LS lb= 63 hd=21 rt= 8 rebals=116 meanGross=+0.29383% meanNet=+0.26935% turn=0.612 DSR54=0.043(net-OOS) clears54=no DSR27=0.074 | EQWdiff mean(d)=-0.004793 diffDSR=0.000 diffPasses=no
+  ARM=LS lb= 63 hd=42 rt=13 rebals= 58 meanGross=+0.54401% meanNet=+0.48559% turn=0.899 DSR54=0.308(net-OOS) clears54=no DSR27=0.375 | EQWdiff mean(d)=-0.010113 diffDSR=0.000 diffPasses=no
+  ARM=LS lb= 63 hd=42 rt= 8 rebals= 58 meanGross=+0.54401% meanNet=+0.50806% turn=0.899 DSR54=0.321(net-OOS) clears54=no DSR27=0.391 | EQWdiff mean(d)=-0.009892 diffDSR=0.000 diffPasses=no
+  ARM=LS lb= 63 hd=63 rt=13 rebals= 38 meanGross=+0.44224% meanNet=+0.38023% turn=0.954 DSR54=0.129(net-OOS) clears54=no DSR27=0.165 | EQWdiff mean(d)=-0.018987 diffDSR=0.000 diffPasses=no
+  ARM=LS lb= 63 hd=63 rt= 8 rebals= 38 meanGross=+0.44224% meanNet=+0.40408% turn=0.954 DSR54=0.134(net-OOS) clears54=no DSR27=0.173 | EQWdiff mean(d)=-0.018755 diffDSR=0.000 diffPasses=no
+  ARM=LS lb=126 hd=21 rt=13 rebals=113 meanGross=+0.21302% meanNet=+0.18986% turn=0.356 DSR54=0.023(net-OOS) clears54=no DSR27=0.042 | EQWdiff mean(d)=-0.005778 diffDSR=0.000 diffPasses=no
+  ARM=LS lb=126 hd=21 rt= 8 rebals=113 meanGross=+0.21302% meanNet=+0.19877% turn=0.356 DSR54=0.025(net-OOS) clears54=no DSR27=0.046 | EQWdiff mean(d)=-0.005692 diffDSR=0.000 diffPasses=no
+  ARM=LS lb=126 hd=42 rt=13 rebals= 56 meanGross=+0.57441% meanNet=+0.54103% turn=0.513 DSR54=0.205(net-OOS) clears54=no DSR27=0.269 | EQWdiff mean(d)=-0.010268 diffDSR=0.000 diffPasses=no
+  ARM=LS lb=126 hd=42 rt= 8 rebals= 56 meanGross=+0.57441% meanNet=+0.55387% turn=0.513 DSR54=0.211(net-OOS) clears54=no DSR27=0.277 | EQWdiff mean(d)=-0.010145 diffDSR=0.000 diffPasses=no
+  ARM=LS lb=126 hd=63 rt=13 rebals= 37 meanGross=+0.56643% meanNet=+0.52492% turn=0.639 DSR54=0.206(net-OOS) clears54=no DSR27=0.252 | EQWdiff mean(d)=-0.018138 diffDSR=0.000 diffPasses=no
+  ARM=LS lb=126 hd=63 rt= 8 rebals= 37 meanGross=+0.56643% meanNet=+0.54089% turn=0.639 DSR54=0.211(net-OOS) clears54=no DSR27=0.260 | EQWdiff mean(d)=-0.017985 diffDSR=0.000 diffPasses=no
+  ARM=LS lb=252 hd=21 rt=13 rebals=107 meanGross=+0.25137% meanNet=+0.23467% turn=0.257 DSR54=0.230(net-OOS) clears54=no DSR27=0.317 | EQWdiff mean(d)=-0.005531 diffDSR=0.000 diffPasses=no
+  ARM=LS lb=252 hd=21 rt= 8 rebals=107 meanGross=+0.25137% meanNet=+0.24109% turn=0.257 DSR54=0.237(net-OOS) clears54=no DSR27=0.327 | EQWdiff mean(d)=-0.005469 diffDSR=0.000 diffPasses=no
+  ARM=LS lb=252 hd=42 rt=13 rebals= 53 meanGross=+0.23292% meanNet=+0.21008% turn=0.351 DSR54=0.228(net-OOS) clears54=no DSR27=0.287 | EQWdiff mean(d)=-0.014002 diffDSR=0.000 diffPasses=no
+  ARM=LS lb=252 hd=42 rt= 8 rebals= 53 meanGross=+0.23292% meanNet=+0.21887% turn=0.351 DSR54=0.233(net-OOS) clears54=no DSR27=0.294 | EQWdiff mean(d)=-0.013919 diffDSR=0.000 diffPasses=no
+  ARM=LS lb=252 hd=63 rt=13 rebals= 35 meanGross=-0.03502% meanNet=-0.06868% turn=0.518 DSR54=0.203(net-OOS) clears54=no DSR27=0.248 | EQWdiff mean(d)=-0.024708 diffDSR=0.000 diffPasses=no
+  ARM=LS lb=252 hd=63 rt= 8 rebals= 35 meanGross=-0.03502% meanNet=-0.05574% turn=0.518 DSR54=0.207(net-OOS) clears54=no DSR27=0.254 | EQWdiff mean(d)=-0.024586 diffDSR=0.000 diffPasses=no
+  ARM=VS lb= 63 hd=21 rt=13 rebals=116 meanGross=+0.52236% meanNet=+0.44691% turn=1.161 DSR54=0.037(net-OOS) clears54=no DSR27=0.064 | EQWdiff mean(d)=-0.003015 diffDSR=0.000 diffPasses=no
+  ARM=VS lb= 63 hd=21 rt= 8 rebals=116 meanGross=+0.52236% meanNet=+0.47593% turn=1.161 DSR54=0.043(net-OOS) clears54=no DSR27=0.072 | EQWdiff mean(d)=-0.002727 diffDSR=0.000 diffPasses=no
+  ARM=VS lb= 63 hd=42 rt=13 rebals= 58 meanGross=+0.99571% meanNet=+0.88557% turn=1.694 DSR54=0.319(net-OOS) clears54=no DSR27=0.385 | EQWdiff mean(d)=-0.006113 diffDSR=0.002 diffPasses=no
+  ARM=VS lb= 63 hd=42 rt= 8 rebals= 58 meanGross=+0.99571% meanNet=+0.92793% turn=1.694 DSR54=0.334(net-OOS) clears54=no DSR27=0.402 | EQWdiff mean(d)=-0.005694 diffDSR=0.002 diffPasses=no
+  ARM=VS lb= 63 hd=63 rt=13 rebals= 38 meanGross=+1.00039% meanNet=+0.88258% turn=1.813 DSR54=0.156(net-OOS) clears54=no DSR27=0.196 | EQWdiff mean(d)=-0.013964 diffDSR=0.001 diffPasses=no
+  ARM=VS lb= 63 hd=63 rt= 8 rebals= 38 meanGross=+1.00039% meanNet=+0.92789% turn=1.813 DSR54=0.162(net-OOS) clears54=no DSR27=0.205 | EQWdiff mean(d)=-0.013517 diffDSR=0.002 diffPasses=no
+  ARM=VS lb=126 hd=21 rt=13 rebals=113 meanGross=+0.46335% meanNet=+0.41825% turn=0.694 DSR54=0.036(net-OOS) clears54=no DSR27=0.061 | EQWdiff mean(d)=-0.003495 diffDSR=0.000 diffPasses=no
+  ARM=VS lb=126 hd=21 rt= 8 rebals=113 meanGross=+0.46335% meanNet=+0.43560% turn=0.694 DSR54=0.039(net-OOS) clears54=no DSR27=0.066 | EQWdiff mean(d)=-0.003323 diffDSR=0.000 diffPasses=no
+  ARM=VS lb=126 hd=42 rt=13 rebals= 56 meanGross=+1.13807% meanNet=+1.07279% turn=1.004 DSR54=0.282(net-OOS) clears54=no DSR27=0.351 | EQWdiff mean(d)=-0.004951 diffDSR=0.002 diffPasses=no
+  ARM=VS lb=126 hd=42 rt= 8 rebals= 56 meanGross=+1.13807% meanNet=+1.09790% turn=1.004 DSR54=0.290(net-OOS) clears54=no DSR27=0.362 | EQWdiff mean(d)=-0.004704 diffDSR=0.002 diffPasses=no
+  ARM=VS lb=126 hd=63 rt=13 rebals= 37 meanGross=+1.56045% meanNet=+1.47977% turn=1.241 DSR54=0.361(net-OOS) clears54=no DSR27=0.418 | EQWdiff mean(d)=-0.008589 diffDSR=0.006 diffPasses=no
+  ARM=VS lb=126 hd=63 rt= 8 rebals= 37 meanGross=+1.56045% meanNet=+1.51080% turn=1.241 DSR54=0.369(net-OOS) clears54=no DSR27=0.428 | EQWdiff mean(d)=-0.008286 diffDSR=0.007 diffPasses=no
+  ARM=VS lb=252 hd=21 rt=13 rebals=107 meanGross=+0.43963% meanNet=+0.40595% turn=0.518 DSR54=0.290(net-OOS) clears54=no DSR27=0.386 | EQWdiff mean(d)=-0.003818 diffDSR=0.000 diffPasses=no
+  ARM=VS lb=252 hd=21 rt= 8 rebals=107 meanGross=+0.43963% meanNet=+0.41890% turn=0.518 DSR54=0.299(net-OOS) clears54=no DSR27=0.399 | EQWdiff mean(d)=-0.003691 diffDSR=0.000 diffPasses=no
+  ARM=VS lb=252 hd=42 rt=13 rebals= 53 meanGross=+0.35366% meanNet=+0.30672% turn=0.722 DSR54=0.311(net-OOS) clears54=no DSR27=0.376 | EQWdiff mean(d)=-0.013035 diffDSR=0.000 diffPasses=no
+  ARM=VS lb=252 hd=42 rt= 8 rebals= 53 meanGross=+0.35366% meanNet=+0.32477% turn=0.722 DSR54=0.318(net-OOS) clears54=no DSR27=0.385 | EQWdiff mean(d)=-0.012860 diffDSR=0.000 diffPasses=no
+  ARM=VS lb=252 hd=63 rt=13 rebals= 35 meanGross=+0.07749% meanNet=+0.01044% turn=1.032 DSR54=0.246(net-OOS) clears54=no DSR27=0.295 | EQWdiff mean(d)=-0.023917 diffDSR=0.000 diffPasses=no
+  ARM=VS lb=252 hd=63 rt= 8 rebals= 35 meanGross=+0.07749% meanNet=+0.03623% turn=1.032 DSR54=0.251(net-OOS) clears54=no DSR27=0.302 | EQWdiff mean(d)=-0.023666 diffDSR=0.000 diffPasses=no
+LEDGER: appended 72 arms → /Users/saleh/ai/research/trials_ledger.jsonl
+
+REGISTRY-INFORMED (informational): best config ARM=LF lb=252 hd=42 rt=8 at trials=362 (54 + 308 registry census) → DSR=0.901
+
+=== FLIP-VS-HOLD (REVERSED period axis; rt=13 primary leg) ===
+  ARM=LF lb= 63 hd=21  forward meanNet=+0.00501  reversed meanNet=+0.00396  sign-flip=no
+  ARM=LF lb= 63 hd=42  forward meanNet=+0.00992  reversed meanNet=+0.00643  sign-flip=no
+  ARM=LF lb= 63 hd=63  forward meanNet=+0.01330  reversed meanNet=+0.01173  sign-flip=no
+  ARM=LF lb=126 hd=21  forward meanNet=+0.00479  reversed meanNet=+0.00395  sign-flip=no
+  ARM=LF lb=126 hd=42  forward meanNet=+0.01055  reversed meanNet=+0.00824  sign-flip=no
+  ARM=LF lb=126 hd=63  forward meanNet=+0.01433  reversed meanNet=+0.01142  sign-flip=no
+  ARM=LF lb=252 hd=21  forward meanNet=+0.00512  reversed meanNet=+0.00372  sign-flip=no
+  ARM=LF lb=252 hd=42  forward meanNet=+0.00911  reversed meanNet=+0.00650  sign-flip=no
+  ARM=LF lb=252 hd=63  forward meanNet=+0.01168  reversed meanNet=+0.00785  sign-flip=no
+  ARM=LS lb= 63 hd=21  forward meanNet=+0.00254  reversed meanNet=+0.00062  sign-flip=no
+  ARM=LS lb= 63 hd=42  forward meanNet=+0.00486  reversed meanNet=-0.00174  sign-flip=YES
+  ARM=LS lb= 63 hd=63  forward meanNet=+0.00380  reversed meanNet=+0.00145  sign-flip=no
+  ARM=LS lb=126 hd=21  forward meanNet=+0.00190  reversed meanNet=+0.00106  sign-flip=no
+  ARM=LS lb=126 hd=42  forward meanNet=+0.00541  reversed meanNet=+0.00280  sign-flip=no
+  ARM=LS lb=126 hd=63  forward meanNet=+0.00525  reversed meanNet=+0.00217  sign-flip=no
+  ARM=LS lb=252 hd=21  forward meanNet=+0.00235  reversed meanNet=+0.00141  sign-flip=no
+  ARM=LS lb=252 hd=42  forward meanNet=+0.00210  reversed meanNet=+0.00096  sign-flip=no
+  ARM=LS lb=252 hd=63  forward meanNet=-0.00069  reversed meanNet=-0.00247  sign-flip=no
+  ARM=VS lb= 63 hd=21  forward meanNet=+0.00447  reversed meanNet=+0.00224  sign-flip=no
+  ARM=VS lb= 63 hd=42  forward meanNet=+0.00886  reversed meanNet=+0.00115  sign-flip=no
+  ARM=VS lb= 63 hd=63  forward meanNet=+0.00883  reversed meanNet=+0.00682  sign-flip=no
+  ARM=VS lb=126 hd=21  forward meanNet=+0.00418  reversed meanNet=+0.00426  sign-flip=no
+  ARM=VS lb=126 hd=42  forward meanNet=+0.01073  reversed meanNet=+0.00734  sign-flip=no
+  ARM=VS lb=126 hd=63  forward meanNet=+0.01480  reversed meanNet=+0.01062  sign-flip=no
+  ARM=VS lb=252 hd=21  forward meanNet=+0.00406  reversed meanNet=+0.00487  sign-flip=no
+  ARM=VS lb=252 hd=42  forward meanNet=+0.00307  reversed meanNet=+0.00479  sign-flip=no
+  ARM=VS lb=252 hd=63  forward meanNet=+0.00010  reversed meanNet=+0.00164  sign-flip=no
+
+INTERPRETATION GUIDE (read before trusting any flip above):
+  - Reversal breaks real market dynamics — momentum is TIME-DIRECTIONAL, so a reversed-period
+    run is not a valid alternate history, only a diagnostic.
+  - A sign-flip on an ALREADY-NULL config adds nothing; the meaningful case is a flip on a
+    config that clears DSR>0.95 FORWARD (evidence the "edge" was fit to temporal order).
+  - This flag exists for FUTURE would-be positives; on a null panel it is inert commentary.
+
+=== SUMMARY ===
+  BEST ARM=LF: lb=252 hd=42 rt=8 net-OOS DSR54=0.965 clears=YES | EQWdiff diffDSR=0.000 diffPasses=no
+  BEST ARM=LS: lb=63 hd=42 rt=8 net-OOS DSR54=0.321 clears=no | EQWdiff diffDSR=0.000 diffPasses=no
+  BEST ARM=VS: lb=126 hd=63 rt=8 net-OOS DSR54=0.369 clears=no | EQWdiff diffDSR=0.007 diffPasses=no
+  ANY config clears DSR>0.95 (absolute): YES
+  ANY config clears absolute AND EQW paired-diff: NO
+
+CAVEATS: ETF wrappers are survivor-lite proxies for the asset classes (USO roll drag is real holder experience; no delisted ETFs) · single-vendor Yahoo adjclose · 10y window (2016-2026: one cut-and-recover cycle 2020, one slow bear 2022) · LS/VS short legs charge NO borrow/financing (gross-favorable) · VS per-name cap 2× / target 40%/yr per MOP · correlated-trials DSR caveat: PSR/DSR haircut the Sharpe for short samples, skew/fat tails, and how many strategies were scanned to find this one — but they ASSUME the trials are roughly independent. A scan over correlated names violates that, so DSR is itself optimistic: it corrects the direction of the bias, not its exact size.
+
+=== RUN COMPLETE ===
