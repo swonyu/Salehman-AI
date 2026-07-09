@@ -3605,8 +3605,11 @@ struct MarketsView: View {
                     // opening the sheet. price > 0 guard matches rewardRisk()'s own pattern — a
                     // malformed zero price must not render "(inf%)"/"(nan%)".
                     let stopPct = abs(idea.price - stop) / idea.price * 100
+                    // VO/edge lens 2026-07-09: sign from DIRECTION, not a hardcoded '−' — a
+                    // sell-family stop sits ABOVE entry (+x.x% away); the hardcoded minus claimed
+                    // the adverse move was downward for shorts.
                     ideaMetric("Stop", adaptivePrice(stop), color: DS.Palette.dangerSoft,
-                               sub: String(format: "−%.1f%% away", stopPct), subColor: DS.Palette.dangerSoft)
+                               sub: String(format: "%+.1f%% away", (stop - idea.price) / idea.price * 100), subColor: DS.Palette.dangerSoft)
                 } else if let stop = a.stopPrice {
                     ideaMetric("Stop", adaptivePrice(stop), color: DS.Palette.dangerSoft)
                 }
@@ -3919,6 +3922,20 @@ struct MarketsView: View {
                 if let g = cardGate {
                     s += ". Pre-trade gate: \(g.decision == .blocked ? "do not trade" : g.decision.rawValue)."
                 }
+                // VO walk 2026-07-09: the label override silences every child Text — the net
+                // estimate, the sized order (the CTA used to speak it on this tab before the
+                // dedup), and the tilt disclosure must be IN the label or they are pixels-only.
+                if let net = StockSageExpectedValue.netEVR(for: idea, calibration: store.convictionCalibration) {
+                    s += String(format: ", about %+.2f R net estimated", net)
+                }
+                if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
+                   let rp = StockSageInput.percent(sizerRiskPct),
+                   let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
+                    s += ". Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp))"
+                }
+                if !tomTiltDisclosureSuffix.isEmpty {
+                    s += ". Ranking includes a small seasonal month tilt."
+                }
                 return s
             }()
             VStack(alignment: .leading, spacing: 6) {
@@ -4077,29 +4094,7 @@ struct MarketsView: View {
                         }
                     }
                     ForEach(plan.positions) { p in
-                        HStack(spacing: 12) {
-                            Text(p.symbol).font(.system(size: mvFont13, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                                .frame(width: 64, alignment: .leading)
-                            ideaMetric("Risk", String(format: "%.2f%%", p.riskFraction * 100))
-                            ideaMetric("Shares", "\(p.shares)")
-                            ideaMetric("At risk", String(format: "$%.0f", p.dollarsAtRisk), color: DS.Palette.warningSoft)
-                            ideaMetric("Notional", String(format: "$%.0f", p.notional))
-                            // "Est. EV" (2026-07-09, harvested Copilot HELD finding #2): same
-                            // estimate class as the best-opp card's "Est. EV" — an unlabeled "EV"
-                            // here read as a firmer number than the identical figure one card up.
-                            ideaMetric("Est. EV", String(format: "%+.2fR (gross)", p.evR), color: DS.Palette.successSoft)
-                                .help(StockSageGlossary.explain(.ev))
-                            // Hierarchy lens HIGH (2026-07-09): the smaller per-card plan warns at
-                            // >100%-of-account, but THIS plan — the portfolio-level one — showed a
-                            // $15,978 notional on a $10,000 account with no flag.
-                            if p.notional > plan.account {
-                                Text("⚠︎ exceeds account")
-                                    .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
-                                    .lineLimit(1).fixedSize()
-                                    .help("This position's notional is larger than the whole account — placing it needs margin or a partial fill. The risk% column still describes only the loss at the stop, not the capital required.")
-                            }
-                            Spacer(minLength: 0)
-                        }
+                        deployPositionRow(p, planAccount: plan.account)
                     }
                     HStack(spacing: 6) {
                         Spacer()
@@ -4145,6 +4140,36 @@ struct MarketsView: View {
     // fitted calibration when one exists, else the conservative linear prior). The "Deploy capital"
     // plan layers on top: regime sizing bias, per-symbol vol-regime brake, correlation de-weighting,
     // and the total-heat cap — those are the genuine additions the Deploy plan makes.
+    /// One Deploy-capital position row — extracted (VO walk 2026-07-09) so the row can be ONE
+    /// combined, self-identifying VoiceOver stop: the "⚠︎ exceeds account" chip was a bare
+    /// floating stop whose row attribution was only inferable from linear order.
+    @ViewBuilder private func deployPositionRow(_ p: AllocatedPosition, planAccount: Double) -> some View {
+        HStack(spacing: 12) {
+            Text(p.symbol).font(.system(size: mvFont13, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                .frame(width: 64, alignment: .leading)
+            ideaMetric("Risk", String(format: "%.2f%%", p.riskFraction * 100))
+            ideaMetric("Shares", "\(p.shares)")
+            ideaMetric("At risk", String(format: "$%.0f", p.dollarsAtRisk), color: DS.Palette.warningSoft)
+            ideaMetric("Notional", String(format: "$%.0f", p.notional))
+            // "Est. EV" (2026-07-09, harvested Copilot HELD finding #2): same
+            // estimate class as the best-opp card's "Est. EV" — an unlabeled "EV"
+            // here read as a firmer number than the identical figure one card up.
+            ideaMetric("Est. EV", String(format: "%+.2fR (gross)", p.evR), color: DS.Palette.successSoft)
+                .help(StockSageGlossary.explain(.ev))
+            // Hierarchy lens HIGH (2026-07-09): the smaller per-card plan warns at
+            // >100%-of-account, but THIS plan — the portfolio-level one — showed a
+            // $15,978 notional on a $10,000 account with no flag.
+            if p.notional > planAccount {
+                Text("⚠︎ exceeds account")
+                    .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
+                    .lineLimit(1).fixedSize()
+                    .help("This position's notional is larger than the whole account — placing it needs margin or a partial fill. The risk% column still describes only the loss at the stop, not the capital required.")
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
     private static let sizeMetricHelp = "Size uses the calibrated win-prob when a journal or backtest calibration is fitted (the same win-rate shown in the EV chip), or the conservative ~\(StockSageExpectedValue.assumedWinBandLabel) prior otherwise. The ‘Deploy capital’ plan is the PORTFOLIO-level size — act on it when allocating the whole book (it layers regime sizing bias → vol-targeting shrink → per-symbol vol-regime brake → correlation de-weighting → heat cap); this per-card Size answers the SINGLE-trade question at your flat risk %."
 
     // Honest "are these EV numbers measured, fitted, or assumed?" chip — reused on every EV-headline
@@ -4346,6 +4371,11 @@ struct MarketsView: View {
                     } else if let wk = s.weeklyR {
                         t += String(format: ". Estimated %+.1f R per week gross, before costs — an estimate, not income", wk)
                     }
+                    // VO walk 2026-07-09: the Best-now tilt disclosure is .help-only inside this
+                    // overridden Button — speak it here when it applies.
+                    if !tomTiltDisclosureSuffix.isEmpty {
+                        t += ". Best-now ranking includes a small seasonal month tilt."
+                    }
                     return t
                 }())
                 + ({ () -> String in
@@ -4414,6 +4444,13 @@ struct MarketsView: View {
                 }
                 if parsedRiskFraction != nil, let g = tradeGateVerdict(for: idea, inputs: tradeGateInputs(for: idea)) {
                     s += ". Pre-trade gate: \(g.decision == .blocked ? "do not trade" : g.decision.rawValue)."
+                }
+                // VO walk 2026-07-09: speak the net estimate + tilt disclosure (pixels-only otherwise).
+                if let net = StockSageExpectedValue.netEVR(for: idea, calibration: store.convictionCalibration) {
+                    s += String(format: ", about %+.2f R net estimated", net)
+                }
+                if !tomTiltDisclosureSuffix.isEmpty {
+                    s += ". Ranking includes a small seasonal month tilt."
                 }
                 return s
             }()
