@@ -1994,6 +1994,17 @@ struct MarketsView: View {
     /// annotated number "this gross figure" — TRUE for the gross fallback, FALSE for the net
     /// headline (which already charges frictions per re-cycle). The net branch swaps that tail
     /// for the net-true phrasing instead of inheriting a mislabel onto the card's money number.
+    /// C1 wave (2026-07-09): the owner's TOM KEEP ratification is premised on "UI-disclosED" —
+    /// and `bestOpportunity` carries the seasonal tilt on EVERY sort and tab, while the ideas-
+    /// board disclosure line correctly renders only under the EV sort (the tilt is not in
+    /// rankByVelocity). Every bestOpportunity-CROWNED surface therefore appends this to its own
+    /// caveat whenever the tilt can actually be moving the crown. Empty when inert.
+    private var tomTiltDisclosureSuffix: String {
+        (StockSageAdvisor.turnOfMonthEnabled && !store.seasonality.isEmpty)
+            ? " Pick includes each name's seasonal month tilt (capped ±0.03 rank units) — a weak, backward-looking tendency, not a forecast."
+            : ""
+    }
+
     private func weeklyGrossHelp(_ base: String, tradingDays: Double? = nil, netFigure: Bool = false) -> String {
         var s = base
         let days = tradingDays ?? StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration)
@@ -3722,6 +3733,12 @@ struct MarketsView: View {
                 let mqLabel = mq >= 2.0 / 3.0 ? "hot" : mq >= 1.0 / 3.0 ? "mixed" : "cold"
                 label += ", momentum \(mqLabel)"
             }
+            // C1 wave: the explicit label silences all child text, which had dropped the
+            // rationale entirely — including engine-appended ⚠ honesty notes (left-tail,
+            // erratic vol, vol-regime brake) that live ONLY in rationale. Speak the first
+            // bullet plus every ⚠ bullet (deduped), mirroring the sheet's "Why:".
+            if let first = a.rationale.first { label += ". Why: \(first)" }
+            for warn in a.rationale.dropFirst() where warn.hasPrefix("⚠") { label += ". \(warn)" }
             return label
         }())
         .accessibilityHint("Opens full advice and backtest")
@@ -3880,7 +3897,8 @@ struct MarketsView: View {
                     HStack(spacing: DS.Space.sm) {
                         Text(idea.symbol).font(.system(size: mvFont16, weight: .bold, design: .rounded)).foregroundStyle(.white)
                         ideaMetric("Est. EV", String(format: "%+.2fR (gross)", ev.evR), color: DS.Palette.successSoft)
-                        ideaMetric("R:R", String(format: "%.1f:1", ev.rewardR))
+                        ideaMetric("R:R (gross)", String(format: "%.1f:1", ev.rewardR))
+                            .help("Gross reward:risk from entry/stop/target, before est. costs — the pre-trade gate evaluates the NET ratio; the ranked rows below flag when net R:R falls under 2:1.")
                         ideaMetric("Win est.", String(format: "~%.0f%%", ev.winProbEstimate * 100))
                         if idea.advice.suggestedWeight > 0 {
                             // "Base size" — raw half-Kelly before regime/vol adjustments.
@@ -3938,7 +3956,7 @@ struct MarketsView: View {
                             .foregroundStyle(ps.pctOfAccount > 100 ? DS.Palette.warningSoft : DS.Palette.successSoft)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    Text(MoneyVelocityCopy.bestOpportunity)
+                    Text(MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix)
                         .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(DS.Space.sm).frame(maxWidth: .infinity, alignment: .leading)
@@ -4025,7 +4043,7 @@ struct MarketsView: View {
                         Button {
                             let lines = ["Capital allocation — \(String(format: "$%.0f", plan.account)) account, heat \(String(format: "%.1f%%", plan.totalHeat * 100)) (cap \(String(format: "%.0f%%", plan.maxHeat * 100)))."]
                                 + plan.positions.map { p in
-                                    "\(p.symbol): \(p.shares) sh · \(String(format: "%.2f%%", p.riskFraction * 100)) risk · \(String(format: "$%.0f", p.dollarsAtRisk)) at risk · \(String(format: "$%.0f", p.notional)) notional · EV \(String(format: "%+.2fR (gross)", p.evR))"
+                                    "\(p.symbol): \(p.shares) sh · \(String(format: "%.2f%%", p.riskFraction * 100)) risk · \(String(format: "$%.0f", p.dollarsAtRisk)) at risk · \(String(format: "$%.0f", p.notional)) notional · Est. EV \(String(format: "%+.2fR (gross)", p.evR))"
                                 }
                                 + [plan.caveat]
                                 + (Self.regimeWarningNeeded(regime: store.regime, isStale: store.regimeIsStale)
@@ -4137,6 +4155,7 @@ struct MarketsView: View {
                         if let sym = s.bestSymbol, let ev = s.bestEV {
                             VStack(alignment: .leading, spacing: 2) {
                                 ideaMetric("Best now", sym, sub: String(format: "%+.2fR EV (gross)", ev))
+                                    .help(MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix)
                                 if let ep = store.earnings[sym.uppercased()], ep.isWarning {
                                     let badge = ep.severity == .imminent ? "⚠︎ earnings ~\(ep.daysUntil)d" : "earnings ~\(ep.daysUntil)d"
                                     Text(badge).font(.system(size: mvFont8))
@@ -4158,8 +4177,8 @@ struct MarketsView: View {
                             // F03/F44 SETTLED 2026-07-09 (owner lifted the netting gate): the
                             // headline is NET — the decision-relevant number after est. frictions.
                             // Gross stays one hover away, labeled, never hidden.
-                            ideaMetric("Est./week", String(format: "%+.1fR", netWk), sub: "net of est. frictions, top 3", subColor: .secondary)
-                                .help(weeklyGrossHelp(String(format: "Net of estimated frictions — sums the top fast-lane NET velocities%@. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income.", s.weeklyR.map { String(format: " (gross %+.1fR before costs)", $0) } ?? ""), netFigure: true))
+                            ideaMetric("Est./week", String(format: "%+.1fR", netWk), sub: "net of est. costs, top 3", subColor: .secondary)
+                                .help(weeklyGrossHelp(String(format: "Net of estimated costs — sums the top fast-lane NET velocities%@. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income.", s.weeklyR.map { String(format: " (gross %+.1fR before costs)", $0) } ?? ""), netFigure: true))
                         } else if let wk = s.weeklyR {
                             // Fallback when the net figure can't be formed: the labeled gross
                             // (F03/F44's original disposition) — never a fabricated net.
@@ -4240,6 +4259,22 @@ struct MarketsView: View {
             // Fold the risk warnings INTO the Button label — the override above collapses the Button to
             // one leaf, so the inner per-Text labels (drawdown brake, fast-lane concentration) are dead.
             .accessibilityLabel("Money velocity summary; tap for the best opportunity"
+                // C1 wave: the Button override silences every child Text, which had dropped ALL
+                // of today's headline facts for VoiceOver — speak them with the same net/gross
+                // qualifiers the pixels carry.
+                + ({ () -> String in
+                    var t = ""
+                    if let sym = s.bestSymbol, let ev = s.bestEV { t += String(format: ". Best now %@, %+.2f R EV gross", sym, ev) }
+                    if let sym = s.fastestSymbol, let v = s.fastestVelocity { t += String(format: ". Fastest %@, %+.2f R per day net", sym, v) }
+                    if let netWk = s.weeklyRNet {
+                        t += String(format: ". Estimated %+.1f R per week net of estimated costs", netWk)
+                        if let wk = s.weeklyR { t += String(format: ", gross %+.1f R before costs", wk) }
+                        t += ", top 3 — an estimate, not income"
+                    } else if let wk = s.weeklyR {
+                        t += String(format: ". Estimated %+.1f R per week gross, before costs — an estimate, not income", wk)
+                    }
+                    return t
+                }())
                 + ({ () -> String in
                     if let ddPct = s.worstRunDrawdownPct, let losses = s.worstRunLosses {
                         return String(format: ". Risk warning: worst losing run %d trades at %.1g percent risk is about %.1f percent drawdown.", losses, s.riskFraction * 100, ddPct * 100)
@@ -4296,6 +4331,10 @@ struct MarketsView: View {
             let accessibilityText: String = {
                 var s = "Do this now: \(idea.symbol), \(idea.advice.action.rawValue), estimated EV \(String(format: "%.2f", ev.evR)) R gross, entry \(adaptivePrice(idea.price))"
                 if let stop = idea.advice.stopPrice { s += ", stop \(adaptivePrice(stop))" }
+                // C1 wave: the size line carries the loss-not-profit honesty tail and the
+                // >100%-of-account warning tint — VoiceOver gets the same facts.
+                s += ", " + sizeInfo.text
+                if sizeInfo.isWarning { s += ". Size warning: position exceeds account balance" }
                 if let variance { s += String(format: ", typical 24-hour range plus or minus %.1f percent", variance) }
                 if let staleAsOf {
                     s += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering."
@@ -4313,7 +4352,7 @@ struct MarketsView: View {
                 sizeText: sizeInfo.text,
                 sizeIsWarning: sizeInfo.isWarning,
                 evText: String(format: "Est. EV %+.2fR (gross)", ev.evR),   // "Est. EV" everywhere (2026-07-09 label sweep)
-                caveatText: MoneyVelocityCopy.bestOpportunity,
+                caveatText: MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix,
                 varianceText: variance.map { String(format: "Typical 24h range ±%.1f%% — size down for 24/7.", $0) },
                 staleAsOfText: staleAsOf.map { "⚠︎ Price as of \($0.formatted(.relative(presentation: .named))) — not live; re-price before ordering." },
                 accessibilityText: accessibilityText,
@@ -4420,8 +4459,9 @@ struct MarketsView: View {
                         .font(.system(size: mvFont9, weight: .medium))
                         .foregroundStyle(DS.Palette.successSoft).fixedSize(horizontal: false, vertical: true)
                         .help(weeklyGrossHelp("Gross, before costs — sums the top fast-lane GROSS velocities. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income.", tradingDays: tradingDays))
-                    if let netWk = StockSageExpectedValue.netExpectedWeeklyR(lane: lane, ideas: store.ideas, tradingDays: tradingDays, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity) {
-                        Text(String(format: "   ↳ %+.1fR/week net (after est. frictions)", netWk))
+                    let netWkOpt = StockSageExpectedValue.netExpectedWeeklyR(lane: lane, ideas: store.ideas, tradingDays: tradingDays, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity)
+                    if let netWk = netWkOpt {
+                        Text(String(format: "   ↳ %+.1fR/week net (after est. costs)", netWk))
                             .font(.system(size: mvFont8)).foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
                     }
                     // PERF-STRIP: expectedWeeklyDollars's body is exactly `wkR * account * riskFraction`
@@ -4429,11 +4469,15 @@ struct MarketsView: View {
                     // tradingDays, holds, calibration), so this avoids a second full fastLane recompute
                     // for arithmetic StockSageInput already guarded (acct/rp finite and positive).
                     if let acct = StockSageInput.positiveAmount(sizerAccount), let rp = StockSageInput.percent(sizerRiskPct) {
-                        let usd = wk * acct * (rp / 100)
-                        Text(String(format: "≈ +$%.0f/week at $%.0f account, %.1f%% risk — gross, before costs; estimate, high variance, NOT income.", usd, acct, rp))
+                        // C1 wave: same net-first convention as the money-velocity card — the two
+                        // $/week answers to the SAME question on one screen must not silently
+                        // diverge 2× on different bases. Net when available; labeled gross beside.
+                        let usd = (netWkOpt ?? wk) * acct * (rp / 100)
+                        let grossPart = netWkOpt != nil ? String(format: " (gross +$%.0f)", wk * acct * (rp / 100)) : ""
+                        Text(String(format: "≈ +$%.0f/week at $%.0f account, %.1f%% risk — %@%@; estimate, high variance, NOT income.", usd, acct, rp, netWkOpt != nil ? "net of est. costs" : "gross, before costs", grossPart))
                             .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)   // neutral: estimate, not a realized gain
-                            .help("Gross, before costs — weekly R × the dollar value of 1R. Can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. NOT income.")
+                            .help((netWkOpt != nil ? "Net of est. costs — weekly R × the dollar value of 1R. " : "Gross, before costs — weekly R × the dollar value of 1R. ") + "Can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. NOT income.")
                     }
                 }
                 if let conc = StockSageExpectedValue.fastLaneConcentration(lane: lane), conc.isConcentrated {

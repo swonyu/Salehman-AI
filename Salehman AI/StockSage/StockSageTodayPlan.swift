@@ -240,7 +240,7 @@ enum StockSageTodayPlan {
         let orderDesc: String = {
             switch mode {
             case .fastestCompounding:    return "by velocity (EV/day)"
-            case .equityExecutableFirst: return "executable equities first (equity before 24/7 crypto, gate-clear before blocked), then by growth rate"
+            case .equityExecutableFirst: return "executable equities first (equity before 24/7 crypto, gate-clear before blocked), then fastest raw EV/day"
             }
         }()
         var lines = ["Today's ranked actions — top \(plans.count), \(orderDesc). Estimates, not advice; a per-trade risk cap always applies."]

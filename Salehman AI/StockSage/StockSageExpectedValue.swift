@@ -1124,7 +1124,7 @@ enum StockSageExpectedValue {
             // decision-relevant net figure the card headlines, with gross beside it labeled —
             // a pasted plan must never revert to the number the card demoted to hover-only.
             let grossPart = s.weeklyR.map { String(format: " (gross %+.1fR before costs)", $0) } ?? ""
-            lines.append("\(n). Run the top setups: ~\(String(format: "%+.1f", netWk))R/week net of est. frictions\(grossPart) — an estimate assuming you take and re-cycle them, not income.")
+            lines.append("\(n). Run the top setups: ~\(String(format: "%+.1f", netWk))R/week net of est. costs\(grossPart) — an estimate assuming you take and re-cycle them, not income.")
             n += 1
         } else if let wk = s.weeklyR {
             // Labeled-gross fallback when the net figure can't form — never a fabricated net.

@@ -51,7 +51,7 @@ struct MarketsTodayActionsCard: View {
                 }
                 Text("Top \(shownPlans.count) setups, sized and gated — equities before 24/7 crypto, gate-clear before blocked, then fastest; do #1 first, unless it's blocked.")
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Text("Within those buckets, order is growth rate (log-growth at ½-Kelly) — a steady compounder can out-rank a higher-R/day but higher-variance setup. Shown R/day is raw EV, not the sort key.")
+                Text("Within those buckets, faster raw EV/day ranks first — unlike the Fast lane above, which ranks by growth rate (log-growth at ½-Kelly), so the two cards can order the same names differently.")
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if executableOnly {
                     Text("Executable now includes only rows that currently clear or caution on the pre-trade gate.")
@@ -62,7 +62,11 @@ struct MarketsTodayActionsCard: View {
                 paperOutcomePanel
 
                 if shownPlans.isEmpty {
-                    Text("No executable rows at current risk settings. Lower risk %, or keep blocked rows visible.")
+                    // F04-parity (C1 wave): with no risk % every gate is honestly nil — "lower
+                    // risk %" would misdiagnose unevaluated rows as risk-blocked.
+                    Text(plans.allSatisfy { $0.gate == nil }
+                         ? "Enter a risk % to evaluate the pre-trade gate — no rows can be classified executable yet."
+                         : "No executable rows at current risk settings. Lower risk %, or keep blocked rows visible.")
                         .font(.system(size: font9, weight: .medium)).foregroundStyle(DS.Palette.warningSoft)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
@@ -109,7 +113,10 @@ struct MarketsTodayActionsCard: View {
             let plan = shownPlans[idx]
             let rank = idx + 1
             let urgentEvent = (plan.daysToEarnings ?? Int.max) <= 3
-            let timing = StockSageExecutionTiming.sessionNote(action: plan.action, regime: plan.regime)
+            // C1 wave (2026-07-09): the order-type + timing guidance is US-EQUITY retail research
+            // (near-close entry, overnight premia) — a 24/7 crypto pick has no close and no
+            // session, so it gets neither the equity order text nor the session timing note.
+            let timing = plan.isCrypto ? nil : StockSageExecutionTiming.sessionNote(action: plan.action, regime: plan.regime)
             let blocked = plan.gate?.decision == .blocked
             let color: Color = blocked ? DS.Palette.dangerSoft : (urgentEvent ? DS.Palette.warningSoft : DS.Palette.successSoft)
             let headline: String = {
@@ -127,6 +134,9 @@ struct MarketsTodayActionsCard: View {
                 if blocked { return "Do not place this order until the gate clears." }
                 if urgentEvent {
                     return "If you still take it, a marketable near-close execution can be justified by event urgency; otherwise skip the trade."
+                }
+                if plan.isCrypto {
+                    return "24/7 crypto — the equity near-close guidance does not apply; use a limit order and size for round-the-clock volatility. Estimates, not advice."
                 }
                 return "A patient limit near the close is ~10 bps cheaper when you are NOT chasing the move; acting urgently on a fresh conviction signal favors a marketable order (avoids chase/adverse-selection cost). Estimates, not advice."
             }()
@@ -148,6 +158,10 @@ struct MarketsTodayActionsCard: View {
 
     private func isExecutableNow(_ plan: TodayActionPlan) -> Bool {
         guard let decision = plan.gate?.decision else { return false }
+        // C1 wave: a row the sizer resolves to 0 shares ("0 sh (≈$0 at risk)") is unfundable
+        // at the current account/risk — gate-clear or not, it cannot be executed now.
+        // shares == nil (no account entered) stays eligible; only a computed 0 excludes.
+        if let sh = plan.shares, sh == 0 { return false }
         return decision != .blocked
     }
 
@@ -161,7 +175,7 @@ struct MarketsTodayActionsCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Paper today: realized (net) vs planned (gross target)")
                     .font(.system(size: 9, weight: .semibold)).foregroundStyle(color)
-                Text(String(format: "%d close%@ today: planned %+.2fR gross vs realized %+.2fR net (Δ %+.2fR — includes costs the gross plan never carried)",
+                Text(String(format: "%d close%@ today: planned %+.2fR gross vs realized %+.2fR net (Δ %+.2fR vs the full-target plan — mostly exit shortfall on stops/early exits, plus costs)",
                             measured, measured == 1 ? "" : "s", planned, realized, delta))
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let fwd = paperStore.forwardStats {
@@ -214,8 +228,12 @@ struct MarketsTodayActionsCard: View {
         // velocity R PER WEEK over currently-blocked rows — so one decent blocked row flipped the
         // label to "deteriorating" on a week that realized +1.5R. The two facts stay (correctly
         // labeled gross/net); the fabricated comparison goes.
-        return String(format: "7d execution: %d closed, realized %+.2fR net. Currently blocked rows idle ≈%+.2fR/week gross velocity (proxy — not comparable to realized net).",
-                      executedCount, executedTotal, blockedPotential)
+        // C1 wave: say PAPER (these are paper trades — the store's own contract) and never
+        // assert idle blocked rows when none exist (the clause invented a population).
+        let base = String(format: "7d paper execution: %d closed, realized %+.2fR net.", executedCount, executedTotal)
+        guard !blocked.isEmpty else { return executedCount > 0 ? base : nil }
+        return base + String(format: " Currently blocked rows idle ≈%+.2fR/week gross velocity (proxy — not comparable to realized net).",
+                             blockedPotential)
     }
 
     @ViewBuilder
@@ -333,7 +351,11 @@ struct MarketsTodayActionsCard: View {
                 }
                 if gate.decision == .caution,
                    let warn = gate.checks.first(where: { $0.level == .warn }) {
-                    label += " Caution: \(warn.label)."
+                    // C1 wave: the visible line appends "+N more" when several warns fired —
+                    // VoiceOver must not report exactly one caution when the gate raised several.
+                    let warnCount = gate.checks.filter { $0.level == .warn }.count
+                    let extra = warnCount > 1 ? ", plus \(warnCount - 1) more" : ""
+                    label += " Caution: \(warn.label)\(extra)."
                 }
             } else {
                 label += ". Pre-trade gate: risk percent not set."
