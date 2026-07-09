@@ -41,10 +41,10 @@ enum StockSageConvictionScaler {
     /// `base` (the flat per-trade risk budget — pass `StockSageAdvisor.riskPerTrade`, 1%, to match
     /// today's default) scaled by conviction (0.5× at conviction 0 → 1.5× at conviction ≥ 1.0) and
     /// by `regimeBias` (`MarketRegime.sizingBias` — 0.25 crisis … 1.25 strong bull), then re-capped
-    /// at `maxRiskFraction` (2%) and floored at `minRiskFraction` (0.5%). Non-finite/non-positive
-    /// `base` → 0 (nothing to scale). Non-finite/non-positive `regimeBias` falls back to a neutral
-    /// 1.0× (no regime adjustment) rather than propagating a garbage multiplier. Pure +
-    /// deterministic; NOT called from advise()/suggestedWeight() — callers opt in explicitly.
+    /// at `maxRiskFraction` (2%) and floored at `min(minRiskFraction, base × 0.5)`. Non-finite/
+    /// non-positive `base` → 0 (nothing to scale). Non-finite/non-positive `regimeBias` falls back
+    /// to a neutral 1.0× (no regime adjustment) rather than propagating a garbage multiplier. Pure
+    /// + deterministic; NOT called from advise()/suggestedWeight() — callers opt in explicitly.
     nonisolated static func scaledRiskFraction(base: Double = 0.01, conviction: Double,
                                                regimeBias: Double) -> Double {
         guard base.isFinite, base > 0 else { return 0 }
@@ -52,6 +52,13 @@ enum StockSageConvictionScaler {
         let bias = (regimeBias.isFinite && regimeBias > 0) ? regimeBias : 1.0
         let convictionMultiplier = Swift.min(1.5, 0.5 + c)
         let raw = base * convictionMultiplier * bias
-        return Swift.max(minRiskFraction, Swift.min(maxRiskFraction, raw))
+        // The floor never RAISES risk above the conviction multiplier's own 0.5× lower bound for
+        // the caller's base (2026-07-09 review fix): the absolute 0.5% floor was designed for the
+        // documented 1% base — fed a smaller user-configured base (e.g. 0.1% risk/trade) it
+        // silently scaled the DISPLAYED risk up to 5× the configured budget, the dangerous
+        // direction for a risk-discipline surface. `min(0.5%, base·0.5)` is byte-identical for
+        // every base ≥ 1% (there base·0.5 ≥ 0.5%, so the effective floor is still 0.5%).
+        let floor = Swift.min(minRiskFraction, base * 0.5)
+        return Swift.max(floor, Swift.min(maxRiskFraction, raw))
     }
 }

@@ -309,7 +309,7 @@ struct MarketsView: View {
             // universe scan aborted early on a 429-storm signature — store.scanThrottled) is ALSO
             // a partial board with the SAME poisoning risk, so it gets the same skip.
             if !store.lastScanCancelled && !store.scanThrottled {
-                let snap = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration)
+                let snap = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, seasonality: store.seasonality, calibration: store.convictionCalibration)
                 if let wk = snap.weeklyR {
                     velocityHistory.record(weeklyR: wk, bestSymbol: snap.bestSymbol, fastestSymbol: snap.fastestSymbol)
                 }
@@ -3208,9 +3208,11 @@ struct MarketsView: View {
             }
             // TOM disclosure (activation 2026-07-09): the seasonal month tilt is a rank INPUT the
             // user can't otherwise see — an invisible ranking factor violates the honesty floor.
-            // Shown only when the flag is on AND at least one name has seasonality data (i.e. the
-            // tilt can actually be moving ranks right now).
-            if StockSageAdvisor.turnOfMonthEnabled && !store.seasonality.isEmpty {
+            // Shown only when the EV sort is active (2026-07-09 review fix: the tilt lives in
+            // rankByEV only — claiming it under velocity/conviction/R:R sorts would be the
+            // inverse honesty error, disclosing an input that is NOT in effect) AND the flag is
+            // on AND at least one name has seasonality data (the tilt can actually move ranks).
+            if ideaSort == .ev && StockSageAdvisor.turnOfMonthEnabled && !store.seasonality.isEmpty {
                 Text("Ranking includes a small seasonal month tilt (each name’s calendar-month history, capped ±0.03 rank units) — a weak, backward-looking tendency, not a forecast.")
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
@@ -4088,7 +4090,7 @@ struct MarketsView: View {
         // OTHER content (best/fastest/weeklyR, unaffected by fraction) but then strip the
         // fraction-dependent brake fields — never show a drawdown number modeled on a risk %
         // the user never typed.
-        let rawSummary = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, fraction: parsedRiskFraction ?? 0.01, holds: velocityHolds, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration)
+        let rawSummary = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, fraction: parsedRiskFraction ?? 0.01, holds: velocityHolds, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, seasonality: store.seasonality, calibration: store.convictionCalibration)
         let riskFrac = parsedRiskFraction
         let s = riskFrac != nil ? rawSummary : MoneyVelocitySummary(
             bestSymbol: rawSummary.bestSymbol, bestEV: rawSummary.bestEV,

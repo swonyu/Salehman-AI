@@ -103,4 +103,31 @@ struct StockSageConvictionScalerTests {
         #expect(Scaler.caveat.localizedCaseInsensitiveContains("size"))
         #expect(Scaler.caveat.localizedCaseInsensitiveContains("stop"))
     }
+
+    // 2026-07-09 review fix: the absolute 0.5% floor was designed for the documented 1% base —
+    // fed a smaller USER-configured base (the wave-7 Today-plan wiring passes the user's own
+    // risk %) it silently scaled the DISPLAYED risk UP to 5x the configured budget. The floor is
+    // now min(0.5%, base * 0.5): byte-identical for base >= 1% (pinned above), never above the
+    // conviction multiplier's own 0.5x lower bound for smaller bases. All hand-derived.
+    @Test func smallBaseIsNeverFlooredAboveItself() {
+        // base 0.1%, conviction 0.2, neutral bias: raw = 0.001 * 0.7 * 1.0 = 0.0007.
+        // OLD behavior floored this UP to 0.005 (5x the user's budget); now it passes through.
+        let f = Scaler.scaledRiskFraction(base: 0.001, conviction: 0.2, regimeBias: 1.0)
+        #expect(abs(f - 0.0007) < 1e-15)
+        #expect(f < Scaler.minRiskFraction)
+    }
+
+    @Test func smallBaseFloorIsHalfTheBase() {
+        // base 0.1%, conviction 0, crisis bias 0.25: raw = 0.001 * 0.5 * 0.25 = 0.000125 —
+        // floors at base * 0.5 = 0.0005 (the multiplier's own lower bound), NOT at 0.005.
+        let f = Scaler.scaledRiskFraction(base: 0.001, conviction: 0.0, regimeBias: 0.25)
+        #expect(abs(f - 0.0005) < 1e-15)
+    }
+
+    @Test func onePercentBaseFloorBehaviorIsUnchangedByTheSmallBaseFix() {
+        // Legacy pin: base 1%, conviction 0, crisis 0.25 -> raw 0.00125 -> floor still 0.005
+        // (min(0.005, 0.01 * 0.5) = 0.005 - identical to the pre-fix absolute floor).
+        let f = Scaler.scaledRiskFraction(base: 0.01, conviction: 0.0, regimeBias: 0.25)
+        #expect(f == Scaler.minRiskFraction)
+    }
 }

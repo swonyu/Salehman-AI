@@ -683,7 +683,18 @@ enum StockSageExpectedValue {
         // dominates the rank key.
         let capped = Swift.max(-0.03, Swift.min(0.03, stat.avgReturn))
         let reliability = min(1.0, Double(stat.samples) / 5.0)
-        return capped * reliability
+        let tilt = capped * reliability
+        // DIRECTION (2026-07-09 review fix): the tilt is a statement about the SYMBOL's month
+        // ("historically drifts up in July") — a sell-family idea profits from the OPPOSITE move,
+        // so the sign flips (direction-blind, a short on a seasonally-rising name was BOOSTED,
+        // the exact inverse of the trade's EV). Neutral actions (hold/avoid) are non-trades: no
+        // tilt. `bestOpportunity` is buy-family-only by its own guard, so this changes sell rows
+        // on the EV board only.
+        switch side(idea) {
+        case .buyFamily:  return tilt
+        case .sellFamily: return -tilt
+        case .neutral:    return 0
+        }
     }
 
     /// Fast lane: positive-EV ideas that HAVE a velocity (crypto/equity), ranked by
@@ -1055,14 +1066,18 @@ enum StockSageExpectedValue {
                                     regime: MarketRegime? = nil,
                                     earnings: [String: EarningsProximity] = [:],
                                     liquidity: [String: LiquidityProfile] = [:],
+                                    seasonality: [String: MonthlySeasonality] = [:],
                                     calibration: StockSageConvictionCalibration? = nil) -> MoneyVelocitySummary {
         // Regime-aware so the card's displayed "best bet" matches the regime-gated nav target
         // (a risk-off tape suppresses the best-buy on BOTH). nil regime → identical to before.
         // Earnings/liquidity-aware so the summary best-bet matches the demoted/gated board
         // (both empty → unchanged). Calibration-aware so every headline number (best EV, fastest
         // velocity, weekly R) uses the SAME measured win-prob as the idea cards — no
-        // calibrated-next-to-uncalibrated mismatch.
-        let best = bestOpportunity(ideas, regime: regime, earnings: earnings, liquidity: liquidity, calibration: calibration)
+        // calibrated-next-to-uncalibrated mismatch. Seasonality-aware (2026-07-09 review fix)
+        // for the same reason: this was the FIFTH bestOpportunity call site — the four direct
+        // UI sites got the TOM tilt but this indirect one didn't, so the money-velocity
+        // headline/playbook/velocityHistory could crown a different "best" than the board.
+        let best = bestOpportunity(ideas, regime: regime, earnings: earnings, liquidity: liquidity, seasonality: seasonality, calibration: calibration)
         // Use rankByVelocity (earnings/liquidity-aware) then skip below-floor and negative-EV
         // ideas — so the "Fastest" headline matches the board's floor-de-ranked, penalized sort.
         let fastest = rankByVelocity(ideas, holds: holds, earnings: earnings, liquidity: liquidity, calibration: calibration)

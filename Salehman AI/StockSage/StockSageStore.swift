@@ -1464,7 +1464,14 @@ final class StockSageStore: ObservableObject {
     /// `refreshEarningsForTopIdeas`: 4-parallel chunks, cached-once per symbol.
     func refreshSeasonalityForTopIdeas(limit: Int = 15) async {
         guard StockSageAdvisor.turnOfMonthEnabled else { return }
-        let top = Array(ideas.prefix(limit))
+        // 2026-07-09 review fix: prefetch in the order the tilt actually AFFECTS — the untilted
+        // EV rank (the tilted rank needs this very data, so the untilted key is the honest
+        // pre-pass) — not raw advisor-score order, whose top-15 can miss EV-board leaders and
+        // re-create the navigation-dependent coverage gap this prefetch exists to close.
+        let evTop = StockSageExpectedValue.rankByEV(ideas, regime: regime, earnings: earnings,
+                                                    liquidity: liquidity,
+                                                    calibration: convictionCalibration)
+        let top = Array(evTop.prefix(limit))
         let chunks = stride(from: 0, to: top.count, by: 4).map { Array(top[$0 ..< min($0 + 4, top.count)]) }
         for chunk in chunks {
             await withTaskGroup(of: Void.self) { group in

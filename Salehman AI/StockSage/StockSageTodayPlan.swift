@@ -231,8 +231,19 @@ enum StockSageTodayPlan {
     /// "Copy all N" clipboard text for a ranked list — one line per plan (symbol, velocity,
     /// entry/stop/target, size, gate), with the same honesty caveats `build`'s single-idea
     /// text carries. A blocked gate is called out explicitly so it can't be copied clean.
-    nonisolated static func copyAllText(_ plans: [TodayActionPlan], isSample: Bool = false) -> String {
-        var lines = ["Today's ranked actions — top \(plans.count) by velocity (EV/day). Estimates, not advice; a per-trade risk cap always applies."]
+    /// `mode` (2026-07-09 review fix) keeps the exported header truthful about the ORDER: the
+    /// production card sorts `.equityExecutableFirst` (equities before 24/7 crypto, gate-clear
+    /// before blocked, THEN growth rate) — exporting that list under a "by velocity" header
+    /// misdescribed the ranking. Defaulted so existing callers/tests stay source-compatible.
+    nonisolated static func copyAllText(_ plans: [TodayActionPlan], isSample: Bool = false,
+                                        mode: RankedMode = .fastestCompounding) -> String {
+        let orderDesc: String = {
+            switch mode {
+            case .fastestCompounding:    return "by velocity (EV/day)"
+            case .equityExecutableFirst: return "executable equities first (equity before 24/7 crypto, gate-clear before blocked), then by growth rate"
+            }
+        }()
+        var lines = ["Today's ranked actions — top \(plans.count), \(orderDesc). Estimates, not advice; a per-trade risk cap always applies."]
         if isSample {
             lines.insert("⚠ SAMPLE DATA — illustrative prices, NOT live quotes. Re-price before any order.", at: 0)
         }
@@ -253,7 +264,10 @@ enum StockSageTodayPlan {
             // silently reverts to the flat base risk% the user did NOT see on screen.
             if let scaled = p.scaledRiskFraction {
                 let bias = p.regimeBias.map { String(format: " (regime ×%.2f)", $0) } ?? ""
-                line += String(format: " | conviction-scaled risk %.2f%%%@ — scales size, not odds", scaled * 100, bias)
+                // 2026-07-09 review fix: the sh count above is sized at the FLAT base risk% —
+                // say so, or the line carries two contradictory size prescriptions and the
+                // reader can't tell which one the printed share count obeys.
+                line += String(format: " | conviction-scaled risk %.2f%%%@ — scales size, not odds; sh count above uses the base risk%%", scaled * 100, bias)
             }
             // EXPORT-01 precedent: the exported checklist carries the same doubling-hazard
             // context the on-screen row does — acting on this line without knowing you already

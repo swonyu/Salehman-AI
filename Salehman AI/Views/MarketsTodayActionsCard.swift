@@ -42,16 +42,16 @@ struct MarketsTodayActionsCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Image(systemName: "list.number").font(.system(size: 11)).foregroundStyle(DS.Palette.accent)
-                    Text("Today's plan — ranked by growth rate").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                    Text("Today's plan — executable equities first").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
                     Spacer()
                     Toggle("Executable now only", isOn: $executableOnly)
                         .toggleStyle(.switch)
                         .font(.system(size: font8, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
-                Text("Top \(shownPlans.count) fastest-compounding setups, sized and gated — do #1 first, unless it's blocked.")
+                Text("Top \(shownPlans.count) setups, sized and gated — equities before 24/7 crypto, gate-clear before blocked, then fastest; do #1 first, unless it's blocked.")
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Text("Ranked by growth rate (log-growth at ½-Kelly) — a steady compounder can out-rank a higher-R/day but higher-variance setup. Shown R/day is raw EV, not the sort key.")
+                Text("Within those buckets, order is growth rate (log-growth at ½-Kelly) — a steady compounder can out-rank a higher-R/day but higher-variance setup. Shown R/day is raw EV, not the sort key.")
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if executableOnly {
                     Text("Executable now includes only rows that currently clear or caution on the pre-trade gate.")
@@ -74,7 +74,7 @@ struct MarketsTodayActionsCard: View {
                 HStack(spacing: 6) {
                     Spacer()
                     Button {
-                        let text = StockSageTodayPlan.copyAllText(shownPlans, isSample: isSampleData)
+                        let text = StockSageTodayPlan.copyAllText(shownPlans, isSample: isSampleData, mode: .equityExecutableFirst)
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(text, forType: .string)
                     } label: {
@@ -100,27 +100,40 @@ struct MarketsTodayActionsCard: View {
 
     @ViewBuilder
     private func executionRecommendationPanel(_ shownPlans: [TodayActionPlan]) -> some View {
-        if let plan = shownPlans.first(where: { $0.gate?.decision != .blocked }) ?? shownPlans.first {
+        // 2026-07-09 review fix: pick the first NON-BLOCKED row but caption it with its REAL
+        // rank — the old panel hard-coded "#1", so when row #1 was blocked the advice for the
+        // row displayed as #2/#3 was attached to the wrong (blocked) row number.
+        let pickIndex: Int? = shownPlans.firstIndex(where: { $0.gate?.decision != .blocked })
+            ?? (shownPlans.isEmpty ? nil : 0)
+        if let idx = pickIndex {
+            let plan = shownPlans[idx]
+            let rank = idx + 1
             let urgentEvent = (plan.daysToEarnings ?? Int.max) <= 3
             let timing = StockSageExecutionTiming.sessionNote(action: plan.action, regime: plan.regime)
             let blocked = plan.gate?.decision == .blocked
             let color: Color = blocked ? DS.Palette.dangerSoft : (urgentEvent ? DS.Palette.warningSoft : DS.Palette.successSoft)
             let headline: String = {
-                if blocked { return "Execution recommendation: blocked setup for #1." }
+                if blocked { return "Execution recommendation: blocked setup for #\(rank)." }
                 if urgentEvent { return "Execution recommendation: event-near setup, urgency-aware." }
-                return "Execution recommendation: patient execution for #1." 
+                return "Execution recommendation for #\(rank) — order type is a trade-off."
             }()
+            // 2026-07-09 review fix: the old non-urgent default prescribed "patient limit …
+            // for uninformed execution" — but the indexed order-type research (research/INDEX
+            // 2026-07-03) says the ~10bps limit-order saving holds for PATIENT/UNINFORMED
+            // entries and SIGN-FLIPS to marketable when the trade is informed/urgent, which is
+            // the leg that applies to conviction-directional ideas. Present the trade-off
+            // honestly instead of prescribing the leg the research says flips here.
             let orderText: String = {
                 if blocked { return "Do not place this order until the gate clears." }
                 if urgentEvent {
                     return "If you still take it, a marketable near-close execution can be justified by event urgency; otherwise skip the trade."
                 }
-                return "Prefer a patient limit near the close; this is the lower-friction default for uninformed execution."
+                return "A patient limit near the close is ~10 bps cheaper when you are NOT chasing the move; acting urgently on a fresh conviction signal favors a marketable order (avoids chase/adverse-selection cost). Estimates, not advice."
             }()
             VStack(alignment: .leading, spacing: 2) {
                 Text(headline)
                     .font(.system(size: 9, weight: .semibold)).foregroundStyle(color)
-                Text("#1 \(plan.symbol): \(orderText)")
+                Text("#\(rank) \(plan.symbol): \(orderText)")
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let timing {
                     Text("Timing note: \(timing)")
@@ -146,9 +159,9 @@ struct MarketsTodayActionsCard: View {
             let delta = realized - planned
             let color: Color = delta >= 0 ? DS.Palette.successSoft : DS.Palette.warningSoft
             VStack(alignment: .leading, spacing: 2) {
-                Text("Paper today: realized vs planned (net-of-cost)")
+                Text("Paper today: realized (net) vs planned (gross target)")
                     .font(.system(size: 9, weight: .semibold)).foregroundStyle(color)
-                Text(String(format: "%d close%@ today: planned %+.2fR vs realized %+.2fR (%+.2fR)",
+                Text(String(format: "%d close%@ today: planned %+.2fR gross vs realized %+.2fR net (Δ %+.2fR — includes costs the gross plan never carried)",
                             measured, measured == 1 ? "" : "s", planned, realized, delta))
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let fwd = paperStore.forwardStats {
@@ -193,15 +206,16 @@ struct MarketsTodayActionsCard: View {
         let executed = recent.compactMap(\.realizedR)
         let executedCount = executed.count
         let executedTotal = executed.reduce(0, +)
-        let executedAvg = executedCount > 0 ? (executedTotal / Double(executedCount)) : 0
         let blocked = plans.filter { $0.gate?.decision == .blocked }
         guard executedCount > 0 || !blocked.isEmpty else { return nil }
         let blockedPotential = blocked.reduce(0.0) { $0 + $1.velocity * 5.0 }
-        let trend = executedAvg - blockedPotential
-        let arrow = trend >= 0 ? "▲" : "▼"
-        let direction = trend >= 0 ? "improving" : "deteriorating"
-        return String(format: "7d execution vs blocked: %d closed, realized %+.2fR; currently blocked potential ~%+.2fR/week (velocity proxy). %@ %@(Δ %+.2fR).",
-                      executedCount, executedTotal, blockedPotential, arrow, direction, trend)
+        // 2026-07-09 review fix: the old "▲ improving / ▼ deteriorating (Δ)" verdict subtracted
+        // unit-incompatible quantities — average NET realized R PER TRADE minus a SUM of GROSS
+        // velocity R PER WEEK over currently-blocked rows — so one decent blocked row flipped the
+        // label to "deteriorating" on a week that realized +1.5R. The two facts stay (correctly
+        // labeled gross/net); the fabricated comparison goes.
+        return String(format: "7d execution: %d closed, realized %+.2fR net. Currently blocked rows idle ≈%+.2fR/week gross velocity (proxy — not comparable to realized net).",
+                      executedCount, executedTotal, blockedPotential)
     }
 
     @ViewBuilder
@@ -274,7 +288,7 @@ struct MarketsTodayActionsCard: View {
                 if let scaled = plan.scaledRiskFraction {
                     let scaledPct = scaled * 100
                     let biasText = plan.regimeBias.map { String(format: " (regime ×%.2f)", $0) } ?? ""
-                    Text(String(format: "Conviction-scaled risk: %.2f%%%@ — scales size, not odds.", scaledPct, biasText))
+                    Text(String(format: "Conviction-scaled risk: %.2f%%%@ — scales size, not odds; the share count above uses the base risk %%.", scaledPct, biasText))
                         .font(.system(size: font8)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .help({
@@ -329,7 +343,7 @@ struct MarketsTodayActionsCard: View {
             // risk% alone and never hear the caveat the sighted row carries.
             if let scaled = plan.scaledRiskFraction {
                 let biasStr = plan.regimeBias.map { String(format: ", regime times %.2f", $0) } ?? ""
-                label += " Conviction-scaled risk \(String(format: "%.2f", scaled * 100)) percent\(biasStr) — scales size, not odds."
+                label += " Conviction-scaled risk \(String(format: "%.2f", scaled * 100)) percent\(biasStr) — scales size, not odds; the share count uses the base risk percent."
             }
             label += " Tap for the plan."
             return label

@@ -600,6 +600,11 @@ struct StockSageExpectedValueTests {
     }
 
     @Test func turnOfMonthActivationCanChangeTheRankWhenMonthSignalExists() {
+        // TomFlagTestLock (2026-07-09 review fix): the flag is a cross-suite process-global;
+        // StockSageTomGateTests briefly flips it off — unguarded, this test could read that
+        // window. Restore runs before unlock (defer LIFO).
+        TomFlagTestLock.lock.lock()
+        defer { TomFlagTestLock.lock.unlock() }
         let saved = StockSageAdvisor.turnOfMonthEnabled
         defer { StockSageAdvisor.turnOfMonthEnabled = saved }
         StockSageAdvisor.turnOfMonthEnabled = true
@@ -625,6 +630,11 @@ struct StockSageExpectedValueTests {
 
         #expect(EV.rankByEV([winner, loser], seasonality: seasonalityBySymbol).first?.symbol == "WIN")
         #expect(EV.bestOpportunity([winner, loser], seasonality: seasonalityBySymbol)?.idea.symbol == "WIN")
+        // 2026-07-09 review fix: summary() was the FIFTH bestOpportunity call site — the four
+        // direct UI sites got the tilt but the money-velocity headline/playbook/velocityHistory
+        // route through summary() and could crown a DIFFERENT best. Pin the parity: the same
+        // tilt-decided fixture must crown the same symbol through summary().
+        #expect(EV.summary([winner, loser], seasonality: seasonalityBySymbol).bestSymbol == "WIN")
     }
 
     // MARK: - RANKING_BACKLOG #4: liquidity gate
