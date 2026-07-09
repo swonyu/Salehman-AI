@@ -104,6 +104,14 @@ enum StockSageExpectedValue {
         return ExpectedValue(winProbEstimate: p, rewardR: rewardR, evR: p * rewardR - (1 - p))
     }
 
+    /// Canonical user-facing warning line for the money-velocity concentration risk. Keeping this
+    /// in one helper prevents wording drift between cards/copy paths while preserving identical
+    /// warning semantics (`isConcentrated` over top-N fast-lane setups).
+    nonisolated static func moneyVelocityConcentrationWarning(_ concentration: FastLaneConcentration?) -> String? {
+        guard let concentration, concentration.isConcentrated else { return nil }
+        return "⚠︎ Fast lane is concentrated — your top \(concentration.total) fastest are all \(concentration.dominantClass); that's closer to one bet, not \(concentration.total). Diversify or size them as one."
+    }
+
     /// Typical hold in days by asset class — crypto turns over fast (24/7), equities
     /// swing. nil for index/FX (not traded for velocity here). A rough default, not
     /// a per-symbol measurement.

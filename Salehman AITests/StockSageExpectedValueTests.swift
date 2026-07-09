@@ -187,6 +187,20 @@ struct StockSageExpectedValueTests {
         #expect(EV.fastLaneConcentration(all, topN: 3, liquidity: liq)?.isConcentrated == false)
     }
 
+    @Test func moneyVelocityConcentrationWarningRendersCanonicalCopyForConcentratedLane() {
+        let concentrated = FastLaneConcentration(dominantClass: "Crypto", count: 3, total: 3)
+        let warning = EV.moneyVelocityConcentrationWarning(concentrated)
+        #expect(warning != nil)
+        #expect(warning?.contains("top 3 fastest are all Crypto") == true)
+        #expect(warning?.contains("closer to one bet") == true)
+    }
+
+    @Test func moneyVelocityConcentrationWarningIsNilForMixedOrInsufficientLane() {
+        let mixed = FastLaneConcentration(dominantClass: "Crypto", count: 2, total: 3)
+        #expect(EV.moneyVelocityConcentrationWarning(mixed) == nil)
+        #expect(EV.moneyVelocityConcentrationWarning(nil) == nil)
+    }
+
     // liquidityRankPenalty (sibling of earningsRankPenalty, §1.A #2) was UNTESTED. Spec is a
     // direct mapping: no profile → 0; tier == .thin → 3000 (the −3000 thin-liquidity sentinel);
     // any other tier (.moderate/.deep) → 0. Only a REAL .thin profile fires (only-real-data).

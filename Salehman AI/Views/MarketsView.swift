@@ -4185,8 +4185,8 @@ struct MarketsView: View {
                             .font(.system(size: mvFont10, weight: .semibold))
                             .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
-                    if let conc, conc.isConcentrated {
-                        Text("⚠︎ Fast lane is concentrated — your top \(conc.total) fastest are all \(conc.dominantClass); that's closer to one bet, not \(conc.total). Diversify or size them as one.")
+                    if let conc, let warning = StockSageExpectedValue.moneyVelocityConcentrationWarning(conc) {
+                        Text(warning)
                             .font(.system(size: mvFont10, weight: .semibold))
                             .foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                             .accessibilityLabel("Velocity warning: the fastest \(conc.total) ideas are all \(conc.dominantClass) — concentration risk; size them as one bet")
