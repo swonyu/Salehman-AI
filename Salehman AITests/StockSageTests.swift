@@ -257,15 +257,19 @@ struct StockSageUniverseTests {
     // 210/2,210/2,420 arithmetic is shown inline) AND bounded > 2,300 so a silent group-loss
     // regression (e.g. a future edit that drops a whole `groups` or `catalogExtra` block) fails
     // loudly even if someone "fixes" the exact pin without noticing the loss.
-    @Test func worldwideIsPromotedToTheFullTwoThousandFourHundredNineteenNameUniverse() {
-        // RE-DERIVED 2026-07-09: groups = 210 − 1 = 209 (ROG.SW removed — persistent HTTP 404 on
-        // the app's own fetch path, dead on Yahoo, failed every live scan; dev-log entry this
-        // date). catalogExtra unchanged (grep: ROG.SW appeared ONLY in the groups literal, so the
-        // zero-overlap premise holds). 209 + 2,210 = 2,419.
-        let groupsCount = 209          // Stage 1 n=210 − the 2026-07-09 ROG.SW dead-symbol removal
-        let catalogExtraCount = 2_210  // hand-counted from the source literal, see derivation script
-        let expected = groupsCount + catalogExtraCount   // zero cross-list overlap today
-        #expect(expected == 2_419)
+    // Count-free name (2026-07-09, second dead-symbol removal in one day): the DERIVATION is
+    // the contract — groups + catalogExtra with zero overlap — and the pinned numbers live in
+    // the body where a change forces re-derivation, not in a test name that churns per removal.
+    @Test func worldwideIsExactlyTheHandDerivedGroupsPlusCatalogExtraSum() {
+        // RE-DERIVED 2026-07-09 (full-catalog CFNetwork sweep, 2,419 probed, double-probed
+        // failures): groups = 210 − ROG.SW (404, dead) − SQ (404; Block trades as XYZ, already
+        // in catalogExtra) = 208. catalogExtra unchanged at 2,210 (neither corpse appears in it;
+        // zero-overlap premise re-checked by grep). 208 + 2,210 = 2,418 — every one of which
+        // returned HTTP 200 + parseable price in the same sweep.
+        let groupsCount = 208
+        let catalogExtraCount = 2_210
+        let expected = groupsCount + catalogExtraCount
+        #expect(expected == 2_418)
         #expect(StockSageUniverse.worldwide.count == expected)
         #expect(StockSageUniverse.worldwide.count > 2_300)   // regression guard: silent group loss
     }
@@ -291,7 +295,7 @@ struct StockSageUniverseTests {
     // future reordering of `build(groups) + build(catalogExtra)` fails a test that says why).
     @Test func worldwideFirstElementIsStillAramcoPostPromotion() {
         #expect(StockSageUniverse.worldwide.first?.symbol == "2222.SR")
-        #expect(StockSageUniverse.worldwide.count == 2_419)   // 209 + 2,210 (ROG.SW removal, 2026-07-09)
+        #expect(StockSageUniverse.worldwide.count == 2_418)   // 208 + 2,210 (ROG.SW + SQ removals, 2026-07-09)
     }
 
     // Review round-2 finding 2: the Markets ideas-header literal ("≈2,330 equities") was WRONG

@@ -376,7 +376,10 @@ enum StockSageUniverse {
     // like `groups` (see the header comment above `groups`), not just searchable/addable.
     // Real, liquid Yahoo tickers; if one ever fails to price, the caller says so honestly.
     private static let catalogExtra: [(label: String, tickers: [String])] = [
-        ("🇺🇸 US Tech & Growth",   ["GOOG", "MRVL", "ON", "MCHP", "NXPI", "SNOW", "PLTR", "CRWD", "DDOG", "ZS", "NET", "WDAY", "TEAM", "DELL", "HPQ", "UBER", "ABNB", "COIN", "SQ", "PYPL", "SHOP", "MDB", "DOCU", "ROKU", "PINS"]),
+        // SQ removed 2026-07-09: persistent HTTP 404 (Block, Inc. trades as XYZ now — already
+        // in catalogExtra and verified fetchable, so coverage is unchanged). Found by the
+        // full-catalog CFNetwork sweep: the ONLY corpse among 2,419 symbols.
+        ("🇺🇸 US Tech & Growth",   ["GOOG", "MRVL", "ON", "MCHP", "NXPI", "SNOW", "PLTR", "CRWD", "DDOG", "ZS", "NET", "WDAY", "TEAM", "DELL", "HPQ", "UBER", "ABNB", "COIN", "PYPL", "SHOP", "MDB", "DOCU", "ROKU", "PINS"]),
         ("🇺🇸 US Financials+",     ["SPGI", "MCO", "ICE", "CME", "COF", "USB", "PNC", "TFC", "BX", "KKR", "APO", "MET", "PRU", "AIG", "TRV"]),
         ("🇺🇸 US Health+",         ["VRTX", "REGN", "BMY", "GILD", "CVS", "MDT", "ISRG", "ZTS", "SYK", "BDX", "HCA", "CI", "ELV", "BSX", "MRNA"]),
         ("🇺🇸 US Consumer+",       ["LOW", "TGT", "TJX", "BKNG", "PM", "MDLZ", "CL", "EL", "KHC", "GIS", "KMB", "MNST", "YUM", "CMG", "MAR"]),
