@@ -28,3 +28,15 @@ Occasioned by the owner's "what about yahoo" — Yahoo v8 5y became reachable ag
 
 ## Honesty caveats
 Survivorship (today's 50 large-cap survivors, no delisted names — biases the reversal/momentum baseline UP); breadth 50 names (deeper 5y but narrower cross-section than the 2,158-name 1y run); industry-map quality high here only because the panel was curated to shipped-tagged names (not an arbitrary universe); single vendor (Yahoo, one 5y window that slides daily — exact decimals drift, the null VERDICT is the stable claim, never a single-config sign). A null here is corroboration at longer horizons + multi-regime depth; it does not (and cannot at this breadth) overturn — or establish — any edge.
+
+## UPDATE 2026-07-09 (corpus reconciliation — "extended" grid wording corrected)
+The opening section above says "only the `tools/altdata_ablation/main.swift` horizon grid
+extended." That is imprecise: the **repo's committed copy** of `tools/altdata_ablation/main.swift`
+still defines `lookbacks = [5, 10, 21, 63]` × `holds = [5, 10, 21]` (12 configs; verified
+2026-07-09) — it was never updated. The 20-config grid this run actually used
+(`lb∈{5,10,21,63,126}×hold∈{5,10,21,63}`) ran from a **session-local modified copy** of the
+harness, not a committed change. The engine files (`StockSageNetCostSim`/`StockSageDeflatedSharpe`)
+compiled for this run remain git-verified identical to origin/main as stated — only the grid
+constants in the disposable driver differed, and that driver's extended grid was never
+committed. A repo grid-commit (widening `tools/altdata_ablation/main.swift` to the run's actual
+20-config grid) is queued as a follow-up, not yet done.

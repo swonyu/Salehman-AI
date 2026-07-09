@@ -105,3 +105,11 @@ campaign's search breadth (probe/sweep/max-t/holdout across the 1y chain) — a 
 trial count only pushes DSR further below the bar, so the null is conservative. Scripts:
 session-scratchpad one-shots (fetch/analysis/DSR runner); this doc carries the full protocol
 + pasted outputs for reproduction.
+
+## UPDATE 2026-07-09 (owner ruling, same day)
+With this powered NULL in hand, the owner ruled **KEEP (option "a")** for the already-activated
+`turnOfMonthEnabled` tilt — a deliberate, disclosed preference, explicitly **not an evidence
+promotion**. The flag stays `true`; harm is bounded by construction (capped ±0.03, reliability-
+weighted, |t|<1-gated, direction-aware, UI-disclosed). Per `research/INDEX.md`'s TOM status-lock
+line, **the TOM research lane is now CLOSED** — do not re-open without new data-class evidence
+(e.g. a delisting-inclusive multi-decade panel) or new owner words.

@@ -78,3 +78,14 @@ Given a decision to trade a name, what order type (marketable/market vs resting 
 - The app already ships `StockSageExecutionTiming.sessionNote` as a **FLAG-ONLY advisory** (no sizing/rank effect), and the reversal-as-liquidity-screen leg was **deliberately deferred**. This round provides **no basis to wire a new order-type or day-of-week signal** into ranking, sizing, or auto-advice.
 - The one genuinely retail-direct, current-era, net-measured result — **limit ~10 bps cheaper for the patient/uninformed trader, sign-flipping to marketable when informed/urgent** — is at most a candidate for a FLAG-ONLY note (same pattern as `sessionNote`), and even that is owner-gated. It is conditional (patient vs informed), intraday-scoped, and its magnitude is dwarfed by the PFOF broker-choice lever, which the app does not control.
 - **A documented absence is a valid result.** The correct disposition of this frontier item is: closing-auction-as-retail-venue = refused (institutional-only, did not survive); day-of-week rule = refused (no net-tradable effect, decayed regime); order-type = retail-direct finding recorded but NOT wired. Do not recommend shipping a new signal on any of the three.
+
+**UPDATE 2026-07-09 (owner gate-lift supersedes this section's framing):** the owner lifted
+every owner gate ("nothing is owner gated i allow u") — see `research/INDEX.md`'s "Execution
+question-3 remainder" frontier row, UPDATE 2026-07-09. The "OWNER-GATED" language above is
+superseded: decisions are now evidence-based through the normal shipping pipeline, not held for
+separate owner sign-off. Honesty floor and DSR validation bar UNCHANGED. As it happens, the
+order-type finding this section called "recorded but NOT wired" WAS subsequently wired: a
+flag-only limit-vs-marketable trade-off advisory (incl. the informed/urgent sign-flip this
+section documents, plus a 24/7-crypto override) shipped display-only in
+`Views/MarketsTodayActionsCard.swift` (2026-07-09 C1 wave) — see the INDEX row for the exact
+lines. Auctions and day-of-week remain REFUSED; nothing there was wired.

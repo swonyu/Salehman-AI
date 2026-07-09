@@ -286,7 +286,7 @@ EXECUTION:
 
 ### Engine mappings
 CALIBRATION (#1, #2, #16 in build checklist):
-- Calibration candidate selector {isotonic, beta-3param, identity}: ALREADY IMPLEMENTED as of iter7 (2026-06-27). `StockSageConvictionCalibration` with `candidateSelectorEnabled` flag (default false), `BetaCalibration` type, `fitBeta` (IRLS, 3×3 Cramer, drop-and-refit monotonicity), `selectCalibration` (chronological 70/30 split + 1-row embargo). 10 new test cases in `StockSageCalibrationSelectorTests`. Ridge-logistic plan subsumed by selector. [Research INDEX.md iter7 entry; doc §1 + DECISION BOX]
+- Calibration candidate selector {isotonic, beta-3param, identity}: ALREADY IMPLEMENTED as of iter7 (2026-06-27). `StockSageConvictionCalibration` with `candidateSelectorEnabled` flag (default false), `BetaCalibration` type, `fitBeta` (IRLS, 3×3 Cramer, drop-and-refit monotonicity), `selectCalibration` (chronological 70/30 split + 1-row embargo). 10 new test cases in `StockSageCalibrationSelectorTests`. Ridge-logistic plan subsumed by selector. [Research INDEX.md iter7 entry; doc §1 + DECISION BOX] **UPDATE 2026-07-09: stale — the flag shipped ACTIVATED (`= true`), owner-approved 2026-06-27; "default false" describes the pre-activation state only. Verified live in `StockSageConvictionCalibration.swift`.**
 - Wilson lower bound as separate conservative floor on TOP of chosen map: ALREADY (Wilson) / NEW = bootstrap floor for Beta (no bins → bootstrap Beta's lower predicted quantile). Do NOT feed Wilson-shrunk targets into the Beta fit (double-shrinkage compresses high-conviction tail). [doc §1, checklist #2]
 - Optional AICc/LR gate falling back to Beta[a=b] (Platt-on-log-odds) for very small n: labeled defense-in-depth (NOT a paper finding), lowest priority. [doc §1, checklist #16]
 
@@ -422,7 +422,7 @@ FINDING 5 — ADOPT (flank, MEDIUM confidence): Low-conviction closet-indexing i
 Justification: Cremers-Petajisto (RFS 2009) show lowest-Active-Share funds underperform their benchmark by −1.41% to −1.76%/yr after expenses. CONDITIONAL: the broader inference "high Active Share pays net of costs" was REFUTED (0-3). Adopt only the mechanical closet-indexer-underperforms conclusion.
 
 ### Quantified claims
-All numbers below are sourced from /Users/saleh/ai/RESEARCH_2026-06-27_money_fast_conviction.md unless otherwise noted.
+All numbers below are sourced from /Users/saleh/Salehman-AI/RESEARCH_2026-06-27_money_fast_conviction.md unless otherwise noted.
 
 --- FINDING 1: Best-ideas concentration ---
 - Best ideas beat market and own portfolio: ~2.8 to 4.5%/yr GROSS (Antón, Cohen & Polk, "Best Ideas," RFS)
@@ -470,7 +470,7 @@ All numbers below are sourced from /Users/saleh/ai/RESEARCH_2026-06-27_money_fas
 - Verification: 3-0 on claim [3] only
 
 ### Engine mappings
-All mappings reference the StockSage engine (Salehman AI project at /Users/saleh/ai/). Sourced from the document itself and the research INDEX.md cross-references.
+All mappings reference the StockSage engine (Salehman AI project at /Users/saleh/Salehman-AI/). Sourced from the document itself and the research INDEX.md cross-references.
 
 1. HALF-KELLY 0.5x SIZING (already implemented):
    - Research directly validates the app's current 0.5x Kelly multiplier.
@@ -492,7 +492,7 @@ All mappings reference the StockSage engine (Salehman AI project at /Users/saleh
 
 5. CALIBRATION PIPELINE (ITER7, planned):
    - The finding that skill is predicted by PAST REALIZED PERFORMANCE (not conviction) directly motivates the calibration-selector approach: {identity, Beta-3param, isotonic} OOS-Brier-picked. The calibrator acts as the engine's operationalization of "measured skill from track record."
-   - `StockSageConvictionCalibration`: `candidateSelectorEnabled` flag (default false, byte-identical off). This is the iter7 module.
+   - `StockSageConvictionCalibration`: `candidateSelectorEnabled` flag (default false, byte-identical off). This is the iter7 module. **UPDATE 2026-07-09: stale — flag shipped ACTIVATED (`= true`), owner-approved 2026-06-27; the identity floor still guarantees byte-identical output when the OOS selector picks identity.**
    - Reconcile note: the research (quant_engine_II) recommends Beta calibration as a candidate alongside isotonic + no-op identity, OOS-selected per refit. The ridge-logistic (plain Platt) plan must be reconciled with this Beta-candidate-selector before iter7 ships.
 
 6. CONCENTRATION / BEST-IDEAS LOGIC (if implemented):

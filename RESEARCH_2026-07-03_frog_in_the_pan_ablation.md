@@ -93,3 +93,10 @@ FIP + blocks + paired-t) → `series.json`; `main.swift` compiled with the real 
 `swiftc -O StockSageAllocation.swift StockSageLiquidity.swift StockSageNetEdge.swift StockSageDeflatedSharpe.swift main.swift -o runner`.
 Expect the null to hold (best DSR well below 0.95); short-horizon decimals/signs drift with Yahoo's
 sliding 5y window — only the CONCLUSION (net does not clear) is stable.
+
+**UPDATE 2026-07-09 (corpus reconciliation — text-vs-table inconsistency, verdict unaffected):**
+the Results section's prose ("Best incremental = LID−HID/42d 0.125. Every incremental DSR ≤ 0.125")
+undercounts its own table above: the H=126 row's LID−HID DSR is **0.163**, not 0.125 — the true
+best-incremental value across the whole table (LID−UM column max 0.094 @42d; LID−HID column max
+0.163 @126d). Corrected in `research/INDEX.md`'s frog-in-the-pan line. Does not change the verdict:
+0.163 is still ≪ 0.95, NO config clears, NULL stands.

@@ -119,6 +119,16 @@ owner approval — exactly as confluence/RS and the IRRX overlay are gated. This
 next step: owner reviews → ratify-as-is vs tiered revision → if revising, it goes through the normal
 wave/QA/test-green pipeline with a `DEVELOPMENT_LOG` entry and an INDEX open-frontier UPDATE.
 
+**UPDATE 2026-07-09 (owner gate-lift supersedes this framing):** the owner lifted every owner
+gate ("nothing is owner gated i allow u") — see `research/INDEX.md`'s "Current-era retail cost
+levels" frontier row, UPDATE 2026-07-09. The "OWNER-GATED" language above is now superseded:
+decisions on this research are made on evidence and shipped through the normal pipeline, not held
+for a separate owner sign-off. The honesty floor and DSR validation bar are UNCHANGED. As it
+happens, this exact table WAS re-ratified through the pipeline that same day (`.SR` given its own
+60bps tier; US/liquid-intl/crypto/FX/index-ETF ratified as-is) — see the INDEX row for the final
+disposition and this doc's own §2 for the residual small-order/illiquid/EM exposure that
+ratification left in place.
+
 ## Key sources (all fetched + 3-vote verified this round)
 
 - Fidelity execution quality (S&P Global Rule-605 audit) — https://www.fidelity.com/trading/execution-quality/overview
