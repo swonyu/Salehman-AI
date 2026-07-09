@@ -2548,7 +2548,11 @@ struct MarketsView: View {
                         }
                         .overlay(RoundedRectangle(cornerRadius: DS.Radius.chip, style: .continuous)
                             .stroke(Color.white.opacity(heatHovered ? 0.22 : 0.08), lineWidth: 1))
-                        .opacity(stale ? 0.55 : 1)   // visually recede a stale row
+                        // C4 harvest (2026-07-09): 0.55 was sub-AA on this row's own secondary
+                        // text — same defect the ideas card fixed (its comment: "0.85 keeps
+                        // .secondary text ≥4.5:1 AA (was 0.75 → 3.84:1)"). Same fix, same floor;
+                        // staleness stays legible instead of illegibly dim.
+                        .opacity(stale ? 0.85 : 1)   // visually recede a stale row (AA floor)
                         .scaleEffect(heatHovered ? 1.04 : 1.0)
                         .animation(DS.Motion.press, value: heatHovered)
                         .onHover { over in
