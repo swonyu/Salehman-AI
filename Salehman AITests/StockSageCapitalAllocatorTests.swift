@@ -32,6 +32,30 @@ struct StockSageCapitalAllocatorTests {
         #expect(a.positions[0].dollarsAtRisk <= a.positions[0].riskFraction * 10_000 + 1e-9)
     }
 
+    // F5 (2026-07-09): allocate() silently dropped every 0-share position — the Deploy card just
+    // vanished with no way to tell "nothing qualified" apart from "everything qualified but was
+    // too small to buy 1 share here". fundableCandidateCount distinguishes the two.
+    @Test func fundableCandidateCountNamesWhyThePlanIsEmptyWhenEveryPositionFloorsToZeroShares() {
+        // Same fixture as halfKellyIsAFractionNotDividedByAccount (conviction 0.5, 100/90/130,
+        // halfKelly ≈ 0.1433 — confirmed fundable at the qualitative level by that sibling test,
+        // which produces 143 real shares at a $10k account/maxHeat 0.50). At a $1 account with the
+        // default maxHeat 0.08, the single-idea scaled budget is EXACTLY account×maxHeat = $0.08
+        // (scaleApplied = cap/requestedHeat when one idea's weight alone exceeds the cap, so
+        // weight×scaleApplied = cap identically) — $0.08 ÷ $10 stop distance floors to 0 shares.
+        let a = Alloc.allocate(ideas: [idea("AAPL", price: 100, stop: 90, target: 130, conviction: 0.5)],
+                               account: 1, maxHeat: 0.08)
+        #expect(a.positions.isEmpty)
+        #expect(a.fundableCandidateCount == 1)
+    }
+
+    @Test func fundableCandidateCountIsZeroWhenNothingQualifiesAtAll() {
+        // No ideas at all → the ORIGINAL silent-empty case — must stay 0, not resurrect a
+        // phantom candidate the view would then wrongly claim "floored to 0 shares".
+        let a = Alloc.allocate(ideas: [], account: 10_000, maxHeat: 0.08)
+        #expect(a.positions.isEmpty)
+        #expect(a.fundableCandidateCount == 0)
+    }
+
     @Test func capBindsAndTotalHeatNeverExceedsMax() {
         // Three high-conviction 6:1 buys (each half-Kelly ≈ 0.2416, Σ ≈ 0.725 ≫ 0.08).
         let ideas = [idea("AAA", price: 100, stop: 90,  target: 160, conviction: 0.9),

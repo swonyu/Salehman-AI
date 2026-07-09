@@ -18,6 +18,12 @@ struct MarketsTodayActionsCard: View {
     /// Called with the tapped row's symbol; the caller resolves it to a `StockSageIdea` (e.g.
     /// `store.ideas.first { $0.symbol == symbol }`) and opens its detail sheet.
     let onSelectSymbol: (String) -> Void
+    /// F8 (2026-07-09): the global "Do this now" CTA's own pick (bestOpportunity: highest gross
+    /// EV), passed in ONLY so this card can disclose it when it names a DIFFERENT symbol than
+    /// this list's own #1 row (rankedActions: fastest EV/day, equities-first) — two different
+    /// lenses that can legitimately disagree with no cross-reference before this. Copy-only:
+    /// nil (default) renders nothing, matching every other call site unaware of this parameter.
+    var globalBestSymbol: String? = nil
     @ObservedObject private var paperStore = StockSagePaperTradeStore.shared
     @State private var executableOnly = false
 
@@ -53,6 +59,13 @@ struct MarketsTodayActionsCard: View {
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text("Within those buckets, faster raw EV/day ranks first — unlike the Fast lane above, which ranks by growth rate (log-growth at ½-Kelly), so the two cards can order the same names differently.")
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                // F8 (2026-07-09): cross-reference the OTHER direction — this list's own #1 vs
+                // the global "Do this now" CTA's pick (a different lens: highest gross EV, not
+                // fastest EV/day). Copy-only; renders nothing when either is nil or they agree.
+                if let globalBestSymbol, let first = plans.first?.symbol, globalBestSymbol != first {
+                    Text("The 'Do this now' CTA leads with \(globalBestSymbol) instead — different lens (highest gross EV, not fastest EV/day).")
+                        .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
                 if executableOnly {
                     Text("Executable now includes only rows that currently clear or caution on the pre-trade gate.")
                         .font(.system(size: 8)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -290,7 +303,11 @@ struct MarketsTodayActionsCard: View {
                         // One short suffix max (compact-row discipline) — closedTradeCount is
                         // lower-value here and carried only in the a11y label below.
                         let heldSuffix = plan.heldShares.map { " · holds \(numShares($0)) sh" } ?? ""
-                        Text("· \(sh) sh (≈$\(Int(dr.rounded())) at risk)\(heldSuffix)")
+                        // F1/F3 (2026-07-09): a row that floors to 0 shares can still hold a #1
+                        // slot here — say so, matching StockSagePositionSizer.summaryLine's same
+                        // disclosure on the idea card / CTA / sheet. No demotion, display-only.
+                        let unfundableSuffix = sh == 0 ? " — below 1-share minimum at your account size" : ""
+                        Text("· \(sh) sh (≈$\(Int(dr.rounded())) at risk)\(heldSuffix)\(unfundableSuffix)")
                             .font(.system(size: font9)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
@@ -347,6 +364,8 @@ struct MarketsTodayActionsCard: View {
             label += ". Entry \(adaptivePrice(plan.entry)), stop \(adaptivePrice(plan.stop)), target \(adaptivePrice(plan.target))"
             if let sh = plan.shares, let dr = plan.dollarsAtRisk {
                 label += ", \(sh) shares, about $\(Int(dr.rounded())) at risk"
+                // F1/F3 a11y parity with the visible row's unfundableSuffix above.
+                if sh == 0 { label += ", below the 1-share minimum at this account size" }
             }
             // TODAY-PARITY a11y: the compact visible row only ever shows "holds N sh" (one
             // suffix max); VoiceOver carries the full held/journal context, matching the ideas

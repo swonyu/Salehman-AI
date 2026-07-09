@@ -33,6 +33,28 @@ struct StockSagePositionSizerTests {
         #expect(line.lowercased().contains("loss"))      // honesty: sizes the loss
     }
 
+    // F1/F3 (2026-07-09): whole-share flooring can round a real setup to 0 shares while the idea
+    // still holds a top rank slot — the sized-order line must say so. Straddle at the 1-share
+    // boundary: $100 account, 1% risk → $1 budget. stop-distance 2 → budget/risk = 0.5 → floors
+    // to 0 shares (unfundable); stop-distance 1 → budget/risk = 1.0 → exactly 1 share (fundable,
+    // right at the boundary) — genuinely brackets the disclosure condition, not just "both sides
+    // nonzero".
+    @Test func summaryLineDisclosesUnfundableAtZeroSharesButFundableJustAboveIt() {
+        let unfundable = PS.size(account: 100, riskFraction: 0.01, entry: 100, stop: 98)!
+        #expect(unfundable.shares == 0)
+        let unfundableLine = PS.summaryLine(unfundable, riskPct: 1)
+        #expect(unfundableLine.contains("0 shares"))
+        #expect(unfundableLine.contains("Below the 1-share minimum at your account size"))
+        #expect(unfundableLine.contains("not fundable as sized"))
+
+        let fundable = PS.size(account: 100, riskFraction: 0.01, entry: 100, stop: 99)!
+        #expect(fundable.shares == 1)
+        let fundableLine = PS.summaryLine(fundable, riskPct: 1)
+        #expect(fundableLine.contains("1 shares"))
+        #expect(!fundableLine.contains("1-share minimum"))
+        #expect(!fundableLine.contains("not fundable"))
+    }
+
     @Test func sizesToTheRiskBudget() {
         // $10k account, 1% risk = $100 budget; $10 stop distance → 10 shares.
         let p = PS.size(account: 10_000, riskFraction: 0.01, entry: 100, stop: 90)!

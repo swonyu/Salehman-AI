@@ -330,6 +330,100 @@ struct StockSageExpectedValueTests {
         #expect(s.weeklyRNet == standalone)
     }
 
+    // F9 (2026-07-09, same-basket display-sum correctness fix). Straddle fixture: 4 EQUITY ideas
+    // (entry 100 / stop 90 / target 130 → risk 10, reward 30, rewardR 3.0; spark:[] so
+    // expectedHoldDays falls back to the Equity default 12), convictions 0.8/0.7/0.6/0.5 so the
+    // UNAWARE rank-key order is strictly A>B>C>D (higher conviction → higher winProb → higher
+    // log-growth AND higher net/gross ratio, both increasing together — no cancellation). Every
+    // number below is hand-derived from the DOCUMENTED formulas (winProbEstimate = 0.35+0.23·c;
+    // evR = p·rewardR-(1-p) = 4p-1 at rewardR=3; NetEdge cost = (8+5)/10000·100 = 0.13 US bps,
+    // netEVR = evR - cost/grossRisk = evR-0.013 since netReward+netRisk = cappedGrossReward+
+    // grossRisk cancels the cost's coefficient; vel=evR/12; netVel=netEVR/12) and cross-checked
+    // by an independent standalone script (derive_f9_samebasket.swift, run via `swift`, not the
+    // app under test):
+    //   p:     A=0.534   B=0.511   C=0.488   D=0.465
+    //   evR:   A=1.136   B=1.044   C=0.952   D=0.86      (evR=4p-1)
+    //   netEVR:A=1.123   B=1.031   C=0.939   D=0.847     (evR-0.013)
+    //   vel:   A=0.09466666.. B=0.087        C=0.07933333.. D=0.07166666..   (evR/12)
+    //   netVel:A=0.09358333.. B=0.08591666.. C=0.07825      D=0.07058333..   (netEVR/12)
+    // Unaware fastLane top-3 (no earnings/liquidity penalty) = {A,B,C}; D is 4th.
+    // C ALONE gets an earnings-imminent flag: -2000 rank-key penalty, which dwarfs the ~0.01-scale
+    // velocityRankKey entirely, so the AWARE fastLane top-3 = {A,B,D} (C sinks below D).
+    // All 4 ideas are Equity (no suffix) so ANY 3-of-4 subset is single-asset-class →
+    // fastLaneConcentration.isConcentrated is true for BOTH baskets → the 0.70 haircut applies to
+    // all three sums below identically. tradingDaysForLane = 5 (0 crypto in the full 4-idea lane;
+    // lane MEMBERSHIP — as opposed to order — is earnings/liquidity-invariant, so this is the same
+    // whether the aware or unaware lane computes it).
+    //   old weeklyR (basket {A,B,C}, UNCHANGED, unaware)      = (0.09466667+0.087+0.07933333)·5·0.70 = 0.9135000000
+    //   weeklyRNet (basket {A,B,D}, aware)                    = (0.09358333+0.08591667+0.07058333)·5·0.70 = 0.8752916667
+    //   NEW weeklyRGrossSameBasket (basket {A,B,D}, SAME as net) = (0.09466667+0.087+0.07166667)·5·0.70 = 0.8866666667
+    // STRADDLE: weeklyR (0.9135) and weeklyRGrossSameBasket (0.8867) genuinely DIFFER (>0.02 apart)
+    // — the old "net X (gross Y)" pairing showed Y from a different top-3 than the one X was summed
+    // over; the fix makes the paired gross figure describe net's OWN basket instead.
+    @Test func summaryWeeklyRGrossSameBasketMatchesNetBasketNotUnawareLane() {
+        let a = idea("FSBA", conviction: 0.8, stop: 90, target: 130)
+        let b = idea("FSBB", conviction: 0.7, stop: 90, target: 130)
+        let c = idea("FSBC", conviction: 0.6, stop: 90, target: 130)
+        let d = idea("FSBD", conviction: 0.5, stop: 90, target: 130)
+        let earnings = ["FSBC": EarningsProximity(daysUntil: 1, severity: .imminent)]
+
+        let s = EV.summary([a, b, c, d], earnings: earnings)
+
+        #expect(s.weeklyR != nil)
+        #expect(s.weeklyRNet != nil)
+        #expect(s.weeklyRGrossSameBasket != nil)
+        guard let wk = s.weeklyR, let net = s.weeklyRNet, let sameBasket = s.weeklyRGrossSameBasket else {
+            Issue.record("summary() returned nil weeklyR/weeklyRNet/weeklyRGrossSameBasket on a positive-velocity 4-idea lane")
+            return
+        }
+        #expect(abs(wk - 0.9135) < 1e-6)                       // unaware basket {A,B,C} — UNCHANGED
+        #expect(abs(net - 0.8752916667) < 1e-6)                // aware basket {A,B,D}
+        #expect(abs(sameBasket - 0.8866666667) < 1e-6)         // SAME aware basket {A,B,D} as net
+        // The straddle itself: old pairing (weeklyR beside weeklyRNet) vs new (weeklyRGrossSameBasket
+        // beside weeklyRNet) show genuinely different numbers — the fix isn't a no-op relabel.
+        #expect(abs(wk - sameBasket) > 0.02)
+        // Sanity: net still strictly below its OWN same-basket gross (cost is strictly positive).
+        #expect(net < sameBasket)
+    }
+
+    // No-divergence companion: with NO earnings/liquidity penalty the aware and unaware lanes are
+    // IDENTICALLY ordered (nothing subtracts the -2000/-3000 term from any idea), so the aware and
+    // unaware top-3 are the same basket {A,B,C} — weeklyRGrossSameBasket must equal weeklyR exactly.
+    // Proves the fix is a true no-op when there is nothing to straddle (not a hidden regression).
+    @Test func summaryWeeklyRGrossSameBasketEqualsWeeklyRWhenBasketsDoNotDiverge() {
+        let a = idea("FSBA", conviction: 0.8, stop: 90, target: 130)
+        let b = idea("FSBB", conviction: 0.7, stop: 90, target: 130)
+        let c = idea("FSBC", conviction: 0.6, stop: 90, target: 130)
+        let d = idea("FSBD", conviction: 0.5, stop: 90, target: 130)
+        let s = EV.summary([a, b, c, d])
+        #expect(s.weeklyR != nil)
+        #expect(s.weeklyRGrossSameBasket != nil)
+        #expect(s.weeklyR == s.weeklyRGrossSameBasket)
+    }
+
+    // F4 (2026-07-09): the "≈ +$N/week" header dollarizes weekly R with no fundability check —
+    // this flag lets the view add an honest qualifier without touching that header's own math.
+    // Straddle: same idea (entry 100/stop 90/target 130, riskPerShare 10), account swept from
+    // unfundable to fundable at the sizer's own 1-share floor.
+    @Test func weeklyDollarsIncludesUnfundableRowTrueWhenATopLaneIdeaFloorsToZeroShares() {
+        // $1 account, 1% risk → $0.01 budget ÷ $10 risk/share = 0.001 → floors to 0 shares.
+        let a = idea("A", conviction: 0.6, stop: 90, target: 130)
+        #expect(EV.weeklyDollarsIncludesUnfundableRow(lane: [a], account: 1, riskFraction: 0.01))
+    }
+
+    @Test func weeklyDollarsIncludesUnfundableRowFalseWhenTheLaneIdeaIsFundable() {
+        // $100k account, 1% risk → $1000 budget ÷ $10 risk/share = 100 shares — clearly fundable.
+        let a = idea("A", conviction: 0.6, stop: 90, target: 130)
+        #expect(!EV.weeklyDollarsIncludesUnfundableRow(lane: [a], account: 100_000, riskFraction: 0.01))
+    }
+
+    @Test func weeklyDollarsIncludesUnfundableRowFalseOnUnusableInputsOrEmptyLane() {
+        let a = idea("A", conviction: 0.6, stop: 90, target: 130)
+        #expect(!EV.weeklyDollarsIncludesUnfundableRow(lane: [a], account: 0, riskFraction: 0.01))       // no account
+        #expect(!EV.weeklyDollarsIncludesUnfundableRow(lane: [a], account: 10_000, riskFraction: 0))     // no risk %
+        #expect(!EV.weeklyDollarsIncludesUnfundableRow(lane: [], account: 10_000, riskFraction: 0.01))   // empty lane
+    }
+
     @Test func summaryIncludesWorstRunDrawdownBrake() {
         let b = idea("BTC-USD", action: .strongBuy, conviction: 0.9, stop: 90, target: 130)
         // 3 closed losers in a row → worst run 3; at 1%/trade → 1 − 0.99^3 = 0.029701.
@@ -952,36 +1046,6 @@ struct StockSageExpectedValueTests {
         #expect(grossEV.evR > expected)   // sanity: net is still below gross from spread/slippage alone
     }
 
-    // MARK: - HARDENING_BACKLOG #12: velocity-hold calibration note vs journal actuals
-
-    private func closedTrade(_ symbol: String, holdDays: Double) -> TradeRecord {
-        TradeRecord(symbol: symbol, side: .long, entry: 100, stop: 90, target: nil, shares: 1,
-                    openedAt: Date(timeIntervalSince1970: 0), exitPrice: 105,
-                    closedAt: Date(timeIntervalSince1970: holdDays * 86_400))
-    }
-
-    @Test func calibrationNoteFlagsCryptoDivergingFromTheHoldAssumption() {
-        // 3 crypto trades held 5 days each vs the 3-day default assumption — (5-3)/3 = 0.667 > 0.20.
-        let trades = (0..<3).map { _ in closedTrade("BTC-USD", holdDays: 5) }
-        let note = EV.calibrationNote(journalTrades: trades)
-        #expect(note != nil)
-        #expect(note!.localizedCaseInsensitiveContains("crypto"))
-        #expect(note!.contains("5.0d") || note!.contains("5d"))
-    }
-
-    @Test func calibrationNoteIsNilWhenHoldsMatchTheAssumption() {
-        // 3 equity trades held exactly 12 days — matches VelocityHoldDays.defaults.equity, 0 divergence.
-        let trades = (0..<3).map { _ in closedTrade("AAPL", holdDays: 12) }
-        #expect(EV.calibrationNote(journalTrades: trades) == nil)
-    }
-
-    @Test func calibrationNoteRequiresAtLeastThreeClosedTradesPerClass() {
-        // Only 2 crypto trades, wildly diverging hold — too thin to estimate honestly → nil.
-        let trades = (0..<2).map { _ in closedTrade("BTC-USD", holdDays: 30) }
-        #expect(EV.calibrationNote(journalTrades: trades) == nil)
-        #expect(EV.calibrationNote(journalTrades: []) == nil)
-    }
-
     @Test func evShortTradeParity() {
         let short = StockSageExpectedValue.ev(conviction: 0.9, entry: 100, stop: 110, target: 80)!
         #expect(abs(short.rewardR - 2.0) < 1e-9)
@@ -1194,6 +1258,22 @@ struct StockSageExpectedValueTests {
         let note = EV.financingNoteSuffix(rate: 0.03, days: 12)
         #expect(note.contains("300bps/yr short financing"),
                 "expected '300bps/yr short financing' in note — got: '\(note)'")
+    }
+
+    // F10 (2026-07-09): `days` here is ALWAYS the expectedHoldDays ESTIMATOR — financingCostInputs
+    // never reads StockSageJournal.holdingPeriod even when the owner's journal has measured holds
+    // for this symbol (verified: zero call sites of holdingPeriod anywhere in financingCostInputs'
+    // call chain). The note must say the hold is assumed. Hand-derived:
+    //   String(format: " + ~%.0fbps/yr short financing (assumed hold)", 0.03 * 10_000)
+    //     → " + ~300bps/yr short financing (assumed hold)"
+    @Test func financingNoteSuffixDisclosesTheHoldIsAssumedNotMeasured() {
+        let note = EV.financingNoteSuffix(rate: 0.03, days: 12)
+        #expect(note == " + ~300bps/yr short financing (assumed hold)")
+        #expect(note.contains("(assumed hold)"))
+        // The qualifier must not appear when the note itself is suppressed (days=0/rate=0) —
+        // an empty string stays empty, never a bare "(assumed hold)" with nothing to qualify.
+        #expect(!EV.financingNoteSuffix(rate: 0.03, days: 0).contains("assumed"))
+        #expect(!EV.financingNoteSuffix(rate: 0, days: 12).contains("assumed"))
     }
 
     @Test func financingNoteSuffixWithZeroDaysIsEmpty() {

@@ -29,6 +29,13 @@ struct CapitalAllocation: Sendable, Equatable {
     let account: Double
     let maxHeat: Double
     let caveat: String
+    /// F5 (2026-07-09): how many ideas cleared EVERY qualitative gate (buy-family, positive EV,
+    /// clears cost-after-frictions, positive weight) BEFORE the whole-share floor — i.e. were
+    /// genuinely fundable in principle. 0 means there was nothing to deploy at all (the pre-F5
+    /// silent-empty case). > 0 while `positions.isEmpty` means every one of them floored to 0
+    /// shares at THIS account size — a DIFFERENT, more honest-to-disclose reason for an empty
+    /// plan than "nothing qualified", which the view can now name instead of just vanishing.
+    let fundableCandidateCount: Int
 }
 
 enum StockSageCapitalAllocator {
@@ -44,7 +51,7 @@ enum StockSageCapitalAllocator {
         let cap = Swift.min(Swift.max(0, maxHeat), 1)
         func empty() -> CapitalAllocation {
             CapitalAllocation(positions: [], totalHeat: 0, requestedHeat: 0, scaleApplied: 1,
-                              account: account, maxHeat: cap, caveat: caveat)
+                              account: account, maxHeat: cap, caveat: caveat, fundableCandidateCount: 0)
         }
         guard account > 0, cap > 0 else { return empty() }
 
@@ -135,7 +142,8 @@ enum StockSageCapitalAllocator {
             finalCaveat += String(format: " Sized ×%.2f for the %@ regime.", regime.sizingBias, regime.state.rawValue)
         }
         return CapitalAllocation(positions: sorted, totalHeat: totalHeat, requestedHeat: requestedHeat,
-                                 scaleApplied: scaleApplied, account: account, maxHeat: cap, caveat: finalCaveat)
+                                 scaleApplied: scaleApplied, account: account, maxHeat: cap, caveat: finalCaveat,
+                                 fundableCandidateCount: fundable.count)
     }
 
     /// #8 (BUGHUNT_NEWENGINES): the position sort is a TOTAL order, not just (risk desc, symbol
