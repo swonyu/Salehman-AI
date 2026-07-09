@@ -4023,9 +4023,14 @@ struct MarketsView: View {
                     if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                        let rp = StockSageInput.percent(sizerRiskPct),
                        let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
-                        Text("Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp))")
+                        // Blocked-fixture QA 2026-07-09: a green sized order directly under a
+                        // DO-NOT-TRADE chip read as two voices — the size line now names the
+                        // refusal itself (and drops the go-green tint) when the gate blocks.
+                        Text("Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp))"
+                             + (cardGate?.decision == .blocked ? " — gate: do NOT trade at this risk %" : ""))
                             .font(.system(size: mvFont9, weight: .medium))
-                            .foregroundStyle(ps.pctOfAccount > 100 ? DS.Palette.warningSoft : DS.Palette.successSoft)
+                            .foregroundStyle(cardGate?.decision == .blocked ? DS.Palette.dangerSoft
+                                             : (ps.pctOfAccount > 100 ? DS.Palette.warningSoft : DS.Palette.successSoft))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Text(MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix)
@@ -4471,8 +4476,8 @@ struct MarketsView: View {
                 isCrypto: isCrypto,
                 entryText: "Entry ~\(adaptivePrice(idea.price))",
                 stopText: idea.advice.stopPrice.map { "stop \(adaptivePrice($0))" },
-                sizeText: sizeInfo.text,
-                sizeIsWarning: sizeInfo.isWarning,
+                sizeText: sizeInfo.text + (ctaGate?.decision == .blocked ? " — gate: do NOT trade at this risk %" : ""),
+                sizeIsWarning: sizeInfo.isWarning || ctaGate?.decision == .blocked,
                 evText: String(format: "Est. EV %+.2fR (gross)", ev.evR)
                     + (ctaNetEV.map { String(format: " · ≈%+.2fR net est.", $0) } ?? ""),
                 gateLabel: ctaGate.map { $0.decision == .blocked ? "DO NOT TRADE" : $0.decision.rawValue.uppercased() },

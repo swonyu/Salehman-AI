@@ -72,9 +72,14 @@ struct StockSageTodayPlanTests {
         // evaluate at all now — this test pins "no stop → gate blocks" given a real risk %, not
         // the honest-nil-gate path (that's rankedActionGateIsNilWhenRiskFractionNotSupplied below).
         let plan = StockSageTodayPlan.build(idea: i, ev: nil, account: nil, riskFraction: 0.01)
-        #expect(plan.lowercased().contains("no stop"))
-        #expect(plan.contains("Don't take this trade"))   // gate blocks on no stop
-        #expect(!plan.contains("shares"))                 // no account → no size line
+        // RE-PINNED 2026-07-09 (EXPORT-W4-1 parity): build() now mirrors the sheet's export —
+        // a BLOCKED setup (here: no stop) returns a status report, never lines of a ticket.
+        // The old pins ("no stop" prose + "Don't take this trade" + ticket scaffolding) belong
+        // to the pre-parity contract; the refusal + reason + no-size guarantees remain.
+        #expect(plan.contains("BLOCKED by the pre-trade gate"))
+        #expect(plan.contains("No order plan exported"))
+        #expect(plan.contains("FAIL"))                    // the no-stop failure is named
+        #expect(!plan.contains("shares"))                 // still never a sized line
     }
 
     // F04-parity (2nd-read hunt, 2026-07-08): nil riskFraction must NOT fabricate a gate verdict
@@ -114,5 +119,27 @@ struct StockSageTodayPlanTests {
         let expectedShares = StockSagePortfolio.holding(for: "AAPL", in: positions)?.shares
         #expect(expectedShares == 30)
         #expect(plan.contains("holds 30 sh"))
+    }
+
+    // EXPORT-W4-1 parity (2026-07-09, from the blocked-fixture QA): build() fed the best-opp
+    // card/CTA "Copy today's plan" a full actionable ticket for a BLOCKED trade (verdict
+    // buried mid-list) while the sheet's export auto-skips. Same rule now, pinned here.
+    @Test func blockedIdeaExportsAStatusReportNeverATicket() {
+        // Risk 3% (> the 2% cap) blocks the gate deterministically — same lever as the
+        // markets_ideas_blocked QA fixture; entry/stop give a clean 2:1 gross setup.
+        let idea = StockSageIdea(
+            symbol: "BLK", market: "M", price: 100,
+            advice: TradeAdvice(action: .buy, conviction: 0.8, regime: .bullTrend, rationale: [],
+                                stopPrice: 90, targetPrice: 120, suggestedWeight: 0.05, caveat: "x"),
+            spark: [])
+        let text = StockSageTodayPlan.build(idea: idea, ev: nil, account: 10_000, riskFraction: 0.03)
+        #expect(text.contains("BLOCKED by the pre-trade gate"))
+        #expect(text.contains("No order plan exported"))
+        #expect(!text.contains("Entry"))    // no actionable ticket lines
+        #expect(!text.contains("shares"))
+        // The non-blocked control at 1% still exports the ticket (guards the skip's scope).
+        let ok = StockSageTodayPlan.build(idea: idea, ev: nil, account: 10_000, riskFraction: 0.01)
+        #expect(ok.contains("Entry"))
+        #expect(!ok.contains("No order plan exported"))
     }
 }

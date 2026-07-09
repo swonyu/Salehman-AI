@@ -59,6 +59,27 @@ enum StockSageTodayPlan {
                                                daysToEarnings: daysToEarnings, rrIsNet: resolvedNetRR != nil)
         }()
 
+        // EXPORT-W4-1 parity (blocked-fixture QA, 2026-07-09): the detail sheet's copy
+        // auto-skips a BLOCKED setup ("a blocked idea is never exported as an actionable
+        // order checklist") — this builder, feeding the best-opp card/CTA "Copy today's
+        // plan", exported a full ticket with the verdict buried mid-list. Same rule now:
+        // blocked ⇒ a status report, never entry/stop/size lines.
+        if let gate, gate.decision == .blocked {
+            let failLabels = gate.checks.filter { $0.level == .fail }.map(\.label)
+            let warnLabels = gate.checks.filter { $0.level == .warn }.map(\.label)
+            var blocked = "Copy plan skipped — \(idea.symbol) is currently BLOCKED by the pre-trade gate."
+            if !failLabels.isEmpty { blocked += "\nFAIL: " + failLabels.joined(separator: "; ") }
+            if !warnLabels.isEmpty { blocked += "\nWARN: " + warnLabels.joined(separator: "; ") }
+            blocked += "\nNo order plan exported. Fix the gate failures, then copy again."
+            if isSample {
+                blocked = "⚠ SAMPLE DATA — illustrative prices, NOT live quotes. Re-price before any order.\n" + blocked
+            }
+            if let priceAsOf, StockSageScanChunking.utcDayKey(priceAsOf) != StockSageScanChunking.utcDayKey(Date()) {
+                blocked = "⚠ PRICE NOT LIVE — as of \(fmtDate(priceAsOf)); re-price before any order.\n" + blocked
+            }
+            return blocked
+        }
+
         var lines = ["Today's plan — estimates, not advice. Size with a stop; risk control > signal."]
         // The copied plan is the one artifact pasted into a broker — it MUST carry the
         // SAMPLE-data warning the on-screen banner shows, so a seed price isn't acted on as real.
