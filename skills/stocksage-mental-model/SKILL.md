@@ -40,7 +40,7 @@ StockSageExpectedValue: winProbEstimate (0.35+0.23·c prior OR calibration.winPr
   evR = p·R−(1−p) (rewardR capped 50:1), velocity = EV/day, rank keys with demotion
   sentinels (regime-ban −1M · cost-fail −500k · thin-liquidity −3000 · earnings −2000 · low-conv −1000)
         ↓ gross edge
-StockSageNetEdge: defaultCosts by suffix (crypto 70bps / FX 7 / index 8 / intl 30 / US 13) →
+StockSageNetEdge: defaultCosts by suffix (crypto 70bps / FX 7 / index 8 / intl 30 / **`.SR` Tadawul 60 — re-ratified 2026-07-09, research §2 dangerous-direction fix** / US 13) →
   netRR, clearsCost; `minNetEVPerDayFloor` 0.005 R/day (constant lives in `StockSageExpectedValue`)
   demotes, never hides
         ↓ net edge
@@ -136,7 +136,7 @@ then grep every consumer file for the changed symbol and re-check each call site
 
 ## 6. Owner-gate registry — REFUSE, don't flag-and-do
 
-Several product decisions are open and OWNER-HELD (example: RANKING #10, flipping `bestOpportunity`'s
+**UPDATE 2026-07-09: the owner-gate CLASS is retired** (verbatim directive + per-item dispositions live in `gated-scope` §1 — RANKING #10 SETTLED-KEEP on the turnover evidence, F03/F44 SETTLED-NET shipped, cost table re-ratified). Decisions now resolve on evidence through the pipeline; the honesty floor and the empirical-validation bar for ranking changes stand. Historical framing below kept for the record: several product decisions were OWNER-HELD (example: RANKING #10, flipping `bestOpportunity`'s
 default to `preferVelocity: true`). Implementing any of them "while you're in there" — even correctly —
 overrides the owner. **The live registry — which decisions are gated, what each forbids, and where each
 is recorded — lives ONLY in the `gated-scope` skill, "How" step 1 (marked CANONICAL REGISTRY).** Read it

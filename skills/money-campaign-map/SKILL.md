@@ -78,7 +78,7 @@ ls "Salehman AI/StockSage/StockSageRefuseList.swift"
   Item A yourself via `executing-plans` (the plan has exact anchors, derivations, and traps).
 
 **Gate discipline for this phase:** Item A is labels-only — the weekly gross numbers are
-byte-identical (F03/F44 stays owner-gated). A step that nets, shrinks, or re-computes the
+byte-identical (F03/F44 — SETTLED 2026-07-09: the NET headline shipped through the pipeline after the owner lifted the gate class; see gated-scope §1). A step that nets, shrinks, or re-computes the
 weekly headline is a plan violation → STOP.
 
 ### Phase 2 — Zero-turnover execution timing (roadmap #2: SHIPPED — verify, don't rebuild)
@@ -115,7 +115,7 @@ EXPECTED (as of 2026-07-02): an **unproven-edge verdict** — `significanceVerdi
   Sharpe is a CEILING (the module's own `caveat` says so); (d) adversarial review + owner
   review BEFORE recording any "edge proven" claim via Phase 6.
 
-### Phase 4 — IRRX overlay (roadmap #3: REFUSED until a net-of-cost simulation clears)
+### Phase 4 — IRRX overlay (roadmap #3) — **CLOSED 2026-07-09: the FULL-exclusion run executed (earnings axis unblocked, 61/61 coverage) and returned NULL (best net-OOS DSR 0.553; RESEARCH_2026-07-09_full_irrx_ablation.md). Overlay REFUSED at its strongest tested form; this phase is done, not pending.**
 
 The one short-horizon equity signal surviving the modern era GROSS of costs is the
 industry-relative, earnings-window-excluded reversal: 58 bps/mo gross, t=3.29
@@ -144,7 +144,7 @@ mandatory "did NOT establish" section.
 
 ### Phase 6 — Validation & promotion protocol (how anything ships)
 
-1. **Gate scan** (`gated-scope`): touching a parked owner gate → `BLOCKED`, not built.
+1. **Gate scan** (`gated-scope`): 2026-07-09 the owner-gate CLASS was retired (dispositions in §1) — the scan now checks the EVIDENCE bar and data-blocks instead; unanswered spec facts/measurements still BLOCK.
 2. **Validation** (`research-memory` §2): a ranking/signal/sizing change ships ONLY with
    empirical validation (walk-forward, deflated Sharpe, net-of-cost) or explicit owner
    sign-off. No stories.

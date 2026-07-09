@@ -14,7 +14,7 @@ it closes a "pending ablation" caveat forever and gets indexed like any other fi
 **When NOT to use this — use a sibling instead:**
 - Writing/fixing unit tests or fixtures → `testing-discipline` + `spec-fidelity` (an ablation never produces a fixture — see "The evidence/fixture line" below).
 - Deciding whether a topic is already researched, or recording the finished run → `research-memory` (this skill defers to its §4 for the write-up format).
-- The change touches an owner-gated decision → `gated-scope` §1 is the ONLY registry of those gates; if the item is listed there, the step is `BLOCKED` — **no ablation result licenses you to decide an owner-gated question.**
+- The change touches a decision `gated-scope` §1 governs → that registry is the ONLY source of truth. *(2026-07-09: the owner-gate CLASS is retired — see §1's dispositions; a passing ablation through THIS harness is now exactly the evidence that licenses the change. What still blocks: missing data/measurements and the DSR/PSR promotion bar itself.)*
 - Process for shipping the (non-)change afterwards → `shipping-changes`.
 
 ## Vocabulary (each defined once)
@@ -159,7 +159,7 @@ Why: the canonical short-term reversal earns +0.37%/mo GROSS but **−1.28%/mo N
 - **Path A**: pass `costs: StockSageNetEdge.defaultCosts(forSymbol: sym)` — every trade's R is charged the round-trip friction against the planned 1R risk (a loser nets worse than −1R; that's the honest unit).
 - **Path B**: subtract `roundTripBps / 10_000 × entry` per round trip before aggregating.
 - The break-even bar in one number: `NetEdge.breakEvenWinRate` = p\* = 1/(1+netRR) — if the honest hit rate is below p\*, the setup loses money regardless of gross R:R.
-- Cost defaults come from `StockSageNetEdge.defaultCosts(forSymbol:)` by symbol suffix (crypto `-USD` widest at 70bps incl. taker; FX `=X` tightest at 7bps; `^` index 8bps; dotted intl listings 30bps; bare US large-cap 13bps). **Grep the source before quoting these — this table is a map, not the territory**; all legs are LABELED ESTIMATES, never venue quotes.
+- Cost defaults come from `StockSageNetEdge.defaultCosts(forSymbol:)` by symbol suffix (crypto `-USD` widest at 70bps incl. taker; FX `=X` tightest at 7bps; `^` index 8bps; dotted intl listings 30bps; `.SR` Tadawul 60bps (re-ratified 2026-07-09); bare US large-cap 13bps). **Grep the source before quoting these — this table is a map, not the territory**; all legs are LABELED ESTIMATES, never venue quotes.
 
 ## Deeper rigor (theory pointers — candidate upgrades, NOT shipped)
 
