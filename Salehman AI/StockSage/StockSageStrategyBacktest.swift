@@ -98,6 +98,29 @@ enum StockSageStrategyBacktest {
         "BHP.AX", "RY.TO", "2222.SR", "1120.SR", "005930.KS",
     ]
 
+    /// Offline conviction-calibration fit recipe (calibration runtime activation): the SAME
+    /// per-symbol walk-forward + pooled-fit that `StockSageStore.refreshStrategyBacktest` runs
+    /// manually, minus the network fetch — `histories` comes from a caller-supplied cache/scan
+    /// result, so this can NEVER reach `StockSageQuoteService` ("no new network" holds by
+    /// construction). `h.closes.count > 205` mirrors `StockSageBacktester.runTrades`'s own
+    /// `n > warmup(200) + 5` guard (StockSageBacktester.swift:190) — a shorter history yields zero
+    /// trades there anyway; checking here just skips the wasted walk-forward call. `fit(fromBacktest:)`
+    /// has its own minSamples=30 floor and returns nil below it — the caller keeps its existing
+    /// snapshot / the conservative prior. Tolerates `benchmark == nil` the same way the manual
+    /// path does (relative-strength term drops out, RS-disabled but not a failure).
+    nonisolated static func offlineCalibrationFit(histories: [String: StockSagePriceHistory],
+                                                  benchmark: StockSagePriceHistory?) -> StockSageConvictionCalibration? {
+        var trades: [BacktestTrade] = []
+        var dates: [Date] = []
+        for sym in sampleSymbols {
+            guard let h = histories[sym.uppercased()], h.closes.count > 205 else { continue }
+            let d = StockSageBacktester.runDetailed(h, costs: StockSageNetEdge.defaultCosts(forSymbol: sym), benchmark: benchmark)
+            trades.append(contentsOf: d.trades)
+            dates.append(contentsOf: d.trades.map { h.dates[$0.entryIndex] })
+        }
+        return StockSageConvictionCalibration.fit(fromBacktest: trades, dates: dates)
+    }
+
     /// ESTIMATE of the number of distinct strategy variants explored across this engine's
     /// development — the researcher degrees of freedom the Deflated Sharpe selection-bias term
     /// (López de Prado) must discount. NOT precisely derivable (we did not log every config), so

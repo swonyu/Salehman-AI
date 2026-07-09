@@ -86,6 +86,17 @@ enum QASnapshots {
             // the View-menu manual capture (that stays live-state, same as seedQAIdeas above).
             let restore = neutralizeIdeaBoardPrefsForQA()
             defer { restore() }
+            // F6 (calibration runtime activation — determinism gap the design itself flagged):
+            // the persisted/backtest calibration leg (`stocksage.calibration.v1`, or Trigger B's
+            // launch-time auto-fit racing in the background) is CAPTURE-MACHINE state, not a QA
+            // fixture — left alone, every EV$/Size/velocity number AND the calibration chip's
+            // pixels would depend on whatever that machine happened to have on disk. Suppress it
+            // for the capture window so `StockSageStore.convictionCalibration` deterministically
+            // falls through to the (also-seeded, sub-floor) journal fit / conservative prior on
+            // every machine — see `qaSuppressPersistedCalibration`'s doc for why suppressing at
+            // that single read site also neutralizes a Trigger B race without a separate gate.
+            let restoreCalibrationSuppression = suppressPersistedCalibrationForQA()
+            defer { restoreCalibrationSuppression() }
             // Scan-deltas seam (PLAN_2026-07-07_scan_deltas.md): seed a previous-scan baseline
             // BEFORE seedQAIdeas so it reads a deterministic baseline — BTC-USD is ABSENT (→ its
             // card renders "New") and AAPL's previous action was "Hold" (→ AAPL renders "was
@@ -162,6 +173,16 @@ enum QASnapshots {
                 }
             }
         }
+    }
+
+    /// F6: flip `StockSageStore.qaSuppressPersistedCalibration` on for the capture window, off
+    /// after. Save→override→restore, same shape as `neutralizeIdeaBoardPrefsForQA` above — restores
+    /// whatever the flag already was (always `false` outside this seam; saving it anyway guards a
+    /// hypothetical re-entrant capture rather than assuming that invariant).
+    private static func suppressPersistedCalibrationForQA() -> () -> Void {
+        let saved = StockSageStore.qaSuppressPersistedCalibration
+        StockSageStore.qaSuppressPersistedCalibration = true
+        return { StockSageStore.qaSuppressPersistedCalibration = saved }
     }
 
     /// Seed ONE fake position (NVDA, 30 sh @ $100.00) so the QA capture actually exercises

@@ -4186,6 +4186,18 @@ struct MarketsView: View {
     // "win% assumed", a Platt fit "win% fitted" (central MLE, not conservative), and only the
     // Wilson-LCB isotonic / OOS-validated Beta paths earn "win% measured". Title/tooltip come from
     // StockSageConvictionCalibration.chipTitle/chipHelp (single source, test-pinned).
+    /// Decision 5 (calibration runtime activation): append persisted-fit provenance (source +
+    /// data-as-of date + n) to the chip tooltip ONLY when the EFFECTIVE calibration is the
+    /// persisted backtest leg (journal fit nil) with a real fit (never identity — the method-keyed
+    /// `chipTitle` already guarantees an identity title can never say "measured"). Identity ⇒
+    /// return `chipHelp` unchanged: every rendered byte stays identical to before this activation.
+    private func calibrationChipHelp(_ cal: StockSageConvictionCalibration) -> String {
+        guard store.convictionCalibrationIsFromBacktest,
+              let snap = store.persistedCalibrationSnapshot,
+              cal.method != .identity else { return cal.chipHelp }
+        return cal.chipHelp + " Fit from \(snap.source) · data as of \(snap.fittedAt.formatted(date: .abbreviated, time: .omitted)) · n=\(snap.sampleCount)"
+    }
+
     @ViewBuilder private var calibrationChip: some View {
         if let cal = store.convictionCalibration {
             let assumed = cal.method == .identity
@@ -4193,7 +4205,7 @@ struct MarketsView: View {
                 Label(cal.chipTitle, systemImage: assumed ? "exclamationmark.triangle.fill" : "checkmark.seal.fill")
                     .font(.system(size: fontChipLabel, weight: .semibold))
                     .foregroundStyle(assumed ? DS.Palette.warningSoft : DS.Palette.successSoft)
-                    .help(cal.chipHelp)
+                    .help(calibrationChipHelp(cal))
             }
         } else {
             calibrationChipChrome(assumed: true) {

@@ -27,9 +27,9 @@ import Foundation
 //
 // Pure + deterministic → unit-tested. The isotonic path is honest about uncertainty via its lower
 // bound; the Platt path is a best-estimate central map and must not be read as a conservative bound.
-struct StockSageConvictionCalibration: Sendable, Equatable {
+struct StockSageConvictionCalibration: Sendable, Equatable, Codable {
     /// One ascending conviction band and its calibrated win probability.
-    struct Bin: Sendable, Equatable {
+    struct Bin: Sendable, Equatable, Codable {
         let upper: Double     // upper edge of the half-open band [lower, upper) — matches fit()'s bucketing
         let winProb: Double   // calibrated P(win) for this band (monotonic non-decreasing in `upper`)
         let n: Int            // realized trades in the band (transparency)
@@ -46,12 +46,48 @@ struct StockSageConvictionCalibration: Sendable, Equatable {
     ///   • identity — the selector's floor: winProb(c) ≈ c. Conviction is used AS the win
     ///     probability — an ASSUMPTION measured from ZERO outcomes. Rendering this as
     ///     "measured" was the F01/F02 CRITICAL; it must always render as "assumed".
-    enum Method: String, Sendable, Equatable {
+    enum Method: String, Sendable, Equatable, Codable {
         case isotonicWilson, beta, platt, identity
     }
     let bins: [Bin]           // ascending by `upper`, equal-width over [0,1]
     let sampleSize: Int       // total trades the fit was built from
     let method: Method        // provenance of the winProb map (F01/F02) — metadata only, no numeric effect
+
+    // MARK: - Persisted snapshot (calibration runtime activation)
+    //
+    // Wraps a fitted calibration with its provenance (source recipe + data-as-of date) so the
+    // effective calibration survives a process restart instead of living in-memory only (the
+    // pre-activation gap: `backtestConvictionCalibration` was set ONLY by the manual Strategy-
+    // backtest button and reset to nil on every relaunch). `oosBrier` is nil in v1 — `fit()` does
+    // not expose the selector's internal OOS Brier outside `selectCalibration`, and we never
+    // re-derive one separately (honesty floor: nil = unknown, never fabricated).
+    struct Snapshot: Codable, Sendable, Equatable {
+        let calibration: StockSageConvictionCalibration   // the selected map — bins/sampleSize/method
+        let source: String        // "strategy-backtest-5y" | "scan-offline-1y" | "cache-offline-1y"
+        /// AS-OF date of the TRAINING DATA (F5): equals the fit-run time when the histories were
+        /// fetched immediately prior to fitting (manual "strategy-backtest-5y", scan-end
+        /// "scan-offline-1y" — both fit on data they just fetched/scanned THIS run); equals
+        /// `cache.savedAt` when fitted from the on-disk HistoryCache instead ("cache-offline-1y" —
+        /// the data could be up to 7 days old, per `StockSageStore.shouldAutoFit`'s staleness rule).
+        let fittedAt: Date
+        let oosBrier: Double?     // nil in v1 — see note above
+        var sampleCount: Int { calibration.sampleSize }   // computed, no duplicated storage
+        var methodLabel: String { calibration.method.rawValue }
+
+        /// Binary plist round-trips Doubles bit-exactly, so a reloaded fit reproduces the
+        /// in-memory original's ranking byte-for-byte. `defaults`/`key` injectable (mirrors
+        /// StockSageJournalStore's seam, StockSageJournal.swift:733) for isolated tests.
+        static func load(defaults: UserDefaults = .standard, key: String = "stocksage.calibration.v1") -> Snapshot? {
+            guard let data = defaults.data(forKey: key),
+                  let decoded = try? PropertyListDecoder().decode(Snapshot.self, from: data) else { return nil }
+            return decoded
+        }
+
+        func save(defaults: UserDefaults = .standard, key: String = "stocksage.calibration.v1") {
+            guard let data = try? PropertyListEncoder().encode(self) else { return }
+            defaults.set(data, forKey: key)
+        }
+    }
 
     /// Calibrated win probability for a conviction in [0,1]: the band it falls into. Uses the SAME
     /// half-open index math as `fit()`'s bucketing, so a conviction on an exact internal edge is

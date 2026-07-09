@@ -179,7 +179,41 @@ final class StockSageStore: ObservableObject {
         priceAlerts = Self.loadPriceAlerts()
         seedSampleData()
         loadCachedQuotes()   // prefer real last-good prices over the sample seed when we have them
+        // Calibration runtime activation (Decision 2): restore the last persisted fit so the
+        // effective calibration survives a relaunch instead of resetting to nil every session.
+        // Decode-fail (no key, corrupt blob, schema mismatch) ⇒ both stay nil ⇒ the conservative
+        // linear prior — silently honest, matching loadPriceAlerts' failure posture above.
+        if let snap = StockSageConvictionCalibration.Snapshot.load() {
+            backtestConvictionCalibration = snap.calibration
+            persistedCalibrationSnapshot = snap
+        }
+        // Decision 3, Trigger B: no persisted fit, or the persisted data is >7d stale — refit
+        // offline from whatever price history is already on disk (zero new network). No-op when
+        // there's no cache yet or the pooled sample is too thin (autoFitCalibration's guard).
+        // F2 (adversarial review): never fire under the test runner — a background Task reading
+        // the real on-disk HistoryCache and writing real UserDefaults would make unit-test runs
+        // racy/flaky and pollute the shared defaults domain other tests share (StockSageStore is
+        // a singleton; every test file that touches `.shared` would inherit this side effect).
+        if !Self.isRunningTests, Self.shouldAutoFit(snapshot: persistedCalibrationSnapshot, now: Date()) {
+            Task {
+                let cache = await Task.detached { StockSageHistoryCache.load() }.value
+                guard let cache else { return }
+                let hist = cache.priceHistories()
+                await self.autoFitCalibration(histories: hist, benchmark: hist["^GSPC"],
+                                              source: "cache-offline-1y", dataAsOf: cache.savedAt)
+            }
+        }
     }
+
+    // MARK: - Test-environment gate (F2, calibration runtime activation adversarial review)
+    //
+    // True whenever the process is hosted by the XCTest/Swift-Testing runner — Swift Testing
+    // suites under `xcodebuild test` still load through the XCTest bundle machinery, so the
+    // XCTestCase class is present in-process either way. Gates ONLY the calibration auto-fit
+    // triggers' background Task spawn (both scan-end and launch-time) — nothing else in this
+    // file reads it. Production is completely unaffected: `NSClassFromString` only resolves a
+    // class when the XCTest framework is actually loaded, which never happens in a shipped app.
+    private nonisolated static var isRunningTests: Bool { NSClassFromString("XCTestCase") != nil }
 
     // MARK: Price alerts (user-set target levels)
 
@@ -568,6 +602,15 @@ final class StockSageStore: ObservableObject {
         // Same for seasonality — the TOM rank tilt must not depend on which sheets were opened.
         Task { await refreshSeasonalityForTopIdeas() }
         ideasUpdated = Date()
+        // Decision 3, Trigger A: refit the offline calibration from this scan's OWN fetched
+        // histories + benchmark — zero new network. Runs only on a full scan-end commit
+        // (deliberately not in the cancel path above or in retryFailedIdeas — a partial scan is
+        // not scan-end); no-op when the pooled sample is too thin (autoFitCalibration's guard).
+        // F2: never fire under the test runner — same rationale as Trigger B's gate in `init`.
+        if !Self.isRunningTests {
+            Task { await autoFitCalibration(histories: accumulatedHistories, benchmark: benchmark,
+                                            source: "scan-offline-1y", dataAsOf: Date()) }
+        }
     }
 
     /// Cancel an in-flight ideas scan (backlog #12). The outer refreshIdeas defer clears the spinner.
@@ -1118,6 +1161,10 @@ final class StockSageStore: ObservableObject {
     /// Conviction→win-probability calibration learned from the strategy BACKTEST's trades. nil until
     /// a backtest has run with enough trades.
     @Published private(set) var backtestConvictionCalibration: StockSageConvictionCalibration?
+    /// Provenance (source recipe + data-as-of date) for `backtestConvictionCalibration` when it came
+    /// from a PERSISTED fit (manual backtest or an offline auto-fit) — nil when no snapshot has ever
+    /// been saved/loaded this run. Display-only (Decision 5); has no effect on ranking/sizing.
+    @Published private(set) var persistedCalibrationSnapshot: StockSageConvictionCalibration.Snapshot?
 
     /// F12 (2026-07-02): memoization for the journal calibration fit + OOS check. The fit
     /// (chronological split + IRLS + PAV + OOS selector) used to re-run on EVERY read of
@@ -1146,6 +1193,23 @@ final class StockSageStore: ObservableObject {
     }
     private var calibrationFitCache = JournalCalibrationCache()
 
+    /// QA-capture determinism seam (F6, calibration runtime activation review). When true,
+    /// `convictionCalibration` below drops the persisted/backtest leg entirely — every EV/sizing/
+    /// velocity/chip consumer (33+ read sites in MarketsView, per the memoization comment above)
+    /// falls through to the journal fit (nil during a QA capture — `QASnapshots.seedQAJournal`
+    /// deliberately keeps the seeded journal under the 30-trade calibration floor) or the
+    /// conservative linear prior. WITHOUT this, the capture's rendered pixels — not just the chip
+    /// tooltip, but every EV$/Size/velocity number derived from `convictionCalibration` — would
+    /// depend on whatever `stocksage.calibration.v1` happens to hold on the CAPTURE MACHINE, or on
+    /// whether Trigger B's async launch auto-fit (init, above) raced to completion before the
+    /// capture ran. Gating here, at the single read choke point, makes both irrelevant: even if
+    /// Trigger B's Task completes mid-capture and mutates `backtestConvictionCalibration`, this
+    /// getter never surfaces it while suppressed — no separate gate on Trigger B itself is needed.
+    /// `nonisolated(unsafe)` mirrors `StockSageConvictionCalibration.candidateSelectorEnabled`'s
+    /// existing seam: one process-wide flag, flipped only by the `--qa` capture entry path
+    /// (`QASnapshots.checkAndRun`) around `captureAll()`, restored right after.
+    nonisolated(unsafe) static var qaSuppressPersistedCalibration = false
+
     /// EFFECTIVE conviction calibration the whole app sizes/ranks on: the owner's OWN realized edge
     /// (their journal) when it has enough closed conviction-trades, ELSE the sample-backtest fit, ELSE
     /// nil (callers fall back to the conservative linear prior). The journal beats a generic backtest —
@@ -1153,7 +1217,9 @@ final class StockSageStore: ObservableObject {
     /// (isotonicWilson/beta/platt/identity) — conservatism depends on the fit path, NOT on non-nil.
     /// Cached per journal state (F12); any journal change is picked up on the very next read.
     var convictionCalibration: StockSageConvictionCalibration? {
-        calibrationFitCache.value(for: StockSageJournalStore.shared.trades).fit ?? backtestConvictionCalibration
+        let journalFit = calibrationFitCache.value(for: StockSageJournalStore.shared.trades).fit
+        if Self.qaSuppressPersistedCalibration { return journalFit }
+        return journalFit ?? backtestConvictionCalibration
     }
 
     /// OUT-OF-SAMPLE honesty check of the conviction→win-prob map on the owner's journal: fit on their
@@ -1162,6 +1228,64 @@ final class StockSageStore: ObservableObject {
     /// there's a real OOS verdict to give (small-sample-noisy by nature). Cached with the fit (F12).
     var calibrationOOS: StockSageConvictionCalibration.OOSCalibrationCheck? {
         calibrationFitCache.value(for: StockSageJournalStore.shared.trades).oos
+    }
+
+    /// True when the EFFECTIVE calibration (`convictionCalibration`) is the backtest leg — the
+    /// owner's journal isn't rich enough to fit its own map yet. Gates the persisted-provenance
+    /// help line in MarketsView's calibrationChip (Decision 5): the journal fit carries no
+    /// snapshot of its own, so provenance only ever applies to the backtest leg.
+    var convictionCalibrationIsFromBacktest: Bool {
+        calibrationFitCache.value(for: StockSageJournalStore.shared.trades).fit == nil
+            && backtestConvictionCalibration != nil
+    }
+
+    /// Staleness rule for the offline auto-fit trigger (Decision 3): no snapshot ever persisted,
+    /// or its training data is more than 7 days old. Mirrors `StockSageHistoryCache.isStale`'s
+    /// default 7-day window (StockSageHistoryCache.swift:80-85) — `fittedAt` is the DATA as-of
+    /// date (F5: equals the fit-run time for the manual-backtest/scan-end writers, which fit on
+    /// data fetched immediately prior; equals `cache.savedAt` for the cache-offline writer — see
+    /// `Snapshot.fittedAt`'s doc), so this measures data age, not fit-run age.
+    /// `nonisolated` + pure so it's unit-testable without the `@MainActor` singleton.
+    nonisolated static func shouldAutoFit(snapshot: StockSageConvictionCalibration.Snapshot?, now: Date) -> Bool {
+        guard let s = snapshot else { return true }
+        return now.timeIntervalSince(s.fittedAt) > 7 * 86_400
+    }
+
+    /// Fit a fresh conviction calibration from the given histories (offline, zero new network —
+    /// `StockSageStrategyBacktest.offlineCalibrationFit` never touches `StockSageQuoteService`)
+    /// and persist it. No-op when the pooled sample is too thin to fit honestly (keeps the
+    /// existing snapshot + in-memory value; its displayed `fittedAt` stays honest either way).
+    /// `defaults`/`key` injectable (F4, mirrors `Snapshot.load`/`save`'s own seam) purely so tests
+    /// can drive this REAL method end-to-end against an isolated suite instead of `.standard` —
+    /// production callers (both triggers + init) never pass them, so they get the exact same
+    /// `.standard`/`"stocksage.calibration.v1"` behavior as before this seam existed.
+    func autoFitCalibration(histories: [String: StockSagePriceHistory], benchmark: StockSagePriceHistory?,
+                            source: String, dataAsOf: Date,
+                            defaults: UserDefaults = .standard, key: String = "stocksage.calibration.v1") async {
+        let fit = await Task.detached {
+            StockSageStrategyBacktest.offlineCalibrationFit(histories: histories, benchmark: benchmark)
+        }.value
+        guard let fit else { return }
+        let candidate = StockSageConvictionCalibration.Snapshot(calibration: fit, source: source, fittedAt: dataAsOf, oosBrier: nil)
+        // F3 (recency-vs-richness, adjudicated on review): recency wins only AT the staleness
+        // boundary — a richer fresh fit is never silently displaced by a thinner one. Trigger A
+        // (scan-end) calls this on EVERY completed scan, so without this guard a small scan-day
+        // sample could stomp a much richer existing fit (a full 5y manual backtest, or an earlier
+        // richer auto-fit) purely because it ran more recently. Persist+assign only when there's
+        // nothing to lose: no existing snapshot, the existing one is already stale (>7d — the same
+        // rule `shouldAutoFit` uses), or the candidate is at least as rich (sampleCount) as what's
+        // there. Trigger B (launch) only ever calls this method when `shouldAutoFit(existing)` is
+        // already true (see `init`), so for Trigger B the first two disjuncts already hold —
+        // this guard is a no-op there, behavior unchanged. Memory and disk update TOGETHER or NOT
+        // AT ALL (one `if`, both writes inside it), so they can never diverge.
+        let existing = persistedCalibrationSnapshot
+        let shouldReplace = existing.map { Self.shouldAutoFit(snapshot: $0, now: Date()) || candidate.sampleCount >= $0.sampleCount } ?? true
+        guard shouldReplace else { return }
+        backtestConvictionCalibration = fit
+        persistedCalibrationSnapshot = candidate
+        // Cross-process: single whole-value key, last-writer-wins. Both writers derive from the
+        // same HistoryCache, so a lost write costs at most one equivalent refit — no merge needed.
+        candidate.save(defaults: defaults, key: key)
     }
 
     /// Fetch ~5y for a bounded equity sample, walk-forward each off-main, and
@@ -1215,6 +1339,15 @@ final class StockSageStore: ObservableObject {
         // pass the 1:1-aligned `tradeDates` so the OOS candidate-selector's train/test split is a
         // genuine chronological holdout (matching fit(fromJournal:)'s own sort-by-close-date fix).
         backtestConvictionCalibration = StockSageConvictionCalibration.fit(fromBacktest: trades, dates: tradeDates)
+        // Decision 4: the manual backtest persists its fit too, same as the offline auto-fit
+        // triggers — so a calibration earned from a full 5y run also survives a relaunch.
+        if let cal = backtestConvictionCalibration {
+            let snap = StockSageConvictionCalibration.Snapshot(calibration: cal, source: "strategy-backtest-5y", fittedAt: Date(), oosBrier: nil)
+            persistedCalibrationSnapshot = snap
+            // Cross-process: single whole-value key, last-writer-wins. Both writers derive from the
+            // same HistoryCache, so a lost write costs at most one equivalent refit — no merge needed.
+            snap.save()
+        }
     }
 
     // Portfolio risk analytics — the full backward-looking risk/return suite.
