@@ -669,20 +669,25 @@ enum StockSageExpectedValue {
     /// passes it — RANKING #10 parked). COVERAGE: the cache is populated by the top-ideas
     /// prefetch after each full scan + on sheet-open; a symbol without an entry simply gets 0
     /// (unknown → no tilt, never fabricated).
+    /// TRUE exactly when `seasonalityRankBonus` would produce a NON-ZERO tilt for this month
+    /// stat (flag on + reliable sample + |t|<1 noise gate passed) — disclosure surfaces (the
+    /// detail sheet's seasonality row) key on THIS so they cannot drift from the engine's own
+    /// firing conditions. Side/direction is the caller's concern (hold/avoid ideas get 0 from
+    /// the bonus regardless — gate the disclosure on the idea's side at the call site).
+    nonisolated static func seasonalityTiltFires(_ stat: MonthlySeasonality.MonthStat) -> Bool {
+        guard StockSageAdvisor.turnOfMonthEnabled, stat.samples >= 3 else { return false }
+        if let t = stat.tStat, abs(t) < 1.0 { return false }
+        return true
+    }
+
     nonisolated static func seasonalityRankBonus(for idea: StockSageIdea,
                                                 seasonality: [String: MonthlySeasonality] = [:]) -> Double {
-        guard StockSageAdvisor.turnOfMonthEnabled else { return 0 }
         guard let s = seasonality[idea.symbol.uppercased()] else { return 0 }
         let m = StockSageSeasonality.currentMonth()
-        guard let stat = StockSageSeasonality.stat(s, month: m), stat.samples >= 3 else { return 0 }
-        // NOISE GATE (2026-07-09 robustness pass): a month whose mean is within one standard
-        // error of zero (|t| < 1) is indistinguishable from noise even at the loosest bar —
-        // e.g. yearly returns [+10%, −8%, +7%] average +3% but t≈0.54 (hand-derived,
-        // /tmp/derive_seasonality_robustness.swift) and must NOT tilt the rank. tStat == nil
-        // with n≥3 means ZERO dispersion — a perfectly consistent signal — which passes.
-        // This is an engineering noise floor, not a significance claim; the tilt stays a
-        // weak, capped, backward-looking tendency either way.
-        if let t = stat.tStat, abs(t) < 1.0 { return 0 }
+        guard let stat = StockSageSeasonality.stat(s, month: m), seasonalityTiltFires(stat) else { return 0 }
+        // Flag + reliability + the |t|<1 NOISE GATE all live in `seasonalityTiltFires` above
+        // (single source of truth shared with the sheet's disclosure — hand-derivations and
+        // rationale documented there and in the 2026-07-09 dev-log entries).
         // Keep the effect small and monotonic: positive seasonal drift gets a mild boost,
         // negative drift gets a mild penalty. Scale by sample count so a thin month never
         // dominates the rank key.
@@ -970,7 +975,7 @@ enum StockSageExpectedValue {
                                                calibration: StockSageConvictionCalibration? = nil) -> String? {
         guard let trips = assumedWeeklyRoundTrips(ideas, maxConcurrent: maxConcurrent, tradingDays: tradingDays,
                                                   holds: holds, calibration: calibration) else { return nil }
-        return String(format: "Assumes ≈%.1f round trips across the top %d this week — every re-entry pays the est. round-trip frictions this gross figure excludes (turnover is the #1 documented edge-killer at this horizon).",
+        return String(format: "Assumes ≈%.1f round trips across the top %d this week — every re-entry pays the est. round-trip costs this gross figure excludes (turnover is the #1 documented edge-killer at this horizon).",
                       trips, Swift.max(0, maxConcurrent))
     }
 

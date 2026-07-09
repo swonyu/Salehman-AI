@@ -2012,8 +2012,8 @@ struct MarketsView: View {
             store.ideas, tradingDays: days, holds: velocityHolds, calibration: store.convictionCalibration) {
             if netFigure {
                 note = note.replacingOccurrences(
-                    of: "every re-entry pays the est. round-trip frictions this gross figure excludes",
-                    with: "every re-entry pays the est. round-trip frictions — already charged in this net figure")
+                    of: "every re-entry pays the est. round-trip costs this gross figure excludes",
+                    with: "every re-entry pays the est. round-trip costs — already charged in this net figure")
             }
             s += "\n\n" + note
         }
@@ -3420,7 +3420,7 @@ struct MarketsView: View {
                         .font(.system(size: fontChipLabel, weight: .semibold))
                         .foregroundStyle(DS.Palette.warningSoft)
                         .modifier(IdeaChipChrome(tint: DS.Palette.warningSoft))
-                        .help(String(format: "Net EV/day after frictions is under %.3fR/day — de-ranked on the velocity board. See the detail sheet for the full net-cost breakdown.", StockSageExpectedValue.minNetEVPerDayFloor))
+                        .help(String(format: "Net EV/day after est. costs is under %.3fR/day — de-ranked on the velocity board. See the detail sheet for the full net-cost breakdown.", StockSageExpectedValue.minNetEVPerDayFloor))
                         .accessibilityLabel("Below net-cost floor — costs exceed edge; de-ranked on velocity board")
                 }
                 // At-the-extreme chip: neutral descriptive fact, not a signal — deliberately
@@ -5281,11 +5281,40 @@ struct MarketsView: View {
                 plan += "\nPre-trade gate: not evaluated — enter risk % to see the verdict."
             }
         }
+        // Sheet-lens (2026-07-09) — EXPORT parity with the on-screen sized-risk warnings the
+        // pasted plan previously understated (the leverage warning's own rationale, extended):
+        // the 20% gap-through-stop worst case and the sector-concentration crossing, SAME
+        // inputs as the on-screen rows; no line when they don't resolve (never fabricated).
+        if let stop = a.stopPrice, let acct = parsedAccount, let ps = size {
+            let gapSide: TradeSide = (a.action == .sell || a.action == .reduce) ? .short : .long
+            if let gap = StockSageGapRisk.scenario(side: gapSide, entry: idea.price, stop: stop,
+                                                   shares: Double(ps.shares), gapPct: 0.20, accountEquity: acct) {
+                plan += "\n⚠ " + gap.verdict
+            }
+        }
+        let exportHoldings = portfolio.positions.map {
+            (symbol: $0.symbol, value: holdingValue($0.symbol, perShare: currentPrice($0.symbol) ?? $0.costBasis, shares: $0.shares))
+        }
+        if !exportHoldings.isEmpty {
+            let bookTotal = exportHoldings.reduce(0) { $0 + $1.value }
+            let sizedNotional = size.map { StockSageCurrency.majorUnitValue(symbol: idea.symbol, rawValue: $0.notional) }
+            let addValue = StockSageWhatIf.proposedAddValue(sizedNotional: sizedNotional, account: parsedAccount, bookTotal: bookTotal)
+            let sectorImpact = StockSageWhatIf.addingHolding(symbol: idea.symbol, addedValue: addValue,
+                                                             to: exportHoldings, classify: StockSageSector.sector)
+            if sectorImpact.isWarning { plan += "\nBy sector — " + sectorImpact.note }
+        }
         // EXPORT-02: mirror StockSageTodayPlan.copyAllText's SAMPLE-data warning — this is
         // the OTHER artifact that gets pasted into a broker; a seed price must not be acted
         // on as real just because this export path skipped the on-screen banner's caveat.
         if store.isSampleData {
             plan = "⚠ SAMPLE DATA — illustrative prices, NOT live quotes. Re-price before any order.\n" + plan
+        }
+        // ROUND-H PARITY (sheet-lens MED, 2026-07-09): the sheet's copy is the OTHER
+        // broker-paste artifact — it must carry the same stale-price flag copyAllText/build
+        // already do. nil priceAsOf ⇒ unknown ⇒ no line, never a false warning.
+        if let asOf = idea.priceAsOf,
+           StockSageScanChunking.utcDayKey(asOf) != StockSageScanChunking.utcDayKey(Date()) {
+            plan = "⚠ PRICE NOT LIVE — as of \(asOf.formatted(.relative(presentation: .named))); re-price before any order.\n" + plan
         }
         // EXPORT-01: mirror the sheet's Held/Journal context lines (same formats, same call sites)
         // so a pasted plan doesn't invite doubling a position the owner already holds. Only append
@@ -5741,22 +5770,22 @@ struct MarketsView: View {
                             ? grossToNetText(
                                 prefix: "≈ ", grossLabel: String(format: "%+.3fR/day (gross)", vel),
                                 netLabel: String(format: "%+.3fR/day (net)", netVel!),
-                                suffix: " after frictions (EV ÷ typical hold) — estimate.", font: .caption2, color: .secondary)
+                                suffix: " after est. costs (EV ÷ typical hold) — estimate.", font: .caption2, color: .secondary)
                             : Text(String(format: "≈ %+.3fR/day gross (EV ÷ typical hold) — faster turnover compounds faster. An estimate.", vel))
                                 .font(.caption2).foregroundStyle(.secondary))
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    // Honest floor label: shown verbatim when net EV/day (after frictions) is
+                    // Honest floor label: shown verbatim when net EV/day (after est. costs) is
                     // below the 0.005R/day floor. The idea is de-ranked on the velocity board; this badge
                     // surfaces the reason so the re-ordering is transparent and auditable.
                     let vFloorFlag = StockSageExpectedValue.netCostFloorFlag(for: idea, holds: velocityHolds, calibration: store.convictionCalibration)
                     if hasFloorWarning && vFloorFlag.isDeranked {
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "exclamationmark.circle").font(.system(size: mvFont11)).foregroundStyle(DS.Palette.warningSoft)
-                            Text(vFloorFlag.badge + String(format: " — net EV/day after frictions is under %.3fR/day; de-ranked on the velocity board.", StockSageExpectedValue.minNetEVPerDayFloor))
+                            Text(vFloorFlag.badge + String(format: " — net EV/day after est. costs is under %.3fR/day; de-ranked on the velocity board.", StockSageExpectedValue.minNetEVPerDayFloor))
                                 .font(.caption2).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                         }
-                        .help(String(format: "Net EV/day after frictions is under %.3fR/day — de-ranked on the velocity board. See the net-cost breakdown above.", StockSageExpectedValue.minNetEVPerDayFloor))
+                        .help(String(format: "Net EV/day after est. costs is under %.3fR/day — de-ranked on the velocity board. See the net-cost breakdown above.", StockSageExpectedValue.minNetEVPerDayFloor))
                     }
                 }
 
@@ -6045,9 +6074,18 @@ struct MarketsView: View {
                     // boundary and highlight the wrong bucket's stat.
                     let m = StockSageSeasonality.currentMonth()
                     if let stat = StockSageSeasonality.stat(s, month: m), stat.samples > 0 {
+                        // Sheet-lens HIGH (2026-07-09): this is the EXACT stat the TOM tilt reads —
+                        // presenting it as pure context on the surface where the crowning gets
+                        // audited hides a live rank input (the owner's KEEP is premised on
+                        // disclosure). `seasonalityTiltFires` is the engine's own gate, so this
+                        // clause can never drift from when the bonus actually fires; hold/avoid
+                        // ideas take no tilt, so they get no claim.
+                        let tiltFires = StockSageExpectedValue.seasonalityTiltFires(stat)
+                            && idea.advice.action != .hold && idea.advice.action != .avoid
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "calendar").font(.system(size: mvFont11)).foregroundStyle(.secondary)
-                            Text(stat.note(monthName: DateFormatter().monthSymbols[m - 1]))
+                            Text(stat.note(monthName: DateFormatter().monthSymbols[m - 1])
+                                 + (tiltFires ? " With the seasonal tilt on, this month stat nudges this name's EV-board rank (capped ±0.03; sign flips for sell ideas)." : ""))
                                 .font(.caption2)
                                 .foregroundStyle(stat.isReliable ? .secondary : DS.Palette.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
