@@ -4173,6 +4173,20 @@ struct MarketsView: View {
     @ViewBuilder private var capitalAllocationCard: some View {
         if let acct = StockSageInput.positiveAmount(sizerAccount) {
             let plan = StockSageCapitalAllocator.allocate(ideas: store.ideas, account: acct, calibration: store.convictionCalibration, regime: store.regime)
+            // F5 (2026-07-09): allocate() silently drops every position that floors to 0 shares —
+            // this card used to just vanish when ALL of them did, indistinguishable from "nothing
+            // qualified". Name the reason instead when there WERE fundable candidates.
+            if plan.positions.isEmpty, plan.fundableCandidateCount > 0 {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: mvFont11)).foregroundStyle(DS.Palette.warningSoft)
+                    Text("Deploy capital — all \(plan.fundableCandidateCount) fundable position\(plan.fundableCandidateCount == 1 ? "" : "s") are below the 1-share minimum at this $\(String(format: "%.0f", acct)) account size. Raise the account size or pick fewer/cheaper names to see an allocation plan.")
+                        .font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(DS.Space.sm).frame(maxWidth: .infinity, alignment: .leading)
+                .background(DS.Palette.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.accent.opacity(0.30), lineWidth: 1))
+                .accessibilityElement(children: .combine)
+            }
             if !plan.positions.isEmpty {
                 let heatColor: Color = plan.totalHeat > plan.maxHeat * 0.75 ? DS.Palette.warningSoft : DS.Palette.successSoft
                 VStack(alignment: .leading, spacing: 8) {
@@ -4359,9 +4373,14 @@ struct MarketsView: View {
             bestSymbol: rawSummary.bestSymbol, bestEV: rawSummary.bestEV,
             fastestSymbol: rawSummary.fastestSymbol, fastestVelocity: rawSummary.fastestVelocity,
             weeklyR: rawSummary.weeklyR, weeklyRNet: rawSummary.weeklyRNet,
+            weeklyRGrossSameBasket: rawSummary.weeklyRGrossSameBasket,
             weeklyTopCount: rawSummary.weeklyTopCount)
         // Whether a Brake WOULD have shown had risk % been set — gates the explicit nil-state below.
         let hadBrakeContent = rawSummary.worstRunLosses != nil
+        // F4: the SAME earnings/liquidity-aware lane summary()'s weeklyRNet/weeklyRGrossSameBasket
+        // sum over (see summary()'s own netAwareLane) — bound here once to check fundability of
+        // the top-N the $/week line below dollarizes, without touching that line's own math.
+        let velocityLane = StockSageExpectedValue.fastLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity)
         // PERF-MVCARD: computed once, reused at both the visual warning below and the a11y-label
         // closure that folds it in — was computed twice (byte-identical args) per render.
         let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity)
@@ -4404,7 +4423,10 @@ struct MarketsView: View {
                             // headline is NET — the decision-relevant number after est. frictions.
                             // Gross stays one hover away, labeled, never hidden.
                             ideaMetric("Est./week", String(format: "%+.1fR", netWk), sub: "net of est. costs, top \(s.weeklyTopCount ?? 3)", subColor: .secondary)
-                                .help(weeklyGrossHelp(String(format: "1R = the amount you risk on one trade (entry→stop distance × size). Net of estimated costs — sums the top fast-lane NET velocities%@. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income.", s.weeklyR.map { String(format: " (gross %+.1fR before costs)", $0) } ?? ""), netFigure: true))
+                                // F9: pair net with weeklyRGrossSameBasket (same top-N net was summed
+                                // over), not weeklyR — that field is deliberately basket-unaware
+                                // (trend continuity), so pairing it here could show two different baskets.
+                                .help(weeklyGrossHelp(String(format: "1R = the amount you risk on one trade (entry→stop distance × size). Net of estimated costs — sums the top fast-lane NET velocities%@. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income.", s.weeklyRGrossSameBasket.map { String(format: " (gross %+.1fR before costs)", $0) } ?? ""), netFigure: true))
                         } else if let wk = s.weeklyR {
                             // Fallback when the net figure can't be formed: the labeled gross
                             // (F03/F44's original disposition) — never a fabricated net.
@@ -4426,6 +4448,13 @@ struct MarketsView: View {
                             .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)   // neutral: an estimate, not a realized gain
                             .help((s.weeklyRNet != nil ? "Net of est. costs — weekly R × the dollar value of 1R. " : "Gross, before costs — weekly R × the dollar value of 1R. ") + "Can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. NOT income.")
+                        // F4 (2026-07-09): the $/week figure above is byte-identical math — this
+                        // only adds an honest qualifier when it dollarizes a setup that floors to
+                        // 0 shares at this account size (F1/F3's silent-unfundable-#1 finding).
+                        if StockSageExpectedValue.weeklyDollarsIncludesUnfundableRow(lane: velocityLane, account: acct, riskFraction: rp / 100) {
+                            Text("⚠︎ At least one of the top setups summed above is below the 1-share minimum at this account size — the $/week figure overstates what you can actually place. See 'Size it now' on each idea.")
+                                .font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     if let d = velocityHistory.lastDelta, abs(d) >= 0.05 {
                         Text(String(format: "Since last session: gross weekly-R %@ %.1fR — %@", d >= 0 ? "↑" : "↓", abs(d), MoneyVelocityCopy.ownHistory))
@@ -4494,7 +4523,8 @@ struct MarketsView: View {
                     if let sym = s.fastestSymbol, let v = s.fastestVelocity { t += String(format: ". Fastest %@, %+.2f R per day net", sym, v) }
                     if let netWk = s.weeklyRNet {
                         t += String(format: ". Estimated %+.1f R per week net of estimated costs", netWk)
-                        if let wk = s.weeklyR { t += String(format: ", gross %+.1f R before costs", wk) }
+                        // F9: same-basket gross, not the basket-unaware weeklyR (see the .help above).
+                        if let wk = s.weeklyRGrossSameBasket { t += String(format: ", gross %+.1f R before costs", wk) }
                         t += ", top \(s.weeklyTopCount ?? 3) — an estimate, not income"
                     } else if let wk = s.weeklyR {
                         t += String(format: ". Estimated %+.1f R per week gross, before costs — an estimate, not income", wk)
@@ -4503,6 +4533,11 @@ struct MarketsView: View {
                     // overridden Button — speak it here when it applies.
                     if !tomTiltDisclosureSuffix.isEmpty {
                         t += ". Best-now ranking includes a small seasonal month tilt."
+                    }
+                    // F4 a11y parity with the visible unfundable-row warning above.
+                    if let acct = StockSageInput.positiveAmount(sizerAccount), let rp = StockSageInput.percent(sizerRiskPct),
+                       StockSageExpectedValue.weeklyDollarsIncludesUnfundableRow(lane: velocityLane, account: acct, riskFraction: rp / 100) {
+                        t += ". Warning: at least one of the top setups summed is below the 1-share minimum at this account size; the dollar-per-week figure overstates what you can actually place."
                     }
                     return t
                 }())
@@ -4557,6 +4592,20 @@ struct MarketsView: View {
             let ctaGate: TradeGateVerdict? = parsedRiskFraction != nil
                 ? tradeGateVerdict(for: idea, inputs: tradeGateInputs(for: idea)) : nil
             let ctaNetEV = StockSageExpectedValue.netEVR(for: idea, calibration: store.convictionCalibration)
+            // F8 (2026-07-09): this global "Do this now" CTA (bestOpportunity: highest gross EV)
+            // and Today's plan's #1 row (rankedActions: fastest EV/day, equities-first) rank by
+            // DIFFERENT lenses and can legitimately name different symbols with no cross-reference
+            // — copy-only fix: when they diverge, say so in this card's existing sub-line.
+            // `max: 1` asks rankedActions for ONLY the #1 row (same inputs todaysActionsCard uses).
+            let todayFirstSymbol = StockSageTodayPlan.rankedActions(
+                store.ideas, account: StockSageInput.positiveAmount(sizerAccount),
+                riskFraction: StockSageInput.percent(sizerRiskPct).map { $0 / 100 },
+                holds: velocityHolds, calibration: store.convictionCalibration, marketRegime: store.regime,
+                earnings: store.earnings, liquidity: store.liquidity,
+                positions: portfolio.positions, journalTrades: journal.trades,
+                mode: .equityExecutableFirst, max: 1).first?.symbol
+            let crownDivergenceSuffix = (todayFirstSymbol != nil && todayFirstSymbol != idea.symbol)
+                ? " Today's plan leads with \(todayFirstSymbol!) — different lens." : ""
             let sizeInfo: (text: String, isWarning: Bool) = {
                 if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                    let rp = StockSageInput.percent(sizerRiskPct),
@@ -4586,6 +4635,16 @@ struct MarketsView: View {
                 if !tomTiltDisclosureSuffix.isEmpty {
                     s += ". Ranking includes a small seasonal month tilt."
                 }
+                // F-review fix (2026-07-10): `s` can already end with "." here (e.g. the tilt
+                // sentence just above) — unconditionally prepending another "." produced a
+                // double period ("...tilt.. Today's plan...") when both suffixes fired. Only add
+                // one when `s` doesn't already end with one (mirrors the caveatText path below,
+                // which concatenates suffixes that already carry their own leading space/trailing
+                // period and never inserts a manual ".").
+                if !crownDivergenceSuffix.isEmpty {
+                    if !s.hasSuffix(".") { s += "." }
+                    s += crownDivergenceSuffix
+                }
                 return s
             }()
             BestOpportunityActionCard(
@@ -4603,7 +4662,7 @@ struct MarketsView: View {
                 gateLabel: ctaGate.map { $0.decision == .blocked ? "DO NOT TRADE" : $0.decision.rawValue.uppercased() },
                 gateColor: ctaGate.map { $0.decision == .blocked ? DS.Palette.danger
                          : ($0.decision == .caution ? DS.Palette.warningSoft.opacity(0.85) : DS.Palette.successSoft.opacity(0.85)) } ?? .clear,
-                caveatText: MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix,
+                caveatText: MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix + crownDivergenceSuffix,
                 varianceText: variance.map { String(format: "Typical 24h range ±%.1f%% — size down for 24/7.", $0) },
                 staleAsOfText: staleAsOf.map { "⚠︎ Price as of \($0.formatted(.relative(presentation: .named))) — not live; re-price before ordering." },
                 accessibilityText: accessibilityText,
@@ -4843,9 +4902,13 @@ struct MarketsView: View {
             positions: portfolio.positions,
             journalTrades: journal.trades,
             mode: .equityExecutableFirst)
-        MarketsTodayActionsCard(plans: plans, isSampleData: store.isSampleData) { symbol in
+        // F8 (2026-07-09): the global "Do this now" CTA's own pick, so this card can disclose it
+        // when it names a different symbol than this list's own #1 row — the SAME bestOpportunity
+        // call bestOpportunityCTA already makes (byte-identical inputs), just for its symbol.
+        let globalBestSymbol = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, seasonality: store.seasonality, calibration: store.convictionCalibration)?.idea.symbol
+        MarketsTodayActionsCard(plans: plans, isSampleData: store.isSampleData, onSelectSymbol: { symbol in
             if let idea = store.ideas.first(where: { $0.symbol == symbol }) { selectedIdea = idea }
-        }
+        }, globalBestSymbol: globalBestSymbol)
     }
 
     // Strategy backtest — the advisor's rules aggregated across the sample universe.

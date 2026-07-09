@@ -129,6 +129,27 @@ struct StockSageTodayPlanRankedTests {
         }
     }
 
+    // F-review export-parity fix (2026-07-10): copyAllText's "N sh (≈$M at risk)" segment carried
+    // no unfundability disclosure when a row floors to 0 shares, while the on-screen row already
+    // shows it (row(_:_:)'s unfundableSuffix, MarketsTodayActionsCard.swift). Hand-derived: the
+    // clearIdea default (price 100, riskAbs 5 → stop 95) has riskPerShare $5; $1 account at 1%
+    // risk → riskBudget $0.01 ÷ $5 = 0.002, floors to 0 shares (StockSagePositionSizer.size).
+    @Test func copyAllTextDisclosesUnfundableZeroShareSizing() {
+        let ideas = [clearIdea("A")]
+        let unfundablePlans = StockSageTodayPlan.rankedActions(ideas, account: 1, riskFraction: 0.01)
+        #expect(unfundablePlans.count == 1)
+        #expect(unfundablePlans.first?.shares == 0)
+        let unfundableText = StockSageTodayPlan.copyAllText(unfundablePlans)
+        #expect(unfundableText.contains("0 sh"))
+        #expect(unfundableText.contains("below the 1-share minimum at your account size"))
+        // Control: a comfortably-fundable account carries the size segment WITHOUT the clause.
+        let fundablePlans = StockSageTodayPlan.rankedActions(ideas, account: 100_000, riskFraction: 0.01)
+        #expect(fundablePlans.first?.shares != 0)
+        let fundableText = StockSageTodayPlan.copyAllText(fundablePlans)
+        #expect(fundableText.contains(" sh ("))
+        #expect(!fundableText.contains("below the 1-share minimum"))
+    }
+
     // Regression: sub-dollar crypto prices (DOGE-class, ~$0.10) must NOT collapse to identical
     // "0.10" strings for entry and stop. fmt must use %.4f so e.g. entry 0.1040 ≠ stop 0.0990.
     @Test func subDollarPricesUseFourDecimalPlacesInCopyText() {
@@ -212,6 +233,28 @@ struct StockSageTodayPlanRankedTests {
         )
         #expect(executableFirst.first?.symbol == "CLEAR")
         #expect(executableFirst.first?.gate?.decision != .blocked)
+    }
+
+    // F8 (2026-07-09): MarketsView's global "Do this now" CTA calls
+    // rankedActions(..., mode: .equityExecutableFirst, max: 1) to cheaply fetch JUST the #1 row
+    // for its cross-reference disclosure against Today's-plan's own #1. This pins the invariant
+    // that fix relies on: under .equityExecutableFirst the full lane is processed and sorted
+    // regardless of `max` (only the RETURNED array is truncated — see rankedActions' own
+    // `if out.count > maxCount { return Array(out.prefix(maxCount)) }`), so max:1 and max:3 must
+    // agree on the #1 symbol. A structural equivalence check, not a numeric literal — protects
+    // against a future change that gates the FULL sort by `max` (which would silently break the
+    // CTA's cheap max:1 shortcut).
+    @Test func equityExecutableFirstMaxOneAgreesWithMaxThreeOnTheFirstRow() {
+        let ideas = [
+            clearIdea("A", conviction: 0.65, riskAbs: 4, rewardAbs: 12),
+            clearIdea("B", conviction: 0.92, riskAbs: 2, rewardAbs: 10),
+            clearIdea("C", conviction: 0.80, riskAbs: 3, rewardAbs: 12)
+        ]
+        let top3 = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: 0.01, mode: .equityExecutableFirst, max: 3)
+        let top1 = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: 0.01, mode: .equityExecutableFirst, max: 1)
+        #expect(top3.count == 3)
+        #expect(top1.count == 1)
+        #expect(top1.first?.symbol == top3.first?.symbol)
     }
 
     @Test func defaultRankedModeRemainsFastLaneOrdered() {

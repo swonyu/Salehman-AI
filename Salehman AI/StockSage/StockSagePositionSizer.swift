@@ -43,8 +43,15 @@ enum StockSagePositionSizer {
 
     /// One-line "size it now" summary — shares, $ at risk, % of account — with the
     /// honesty caveat that this sizes the LOSS at the stop, not a profit.
+    /// F1/F3 (2026-07-09): whole-share flooring can round a real setup down to 0 shares at a
+    /// small account (crypto rows especially — a $50k+ entry floors to 0 at a $10k account) while
+    /// the idea still holds a #1 rank slot on the board — that was silent before this. `shares==0`
+    /// now says so explicitly, in this SAME string every "Size it now" surface already renders
+    /// (idea card, best-opportunity CTA, detail sheet) — no ranking/demotion change, display-only.
     nonisolated static func summaryLine(_ ps: PositionSize, riskPct: Double) -> String {
-        String(format: "%d shares ≈ $%.0f at risk (%.0f%% of acct) at %.1f%%/trade — sizes the LOSS, not a profit promise.",
+        let base = String(format: "%d shares ≈ $%.0f at risk (%.0f%% of acct) at %.1f%%/trade — sizes the LOSS, not a profit promise.",
                ps.shares, ps.dollarsAtRisk, ps.pctOfAccount, riskPct)
+        guard ps.shares == 0 else { return base }
+        return base + " Below the 1-share minimum at your account size — not fundable as sized."
     }
 }

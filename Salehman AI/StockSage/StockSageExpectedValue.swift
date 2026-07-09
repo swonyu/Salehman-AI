@@ -43,6 +43,14 @@ struct MoneyVelocitySummary: Sendable, Equatable {
     let fastestVelocity: Double?
     let weeklyR: Double?          // est. weekly R running the top setups (GROSS — see weeklyRNet)
     let weeklyRNet: Double?       // same, net of est. frictions (F03/F44: the decision-relevant headline)
+    /// F9 (2026-07-09): GROSS weekly R summed over the EXACT SAME top-N basket `weeklyRNet` used
+    /// (the earnings/liquidity-AWARE lane) — for the "net X (gross Y)" PAIRED display only. `weeklyR`
+    /// deliberately stays basket-UNAWARE (trend-continuity contract with `VelocityHistory`, see
+    /// MarketsView's onAppear .task comment) so a caller pairing it next to `weeklyRNet` could be
+    /// showing two different top-3 baskets as if they were the same one — this field fixes exactly
+    /// that display-string correctness bug, without touching `weeklyR`'s own recorded value, any
+    /// rank key, or any gate/cost math. nil under the identical conditions `weeklyRNet` is nil.
+    let weeklyRGrossSameBasket: Double?
     let weeklyTopCount: Int?      // how many setups the weekly figures actually sum (min(3, lane)) — the "top N" claim
     let worstRunLosses: Int?      // worst losing streak in the journal (the brake)
     let worstRunDrawdownPct: Double?  // that streak at the modeled risk % → account drawdown
@@ -51,10 +59,12 @@ struct MoneyVelocitySummary: Sendable, Equatable {
 
     nonisolated init(bestSymbol: String? = nil, bestEV: Double? = nil, fastestSymbol: String? = nil,
                      fastestVelocity: Double? = nil, weeklyR: Double? = nil, weeklyRNet: Double? = nil,
+                     weeklyRGrossSameBasket: Double? = nil,
                      weeklyTopCount: Int? = nil,
                      worstRunLosses: Int? = nil,
                      worstRunDrawdownPct: Double? = nil, riskFraction: Double = 0.01) {
         self.bestSymbol = bestSymbol; self.bestEV = bestEV; self.weeklyRNet = weeklyRNet
+        self.weeklyRGrossSameBasket = weeklyRGrossSameBasket
         self.weeklyTopCount = weeklyTopCount
         self.fastestSymbol = fastestSymbol; self.fastestVelocity = fastestVelocity
         self.weeklyR = weeklyR; self.worstRunLosses = worstRunLosses
@@ -219,11 +229,18 @@ enum StockSageExpectedValue {
     }
 
     /// F27: single source of truth for the financing-cost note appended to net-cost display strings.
-    /// Returns " + ~NNNbps/yr short financing" when BOTH rate > 0 AND days > 0; otherwise "".
-    /// Keyed on BOTH conditions: rate > 0 alone would falsely claim financing was modeled for
-    /// FX/index sells whose expectedHoldDays returns nil → 0 (no hold estimate → $0 financing).
+    /// Returns " + ~NNNbps/yr short financing (assumed hold)" when BOTH rate > 0 AND days > 0;
+    /// otherwise "". Keyed on BOTH conditions: rate > 0 alone would falsely claim financing was
+    /// modeled for FX/index sells whose expectedHoldDays returns nil → 0 (no hold estimate → $0
+    /// financing). F10 (2026-07-09): `days` is ALWAYS `expectedHoldDays(for:)`'s tuned per-class
+    /// estimator (crypto 3d/equity 12d, target-distance adjusted) — it never reads the owner's OWN
+    /// measured holds (`StockSageJournal.holdingPeriod`), even when the journal has them. The
+    /// "(assumed hold)" qualifier says so, matching the honesty floor's "estimates labeled
+    /// assumed". Disclosure-only: `days` itself is untouched here — swapping in a measured hold
+    /// would change `netEVR`/`clearsCostAfterFrictions`/`velocityRankKey` (ranking-adjacent), not
+    /// just this string.
     nonisolated static func financingNoteSuffix(rate: Double, days: Double) -> String {
-        (rate > 0 && days > 0) ? String(format: " + ~%.0fbps/yr short financing", rate * 10_000) : ""
+        (rate > 0 && days > 0) ? String(format: " + ~%.0fbps/yr short financing (assumed hold)", rate * 10_000) : ""
     }
 
     /// Does the idea's conviction-mapped win prob clear its AFTER-COST break-even? A thin,
@@ -866,8 +883,17 @@ enum StockSageExpectedValue {
     /// caller is responsible for that match; this function trusts `lane` as given, same contract
     /// `fastLaneByClass`'s PERF-STRIP replacement already established). `ideas` is still required
     /// (unchanged) because `fastLaneConcentration` below re-derives ITS OWN lane from `ideas` for
-    /// the concentration check — concentration is evaluated over `ideas` post-earnings/liquidity
-    /// filtering at ITS OWN call, not blindly assumed identical to the passed `lane`'s provenance.
+    /// the concentration check. `earnings`/`liquidity` (default empty, F-review fix 2026-07-10)
+    /// are threaded straight into that concentration check so it analyzes the SAME earnings/
+    /// liquidity-aware top-N the caller's `lane` was built with — a caller passing an AWARE `lane`
+    /// (e.g. `summary()`'s `netAwareLane`) but leaving these defaulted would otherwise silently
+    /// haircut against the UNAWARE lane's concentration instead, which can put the concentration
+    /// verdict on the wrong side of `isConcentrated` vs the AWARE haircut `netExpectedWeeklyR(lane:
+    /// ...)` already applies (was: `weeklyRGrossSameBasket` could show gross ≈0.70× below net when
+    /// the aware/unaware top-3 diverge across that boundary — see
+    /// `summaryWeeklyRGrossSameBasketUsesAwareConcentrationAcrossAssetClasses`). Every PRE-EXISTING
+    /// call site (the `ideas`-only overload below, `weeklyR`) omits `earnings`/`liquidity` and so
+    /// stays byte-identical (defaults to empty ⇒ UNAWARE, unchanged).
     /// Equivalence to the `ideas`-only overload holds BY CONSTRUCTION whenever `lane ==
     /// fastLane(ideas, holds:calibration:)`: the `ideas`-only overload's body IS `expectedWeeklyR(lane:
     /// fastLane(ideas, ...), ideas: ideas, ...)` — it delegates to this function, so the two share one
@@ -878,14 +904,20 @@ enum StockSageExpectedValue {
     /// that does).
     nonisolated static func expectedWeeklyR(lane: [StockSageIdea], ideas: [StockSageIdea], maxConcurrent: Int = 3,
                                             tradingDays: Double = 5, holds: VelocityHoldDays = .defaults,
-                                            calibration: StockSageConvictionCalibration? = nil) -> Double? {
+                                            calibration: StockSageConvictionCalibration? = nil,
+                                            earnings: [String: EarningsProximity] = [:],
+                                            liquidity: [String: LiquidityProfile] = [:]) -> Double? {
         let vels = lane.prefix(Swift.max(0, maxConcurrent)).compactMap { velocity(for: $0, holds: holds, calibration: calibration) }
         guard !vels.isEmpty else { return nil }
         // If the top-N fast-lane setups are all one asset class, they tend to move together —
         // summing their velocities as if independent overstates the real weekly R by counting
         // one correlated bet N times. Haircut the total (not each leg) so the raw per-idea
         // velocities stay honest; 0.70 is a conservative single-token estimate, not a fit.
-        let concentrationFactor = fastLaneConcentration(ideas, topN: maxConcurrent, holds: holds, calibration: calibration)?.isConcentrated == true ? 0.70 : 1.0
+        // Must analyze the SAME earnings/liquidity-aware top-N `lane` was built with (F-review fix
+        // 2026-07-10, mirrors the identical `netExpectedWeeklyR(lane:ideas:...)` contract note
+        // below) — otherwise the 0.70 factor is decided on a different top-3 than the one `lane`'s
+        // velocities were summed over.
+        let concentrationFactor = fastLaneConcentration(ideas, topN: maxConcurrent, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity)?.isConcentrated == true ? 0.70 : 1.0
         return vels.reduce(0, +) * tradingDays * concentrationFactor
     }
 
@@ -1004,37 +1036,6 @@ enum StockSageExpectedValue {
         return (5 + 2 * Double(crypto) / Double(lane.count)).rounded()
     }
 
-    /// Every velocity rank silently ASSUMES `holds` (crypto 3d / equity 12d by default) — this
-    /// checks that assumption against the owner's OWN closed trades. Diverges >20% for either
-    /// class → surface a note so the velocity card doesn't quietly mis-rank against reality
-    /// (e.g. holding crypto 5d when velocity assumes 3d overstates its EV/day by ~67%). nil
-    /// when there's too little closed data per class (<3 trades) to estimate honestly, or
-    /// nothing diverges past the threshold.
-    nonisolated static func calibrationNote(journalTrades: [TradeRecord], assumes: VelocityHoldDays = .defaults,
-                                            divergenceThreshold: Double = 0.20) -> String? {
-        let closed = journalTrades.filter { $0.closedAt != nil }
-        func avgHoldDays(_ isClass: (String) -> Bool) -> Double? {
-            let holds = closed.compactMap { t -> Double? in
-                guard isClass(t.symbol), let closedAt = t.closedAt else { return nil }
-                return closedAt.timeIntervalSince(t.openedAt) / 86_400
-            }
-            guard holds.count >= 3 else { return nil }
-            return holds.reduce(0, +) / Double(holds.count)
-        }
-        var divergences: [String] = []
-        if assumes.crypto > 0, let actual = avgHoldDays({ StockSageAllocation.assetClass($0) == "Crypto" }),
-           abs(actual - assumes.crypto) / assumes.crypto > divergenceThreshold {
-            divergences.append(String(format: "crypto ~%.1fd vs the %.0fd assumption", actual, assumes.crypto))
-        }
-        if assumes.equity > 0, let actual = avgHoldDays({ StockSageAllocation.assetClass($0) == "Equity" }),
-           abs(actual - assumes.equity) / assumes.equity > divergenceThreshold {
-            divergences.append(String(format: "equity ~%.1fd vs the %.0fd assumption", actual, assumes.equity))
-        }
-        guard !divergences.isEmpty else { return nil }
-        return "Your actual hold times diverge from velocity's assumption — " + divergences.joined(separator: "; ")
-             + " — so EV/day estimates may be off by roughly that ratio."
-    }
-
     /// How much to SHRINK per-trade risk for an asset's realized volatility: max(1, vol/baseline).
     /// FLOORED at 1 so it can only reduce risk, never inflate it — even fast money needs brakes.
     /// e.g. 70%-vol crypto vs a 20% baseline → 3.5× (size 1%/3.5 ≈ 0.29%/trade). Feed `vol` from
@@ -1096,6 +1097,12 @@ enum StockSageExpectedValue {
         // The brake: the owner's worst losing streak, compounded down at the risk fraction.
         let dd = StockSageJournal.equityRisk(trades)
             .flatMap { StockSageRiskOfRuin.scenario(losses: $0.maxConsecutiveLosses, fraction: fraction) }
+        // F9 (2026-07-09, display-sum correctness): the earnings/liquidity-AWARE lane, computed
+        // ONCE and fed into BOTH weeklyRNet and its gross same-basket companion below, so a caller
+        // pairing them as "net X (gross Y)" sums over the identical top-N — not two different
+        // baskets. `weeklyR` (a few lines up) deliberately stays the UNAWARE lane, unchanged, for
+        // VelocityHistory's cross-session trend continuity (see MarketsView's onAppear .task).
+        let netAwareLane = fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity)
         return MoneyVelocitySummary(
             bestSymbol: best?.idea.symbol,
             bestEV: best?.ev.evR,
@@ -1105,8 +1112,15 @@ enum StockSageExpectedValue {
             weeklyR: expectedWeeklyR(ideas, tradingDays: tradingDaysForLane(ideas, holds: holds, calibration: calibration), holds: holds, calibration: calibration),
             // F03/F44 (owner gate lifted 2026-07-09): the NET figure is the headline the card
             // shows; earnings/liquidity passed so it equals the fast-lane strip's own net line
-            // (the same number rendered twice must be identical).
-            weeklyRNet: netExpectedWeeklyR(ideas, tradingDays: tradingDaysForLane(ideas, holds: holds, calibration: calibration), holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity),
+            // (the same number rendered twice must be identical). Routed through the bind-once
+            // lane overload with `netAwareLane` — equivalent BY CONSTRUCTION to the ideas-only
+            // overload's own internal `fastLane(...)` call, so this is byte-identical to before.
+            weeklyRNet: netExpectedWeeklyR(lane: netAwareLane, ideas: ideas, tradingDays: tradingDaysForLane(ideas, holds: holds, calibration: calibration), holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity),
+            // F9: the SAME netAwareLane basket, summed GROSS — for pairing next to weeklyRNet ONLY.
+            // F-review fix (2026-07-10): earnings/liquidity now passed through so the concentration
+            // haircut is judged on this SAME aware basket, not the unaware one weeklyR uses — see
+            // the doc on `expectedWeeklyR(lane:ideas:...)` above for why that mismatch mattered.
+            weeklyRGrossSameBasket: expectedWeeklyR(lane: netAwareLane, ideas: ideas, tradingDays: tradingDaysForLane(ideas, holds: holds, calibration: calibration), holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity),
             // C7a (2026-07-09): the card's "top 3" subtitle overstated when the lane held fewer —
             // expose the count the weekly sums ACTUALLY use. Lane membership is earnings/
             // liquidity-independent (they adjust only the sort key), so the bare lane's count
@@ -1136,7 +1150,9 @@ enum StockSageExpectedValue {
             // F03/F44 net headline (2026-07-09): the copyable artifact carries the SAME
             // decision-relevant net figure the card headlines, with gross beside it labeled —
             // a pasted plan must never revert to the number the card demoted to hover-only.
-            let grossPart = s.weeklyR.map { String(format: " (gross %+.1fR before costs)", $0) } ?? ""
+            // F9: the parenthetical uses weeklyRGrossSameBasket (same top-N as netWk), never the
+            // basket-unaware weeklyR — pairing those two would sum two different baskets.
+            let grossPart = s.weeklyRGrossSameBasket.map { String(format: " (gross %+.1fR before costs)", $0) } ?? ""
             lines.append("\(n). Run the top setups: ~\(String(format: "%+.1f", netWk))R/week net of est. costs\(grossPart) — an estimate assuming you take and re-cycle them, not income.")
             n += 1
         } else if let wk = s.weeklyR {
@@ -1184,6 +1200,26 @@ enum StockSageExpectedValue {
             .mapValues(\.count)
         guard let dominant = counts.max(by: { $0.value < $1.value }) else { return nil }
         return FastLaneConcentration(dominantClass: dominant.key, count: dominant.value, total: top.count)
+    }
+
+    /// F4 (2026-07-09): does ANY of `lane`'s top-N (the exact setups a caller's "≈ +$N/week"
+    /// dollarization sums) floor to 0 shares at this account/risk — i.e. is the header
+    /// dollarizing a setup that literally isn't placeable at this size (the F1/F3 whole-share-
+    /// flooring finding)? Reuses `StockSagePositionSizer.size` — the SAME sizer every "Size it
+    /// now" line already calls — no new sizing math, no rank change, and the header's own dollar
+    /// figure is untouched by this: it only gates whether a qualifier renders beside it.
+    /// false (never flags) when account/riskFraction is unusable, or a lane idea has no stop to
+    /// size against — only-real-data, matches this file's "unknown ⇒ no penalty" convention.
+    nonisolated static func weeklyDollarsIncludesUnfundableRow(lane: [StockSageIdea], account: Double,
+                                                               riskFraction: Double, maxConcurrent: Int = 3) -> Bool {
+        guard account > 0, riskFraction > 0, account.isFinite, riskFraction.isFinite else { return false }
+        for idea in lane.prefix(Swift.max(0, maxConcurrent)) {
+            guard let stop = idea.advice.stopPrice,
+                  let ps = StockSagePositionSizer.size(account: account, riskFraction: riskFraction, entry: idea.price, stop: stop)
+            else { continue }
+            if ps.shares == 0 { return true }
+        }
+        return false
     }
 
     // ── FASTMONEY_BACKLOG #7 — crypto vs equity fast-lane board split + cross-correlation ──────
