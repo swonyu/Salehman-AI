@@ -45,6 +45,16 @@ enum MoneyVelocityCopy {
     nonisolated static let growthProjection = "Assumes your past edge persists — it may not, and real variance lowers this. NOT a prediction."
     /// Compact tail for the Today-tab "Best bet" stat tile (rendered after the EV figure).
     nonisolated static let bestBetTile = "EV · estimate"
+    /// TOM-tilt disclosure suffix for every `bestOpportunity`-CROWNED surface (C1 wave HIGH,
+    /// extended to the Today tile in-turn 2026-07-09): the owner's KEEP ratification is
+    /// premised on UI-disclosure, and the tilt crowns on every sort and tab. Centralized here
+    /// so the three consuming files (MarketsView ×3 sites, TodayView tile) cannot drift.
+    /// Empty when the tilt cannot be moving the crown.
+    nonisolated static func tomTiltSuffix(seasonalityPopulated: Bool) -> String {
+        (StockSageAdvisor.turnOfMonthEnabled && seasonalityPopulated)
+            ? " Pick includes each name's seasonal month tilt (capped ±0.03 rank units) — a weak, backward-looking tendency, not a forecast."
+            : ""
+    }
     nonisolated static let all: [String] = [bestOpportunity, fastLane, summary, weeklyDollars, weeklyDollarsNet, cannotHedgeOvernight, ownHistory, drawdownBrake, growthProjection, bestBetTile]
 }
 

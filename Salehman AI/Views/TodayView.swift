@@ -264,6 +264,11 @@ struct TodayView: View {
                              valueAccent: DS.Palette.accent) {
                         app.selectedTab = .markets
                     }
+                    // The tile is CROWNED by the tilted bestOpportunity (seasonality passed
+                    // above) — the compact L3-01 design stands, but the tilt disclosure must
+                    // reach this surface too (hover; same centralized copy as Markets).
+                    .help("The single best estimated-EV buy right now — full caveats on the Markets card."
+                          + MoneyVelocityCopy.tomTiltSuffix(seasonalityPopulated: !stockSage.seasonality.isEmpty))
                 }
             }
         }

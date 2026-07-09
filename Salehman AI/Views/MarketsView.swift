@@ -2000,9 +2000,9 @@ struct MarketsView: View {
     /// rankByVelocity). Every bestOpportunity-CROWNED surface therefore appends this to its own
     /// caveat whenever the tilt can actually be moving the crown. Empty when inert.
     private var tomTiltDisclosureSuffix: String {
-        (StockSageAdvisor.turnOfMonthEnabled && !store.seasonality.isEmpty)
-            ? " Pick includes each name's seasonal month tilt (capped ±0.03 rank units) — a weak, backward-looking tendency, not a forecast."
-            : ""
+        // Centralized in MoneyVelocityCopy (in-turn 2026-07-09) so the Today tile's copy of
+        // this disclosure cannot drift from the Markets surfaces'.
+        MoneyVelocityCopy.tomTiltSuffix(seasonalityPopulated: !store.seasonality.isEmpty)
     }
 
     private func weeklyGrossHelp(_ base: String, tradingDays: Double? = nil, netFigure: Bool = false) -> String {
