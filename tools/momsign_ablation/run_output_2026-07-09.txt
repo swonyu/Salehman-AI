@@ -1,0 +1,220 @@
+PANEL ASSERTS:
+  symbolCount=61 (expect 61)
+  periodCount=1253 (expect 1253)
+  industry.count=61 (expect 61), distinct groups=7 (expect 7)
+  earningsExcludedAt entries=926 (expect 926)
+  roundTripBps=13.0 (expect 13.0)
+  labels[:8]=["AAPL", "MSFT", "NVDA", "GOOGL", "GOOG", "META", "AVGO", "ORCL"] (expect ["AAPL", "MSFT", "NVDA", "GOOGL", "GOOG", "META", "AVGO", "ORCL"])
+PANEL ASSERTS: ALL PASS
+PROVENANCE: Full-IRRX panel 2026-07-09: 61 shipped-StockSageSector equities x 5y Yahoo v8 adjclose (2021-07-09..2026-07-08, 1254 common days, 0 split-leak events), earnings dates via Yahoo visualization API (cookie+crumb, CFNetwork) for 61/61 symbols, exclusion window ±2 trading days (fetch_eodhd_panel.py convention), rt=13bps.
+PREFLIGHT: edge series (n=200, seed=2) DSR=0.9999940933539617 (require >= 0.95)
+PREFLIGHT: noise series (n=200, seed=3) DSR=0.6904760142301203 (require < 0.95)
+PREFLIGHT: PASS
+PORT-VALIDATION: 30/30 EXACT-EQUAL
+
+=== REVERSAL-REPRO WITHOUT earnings exclusion · 12 configs · varTrialSharpe=0.0011 ===
+  lb= 5 hd= 5  rebals=249  meanGross=-0.00004 meanNet=-0.00098  net-OOS DSR=0.042  clears=no
+  lb= 5 hd=10  rebals=124  meanGross=-0.00129 meanNet=-0.00222  net-OOS DSR=0.095  clears=no
+  lb= 5 hd=21  rebals= 59  meanGross=-0.00022 meanNet=-0.00115  net-OOS DSR=0.541  clears=no
+  lb=10 hd= 5  rebals=248  meanGross=-0.00025 meanNet=-0.00091  net-OOS DSR=0.102  clears=no
+  lb=10 hd=10  rebals=124  meanGross=-0.00041 meanNet=-0.00133  net-OOS DSR=0.125  clears=no
+  lb=10 hd=21  rebals= 59  meanGross=-0.00147 meanNet=-0.00241  net-OOS DSR=0.150  clears=no
+  lb=21 hd= 5  rebals=246  meanGross=-0.00045 meanNet=-0.00090  net-OOS DSR=0.054  clears=no
+  lb=21 hd=10  rebals=123  meanGross=-0.00021 meanNet=-0.00084  net-OOS DSR=0.073  clears=no
+  lb=21 hd=21  rebals= 58  meanGross=+0.00060 meanNet=-0.00032  net-OOS DSR=0.086  clears=no
+  lb=63 hd= 5  rebals=238  meanGross=-0.00054 meanNet=-0.00079  net-OOS DSR=0.029  clears=no
+  lb=63 hd=10  rebals=119  meanGross=-0.00133 meanNet=-0.00168  net-OOS DSR=0.032  clears=no
+  lb=63 hd=21  rebals= 56  meanGross=-0.00090 meanNet=-0.00142  net-OOS DSR=0.069  clears=no
+  → BEST net DSR = 0.541 (lb=5,hd=21)
+
+=== REVERSAL-REPRO WITH earnings exclusion (full IRRX) · 12 configs · varTrialSharpe=0.0012 ===
+  lb= 5 hd= 5  rebals=249  meanGross=+0.00003 meanNet=-0.00094  net-OOS DSR=0.039  clears=no
+  lb= 5 hd=10  rebals=124  meanGross=-0.00154 meanNet=-0.00250  net-OOS DSR=0.053  clears=no
+  lb= 5 hd=21  rebals= 59  meanGross=+0.00044 meanNet=-0.00052  net-OOS DSR=0.553  clears=no
+  lb=10 hd= 5  rebals=248  meanGross=-0.00034 meanNet=-0.00106  net-OOS DSR=0.056  clears=no
+  lb=10 hd=10  rebals=124  meanGross=-0.00030 meanNet=-0.00125  net-OOS DSR=0.129  clears=no
+  lb=10 hd=21  rebals= 59  meanGross=+0.00025 meanNet=-0.00073  net-OOS DSR=0.221  clears=no
+  lb=21 hd= 5  rebals=246  meanGross=-0.00060 meanNet=-0.00111  net-OOS DSR=0.013  clears=no
+  lb=21 hd=10  rebals=123  meanGross=+0.00009 meanNet=-0.00061  net-OOS DSR=0.081  clears=no
+  lb=21 hd=21  rebals= 58  meanGross=-0.00046 meanNet=-0.00140  net-OOS DSR=0.023  clears=no
+  lb=63 hd= 5  rebals=238  meanGross=-0.00058 meanNet=-0.00091  net-OOS DSR=0.015  clears=no
+  lb=63 hd=10  rebals=119  meanGross=-0.00059 meanNet=-0.00103  net-OOS DSR=0.043  clears=no
+  lb=63 hd=21  rebals= 56  meanGross=-0.00104 meanNet=-0.00159  net-OOS DSR=0.053  clears=no
+  → BEST net DSR = 0.553 (lb=5,hd=21)
+
+REVERSAL-REPRO CHECK: WITHOUT best=0.541 (expect 0.541, cfg lb=5,hd=21 expect lb=5,hd=21)
+REVERSAL-REPRO CHECK: WITH    best=0.553 (expect 0.553, cfg lb=5,hd=21 expect lb=5,hd=21)
+REVERSAL-REPRO: PASS (panel+harness identity with the indexed 07-09 full-IRRX run confirmed)
+
+=== ANTI-SYMMETRY CHECKS (Variant A) ===
+  lb= 5 hd= 5 WITHOUT: mean(gross_rev)=-0.000044 mean(gross_mom)=+0.000044 | maxResid gross=0.000e+00 turnover=0.000e+00 net=3.469e-18
+  lb= 5 hd= 5 WITH: mean(gross_rev)=+0.000034 mean(gross_mom)=-0.000034 | maxResid gross=0.000e+00 turnover=0.000e+00 net=6.939e-18
+  lb= 5 hd=10 WITHOUT: mean(gross_rev)=-0.001286 mean(gross_mom)=+0.001286 | maxResid gross=0.000e+00 turnover=0.000e+00 net=3.469e-18
+  lb= 5 hd=10 WITH: mean(gross_rev)=-0.001543 mean(gross_mom)=+0.001543 | maxResid gross=0.000e+00 turnover=0.000e+00 net=3.469e-18
+  lb= 5 hd=21 WITHOUT: mean(gross_rev)=-0.000220 mean(gross_mom)=+0.000220 | maxResid gross=0.000e+00 turnover=0.000e+00 net=3.469e-18
+  lb= 5 hd=21 WITH: mean(gross_rev)=+0.000437 mean(gross_mom)=-0.000437 | maxResid gross=0.000e+00 turnover=0.000e+00 net=6.939e-18
+  lb=10 hd= 5 WITHOUT: mean(gross_rev)=-0.000255 mean(gross_mom)=+0.000255 | maxResid gross=0.000e+00 turnover=0.000e+00 net=6.939e-18
+  lb=10 hd= 5 WITH: mean(gross_rev)=-0.000342 mean(gross_mom)=+0.000342 | maxResid gross=0.000e+00 turnover=0.000e+00 net=6.939e-18
+  lb=10 hd=10 WITHOUT: mean(gross_rev)=-0.000407 mean(gross_mom)=+0.000407 | maxResid gross=0.000e+00 turnover=0.000e+00 net=3.469e-18
+  lb=10 hd=10 WITH: mean(gross_rev)=-0.000301 mean(gross_mom)=+0.000301 | maxResid gross=0.000e+00 turnover=0.000e+00 net=6.939e-18
+  lb=10 hd=21 WITHOUT: mean(gross_rev)=-0.001465 mean(gross_mom)=+0.001465 | maxResid gross=0.000e+00 turnover=0.000e+00 net=3.469e-18
+  lb=10 hd=21 WITH: mean(gross_rev)=+0.000251 mean(gross_mom)=-0.000251 | maxResid gross=0.000e+00 turnover=0.000e+00 net=1.735e-18
+  lb=21 hd= 5 WITHOUT: mean(gross_rev)=-0.000454 mean(gross_mom)=+0.000454 | maxResid gross=0.000e+00 turnover=0.000e+00 net=1.735e-18
+  lb=21 hd= 5 WITH: mean(gross_rev)=-0.000597 mean(gross_mom)=+0.000597 | maxResid gross=0.000e+00 turnover=0.000e+00 net=1.735e-18
+  lb=21 hd=10 WITHOUT: mean(gross_rev)=-0.000209 mean(gross_mom)=+0.000209 | maxResid gross=0.000e+00 turnover=0.000e+00 net=3.469e-18
+  lb=21 hd=10 WITH: mean(gross_rev)=+0.000086 mean(gross_mom)=-0.000086 | maxResid gross=0.000e+00 turnover=0.000e+00 net=3.469e-18
+  lb=21 hd=21 WITHOUT: mean(gross_rev)=+0.000603 mean(gross_mom)=-0.000603 | maxResid gross=0.000e+00 turnover=0.000e+00 net=1.388e-17
+  lb=21 hd=21 WITH: mean(gross_rev)=-0.000461 mean(gross_mom)=+0.000461 | maxResid gross=0.000e+00 turnover=0.000e+00 net=3.469e-18
+  lb=63 hd= 5 WITHOUT: mean(gross_rev)=-0.000544 mean(gross_mom)=+0.000544 | maxResid gross=0.000e+00 turnover=0.000e+00 net=6.939e-18
+  lb=63 hd= 5 WITH: mean(gross_rev)=-0.000581 mean(gross_mom)=+0.000581 | maxResid gross=0.000e+00 turnover=0.000e+00 net=1.735e-18
+  lb=63 hd=10 WITHOUT: mean(gross_rev)=-0.001334 mean(gross_mom)=+0.001334 | maxResid gross=0.000e+00 turnover=0.000e+00 net=1.735e-18
+  lb=63 hd=10 WITH: mean(gross_rev)=-0.000589 mean(gross_mom)=+0.000589 | maxResid gross=0.000e+00 turnover=0.000e+00 net=3.469e-18
+  lb=63 hd=21 WITHOUT: mean(gross_rev)=-0.000896 mean(gross_mom)=+0.000896 | maxResid gross=0.000e+00 turnover=0.000e+00 net=1.735e-18
+  lb=63 hd=21 WITH: mean(gross_rev)=-0.001041 mean(gross_mom)=+0.001041 | maxResid gross=0.000e+00 turnover=0.000e+00 net=3.469e-18
+  lb=126 hd= 5 WITHOUT: mean(gross_rev)=-0.000841 mean(gross_mom)=+0.000841 | maxResid gross=0.000e+00 turnover=0.000e+00 net=1.735e-18
+  lb=126 hd= 5 WITH: mean(gross_rev)=-0.000617 mean(gross_mom)=+0.000617 | maxResid gross=0.000e+00 turnover=0.000e+00 net=1.735e-18
+  lb=126 hd=10 WITHOUT: mean(gross_rev)=-0.001912 mean(gross_mom)=+0.001912 | maxResid gross=0.000e+00 turnover=0.000e+00 net=1.735e-18
+  lb=126 hd=10 WITH: mean(gross_rev)=-0.002052 mean(gross_mom)=+0.002052 | maxResid gross=0.000e+00 turnover=0.000e+00 net=8.674e-19
+  lb=126 hd=21 WITHOUT: mean(gross_rev)=-0.003869 mean(gross_mom)=+0.003869 | maxResid gross=0.000e+00 turnover=0.000e+00 net=1.084e-19
+  lb=126 hd=21 WITH: mean(gross_rev)=-0.004021 mean(gross_mom)=+0.004021 | maxResid gross=0.000e+00 turnover=0.000e+00 net=8.674e-19
+ANTI-SYMMETRY: ALL 30 CONFIG×ARM CHECKS PASS (< 1e-12)
+
+=== VARIANT B INVARIANT CHECKS ===
+  lb=5 hd=5 WITHOUT: rebalances=249 degenerate=0 violations=0
+  lb=5 hd=5 WITH: rebalances=249 degenerate=0 violations=0
+  lb=5 hd=10 WITHOUT: rebalances=124 degenerate=0 violations=0
+  lb=5 hd=10 WITH: rebalances=124 degenerate=0 violations=0
+  lb=5 hd=21 WITHOUT: rebalances=59 degenerate=0 violations=0
+  lb=5 hd=21 WITH: rebalances=59 degenerate=0 violations=0
+  lb=10 hd=5 WITHOUT: rebalances=248 degenerate=0 violations=0
+  lb=10 hd=5 WITH: rebalances=248 degenerate=0 violations=0
+  lb=10 hd=10 WITHOUT: rebalances=124 degenerate=0 violations=0
+  lb=10 hd=10 WITH: rebalances=124 degenerate=0 violations=0
+  lb=10 hd=21 WITHOUT: rebalances=59 degenerate=0 violations=0
+  lb=10 hd=21 WITH: rebalances=59 degenerate=0 violations=0
+  lb=21 hd=5 WITHOUT: rebalances=246 degenerate=0 violations=0
+  lb=21 hd=5 WITH: rebalances=246 degenerate=0 violations=0
+  lb=21 hd=10 WITHOUT: rebalances=123 degenerate=0 violations=0
+  lb=21 hd=10 WITH: rebalances=123 degenerate=0 violations=0
+  lb=21 hd=21 WITHOUT: rebalances=58 degenerate=0 violations=0
+  lb=21 hd=21 WITH: rebalances=58 degenerate=0 violations=0
+  lb=63 hd=5 WITHOUT: rebalances=238 degenerate=0 violations=0
+  lb=63 hd=5 WITH: rebalances=238 degenerate=0 violations=0
+  lb=63 hd=10 WITHOUT: rebalances=119 degenerate=0 violations=0
+  lb=63 hd=10 WITH: rebalances=119 degenerate=0 violations=0
+  lb=63 hd=21 WITHOUT: rebalances=56 degenerate=0 violations=0
+  lb=63 hd=21 WITH: rebalances=56 degenerate=0 violations=0
+  lb=126 hd=5 WITHOUT: rebalances=225 degenerate=0 violations=0
+  lb=126 hd=5 WITH: rebalances=225 degenerate=0 violations=0
+  lb=126 hd=10 WITHOUT: rebalances=112 degenerate=0 violations=0
+  lb=126 hd=10 WITH: rebalances=112 degenerate=0 violations=0
+  lb=126 hd=21 WITHOUT: rebalances=53 degenerate=0 violations=0
+  lb=126 hd=21 WITH: rebalances=53 degenerate=0 violations=0
+VARIANT B INVARIANTS: 0 violations across all configs×arms
+
+TRIALS ACCOUNTING: 60 selection candidates (15 configs × 2 variants × 2 arms); pass-1 Sharpes gathered=60; varTrialSharpe(V60)=0.0141
+
+=== PRIMARY RESULTS (trials=60) + SENSITIVITY (trials=15, per-variant×arm-group V) ===
+  VAR=A ARM=WITHOUT lb= 5 hd= 5 rebals=249 meanGross=+0.00436% meanNet=-0.08918% DSR60=0.000 DSR15=0.012  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITH    lb= 5 hd= 5 rebals=249 meanGross=-0.00340% meanNet=-0.10039% DSR60=0.000 DSR15=0.006  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITHOUT lb= 5 hd= 5 rebals=249 meanGross=+0.37976% meanNet=+0.28633% DSR60=0.081 DSR15=0.670  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITH    lb= 5 hd= 5 rebals=249 meanGross=+0.34991% meanNet=+0.25292% DSR60=0.059 DSR15=0.576  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITHOUT lb= 5 hd=10 rebals=124 meanGross=+0.12859% meanNet=+0.03508% DSR60=0.003 DSR15=0.114  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITH    lb= 5 hd=10 rebals=124 meanGross=+0.15430% meanNet=+0.05831% DSR60=0.005 DSR15=0.144  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITHOUT lb= 5 hd=10 rebals=124 meanGross=+0.80498% meanNet=+0.71074% DSR60=0.371 DSR15=0.854  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITH    lb= 5 hd=10 rebals=124 meanGross=+0.82637% meanNet=+0.72989% DSR60=0.358 DSR15=0.832  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITHOUT lb= 5 hd=21 rebals= 59 meanGross=+0.02199% meanNet=-0.07123% DSR60=0.004 DSR15=0.053  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITH    lb= 5 hd=21 rebals= 59 meanGross=-0.04369% meanNet=-0.13933% DSR60=0.003 DSR15=0.040  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITHOUT lb= 5 hd=21 rebals= 59 meanGross=+1.25823% meanNet=+1.16388% DSR60=0.511 DSR15=0.821  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITH    lb= 5 hd=21 rebals= 59 meanGross=+1.24426% meanNet=+1.14757% DSR60=0.531 DSR15=0.827  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITHOUT lb=10 hd= 5 rebals=248 meanGross=+0.02549% meanNet=-0.03999% DSR60=0.000 DSR15=0.022  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITH    lb=10 hd= 5 rebals=248 meanGross=+0.03415% meanNet=-0.03738% DSR60=0.000 DSR15=0.021  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITHOUT lb=10 hd= 5 rebals=248 meanGross=+0.38814% meanNet=+0.32251% DSR60=0.067 DSR15=0.633  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITH    lb=10 hd= 5 rebals=248 meanGross=+0.39365% meanNet=+0.32208% DSR60=0.076 DSR15=0.625  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITHOUT lb=10 hd=10 rebals=124 meanGross=+0.04074% meanNet=-0.05116% DSR60=0.002 DSR15=0.110  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITH    lb=10 hd=10 rebals=124 meanGross=+0.03011% meanNet=-0.06485% DSR60=0.002 DSR15=0.080  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITHOUT lb=10 hd=10 rebals=124 meanGross=+0.83832% meanNet=+0.74569% DSR60=0.500 DSR15=0.860  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITH    lb=10 hd=10 rebals=124 meanGross=+0.80483% meanNet=+0.70877% DSR60=0.501 DSR15=0.850  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITHOUT lb=10 hd=21 rebals= 59 meanGross=+0.14651% meanNet=+0.05244% DSR60=0.056 DSR15=0.307  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITH    lb=10 hd=21 rebals= 59 meanGross=-0.02514% meanNet=-0.12366% DSR60=0.030 DSR15=0.199  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITHOUT lb=10 hd=21 rebals= 59 meanGross=+1.55148% meanNet=+1.45616% DSR60=0.806 DSR15=0.962  net-OOS clears60=no  |  net-OOS clears15=YES
+  VAR=B ARM=WITH    lb=10 hd=21 rebals= 59 meanGross=+1.42004% meanNet=+1.32086% DSR60=0.779 DSR15=0.949  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITHOUT lb=21 hd= 5 rebals=246 meanGross=+0.04538% meanNet=+0.00078% DSR60=0.000 DSR15=0.076  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITH    lb=21 hd= 5 rebals=246 meanGross=+0.05974% meanNet=+0.00832% DSR60=0.001 DSR15=0.126  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITHOUT lb=21 hd= 5 rebals=246 meanGross=+0.42635% meanNet=+0.38215% DSR60=0.167 DSR15=0.809  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITH    lb=21 hd= 5 rebals=246 meanGross=+0.43892% meanNet=+0.38784% DSR60=0.242 DSR15=0.851  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITHOUT lb=21 hd=10 rebals=123 meanGross=+0.02092% meanNet=-0.04263% DSR60=0.011 DSR15=0.236  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITH    lb=21 hd=10 rebals=123 meanGross=-0.00857% meanNet=-0.07773% DSR60=0.008 DSR15=0.182  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITHOUT lb=21 hd=10 rebals=123 meanGross=+0.79206% meanNet=+0.72857% DSR60=0.559 DSR15=0.917  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITH    lb=21 hd=10 rebals=123 meanGross=+0.71142% meanNet=+0.64184% DSR60=0.511 DSR15=0.890  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITHOUT lb=21 hd=21 rebals= 58 meanGross=-0.06027% meanNet=-0.15276% DSR60=0.117 DSR15=0.458  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITH    lb=21 hd=21 rebals= 58 meanGross=+0.04605% meanNet=-0.04803% DSR60=0.219 DSR15=0.622  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITHOUT lb=21 hd=21 rebals= 58 meanGross=+1.50129% meanNet=+1.40895% DSR60=0.865 DSR15=0.971  net-OOS clears60=no  |  net-OOS clears15=YES
+  VAR=B ARM=WITH    lb=21 hd=21 rebals= 58 meanGross=+1.72123% meanNet=+1.62745% DSR60=0.911 DSR15=0.980  net-OOS clears60=no  |  net-OOS clears15=YES
+  VAR=A ARM=WITHOUT lb=63 hd= 5 rebals=238 meanGross=+0.05442% meanNet=+0.03014% DSR60=0.004 DSR15=0.302  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITH    lb=63 hd= 5 rebals=238 meanGross=+0.05813% meanNet=+0.02494% DSR60=0.004 DSR15=0.286  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITHOUT lb=63 hd= 5 rebals=238 meanGross=+0.42136% meanNet=+0.39713% DSR60=0.260 DSR15=0.879  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITH    lb=63 hd= 5 rebals=238 meanGross=+0.40500% meanNet=+0.37163% DSR60=0.249 DSR15=0.852  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITHOUT lb=63 hd=10 rebals=119 meanGross=+0.13339% meanNet=+0.09839% DSR60=0.068 DSR15=0.526  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITH    lb=63 hd=10 rebals=119 meanGross=+0.05893% meanNet=+0.01534% DSR60=0.042 DSR15=0.405  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITHOUT lb=63 hd=10 rebals=119 meanGross=+0.79507% meanNet=+0.75981% DSR60=0.546 DSR15=0.909  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITH    lb=63 hd=10 rebals=119 meanGross=+0.69579% meanNet=+0.65193% DSR60=0.474 DSR15=0.873  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITHOUT lb=63 hd=21 rebals= 56 meanGross=+0.08956% meanNet=+0.03753% DSR60=0.240 DSR15=0.625  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITH    lb=63 hd=21 rebals= 56 meanGross=+0.10407% meanNet=+0.04904% DSR60=0.264 DSR15=0.639  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITHOUT lb=63 hd=21 rebals= 56 meanGross=+1.71622% meanNet=+1.66468% DSR60=0.898 DSR15=0.977  net-OOS clears60=no  |  net-OOS clears15=YES
+  VAR=B ARM=WITH    lb=63 hd=21 rebals= 56 meanGross=+1.74878% meanNet=+1.69390% DSR60=0.898 DSR15=0.974  net-OOS clears60=no  |  net-OOS clears15=YES
+  VAR=A ARM=WITHOUT lb=126 hd= 5 rebals=225 meanGross=+0.08412% meanNet=+0.06669% DSR60=0.010 DSR15=0.428  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITH    lb=126 hd= 5 rebals=225 meanGross=+0.06174% meanNet=+0.03370% DSR60=0.007 DSR15=0.343  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITHOUT lb=126 hd= 5 rebals=225 meanGross=+0.43784% meanNet=+0.42053% DSR60=0.216 DSR15=0.808  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITH    lb=126 hd= 5 rebals=225 meanGross=+0.39719% meanNet=+0.36911% DSR60=0.186 DSR15=0.756  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITHOUT lb=126 hd=10 rebals=112 meanGross=+0.19120% meanNet=+0.16601% DSR60=0.170 DSR15=0.705  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITH    lb=126 hd=10 rebals=112 meanGross=+0.20523% meanNet=+0.17052% DSR60=0.151 DSR15=0.650  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITHOUT lb=126 hd=10 rebals=112 meanGross=+0.89868% meanNet=+0.87377% DSR60=0.606 DSR15=0.925  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITH    lb=126 hd=10 rebals=112 meanGross=+0.96757% meanNet=+0.93361% DSR60=0.624 DSR15=0.924  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITHOUT lb=126 hd=21 rebals= 53 meanGross=+0.38692% meanNet=+0.35017% DSR60=0.537 DSR15=0.879  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=A ARM=WITH    lb=126 hd=21 rebals= 53 meanGross=+0.40205% meanNet=+0.36120% DSR60=0.578 DSR15=0.891  net-OOS clears60=no  |  net-OOS clears15=no
+  VAR=B ARM=WITHOUT lb=126 hd=21 rebals= 53 meanGross=+2.06833% meanNet=+2.03237% DSR60=0.896 DSR15=0.977  net-OOS clears60=no  |  net-OOS clears15=YES
+  VAR=B ARM=WITH    lb=126 hd=21 rebals= 53 meanGross=+2.08462% meanNet=+2.04438% DSR60=0.897 DSR15=0.976  net-OOS clears60=no  |  net-OOS clears15=YES
+
+=== VARIANT B BETA GUARD (EQW-LONG benchmark) ===
+  lb= 5 hd= 5 WITHOUT: bench meanNet=+0.31453% benchSharpe=0.138 | mean(d)=-0.000282 diffDSR=0.000 diffPasses=no
+  lb= 5 hd= 5 WITH: bench meanNet=+0.28807% benchSharpe=0.128 | mean(d)=-0.000351 diffDSR=0.000 diffPasses=no
+  lb= 5 hd=10 WITHOUT: bench meanNet=+0.61863% benchSharpe=0.215 | mean(d)=+0.000921 diffDSR=0.003 diffPasses=no
+  lb= 5 hd=10 WITH: bench meanNet=+0.60821% benchSharpe=0.211 | mean(d)=+0.001217 diffDSR=0.005 diffPasses=no
+  lb= 5 hd=21 WITHOUT: bench meanNet=+1.30246% benchSharpe=0.291 | mean(d)=-0.001386 diffDSR=0.006 diffPasses=no
+  lb= 5 hd=21 WITH: bench meanNet=+1.30632% benchSharpe=0.295 | mean(d)=-0.001587 diffDSR=0.006 diffPasses=no
+  lb=10 hd= 5 WITHOUT: bench meanNet=+0.30846% benchSharpe=0.135 | mean(d)=+0.000141 diffDSR=0.000 diffPasses=no
+  lb=10 hd= 5 WITH: bench meanNet=+0.28143% benchSharpe=0.125 | mean(d)=+0.000407 diffDSR=0.000 diffPasses=no
+  lb=10 hd=10 WITHOUT: bench meanNet=+0.61692% benchSharpe=0.183 | mean(d)=+0.001288 diffDSR=0.007 diffPasses=no
+  lb=10 hd=10 WITH: bench meanNet=+0.59286% benchSharpe=0.175 | mean(d)=+0.001159 diffDSR=0.007 diffPasses=no
+  lb=10 hd=21 WITHOUT: bench meanNet=+1.28163% benchSharpe=0.362 | mean(d)=+0.001745 diffDSR=0.046 diffPasses=no
+  lb=10 hd=21 WITH: bench meanNet=+1.31910% benchSharpe=0.361 | mean(d)=+0.000018 diffDSR=0.017 diffPasses=no
+  lb=21 hd= 5 WITHOUT: bench meanNet=+0.30732% benchSharpe=0.132 | mean(d)=+0.000748 diffDSR=0.000 diffPasses=no
+  lb=21 hd= 5 WITH: bench meanNet=+0.28266% benchSharpe=0.122 | mean(d)=+0.001052 diffDSR=0.001 diffPasses=no
+  lb=21 hd=10 WITHOUT: bench meanNet=+0.61464% benchSharpe=0.184 | mean(d)=+0.001139 diffDSR=0.005 diffPasses=no
+  lb=21 hd=10 WITH: bench meanNet=+0.56513% benchSharpe=0.168 | mean(d)=+0.000767 diffDSR=0.003 diffPasses=no
+  lb=21 hd=21 WITHOUT: bench meanNet=+1.30335% benchSharpe=0.312 | mean(d)=+0.001056 diffDSR=0.031 diffPasses=no
+  lb=21 hd=21 WITH: bench meanNet=+1.24761% benchSharpe=0.299 | mean(d)=+0.003798 diffDSR=0.117 diffPasses=no
+  lb=63 hd= 5 WITHOUT: bench meanNet=+0.31255% benchSharpe=0.144 | mean(d)=+0.000846 diffDSR=0.000 diffPasses=no
+  lb=63 hd= 5 WITH: bench meanNet=+0.28609% benchSharpe=0.132 | mean(d)=+0.000855 diffDSR=0.000 diffPasses=no
+  lb=63 hd=10 WITHOUT: bench meanNet=+0.62509% benchSharpe=0.219 | mean(d)=+0.001347 diffDSR=0.008 diffPasses=no
+  lb=63 hd=10 WITH: bench meanNet=+0.58139% benchSharpe=0.202 | mean(d)=+0.000705 diffDSR=0.004 diffPasses=no
+  lb=63 hd=21 WITHOUT: bench meanNet=+1.33976% benchSharpe=0.316 | mean(d)=+0.003249 diffDSR=0.109 diffPasses=no
+  lb=63 hd=21 WITH: bench meanNet=+1.28438% benchSharpe=0.303 | mean(d)=+0.004095 diffDSR=0.157 diffPasses=no
+  lb=126 hd= 5 WITHOUT: bench meanNet=+0.30019% benchSharpe=0.127 | mean(d)=+0.001203 diffDSR=0.001 diffPasses=no
+  lb=126 hd= 5 WITH: bench meanNet=+0.27808% benchSharpe=0.118 | mean(d)=+0.000910 diffDSR=0.000 diffPasses=no
+  lb=126 hd=10 WITHOUT: bench meanNet=+0.58703% benchSharpe=0.192 | mean(d)=+0.002867 diffDSR=0.050 diffPasses=no
+  lb=126 hd=10 WITH: bench meanNet=+0.61591% benchSharpe=0.201 | mean(d)=+0.003177 diffDSR=0.067 diffPasses=no
+  lb=126 hd=21 WITHOUT: bench meanNet=+1.27425% benchSharpe=0.297 | mean(d)=+0.007581 diffDSR=0.406 diffPasses=no
+  lb=126 hd=21 WITH: bench meanNet=+1.21266% benchSharpe=0.283 | mean(d)=+0.008317 diffDSR=0.481 diffPasses=no
+
+=== SUMMARY ===
+  BEST VAR=A ARM=WITHOUT: lb=126 hd=21 net-OOS DSR60=0.537 clears=no
+  BEST VAR=A ARM=WITH: lb=126 hd=21 net-OOS DSR60=0.578 clears=no
+  BEST VAR=B ARM=WITHOUT: lb=63 hd=21 net-OOS DSR60=0.898 clears=no
+  BEST VAR=B ARM=WITH: lb=21 hd=21 net-OOS DSR60=0.911 clears=no
+  ANY config clears DSR>0.95: NO
+
+CAVEATS: survivorship (61 current large-cap survivors) · single-vendor Yahoo (adjclose + earnings dates) · 61-name breadth / 7 coarse industry groups · in-sample panel construction · B's beta confound (see EQW guard above) · correlated-trials DSR caveat: PSR/DSR haircut the Sharpe for short samples, skew/fat tails, and how many strategies were scanned to find this one — but they ASSUME the trials are roughly independent. A scan over correlated names violates that, so DSR is itself optimistic: it corrects the direction of the bias, not its exact size. · exclusion window fixed at cached ±2 trading days (not swept; README's ±10 differs — consumed as cached, no refetch).
+
+=== RUN COMPLETE ===
