@@ -57,3 +57,9 @@ qa/history.jsonl
 
 # Workflow agent scratch (skeptic verifiers)
 .skeptic_tmp/
+
+# xcode-build-server (machine-specific paths; regenerate with: xcode-build-server config -scheme "Salehman AI" -project "Salehman AI.xcodeproj")
+buildServer.json
+
+# ablation runner build artifacts (rebuild via each tool dir's build_and_run.sh)
+tools/*/runner
