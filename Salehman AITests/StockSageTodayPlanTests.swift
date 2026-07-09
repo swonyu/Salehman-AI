@@ -27,6 +27,19 @@ struct StockSageTodayPlanTests {
         #expect(plan.contains("shares"))                  // size present (account+risk supplied)
     }
 
+    // T15 (rotation-3 triage): build()'s size segment dropped the "$" before the dollars-at-risk
+    // figure ("≈ 150 at risk") while every sibling surface (copyAllText's "≈$150 at risk",
+    // MarketsTodayActionsCard's "≈$150 at risk") already had it — the same figure read as a
+    // bare share count next door. Hand-derived (StockSagePositionSizer.size, entry=100/stop=90):
+    // riskPerShare = |100-90| = 10; riskBudget = 10,000 × 0.01 = 100; shares = floor(100/10) = 10;
+    // dollarsAtRisk = 10 × 10 = 100; pctOfAccount = (10 × 100)/10,000 × 100 = 10%.
+    @Test func sizeSegmentDollarFigureCarriesADollarSign() {
+        let i = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        let plan = StockSageTodayPlan.build(idea: i, ev: StockSageExpectedValue.ev(for: i),
+                                            account: 10_000, riskFraction: 0.01)
+        #expect(plan.contains("10 shares ≈ $100 at risk (10% of acct)"))
+    }
+
     @Test func sampleDataIsFlaggedInTheCopiedPlan() {
         let i = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
         // Sample data → the copied plan (pasted into a broker) must carry the SAMPLE warning.

@@ -27,6 +27,14 @@ struct StockSageInputTests {
         #expect(I.percent("100.1") == nil)
         #expect(I.percent("25", max: 20) == nil)            // custom cap
         #expect(I.percent("nope") == nil)
+        // F6 (rotation-3 triage): the first-run marketsSizerRiskPct AppStorage default was
+        // changed from the fabricated "1" to "" — this is the load-bearing link the honest-nil
+        // chain (MarketsView.parsedRiskFraction → StockSageDecisionSnapshotBuilder.build's gate
+        // guard → StockSageTodayPlan.rankedActions' TodayActionPlan.gate) rests on. Downstream nil
+        // branches are already pinned (StockSageTodayPlanRankedTests.
+        // rankedActionGateIsNilWhenRiskFractionNotSuppliedAndCopyTextSaysNotEvaluated,
+        // .sharesXorNilAccount for the account side) — this closes the missing first link.
+        #expect(I.percent("") == nil)
     }
 
     @Test func percentStripsThousandsSeparatorSameAsPositiveAmount() {

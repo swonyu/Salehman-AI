@@ -258,9 +258,14 @@ struct TodayView: View {
                 // Money-velocity glance: the single best positive-EV bet, if ideas are
                 // loaded. A concise pointer — the full caveats live on the Markets card.
                 if let best = StockSageExpectedValue.bestOpportunity(stockSage.ideas, regime: stockSage.regime, earnings: stockSage.earnings, liquidity: stockSage.liquidity, seasonality: stockSage.seasonality, calibration: stockSage.convictionCalibration) {
+                    // D4 (rotation-3 triage): reuse the SAME two-axis staleness/provenance
+                    // helpers the Markets cards use — a glance tile pointing at a stale pick
+                    // with no cue is the same honesty gap as the full card, just compacted.
+                    let staleTile = MarketsView.cardIsStale(generatedAt: best.idea.generatedAt, now: Date(), priceAsOf: best.idea.priceAsOf)
+                    let sourceTag = MarketsView.sourceTagLabel(isSampleData: stockSage.isSampleData, loadedFromCache: stockSage.loadedFromCache, priceAsOf: best.idea.priceAsOf, now: Date())
                     StatTile(icon: "bolt.fill", title: "Best bet",
                              value: best.idea.symbol,
-                             detail: String(format: "%+.2fR %@", best.ev.evR, MoneyVelocityCopy.bestBetTile),
+                             detail: (staleTile ? "⚠︎ stale — " : "") + String(format: "%+.2fR %@", best.ev.evR, MoneyVelocityCopy.bestBetTile),
                              valueAccent: DS.Palette.accent) {
                         app.selectedTab = .markets
                     }
@@ -268,7 +273,8 @@ struct TodayView: View {
                     // above) — the compact L3-01 design stands, but the tilt disclosure must
                     // reach this surface too (hover; same centralized copy as Markets).
                     .help("The single best estimated-EV buy right now — full caveats on the Markets card."
-                          + MoneyVelocityCopy.tomTiltSuffix(seasonalityPopulated: !stockSage.seasonality.isEmpty))
+                          + MoneyVelocityCopy.tomTiltSuffix(seasonalityPopulated: !stockSage.seasonality.isEmpty)
+                          + (sourceTag.map { " Source: \($0)." } ?? ""))
                 }
             }
         }
