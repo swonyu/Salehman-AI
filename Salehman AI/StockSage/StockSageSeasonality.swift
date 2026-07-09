@@ -13,9 +13,19 @@ struct MonthlySeasonality: Sendable, Equatable {
         let month: Int          // 1…12
         let avgReturn: Double   // average month-over-month return (fraction)
         let samples: Int        // how many years contributed this month
+        /// Sample standard deviation of this month's yearly returns (Bessel n−1; 0 when <2
+        /// samples). Defaulted so existing construction sites stay source-compatible.
+        var stdDev: Double = 0
         var id: Int { month }
         /// A month needs ≥3 yearly samples before it's worth reading at all.
         nonisolated var isReliable: Bool { samples >= 3 }
+        /// t-statistic of the mean vs zero (mean ÷ SE). nil when undefined (<2 samples or
+        /// zero dispersion — zero dispersion with n≥2 is a perfectly consistent signal,
+        /// which callers should treat as PASSING any noise gate, not failing it).
+        nonisolated var tStat: Double? {
+            guard samples >= 2, stdDev > 0 else { return nil }
+            return avgReturn / (stdDev / Double(samples).squareRoot())
+        }
 
         nonisolated func note(monthName: String) -> String {
             let pct = String(format: "%+.1f%%", avgReturn * 100)
@@ -47,12 +57,20 @@ enum StockSageSeasonality {
     /// Group month-over-month returns by calendar month. Accepts daily OR monthly
     /// bars — within each calendar month the LAST close is taken as the month-end,
     /// then returns are computed between consecutive month-ends.
-    nonisolated static func compute(dates: [Date], closes: [Double]) -> MonthlySeasonality {
+    ///
+    /// `now` (injectable, UTC-bucketed like everything else here) excludes the IN-PROGRESS
+    /// month: Yahoo's `1mo` bars include the current partial month (MEASURED 2026-07-09:
+    /// AAPL response carried a 2026-07-01 bar 6 trading days into July, close 313.39 — a
+    /// +8.3% partial MTD move that would otherwise be credited as a full "July" seasonality
+    /// sample). The current month is exactly the bucket the TOM rank tilt reads, so without
+    /// this exclusion the "seasonal" tilt double-counts the symbol's own recent momentum.
+    nonisolated static func compute(dates: [Date], closes: [Double], now: Date = Date()) -> MonthlySeasonality {
         guard dates.count == closes.count, dates.count >= 2 else { return .empty }
         let cal = utcCalendar
 
         // Collapse to one (key, month, month-end-close) point per calendar month.
-        // `key` = year*12+month lets us require ADJACENT months below.
+        // `key` = year*12+month lets us require ADJACENT months below — and lets the
+        // in-progress-month exclusion compare against `now`'s (year, month) exactly.
         var order: [(key: Int, month: Int, close: Double)] = []
         var lastKey = Int.min
         for (d, c) in zip(dates, closes) where c > 0 {
@@ -68,6 +86,15 @@ enum StockSageSeasonality {
         }
         guard order.count >= 2 else { return .empty }
 
+        // Drop the trailing point when it belongs to the CURRENT (incomplete) calendar month —
+        // its "month return" is a partial MTD move, not a seasonality observation.
+        let nowComps = cal.dateComponents([.year, .month], from: now)
+        if let ny = nowComps.year, let nm = nowComps.month,
+           let last = order.last, last.key == ny * 12 + nm {
+            order.removeLast()
+            guard order.count >= 2 else { return .empty }
+        }
+
         var byMonth: [Int: [Double]] = [:]
         for i in 1..<order.count {
             // Only credit a return when the two points are CONSECUTIVE calendar
@@ -79,7 +106,11 @@ enum StockSageSeasonality {
         let months = (1...12).map { m -> MonthlySeasonality.MonthStat in
             let rs = byMonth[m] ?? []
             let avg = rs.isEmpty ? 0 : rs.reduce(0, +) / Double(rs.count)
-            return MonthlySeasonality.MonthStat(month: m, avgReturn: avg, samples: rs.count)
+            // Sample std (Bessel n−1) — feeds the tilt's noise gate; 0 when <2 samples.
+            let std: Double = rs.count >= 2
+                ? (rs.map { ($0 - avg) * ($0 - avg) }.reduce(0, +) / Double(rs.count - 1)).squareRoot()
+                : 0
+            return MonthlySeasonality.MonthStat(month: m, avgReturn: avg, samples: rs.count, stdDev: std)
         }
         let years = dates.last!.timeIntervalSince(dates.first!) / (365.25 * 86_400)
         return MonthlySeasonality(months: months, years: years)

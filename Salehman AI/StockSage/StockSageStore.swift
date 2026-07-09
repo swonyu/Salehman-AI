@@ -565,6 +565,8 @@ final class StockSageStore: ObservableObject {
         // Populate earnings for the top names (non-blocking) so the imminent-earnings demotion +
         // warnings fire on the boards, not only on detail-expand. Cached-once → cheap after first load.
         Task { await refreshEarningsForTopIdeas() }
+        // Same for seasonality — the TOM rank tilt must not depend on which sheets were opened.
+        Task { await refreshSeasonalityForTopIdeas() }
         ideasUpdated = Date()
     }
 
@@ -1453,6 +1455,24 @@ final class StockSageStore: ObservableObject {
 
     // Monthly seasonality — calendar-month return tendency over a long history.
     @Published private(set) var seasonality: [String: MonthlySeasonality] = [:]
+
+    /// Populate seasonality for the top ideas (non-blocking) so the TOM rank tilt
+    /// (`seasonalityRankBonus`, activated 2026-07-09) applies uniformly at the top of the board
+    /// instead of only to symbols whose detail sheet happened to be opened — a navigation-
+    /// dependent BONUS input is a fairness hazard the demote-only earnings/liquidity partials
+    /// don't have (they err safe; a view-history-gated boost doesn't). Mirrors
+    /// `refreshEarningsForTopIdeas`: 4-parallel chunks, cached-once per symbol.
+    func refreshSeasonalityForTopIdeas(limit: Int = 15) async {
+        guard StockSageAdvisor.turnOfMonthEnabled else { return }
+        let top = Array(ideas.prefix(limit))
+        let chunks = stride(from: 0, to: top.count, by: 4).map { Array(top[$0 ..< min($0 + 4, top.count)]) }
+        for chunk in chunks {
+            await withTaskGroup(of: Void.self) { group in
+                for idea in chunk { group.addTask { await self.refreshSeasonality(symbol: idea.symbol) } }
+                for await _ in group { }
+            }
+        }
+    }
 
     func refreshSeasonality(symbol: String) async {
         let up = symbol.uppercased()

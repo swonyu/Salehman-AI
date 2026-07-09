@@ -3034,7 +3034,7 @@ struct MarketsView: View {
     private var displayedIdeas: [StockSageIdea] {
         let sorted: [StockSageIdea]
         switch ideaSort {
-        case .ev:         sorted = StockSageExpectedValue.rankByEV(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration)
+        case .ev:         sorted = StockSageExpectedValue.rankByEV(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, seasonality: store.seasonality, calibration: store.convictionCalibration)
         case .velocity:   sorted = StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration)
         case .conviction: sorted = store.ideas.sorted { $0.advice.conviction > $1.advice.conviction }
         case .rr:         sorted = store.ideas.sorted { rewardRisk($0) > rewardRisk($1) }
@@ -3205,6 +3205,14 @@ struct MarketsView: View {
                         : "Analyzed \(Self.timeFormatter.string(from: when)) · ranked by \(ideaSort.label.lowercased())"))
                     .font(.caption2).foregroundStyle(store.isLoadingIdeas ? .secondary : (store.ideasIsStale ? DS.Palette.warningSoft : .secondary))
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            // TOM disclosure (activation 2026-07-09): the seasonal month tilt is a rank INPUT the
+            // user can't otherwise see — an invisible ranking factor violates the honesty floor.
+            // Shown only when the flag is on AND at least one name has seasonality data (i.e. the
+            // tilt can actually be moving ranks right now).
+            if StockSageAdvisor.turnOfMonthEnabled && !store.seasonality.isEmpty {
+                Text("Ranking includes a small seasonal month tilt (each name’s calendar-month history, capped ±0.03 rank units) — a weak, backward-looking tendency, not a forecast.")
+                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if store.scanThrottled {
                 // POST2420-COPY item 2: "paused" was false — a throttle trip permanently ends
@@ -3808,7 +3816,7 @@ struct MarketsView: View {
 
     // Best opportunity now — the single highest positive-EV buy idea (money velocity).
     @ViewBuilder private var bestOpportunityCard: some View {
-        if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration) {
+        if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, seasonality: store.seasonality, calibration: store.convictionCalibration) {
             let idea = best.idea, ev = best.ev
             // Round-H: this card presents a sized, placeable order (Entry/Stop/Target + "Size it
             // now") off `idea.price`, which can be a cache-served prior-UTC-day close even when
@@ -4094,7 +4102,7 @@ struct MarketsView: View {
         if s.hasContent {
             VStack(alignment: .leading, spacing: 6) {
             Button {
-                if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration) { selectedIdea = best.idea }
+                if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, seasonality: store.seasonality, calibration: store.convictionCalibration) { selectedIdea = best.idea }
             } label: {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
@@ -4240,7 +4248,7 @@ struct MarketsView: View {
     /// 24h-range variance line from the idea's ALREADY-STORED `realizedVol` — no new volatility
     /// computation.
     @ViewBuilder private var bestOpportunityCTA: some View {
-        if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration) {
+        if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, seasonality: store.seasonality, calibration: store.convictionCalibration) {
             let idea = best.idea, ev = best.ev
             let isCrypto = StockSageAllocation.assetClass(idea.symbol) == "Crypto"
             let variance: Double? = isCrypto ? StockSageExpectedValue.dailyVariancePct(annualizedVol: idea.realizedVol) : nil

@@ -33,11 +33,12 @@ Enumerate them — never work from a remembered list:
 grep -rn "nonisolated(unsafe) static var" "Salehman AI/StockSage/"
 ```
 
-As of 2026-07-02 that grep returns exactly two. Gate on the grep output, not this table.
+As of 2026-07-09 that grep returns exactly three. Gate on the grep output, not this table.
 
 | Flag | Shipped default | Lives in | Gates | Ratified by |
 |---|---|---|---|---|
 | `StockSageAdvisor.relativeStrengthEnabled` | `false` | `StockSageAdvisor.swift` (declaration doc-comment block above it) | The ±0.08 benchmark-relative nudge inside `advise` — skipped entirely when off | Parsimony cut 2026-06-27 (commit `6ae1e4f`: DSR=0, partly redundant with the absolute trend term) + null ablation `RESEARCH_2026-07-02_confluence_rs_ablation.md` (no significant edge at any horizon) |
+| `StockSageAdvisor.turnOfMonthEnabled` | `true` | `StockSageAdvisor.swift` (declaration doc-comment block) | ONLY `StockSageExpectedValue.seasonalityRankBonus` — a capped ±0.03 additive rank tilt in `rankByEV`/`bestOpportunity` (velocity surfaces exempt; NO advise()/sizing branch) | Shipped as a default-OFF status lock 2026-07-09, OWNER-ACTIVATED the same day ("WIRE ACTIVATE") — an owner call, NOT an evidence promotion; the TOM research lane stays OPEN/underpowered (`research/INDEX.md` 2026-07-09 entries); state pinned by `StockSageTomGateTests` |
 | `StockSageConvictionCalibration.candidateSelectorEnabled` | `true` | `StockSageConvictionCalibration.swift` (declaration doc-comment block) | The iter7 OOS candidate-selector in `fit(_:)` — picks {identity, Beta-3param, isotonic} by out-of-sample Brier score | Shipped OFF in commit `d9c62d5`, owner-ACTIVATED 2026-06-27 in commit `3b40058`; recorded in `research/INDEX.md` ("UPDATE 2026-06-27 (owner-approved)") |
 
 Facts that matter when touching these:

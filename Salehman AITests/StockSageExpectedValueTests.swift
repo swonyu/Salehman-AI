@@ -599,6 +599,34 @@ struct StockSageExpectedValueTests {
                                    preferVelocity: true, preferConfluence: true)?.idea.symbol == "HIGHC-USD")
     }
 
+    @Test func turnOfMonthActivationCanChangeTheRankWhenMonthSignalExists() {
+        let saved = StockSageAdvisor.turnOfMonthEnabled
+        defer { StockSageAdvisor.turnOfMonthEnabled = saved }
+        StockSageAdvisor.turnOfMonthEnabled = true
+
+        let currentMonth = StockSageSeasonality.currentMonth()
+        let winner = idea("WIN", conviction: 0.60, stop: 90, target: 120)
+        let loser  = idea("LOSE", conviction: 0.61, stop: 90, target: 120)
+
+        func seasonality(_ monthlyDrift: Double, samples: Int) -> MonthlySeasonality {
+            MonthlySeasonality(months: (1...12).map { month in
+                MonthlySeasonality.MonthStat(
+                    month: month,
+                    avgReturn: month == currentMonth ? monthlyDrift : 0.0,
+                    samples: month == currentMonth ? samples : 0
+                )
+            }, years: 5)
+        }
+
+        let seasonalityBySymbol = [
+            "WIN": seasonality(0.04, samples: 5),
+            "LOSE": seasonality(0.0, samples: 5)
+        ]
+
+        #expect(EV.rankByEV([winner, loser], seasonality: seasonalityBySymbol).first?.symbol == "WIN")
+        #expect(EV.bestOpportunity([winner, loser], seasonality: seasonalityBySymbol)?.idea.symbol == "WIN")
+    }
+
     // MARK: - RANKING_BACKLOG #4: liquidity gate
 
     @Test func thinLiquidityIsDemotedInRankingAndBarredFromBestOpportunity() {

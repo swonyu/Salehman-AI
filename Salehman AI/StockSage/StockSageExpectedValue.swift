@@ -528,12 +528,15 @@ enum StockSageExpectedValue {
     nonisolated static func rankByEV(_ ideas: [StockSageIdea], regime: MarketRegime? = nil,
                                      earnings: [String: EarningsProximity] = [:],
                                      liquidity: [String: LiquidityProfile] = [:],
+                                     seasonality: [String: MonthlySeasonality] = [:],
                                      calibration: StockSageConvictionCalibration? = nil) -> [StockSageIdea] {
         // Demote imminent-earnings + thin-liquidity ideas inside the EV key
         // (both empty → 0 penalty → unchanged order).
         func key(_ idea: StockSageIdea) -> Double? {
             regimeAdjustedEVRankKey(for: idea, regime: regime, calibration: calibration).map {
-                $0 - earningsRankPenalty(for: idea, earnings: earnings) - liquidityRankPenalty(for: idea, liquidity: liquidity)
+                $0 - earningsRankPenalty(for: idea, earnings: earnings)
+                   - liquidityRankPenalty(for: idea, liquidity: liquidity)
+                   + seasonalityRankBonus(for: idea, seasonality: seasonality)
             }
         }
         // F12: decorate-sort-undecorate — same rationale as rankByVelocity (key computed once per
@@ -581,6 +584,7 @@ enum StockSageExpectedValue {
     nonisolated static func bestOpportunity(_ ideas: [StockSageIdea], regime: MarketRegime? = nil,
                                             earnings: [String: EarningsProximity] = [:],
                                             liquidity: [String: LiquidityProfile] = [:],
+                                            seasonality: [String: MonthlySeasonality] = [:],
                                             calibration: StockSageConvictionCalibration? = nil,
                                             preferVelocity: Bool = false,
                                             preferConfluence: Bool = false,
@@ -599,6 +603,7 @@ enum StockSageExpectedValue {
             } else {
                 base = qualityAdjustedEVR(for: idea, calibration: calibration) ?? 0
             }
+            let seasonalBonus = seasonalityRankBonus(for: idea, seasonality: seasonality)
             // Continuous net-cost ratio — matches evRankKey's new pattern so the
             // "best opportunity" ranking is consistent with the EV/velocity boards:
             // a barely-clears-cost candidate ranks below a strongly-clears one.
@@ -607,7 +612,10 @@ enum StockSageExpectedValue {
                 guard let ne = netEVR(for: idea, calibration: calibration) else { return 1 }
                 return Swift.max(0, Swift.min(1, ne / e.evR))
             }()
-            return base * netRatio
+            // Seasonal bonus is additive AFTER cost-scaling — the same placement rankByEV uses
+            // (key + bonus − penalties) — so the board and this card cannot diverge on identical
+            // inputs just because netRatio < 1 shrank the bonus on one surface but not the other.
+            return base * netRatio + seasonalBonus
                 - earningsRankPenalty(for: idea, earnings: earnings)
                 - liquidityRankPenalty(for: idea, liquidity: liquidity)
         }
@@ -642,6 +650,40 @@ enum StockSageExpectedValue {
             }
             return false   // fully tied on every enabled criterion → keep the earlier candidate
         }.map { (idea: $0.0, ev: $0.1) }
+    }
+
+    /// Turn-of-month seasonal bonus for the current calendar month. Uses the already-fetched
+    /// monthly seasonality cache and stays inert when the activation flag is off or no reliable
+    /// month stat exists. This is a ranking bonus only — it does not alter conviction, stop,
+    /// target, or sizing.
+    ///
+    /// SCOPE (activation 2026-07-09): applies to the EV-quality ranks only (`rankByEV` +
+    /// `bestOpportunity`). Velocity surfaces (`rankByVelocity`/`fastLane`) are DELIBERATELY
+    /// exempt — a monthly-return tendency has no per-day unit meaning in an EV/day key (the
+    /// opt-in `preferVelocity` branch of bestOpportunity would mix scales; production never
+    /// passes it — RANKING #10 parked). COVERAGE: the cache is populated by the top-ideas
+    /// prefetch after each full scan + on sheet-open; a symbol without an entry simply gets 0
+    /// (unknown → no tilt, never fabricated).
+    nonisolated static func seasonalityRankBonus(for idea: StockSageIdea,
+                                                seasonality: [String: MonthlySeasonality] = [:]) -> Double {
+        guard StockSageAdvisor.turnOfMonthEnabled else { return 0 }
+        guard let s = seasonality[idea.symbol.uppercased()] else { return 0 }
+        let m = StockSageSeasonality.currentMonth()
+        guard let stat = StockSageSeasonality.stat(s, month: m), stat.samples >= 3 else { return 0 }
+        // NOISE GATE (2026-07-09 robustness pass): a month whose mean is within one standard
+        // error of zero (|t| < 1) is indistinguishable from noise even at the loosest bar —
+        // e.g. yearly returns [+10%, −8%, +7%] average +3% but t≈0.54 (hand-derived,
+        // /tmp/derive_seasonality_robustness.swift) and must NOT tilt the rank. tStat == nil
+        // with n≥3 means ZERO dispersion — a perfectly consistent signal — which passes.
+        // This is an engineering noise floor, not a significance claim; the tilt stays a
+        // weak, capped, backward-looking tendency either way.
+        if let t = stat.tStat, abs(t) < 1.0 { return 0 }
+        // Keep the effect small and monotonic: positive seasonal drift gets a mild boost,
+        // negative drift gets a mild penalty. Scale by sample count so a thin month never
+        // dominates the rank key.
+        let capped = Swift.max(-0.03, Swift.min(0.03, stat.avgReturn))
+        let reliability = min(1.0, Double(stat.samples) / 5.0)
+        return capped * reliability
     }
 
     /// Fast lane: positive-EV ideas that HAVE a velocity (crypto/equity), ranked by

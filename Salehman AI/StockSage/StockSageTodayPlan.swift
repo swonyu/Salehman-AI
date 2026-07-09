@@ -248,6 +248,13 @@ enum StockSageTodayPlan {
                StockSageScanChunking.utcDayKey(priceAsOf) != StockSageScanChunking.utcDayKey(Date()) {
                 line += " | ⚠ PRICE NOT LIVE — as of \(fmtDate(priceAsOf))"
             }
+            // Wave-7 export parity: the on-screen row shows a conviction/regime-scaled risk
+            // line — the export must carry the same size-discipline fact, or a pasted plan
+            // silently reverts to the flat base risk% the user did NOT see on screen.
+            if let scaled = p.scaledRiskFraction {
+                let bias = p.regimeBias.map { String(format: " (regime ×%.2f)", $0) } ?? ""
+                line += String(format: " | conviction-scaled risk %.2f%%%@ — scales size, not odds", scaled * 100, bias)
+            }
             // EXPORT-01 precedent: the exported checklist carries the same doubling-hazard
             // context the on-screen row does — acting on this line without knowing you already
             // hold the name silently stacks new risk on an existing position.

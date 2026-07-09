@@ -88,6 +88,18 @@ enum StockSageAdvisor {
     /// term still works when re-enabled, then reset it; default OFF is the shipped behavior.
     nonisolated(unsafe) static var relativeStrengthEnabled = false
 
+        /// Turn-of-month (TOM) ranking tilt — ACTIVATED 2026-07-09 by explicit owner direction
+        /// ("WIRE ACTIVATE"), after the same-day research chain (probe → sweep → max-t → holdout →
+        /// LOOMO → nonparam → exact sign-flip → cost-stress → LOSO, all indexed in research/INDEX.md)
+        /// recorded the evidence as INTERIM/underpowered on the 1y cache horizon. Activation is an
+        /// owner call, not an evidence promotion — the research lane stays OPEN.
+        ///
+        /// Gates ONLY `StockSageExpectedValue.seasonalityRankBonus` — a small additive rank tilt in
+        /// `rankByEV` + `bestOpportunity` (velocity surfaces exempt). There is intentionally still NO
+        /// TOM branch in `advise(...)`: conviction, stop, target, and sizing are untouched. Flipping
+        /// this default is an owner decision (state pinned by StockSageTomGateTests).
+        nonisolated(unsafe) static var turnOfMonthEnabled = true
+
     nonisolated static let caveat = "Rules-based & educational — not a guarantee or financial advice. Markets are uncertain; size small and honor your stop."
 
     /// Advice straight from a fetched candle history — wires the live OHLC feed

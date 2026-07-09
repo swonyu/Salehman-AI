@@ -456,4 +456,29 @@ struct StockSageTodayPlanRankedTests {
             #expect(p.regimeBias == nil)
         }
     }
+
+    @Test func copyAllTextCarriesConvictionScaledRiskParityWithTheRow() {
+        let ideas = [clearIdea("A", conviction: 0.9), clearIdea("B", conviction: 0.5, riskAbs: 3, rewardAbs: 15)]
+        let regime = MarketRegime(state: .trendingBull, riskScore: 0.7, signals: ["uptrend"],
+                                  sizingBias: 1.2, caveat: "x")
+        let plans = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: 0.01,
+                                                     marketRegime: regime, max: 2)
+        #expect(plans.count == 2)
+        let text = StockSageTodayPlan.copyAllText(plans)
+        // Hand-derived from the scaler SPEC (0.5×@c=0 → 1.5×@c≥1, ×bias, clamp [0.5%, 2%]),
+        // not from calling the implementation:
+        //   A (c=0.9): min(1.5, 0.5+0.9)=1.4 → 0.01·1.4·1.2 = 0.0168 → 1.68% (inside clamp)
+        //   B (c=0.5): min(1.5, 0.5+0.5)=1.0 → 0.01·1.0·1.2 = 0.0120 → 1.20% (inside clamp)
+        #expect(text.contains("conviction-scaled risk 1.68% (regime ×1.20)"))
+        #expect(text.contains("conviction-scaled risk 1.20% (regime ×1.20)"))
+        #expect(text.contains("scales size, not odds"))
+    }
+
+    @Test func copyAllTextOmitsScaledRiskWhenRiskFractionMissing() {
+        let ideas = [clearIdea("A"), clearIdea("B", conviction: 0.9, riskAbs: 3, rewardAbs: 15)]
+        let plans = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: nil, max: 2)
+        #expect(!plans.isEmpty)
+        let text = StockSageTodayPlan.copyAllText(plans)
+        #expect(!text.contains("conviction-scaled risk"))
+    }
 }

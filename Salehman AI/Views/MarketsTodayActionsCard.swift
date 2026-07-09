@@ -324,6 +324,13 @@ struct MarketsTodayActionsCard: View {
             } else {
                 label += ". Pre-trade gate: risk percent not set."
             }
+            // Wave-7 a11y parity (TODAY-A11Y-02 precedent): the visible conviction-scaled risk
+            // line must be spoken too — VoiceOver users otherwise size from the flat base
+            // risk% alone and never hear the caveat the sighted row carries.
+            if let scaled = plan.scaledRiskFraction {
+                let biasStr = plan.regimeBias.map { String(format: ", regime times %.2f", $0) } ?? ""
+                label += " Conviction-scaled risk \(String(format: "%.2f", scaled * 100)) percent\(biasStr) — scales size, not odds."
+            }
             label += " Tap for the plan."
             return label
         }())

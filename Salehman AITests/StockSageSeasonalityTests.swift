@@ -78,4 +78,45 @@ struct StockSageSeasonalityTests {
         #expect(!feb.isReliable)
         #expect(feb.note(monthName: "February").contains("thin sample"))
     }
+
+    @Test func inProgressMonthIsExcludedFromItsOwnBucket() {
+        // Month-end points Jan…Jun 2020 + a PARTIAL July point (July 9). MEASURED premise
+        // (2026-07-09, Yahoo v8 AAPL 1mo): the feed's last monthly bar is the in-progress
+        // month — its "return" is a partial MTD move, not a seasonality observation.
+        let dates = (1...6).map { utcDate(2020, $0) } + [utcDate(2020, 7, 9)]
+        let closes: [Double] = [100, 102, 104, 106, 108, 110, 119]
+        // As of MID-JULY (the month is in progress) → the July bucket must be EMPTY…
+        let during = StockSageSeasonality.compute(dates: dates, closes: closes,
+                                                  now: utcDate(2020, 7, 15))
+        #expect(StockSageSeasonality.stat(during, month: 7)!.samples == 0)
+        #expect(StockSageSeasonality.stat(during, month: 6)!.samples == 1)   // completed months keep theirs
+        // …but from AUGUST on, the same trailing point is a COMPLETED July → it counts.
+        let after = StockSageSeasonality.compute(dates: dates, closes: closes,
+                                                 now: utcDate(2020, 8, 15))
+        #expect(StockSageSeasonality.stat(after, month: 7)!.samples == 1)
+    }
+
+    @Test func stdDevAndTStatMatchHandDerivation() {
+        // June returns across 3 years: +10%, +4%, +7%. Hand-derived (Bessel n−1,
+        // /tmp/derive_seasonality_robustness.swift): mean 0.07, std 0.03, t 4.04145188432738.
+        var dates: [Date] = [utcDate(2019, 12)]
+        var closes: [Double] = [100]
+        var price = 100.0
+        let juneFactor = [2020: 1.10, 2021: 1.04, 2022: 1.07]
+        for y in 2020...2022 {
+            for m in 1...12 {
+                price *= (m == 6) ? juneFactor[y]! : 1.0
+                dates.append(utcDate(y, m)); closes.append(price)
+            }
+        }
+        let r = StockSageSeasonality.compute(dates: dates, closes: closes, now: utcDate(2026, 7, 9))
+        let june = StockSageSeasonality.stat(r, month: 6)!
+        #expect(abs(june.avgReturn - 0.07) < 1e-9)
+        #expect(abs(june.stdDev - 0.03) < 1e-9)
+        #expect(june.samples == 3)
+        #expect(june.tStat.map { abs($0 - 4.04145188432738) < 1e-6 } == true)
+        // Flat months: zero dispersion with n≥2 → tStat nil (undefined, treated as consistent).
+        let jan = StockSageSeasonality.stat(r, month: 1)!
+        #expect(jan.stdDev == 0 && jan.tStat == nil)
+    }
 }
