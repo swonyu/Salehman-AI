@@ -4635,7 +4635,16 @@ struct MarketsView: View {
                 if !tomTiltDisclosureSuffix.isEmpty {
                     s += ". Ranking includes a small seasonal month tilt."
                 }
-                if !crownDivergenceSuffix.isEmpty { s += "." + crownDivergenceSuffix }
+                // F-review fix (2026-07-10): `s` can already end with "." here (e.g. the tilt
+                // sentence just above) — unconditionally prepending another "." produced a
+                // double period ("...tilt.. Today's plan...") when both suffixes fired. Only add
+                // one when `s` doesn't already end with one (mirrors the caveatText path below,
+                // which concatenates suffixes that already carry their own leading space/trailing
+                // period and never inserts a manual ".").
+                if !crownDivergenceSuffix.isEmpty {
+                    if !s.hasSuffix(".") { s += "." }
+                    s += crownDivergenceSuffix
+                }
                 return s
             }()
             BestOpportunityActionCard(

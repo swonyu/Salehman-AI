@@ -339,8 +339,8 @@ struct StockSageExpectedValueTests {
     // evR = p·rewardR-(1-p) = 4p-1 at rewardR=3; NetEdge cost = (8+5)/10000·100 = 0.13 US bps,
     // netEVR = evR - cost/grossRisk = evR-0.013 since netReward+netRisk = cappedGrossReward+
     // grossRisk cancels the cost's coefficient; vel=evR/12; netVel=netEVR/12) and cross-checked
-    // by an independent standalone script (derive_f9_samebasket.swift, run via `swift`, not the
-    // app under test):
+    // by an independent standalone COMMITTED script (`swift tools/derive/derive_f9_samebasket.swift`
+    // — reimplements only the documented formulas above, never calls the app under test):
     //   p:     A=0.534   B=0.511   C=0.488   D=0.465
     //   evR:   A=1.136   B=1.044   C=0.952   D=0.86      (evR=4p-1)
     //   netEVR:A=1.123   B=1.031   C=0.939   D=0.847     (evR-0.013)
@@ -399,6 +399,83 @@ struct StockSageExpectedValueTests {
         #expect(s.weeklyR != nil)
         #expect(s.weeklyRGrossSameBasket != nil)
         #expect(s.weeklyR == s.weeklyRGrossSameBasket)
+    }
+
+    // F-review fix (2026-07-10, MEDIUM): weeklyRGrossSameBasket's 0.70 concentration haircut was
+    // computed by fastLaneConcentration over the UNAWARE lane (earnings/liquidity defaulted empty
+    // inside `expectedWeeklyR(lane:ideas:...)`) even though its velocities were summed over the
+    // AWARE `netAwareLane` — the two F9 tests above never caught this because every fixture there
+    // is single-asset-class (Equity), so the aware and unaware top-3 are EITHER BOTH concentrated
+    // or (no-earnings companion) identical; the isConcentrated boundary was never crossed. This
+    // test straddles that boundary: the UNAWARE top-3 is all-crypto (concentrated), the AWARE
+    // top-3 swaps in a different-class (equity) idea (NOT concentrated).
+    //
+    // Fixture: entry 100 / stop 90 / target 130 (rewardR 3.0) on every idea.
+    //   C1 BTC-USD conviction 0.8, C2 ETH-USD conviction 0.7, C3 SOL-USD conviction 0.6 (crypto,
+    //   hold 3) — velocityRankKey order C1 > C2 > C3, all far above E1.
+    //   E1 MSFT conviction 0.55 (equity, hold 12).
+    // Hand-derived (documented formulas: winProb=0.35+0.23c; evR=4p-1 at rewardR=3; costPerR =
+    // (spreadBps+slippageBps+takerFeeBps)/10000·100/10, crypto=0.07 (70bps), US=0.013 (13bps);
+    // netEVR=evR-costPerR; vel=evR/hold; velocityRankKey=logGrowth(p,3)·(netEVR/evR)/hold) and
+    // cross-checked by an independent standalone script (scratchpad derive_mixedclass_straddle.swift,
+    // run via `swift`, not the app under test):
+    //   p:      C1=0.5340  C2=0.5110  C3=0.4880  E1=0.4765
+    //   evR:    C1=1.1360  C2=1.0440  C3=0.9520  E1=0.9060
+    //   vel:    C1=0.3786666667  C2=0.3480000000  C3=0.3173333333  E1=0.0755000000
+    //   netVel: C1=0.3553333333  C2=0.3246666667  C3=0.2940000000  E1=0.0744166667
+    //   velocityRankKey (unaware, no earnings/liquidity): C1=0.04453586  C2=0.03767732
+    //     C3=0.03135762  E1=0.00758458 — strictly C1>C2>C3>E1 (crypto's 4x-shorter hold dominates
+    //     E1's higher-than-C3 conviction), so UNAWARE fastLane top-3 = {C1,C2,C3} (all Crypto) →
+    //     fastLaneConcentration.isConcentrated = TRUE (count 3 of 3).
+    //   C3 alone gets an earnings-imminent flag: -2000 rank-key penalty crushes its key to
+    //     ≈ -1999.97, far below E1's ≈0.00758 → AWARE fastLane top-3 = {C1,C2,E1} (2 Crypto, 1
+    //     Equity) → fastLaneConcentration.isConcentrated = FALSE (count 2 of 3, not all-same-class).
+    //   tradingDaysForLane over the FULL 4-idea lane (membership is earnings/liquidity-invariant,
+    //     StockSageExpectedValue.tradingDaysForLane's own doc): crypto=3 of lane.count=4 →
+    //     round(5 + 2·3/4) = round(6.5) = 7.
+    //   OLD (pre-fix) weeklyRGrossSameBasket = (vel C1+C2+E1)·7·0.70 (WRONG: haircut judged on the
+    //     UNAWARE {C1,C2,C3} concentration, even though the basket summed is {C1,C2,E1})
+    //     = (0.3786666667+0.3480000000+0.0755000000)·7·0.70 = 3.9306166667
+    //   NEW (fixed) weeklyRGrossSameBasket = (vel C1+C2+E1)·7·1.00 (RIGHT: haircut judged on the
+    //     SAME AWARE {C1,C2,E1} basket, which is not concentrated) = 5.6151666667
+    //   weeklyRNet (aware {C1,C2,E1}, always used the aware haircut, unaffected by this fix)
+    //     = (netVel C1+C2+E1)·7·1.00 = (0.3553333333+0.3246666667+0.0744166667)·7 = 5.2809166667
+    // STRADDLE PROOF: the OLD value (3.9306166667) is exactly 0.70× the NEW value (5.6151666667)
+    // — the pre-fix bug this test pins against — and OLD sits BELOW weeklyRNet (5.2809166667),
+    // which would have shown a net-of-cost figure ABOVE its own paired "gross before costs"
+    // parenthetical, backwards from every other pairing in the app. The fix restores gross ≥ net.
+    @Test func summaryWeeklyRGrossSameBasketUsesAwareConcentrationAcrossAssetClasses() {
+        let c1 = idea("BTC-USD", conviction: 0.8,  stop: 90, target: 130)
+        let c2 = idea("ETH-USD", conviction: 0.7,  stop: 90, target: 130)
+        let c3 = idea("SOL-USD", conviction: 0.6,  stop: 90, target: 130)
+        let e1 = idea("MSFT",    conviction: 0.55, stop: 90, target: 130)
+        let earnings = ["SOL-USD": EarningsProximity(daysUntil: 1, severity: .imminent)]
+
+        // Unaware sanity check: without the earnings demotion, the top-3 by velocity ranking is
+        // indeed the all-crypto {C1,C2,C3} and IS concentrated — the premise the OLD buggy code
+        // relied on for its (wrong, in the aware case) 0.70 haircut.
+        let unawareLane = EV.fastLane([c1, c2, c3, e1])
+        #expect(unawareLane.prefix(3).map(\.symbol) == ["BTC-USD", "ETH-USD", "SOL-USD"])
+        #expect(EV.fastLaneConcentration([c1, c2, c3, e1], topN: 3)?.isConcentrated == true)
+        // Aware sanity check: WITH the earnings demotion, MSFT swaps into the top-3 and the basket
+        // is no longer single-asset-class.
+        let awareLane = EV.fastLane([c1, c2, c3, e1], earnings: earnings)
+        #expect(awareLane.prefix(3).map(\.symbol) == ["BTC-USD", "ETH-USD", "MSFT"])
+        #expect(EV.fastLaneConcentration([c1, c2, c3, e1], topN: 3, earnings: earnings)?.isConcentrated == false)
+
+        let s = EV.summary([c1, c2, c3, e1], earnings: earnings)
+        guard let net = s.weeklyRNet, let sameBasket = s.weeklyRGrossSameBasket else {
+            Issue.record("summary() returned nil weeklyRNet/weeklyRGrossSameBasket on a positive-velocity 4-idea mixed-class lane")
+            return
+        }
+        #expect(abs(sameBasket - 5.6151666667) < 1e-6)   // NEW: aware haircut (1.00) — the fix
+        #expect(abs(net - 5.2809166667) < 1e-6)
+        // The bug this test pins: the OLD value would have been sameBasket·0.70 (the wrong,
+        // unaware-judged haircut) — exactly 3.9306166667, and BELOW net, backwards.
+        let oldBuggyValue = 3.9306166667
+        #expect(abs(oldBuggyValue - sameBasket * 0.70) < 1e-6)
+        #expect(oldBuggyValue < net)          // the OLD bug: gross-before-costs shown BELOW net-of-cost
+        #expect(sameBasket > net)             // the FIX: gross-before-costs correctly ABOVE net-of-cost
     }
 
     // F4 (2026-07-09): the "≈ +$N/week" header dollarizes weekly R with no fundability check —

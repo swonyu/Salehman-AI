@@ -142,4 +142,23 @@ struct StockSageTodayPlanTests {
         #expect(ok.contains("Entry"))
         #expect(!ok.contains("No order plan exported"))
     }
+
+    // F-review export-parity fix (2026-07-10): build()'s ticket line rendered "0 shares ≈ $0
+    // at risk" with NO unfundability disclosure while the on-screen row (MarketsTodayActionsCard's
+    // unfundableSuffix, StockSagePositionSizer.summaryLine) already discloses it — a pasted plan
+    // read as a placeable order. Hand-derived: entry 100 / stop 90 → riskPerShare $10; $1 account
+    // at 1% risk → riskBudget $0.01 ÷ $10 = 0.001, floors to 0 shares (StockSagePositionSizer.size).
+    @Test func buildDisclosesUnfundableZeroShareSizing() {
+        let i = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        let unfundable = StockSageTodayPlan.build(idea: i, ev: StockSageExpectedValue.ev(for: i),
+                                                   account: 1, riskFraction: 0.01)
+        #expect(unfundable.contains("0 shares"))
+        #expect(unfundable.contains("below the 1-share minimum at your account size"))
+        // Control: a comfortably-fundable account gets the size line WITHOUT the clause — the
+        // fix must not fire on every sized row, only the genuinely-unfundable one.
+        let fundable = StockSageTodayPlan.build(idea: i, ev: StockSageExpectedValue.ev(for: i),
+                                                 account: 100_000, riskFraction: 0.01)
+        #expect(fundable.contains("shares"))
+        #expect(!fundable.contains("below the 1-share minimum"))
+    }
 }

@@ -110,6 +110,10 @@ enum StockSageTodayPlan {
             if let acct = account, acct > 0, rf > 0,
                let ps = StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: entry, stop: s) {
                 size = " — \(ps.shares) shares ≈ \(Int(ps.dollarsAtRisk.rounded())) at risk (\(Int(ps.pctOfAccount.rounded()))% of acct)"
+                // F-review export-parity fix (2026-07-10, wave-7 rule): the on-screen row already
+                // discloses this (StockSagePositionSizer.summaryLine, MarketsTodayActionsCard's
+                // unfundableSuffix) — a copied plan silent on it reads as a placeable order.
+                if ps.shares == 0 { size += " — below the 1-share minimum at your account size" }
             }
             // TODAY-PARITY: pasted into a broker without knowing you already hold the name
             // silently stacks new risk on an existing position — same rationale as the ranked
@@ -274,6 +278,10 @@ enum StockSageTodayPlan {
                 + " | entry \(fmt(p.entry)) stop \(fmt(p.stop)) target \(fmt(p.target))"
             if let sh = p.shares, let dr = p.dollarsAtRisk {
                 line += " | \(sh) sh (≈$\(Int(dr.rounded())) at risk)"
+                // F-review export-parity fix (2026-07-10, wave-7 rule): mirrors row(_:_:)'s visible
+                // unfundableSuffix (MarketsTodayActionsCard.swift) — the on-screen row already
+                // discloses a floored-to-0 setup; the export must too, or it reads as placeable.
+                if sh == 0 { line += " — below the 1-share minimum at your account size" }
             }
             // Round-H: same cache-stale price flag as build() — independent of isSample.
             if let priceAsOf = p.priceAsOf,

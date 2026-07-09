@@ -129,6 +129,27 @@ struct StockSageTodayPlanRankedTests {
         }
     }
 
+    // F-review export-parity fix (2026-07-10): copyAllText's "N sh (≈$M at risk)" segment carried
+    // no unfundability disclosure when a row floors to 0 shares, while the on-screen row already
+    // shows it (row(_:_:)'s unfundableSuffix, MarketsTodayActionsCard.swift). Hand-derived: the
+    // clearIdea default (price 100, riskAbs 5 → stop 95) has riskPerShare $5; $1 account at 1%
+    // risk → riskBudget $0.01 ÷ $5 = 0.002, floors to 0 shares (StockSagePositionSizer.size).
+    @Test func copyAllTextDisclosesUnfundableZeroShareSizing() {
+        let ideas = [clearIdea("A")]
+        let unfundablePlans = StockSageTodayPlan.rankedActions(ideas, account: 1, riskFraction: 0.01)
+        #expect(unfundablePlans.count == 1)
+        #expect(unfundablePlans.first?.shares == 0)
+        let unfundableText = StockSageTodayPlan.copyAllText(unfundablePlans)
+        #expect(unfundableText.contains("0 sh"))
+        #expect(unfundableText.contains("below the 1-share minimum at your account size"))
+        // Control: a comfortably-fundable account carries the size segment WITHOUT the clause.
+        let fundablePlans = StockSageTodayPlan.rankedActions(ideas, account: 100_000, riskFraction: 0.01)
+        #expect(fundablePlans.first?.shares != 0)
+        let fundableText = StockSageTodayPlan.copyAllText(fundablePlans)
+        #expect(fundableText.contains(" sh ("))
+        #expect(!fundableText.contains("below the 1-share minimum"))
+    }
+
     // Regression: sub-dollar crypto prices (DOGE-class, ~$0.10) must NOT collapse to identical
     // "0.10" strings for entry and stop. fmt must use %.4f so e.g. entry 0.1040 ≠ stop 0.0990.
     @Test func subDollarPricesUseFourDecimalPlacesInCopyText() {
