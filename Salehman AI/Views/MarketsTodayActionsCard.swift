@@ -264,6 +264,9 @@ struct MarketsTodayActionsCard: View {
     @ViewBuilder
     private func row(_ rank: Int, _ plan: TodayActionPlan) -> some View {
         let blocked = plan.gate?.decision == .blocked
+        // D1 (rotation-3 triage): same utcDayKey staleness check `copyAllText` already gates
+        // its "⚠ PRICE NOT LIVE" line on — nil priceAsOf ⇒ unknown, renders nothing.
+        let staleAsOf = MarketsView.staleAsOfPrice(plan.priceAsOf, now: Date())
         Button { onSelectSymbol(plan.symbol) } label: {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: DS.Space.sm) {
@@ -314,6 +317,17 @@ struct MarketsTodayActionsCard: View {
                         Text("· set account to size").font(.system(size: font9)).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
+                }
+                // D1 (rotation-3 triage): the Entry/Stop/Target + size above are a placeable
+                // order — flag a stale (prior-UTC-day) price the same way the detail sheet's
+                // DEG-03 cue and this same file's `copyAllText` export already do. Spoken form
+                // folded into the a11y label below (accessibilityHidden here, same pattern as
+                // MarketsView's own staleAsOf line).
+                if let staleAsOf {
+                    Text("⚠︎ Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering.")
+                        .font(.system(size: font8)).foregroundStyle(DS.Palette.warningSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityHidden(true)
                 }
                 if blocked, let gate = plan.gate {
                     Text("DO NOT TRADE — \(gate.checks.first(where: { $0.level == .fail })?.label ?? "gate failed")")
@@ -372,6 +386,10 @@ struct MarketsTodayActionsCard: View {
             // board's own a11y phrasing (MarketsView ideaCard label builder).
             if let held = plan.heldShares { label += ", you hold \(numShares(held)) shares" }
             if let closed = plan.closedTradeCount { label += ", \(closed) closed trades in your journal" }
+            // D1 (rotation-3 triage): spoken counterpart of the visible staleAsOf line above.
+            if let staleAsOf {
+                label += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering."
+            }
             // F04-parity: nil gate ⇒ risk % wasn't supplied — mirror the sheet chip's a11y wording
             // ("Pre-trade gate: risk percent not set", MarketsView.swift ~5993) instead of forcing
             // a verdict sentence with no verdict to report.

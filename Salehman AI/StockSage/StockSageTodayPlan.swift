@@ -109,7 +109,7 @@ enum StockSageTodayPlan {
             var size = ""
             if let acct = account, acct > 0, rf > 0,
                let ps = StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: entry, stop: s) {
-                size = " — \(ps.shares) shares ≈ \(Int(ps.dollarsAtRisk.rounded())) at risk (\(Int(ps.pctOfAccount.rounded()))% of acct)"
+                size = " — \(ps.shares) shares ≈ $\(Int(ps.dollarsAtRisk.rounded())) at risk (\(Int(ps.pctOfAccount.rounded()))% of acct)"
                 // F-review export-parity fix (2026-07-10, wave-7 rule): the on-screen row already
                 // discloses this (StockSagePositionSizer.summaryLine, MarketsTodayActionsCard's
                 // unfundableSuffix) — a copied plan silent on it reads as a placeable order.

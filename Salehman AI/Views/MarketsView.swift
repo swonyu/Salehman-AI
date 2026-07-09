@@ -168,8 +168,18 @@ struct MarketsView: View {
     @State private var closeExitFillText = ""
     @State private var pendingJournalDeleteID: UUID?
     /// Detail-sheet position sizer inputs.
-    @AppStorage("marketsSizerAccount") private var sizerAccount = "10000"
-    @AppStorage("marketsSizerRiskPct") private var sizerRiskPct = "1"
+    // F6 (rotation-3 triage, first-run honesty floor): fresh installs used to seed these
+    // AppStorage keys with a FABRICATED $10,000/1% account — every sized order, gate verdict,
+    // and Deploy-capital plan a first-run owner saw was silently computed off numbers nobody
+    // typed. Unset ("") on a fresh install; every downstream read already goes through
+    // `StockSageInput.positiveAmount`/`.percent` (nil on ""), which every call site below
+    // already honestly nil-guards (SET RISK % badge, "set account to size", gate == nil, etc.)
+    // — verified by reading every read site before this change, not assumed. The TextField
+    // placeholder ("10000"/"1", `journalField` calls ~5389/5392) still shows the SHAPE of a
+    // valid input; only the seeded VALUE is gone. An owner who already ran the app keeps their
+    // real typed value — AppStorage persists past this default, this only changes first-run.
+    @AppStorage("marketsSizerAccount") private var sizerAccount = ""
+    @AppStorage("marketsSizerRiskPct") private var sizerRiskPct = ""
     // F04 (sizer-input trust seam): the comma-aware parse the idea CARDS already use
     // (StockSageInput.positiveAmount/.percent) — nil on blank/unparseable/"10,000" mis-thousands.
     // Every sheet/copied-plan/gate site below must read THESE, never `Double(sizerAccount)`
@@ -315,6 +325,12 @@ struct MarketsView: View {
             // Auto-scan the EV ideas so the board the app lands on is already populated —
             // 0 taps from open to the best move. refreshIdeas self-guards re-entry/ToolPolicy.
             if store.ideas.isEmpty { await store.refreshIdeas() }
+            // F8 (rotation-3 triage, first-run honesty): a fresh install's Deploy-capital plan
+            // and every regime-aware sizing path silently ran with ZERO risk-off/on brake until
+            // the owner noticed the ungauged state and tapped Gauge by hand — same "0 taps to
+            // the best move" reasoning as the ideas auto-scan above. The Gauge/Refresh button
+            // stays for every later re-gauge; this only covers the one-time nil→gauged step.
+            if store.regime == nil { await store.refreshRegime() }
             // Snapshot today's money-velocity (one per UTC day) so the trend can build. Skipped
             // when the scan that just ran was cancelled mid-way (post-ship critique fleet,
             // orchestrator-confirmed): the board is a partial snapshot in that case, and this
@@ -519,6 +535,17 @@ struct MarketsView: View {
         regime == nil || isStale
     }
 
+    /// F7 (rotation-3 triage, first-run honesty): non-nil ONLY during the FIRST-EVER scan — a
+    /// later re-scan already has `ideasUpdated` committed and the board keeps showing the PRIOR
+    /// results while the new ones stream in (see the "re-scan in progress" line the scan button
+    /// area already shows), so this caption is reserved for the one moment there is no committed
+    /// board at all yet — the "best" the card names right now is provisional, not the true best
+    /// of the eventual full universe. Pure/testable.
+    static func firstScanProgressCaption(isLoadingIdeas: Bool, ideasUpdated: Date?, progress: (current: Int, total: Int)?) -> String? {
+        guard isLoadingIdeas, ideasUpdated == nil, let p = progress, p.total > 0 else { return nil }
+        return "First scan in progress — \(p.current) of \(p.total) names analyzed; best-so-far, order may change."
+    }
+
     /// L1 (2026-07-09, DISPLAY-ONLY): maps the Deploy-capital plan's positions + the live idea
     /// board to the aligned spark-return series `effectiveBets` needs — the SAME series
     /// `correlationAdjustedWeights` reads (spark-derived, suffix-aligned), so the diagnostic
@@ -640,7 +667,11 @@ struct MarketsView: View {
     private var sampleBanner: some View {
         HStack(spacing: DS.Space.sm) {
             Image(systemName: "info.circle.fill").foregroundStyle(DS.Palette.warningSoft)
-            Text(store.feedError ?? "Sample data — connecting to the live worldwide feed… The signals show the engine running on illustrative prices.")
+            // D5 (rotation-3 triage): `feedError ?? sample` hid the sample-data truth whenever a
+            // feed error was ALSO present — both facts are true simultaneously (on sample data
+            // AND the live feed errored) and the reader needs both, not whichever one won ??.
+            Text("Sample data — connecting to the live worldwide feed… The signals show the engine running on illustrative prices."
+                 + (store.feedError.map { " \($0)" } ?? ""))
                 .font(.caption).foregroundStyle(.white.opacity(0.85))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
@@ -2236,7 +2267,10 @@ struct MarketsView: View {
         draftStop = idea.advice.stopPrice.map { adaptivePrice($0) } ?? ""
         draftTarget = idea.advice.targetPrice.map { adaptivePrice($0) } ?? ""
         draftShares = ""
-        draftNote = "From idea: \(idea.advice.action.rawValue), \(Int(idea.advice.conviction * 100))% conviction"
+        // T11 (rotation-3 triage): "N% conviction" read as a win-probability percent — F08
+        // (wave-8) already relabeled this everywhere else to "signal strength N/100"
+        // (StockSageTradePlan.swift's own note), this journal-note prefill was the straggler.
+        draftNote = "From idea: \(idea.advice.action.rawValue), signal strength \(Int(idea.advice.conviction * 100))/100"
         draftConviction = idea.advice.conviction   // recorded on the trade for journal calibration
         draftSide = bearish ? .short : .long   // side follows the idea's direction
         showAddTrade = true
@@ -3133,7 +3167,10 @@ struct MarketsView: View {
             if strong > 0 { summaryChip("\(strong)", "strong buy", DS.Palette.successSoft) { ideaFilter = .strongBuy } }
             if buys > 0 { summaryChip("\(buys)", "buys", .white) { ideaFilter = .buys } }
             if sells > 0 { summaryChip("\(sells)", "sells", DS.Palette.warningSoft) { ideaFilter = .sells } }
-            summaryChip("\(Int((avgConv * 100).rounded()))%", "avg conv")
+            // T9 (rotation-3 triage): "avg conv" read as an average PROBABILITY of winning —
+            // it's the average rules-based signal score (F08 vocabulary), same idiom as the
+            // idea card's own "Signal strength — a rules-based score, not a probability." .help.
+            summaryChip("\(Int((avgConv * 100).rounded()))%", "avg signal", help: "Average signal strength across the shown ideas — a rules-based score, not a probability.")
             if avgRR > 0 { summaryChip(String(format: "%.1f", avgRR), "avg R:R") }
             // Non-interactive sort-mode chip so the user always knows why
             // the board is ordered as it is, even after scrolling past the sort/filter strip.
@@ -3144,7 +3181,7 @@ struct MarketsView: View {
 
     @ViewBuilder
     private func summaryChip(_ value: String, _ label: String, _ valueColor: Color = .white,
-                             action: (() -> Void)? = nil) -> some View {
+                             help: String? = nil, action: (() -> Void)? = nil) -> some View {
         let chip = HStack(spacing: DS.Space.xs) {
             Text(value).font(.system(size: mvFont11, weight: .bold)).foregroundStyle(valueColor)
                 .lineLimit(1).fixedSize()   // narrow lens 2026-07-09: "48%" split into "48"/"%" at 560pt
@@ -3155,6 +3192,12 @@ struct MarketsView: View {
         .background(.white.opacity(0.05), in: Capsule())
         if let action {
             Button(action: action) { chip }.buttonStyle(.plain).help("Filter to \(label)")
+        } else if let help {
+            // T9 (rotation-3 triage): non-interactive chips get an optional .help — a hover
+            // explanation for a number that isn't a tap target, e.g. "avg signal"'s
+            // rules-based-not-a-probability caveat. nil (every other call site) ⇒ no .help
+            // modifier at all, byte-unchanged from before.
+            chip.help(help)
         } else {
             chip
         }
@@ -3609,7 +3652,10 @@ struct MarketsView: View {
                         .foregroundStyle(ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft)
                         .modifier(IdeaChipChrome(tint: ev.isPositive ? DS.Palette.successSoft : DS.Palette.warningSoft))
                         .frame(minWidth: 72, alignment: .trailing)
-                        .help("Gross EV — before round-trip frictions. The detail sheet's Evidence section shows gross + net velocity, and the net-cost breakdown. Conviction→win-prob estimate × reward:risk. An estimate, not a forecast.")
+                        // T12 (rotation-3 triage): "frictions" was the last straggler — every
+                        // other surface (StockSageKelly/NetEdge/TodayPlan/etc.) already says
+                        // "round-trip costs" (993bdce), not "frictions".
+                        .help("Gross EV — before est. round-trip costs. The detail sheet's Evidence section shows gross + net velocity, and the net-cost breakdown. Conviction→win-prob estimate × reward:risk. An estimate, not a forecast.")
                 }
                 if visibleChips.contains(.confluence) {
                     // RANKING_BACKLOG #12 (reframed, pure observer) — display-only badge, never a
@@ -3688,7 +3734,11 @@ struct MarketsView: View {
                 // user can compare #3 vs #5 without opening the detail sheet.
                 if ideaSort == .velocity, let vel {
                     ideaMetric("Vel.", String(format: "%+.3fR/d", vel), color: DS.Palette.successSoft)
-                        .help("Gross EV/day. The board ORDERS by net-adjusted growth rate (costs + variance haircuts), which can differ — two cards with similar gross Vel. may rank apart.")
+                        // T14 (rotation-3 triage): "net-adjusted growth rate (costs + variance
+                        // haircuts)" named the same ordering key the fastLane hover
+                        // (StockSageGlossary.explain(.fastLane)) already names precisely —
+                        // align on that naming instead of a second, divergent description.
+                        .help("Gross EV/day. The board ORDERS by per-day log-growth at ½-Kelly, cost-haircut, which can differ — two cards with similar gross Vel. may rank apart.")
                 }
                 // F-round-j FIX 2: per-idea provenance tag, subtle caption under the price —
                 // reuses the SAME isSampleData/loadedFromCache truth the top banner keys on, so
@@ -3992,6 +4042,16 @@ struct MarketsView: View {
             // sheet (`Self.staleAsOfPrice`) already close. Computed once, reused by the visible
             // line below and folded into orderLabel for VoiceOver.
             let staleAsOf = Self.staleAsOfPrice(idea.priceAsOf, now: Date())
+            // D3 (rotation-3 triage): upgrade to the two-axis `cardIsStale` (price OR analysis
+            // >4h old) the board card already uses — a fresh price bar can still ride a stale
+            // ANALYSIS (the advice/EV numbers were computed >4h ago and the tape has moved since).
+            // `cardIsStale` = analysisStale || priceStale; `staleAsOf` above is non-nil exactly
+            // when priceStale, so "stale overall but staleAsOf nil" isolates the analysis-only
+            // axis without duplicating cardIsStale's internals.
+            let cardIsStaleOverall = Self.cardIsStale(generatedAt: idea.generatedAt, now: Date(), priceAsOf: idea.priceAsOf)
+            let analysisStaleOnly = cardIsStaleOverall && staleAsOf == nil
+            // F7 (rotation-3 triage): first-ever scan only — see firstScanProgressCaption's doc.
+            let firstScanCaption = Self.firstScanProgressCaption(isLoadingIdeas: store.isLoadingIdeas, ideasUpdated: store.ideasUpdated, progress: store.ideasProgress)
             // Gate verdict ON the prescriptive card (hierarchy lens HIGH, 2026-07-09): the card's
             // own copied plan already prints "Gate: <verdict>" — the pixels must not be less
             // honest than the export. Honest-nil (F04): no chip when risk % isn't set.
@@ -4009,7 +4069,10 @@ struct MarketsView: View {
                 if let target = idea.advice.targetPrice { s += ", target \(adaptivePrice(target))" }
                 if let staleAsOf {
                     s += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering."
+                } else if analysisStaleOnly {
+                    s += ". Analysis over 4h old — re-scan for a current read."
                 }
+                if let firstScanCaption { s += ". \(firstScanCaption)" }
                 if let ep = store.earnings[idea.symbol.uppercased()], ep.isWarning {
                     s += ". Earnings risk: \(ep.note)"
                 }
@@ -4059,6 +4122,13 @@ struct MarketsView: View {
                         Text(idea.advice.action.rawValue).font(.system(size: mvFont10, weight: .bold))
                             .foregroundStyle(actionTextColor(idea.advice.action))
                             .padding(.horizontal, 7).padding(.vertical, 2).background(actionColor(idea.advice.action), in: Capsule())
+                    }
+                    // F7 (rotation-3 triage): this card's "best" is provisional during the
+                    // first-ever scan — say so, folded into orderLabel above for VoiceOver.
+                    if let firstScanCaption {
+                        Text(firstScanCaption)
+                            .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            .accessibilityHidden(true)
                     }
                     HStack(spacing: DS.Space.sm) {
                         Text(idea.symbol).font(.system(size: mvFont16, weight: .bold, design: .rounded)).foregroundStyle(.white)
@@ -4114,6 +4184,16 @@ struct MarketsView: View {
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "clock.badge.exclamationmark").font(.system(size: mvFont11)).foregroundStyle(DS.Palette.warningSoft)
                             Text("⚠︎ Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering.")
+                                .font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                        }
+                        .accessibilityHidden(true)  // folded into orderLabel above so VoiceOver reads it once
+                    } else if analysisStaleOnly {
+                        // D3: the price bar itself is current but the advice/EV numbers behind
+                        // this card were computed >4h ago — a different honesty gap than a stale
+                        // price, so it gets its own wording rather than reusing the price cue.
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "clock.badge.exclamationmark").font(.system(size: mvFont11)).foregroundStyle(DS.Palette.warningSoft)
+                            Text("⚠︎ Analysis over 4h old — re-scan for a current read.")
                                 .font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                         }
                         .accessibilityHidden(true)  // folded into orderLabel above so VoiceOver reads it once
@@ -4224,18 +4304,45 @@ struct MarketsView: View {
                             .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                             .help("Kish/design-effect: n_eff = N ÷ (1 + (N−1)·ρ̄); ρ̄ = mean pairwise correlation of the plan's positions over their shared \(eb.windowBars)-return recent window (spark-derived) — the same series the plan's correlation de-weighting reads. Sparks are downsampled (~2-day points); cross-calendar pairs understate co-movement, so treat n_eff as an OPTIMISTIC upper bound. Correlations are regime-dependent and rise in crashes (US average pairwise ~0.30–0.40 normal → >0.80 in 2008, ~0.75 Feb–Mar 2020) — a calm-window n_eff overstates crisis diversification. RESEARCH_2026-07-03_weekly_concentration.md §3b.")
                     }
+                    // D2 (rotation-3 triage): per-position price-freshness lookup, reused by both
+                    // the visible one-line note and the copy-plan export below — AllocatedPosition
+                    // carries no priceAsOf of its own, so resolve it via the matching board idea
+                    // (same symbol join `deployEffectiveBets` already does).
+                    let ideaBySymbol = Dictionary(store.ideas.map { ($0.symbol, $0) }, uniquingKeysWith: { a, _ in a })
+                    let staleDeploySymbols = plan.positions.filter {
+                        MarketsView.staleAsOfPrice(ideaBySymbol[$0.symbol]?.priceAsOf, now: Date()) != nil
+                    }
+                    if !staleDeploySymbols.isEmpty {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "clock.badge.exclamationmark").font(.system(size: mvFont11)).foregroundStyle(DS.Palette.warningSoft)
+                            Text("⚠︎ \(staleDeploySymbols.count) position\(staleDeploySymbols.count == 1 ? "" : "s") priced off a prior-day close — not live; re-price before ordering.")
+                                .font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                     HStack(spacing: 6) {
                         Spacer()
                         Button {
-                            let lines = ["Capital allocation — \(String(format: "$%.0f", plan.account)) account, heat \(String(format: "%.1f%%", plan.totalHeat * 100)) (cap \(String(format: "%.0f%%", plan.maxHeat * 100)))."]
+                            var lines = ["Capital allocation — \(String(format: "$%.0f", plan.account)) account, heat \(String(format: "%.1f%%", plan.totalHeat * 100)) (cap \(String(format: "%.0f%%", plan.maxHeat * 100)))."]
                                 + plan.positions.map { p in
-                                    "\(p.symbol): \(p.shares) sh · \(String(format: "%.2f%%", p.riskFraction * 100)) risk · \(String(format: "$%.0f", p.dollarsAtRisk)) at risk · \(String(format: "$%.0f", p.notional)) notional · Est. EV \(String(format: "%+.2fR (gross)", p.evR))"
+                                    var line = "\(p.symbol): \(p.shares) sh · \(String(format: "%.2f%%", p.riskFraction * 100)) risk · \(String(format: "$%.0f", p.dollarsAtRisk)) at risk · \(String(format: "$%.0f", p.notional)) notional · Est. EV \(String(format: "%+.2fR (gross)", p.evR))"
+                                    // D2: mirror StockSageTodayPlan.copyAllText's per-line stale-price
+                                    // suffix verbatim — same utcDayKey check, same wording.
+                                    if let staleAsOf = MarketsView.staleAsOfPrice(ideaBySymbol[p.symbol]?.priceAsOf, now: Date()) {
+                                        line += " | ⚠ PRICE NOT LIVE — as of \(staleAsOf.formatted(.relative(presentation: .named)))"
+                                    }
+                                    return line
                                 }
                                 + (eb.map { [Self.effectiveBetsCaption($0)] } ?? [])
                                 + [plan.caveat]
                                 + (Self.regimeWarningNeeded(regime: store.regime, isStale: store.regimeIsStale)
                                    ? ["⚠︎ Regime not gauged — this plan applies no risk-off/on brake; tap Gauge for a plan sized to the tape."]
                                    : [])
+                            // D2: the copied allocation plan is a placeable order list — it must
+                            // carry the same SAMPLE-data warning the board banner shows (mirrors
+                            // StockSageTodayPlan.build/copyAllText's identical prepend).
+                            if store.isSampleData {
+                                lines.insert("⚠ SAMPLE DATA — illustrative prices, NOT live quotes. Re-price before any order.", at: 0)
+                            }
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
                         } label: {
@@ -4384,6 +4491,8 @@ struct MarketsView: View {
         // PERF-MVCARD: computed once, reused at both the visual warning below and the a11y-label
         // closure that folds it in — was computed twice (byte-identical args) per render.
         let conc = StockSageExpectedValue.fastLaneConcentration(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity)
+        // F7 (rotation-3 triage): first-ever scan only — see firstScanProgressCaption's doc.
+        let firstScanCaption = Self.firstScanProgressCaption(isLoadingIdeas: store.isLoadingIdeas, ideasUpdated: store.ideasUpdated, progress: store.ideasProgress)
         if s.hasContent {
             VStack(alignment: .leading, spacing: 6) {
             Button {
@@ -4396,10 +4505,21 @@ struct MarketsView: View {
                         Spacer()
                         calibrationChip   // measured (n) vs assumed — qualifies the EV/$ numbers below
                     }
+                    // F7 (rotation-3 triage): this card's "best"/"fastest" are provisional
+                    // during the first-ever scan — folded into the accessibilityLabel below.
+                    if let firstScanCaption {
+                        Text(firstScanCaption)
+                            .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            .accessibilityHidden(true)
+                    }
                     HStack(alignment: .top, spacing: DS.Space.lg) {
                         if let sym = s.bestSymbol, let ev = s.bestEV {
                             VStack(alignment: .leading, spacing: 2) {
-                                ideaMetric("Best now", sym, sub: String(format: "%+.2fR EV (gross)", ev))
+                                // T10 (rotation-3 triage): "+0.45R EV (gross)" read as a labeled
+                                // R figure with EV as a tag; "Est. EV +0.45R (gross)" matches
+                                // every other EV surface (bestOpportunityCard's "Est. EV" metric,
+                                // the idea card's EV chip) — the last unlabeled EV in the app.
+                                ideaMetric("Best now", sym, sub: String(format: "Est. EV %+.2fR (gross)", ev))
                                     .help(MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix)
                                 if let ep = store.earnings[sym.uppercased()], ep.isWarning {
                                     let badge = ep.severity == .imminent ? "⚠︎ earnings ~\(ep.daysUntil)d" : "earnings ~\(ep.daysUntil)d"
@@ -4519,7 +4639,8 @@ struct MarketsView: View {
                 // qualifiers the pixels carry.
                 + ({ () -> String in
                     var t = ""
-                    if let sym = s.bestSymbol, let ev = s.bestEV { t += String(format: ". Best now %@, %+.2f R EV gross", sym, ev) }
+                    if let firstScanCaption { t += ". \(firstScanCaption)" }
+                    if let sym = s.bestSymbol, let ev = s.bestEV { t += String(format: ". Best now %@, estimated EV %+.2f R gross", sym, ev) }
                     if let sym = s.fastestSymbol, let v = s.fastestVelocity { t += String(format: ". Fastest %@, %+.2f R per day net", sym, v) }
                     if let netWk = s.weeklyRNet {
                         t += String(format: ". Estimated %+.1f R per week net of estimated costs", netWk)
@@ -4586,6 +4707,11 @@ struct MarketsView: View {
             // Round-H: same stale-price gap as bestOpportunityCard — this CTA renders the
             // identical sized/placeable order globally, not just on the Ideas tab.
             let staleAsOf = Self.staleAsOfPrice(idea.priceAsOf, now: Date())
+            // D3 (rotation-3 triage): same two-axis upgrade as bestOpportunityCard — see the
+            // comment there for the derivation (cardIsStale = analysisStale || priceStale;
+            // staleAsOf non-nil exactly when priceStale).
+            let cardIsStaleOverall = Self.cardIsStale(generatedAt: idea.generatedAt, now: Date(), priceAsOf: idea.priceAsOf)
+            let analysisStaleOnly = cardIsStaleOverall && staleAsOf == nil
             // PERF (2026-07-09 cleanup of this day's own waves): compute once per body
             // evaluation — the gate verdict was computed TWICE (gateLabel + gateColor
             // closures) and netEVR twice (evText + accessibilityText).
@@ -4624,6 +4750,8 @@ struct MarketsView: View {
                 if let variance { s += String(format: ", typical 24-hour range plus or minus %.1f percent", variance) }
                 if let staleAsOf {
                     s += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering."
+                } else if analysisStaleOnly {
+                    s += ". Analysis over 4h old — re-scan for a current read."
                 }
                 if let g = ctaGate {
                     s += ". Pre-trade gate: \(g.decision == .blocked ? "do not trade" : g.decision.rawValue)."
@@ -4664,7 +4792,8 @@ struct MarketsView: View {
                          : ($0.decision == .caution ? DS.Palette.warningSoft.opacity(0.85) : DS.Palette.successSoft.opacity(0.85)) } ?? .clear,
                 caveatText: MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix + crownDivergenceSuffix,
                 varianceText: variance.map { String(format: "Typical 24h range ±%.1f%% — size down for 24/7.", $0) },
-                staleAsOfText: staleAsOf.map { "⚠︎ Price as of \($0.formatted(.relative(presentation: .named))) — not live; re-price before ordering." },
+                staleAsOfText: staleAsOf.map { "⚠︎ Price as of \($0.formatted(.relative(presentation: .named))) — not live; re-price before ordering." }
+                    ?? (analysisStaleOnly ? "⚠︎ Analysis over 4h old — re-scan for a current read." : nil),
                 accessibilityText: accessibilityText,
                 onTap: { selectedIdea = idea },
                 onCopy: {
@@ -5352,7 +5481,11 @@ struct MarketsView: View {
                     } else {
                         // Floored to 0 shares: the budget cannot fund even one share at this stop. Saying
                         // "$0 at risk" would read as a free trade — it is an un-takeable one.
-                        Text("Risk %/account too small to fund even one share at this stop distance — raise the account or risk %, or tighten the stop. This is NOT a zero-risk trade.")
+                        // T13 (rotation-3 triage): lead with the Wave-A ratified phrase
+                        // (StockSagePositionSizer.summaryLine's own "Below the 1-share minimum at
+                        // your account size" — the same event every other "Size it now" surface
+                        // already names this way), keep this widget's own remedy + honesty tail.
+                        Text("Below the 1-share minimum at your account size — raise the account or risk %, or tighten the stop. This is NOT a zero-risk trade.")
                             .font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                     }
                     // One side derivation for BOTH risk lines below — a sell/reduce idea is a genuine
