@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 // Momentum-sign ablation (variants A/B x earnings-exclusion arms) on the cached 61-name/5y IRRX
 // panel. Links against the SHIPPED StockSageNetCostSim + StockSageDeflatedSharpe (compiled from
@@ -238,6 +239,36 @@ func sampleVariance(_ xs: [Double]) -> Double {
     return xs.map { ($0 - m) * ($0 - m) }.reduce(0, +) / Double(xs.count - 1)
 }
 
+// MARK: - Trials ledger (research/trials_ledger.jsonl; ALWAYS-ON, opt-out via TRIALS_LEDGER=off —
+// see the "TRIAL REGISTRY" design: an omitted arm silently under-deflates every future DSR, the
+// dangerous direction; a duplicated arm just dedups. RUN_ID env overrides the deterministic id.)
+func ledgerPath() -> String? {
+    let env = ProcessInfo.processInfo.environment
+    if let p = env["TRIALS_LEDGER"] { return p == "off" ? nil : p }
+    let cwd = FileManager.default.currentDirectoryPath
+    return FileManager.default.fileExists(atPath: cwd + "/research") ? cwd + "/research/trials_ledger.jsonl" : "trials_ledger_fragment.jsonl"
+}
+func ledgerRunID(_ seed: String) -> String {
+    if let id = ProcessInfo.processInfo.environment["RUN_ID"] { return id }
+    let hash = SHA256.hash(data: Data(seed.utf8)).compactMap { String(format: "%02x", $0) }.joined()
+    return "\(String(ISO8601DateFormatter().string(from: Date()).prefix(10)))_\(hash.prefix(8))"
+}
+func ledgerNum(_ d: Double?) -> String { guard let d = d, d.isFinite else { return "null" }; return String(d) }
+func ledgerAppend(path: String, run: String, family: String, panel: String, config: String, role: String,
+                   meanNetPct: Double?, sharpe: Double?, sharpeBasis: String, dsr: Double?, sourceFile: String) {
+    let date = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+    let line = "{\"date\":\"\(date)\",\"run\":\"\(run)\",\"family\":\"\(family)\",\"panel\":\"\(panel)\"," +
+        "\"config\":\"\(config)\",\"role\":\"\(role)\",\"meanNetPct\":\(ledgerNum(meanNetPct))," +
+        "\"sharpe\":\(ledgerNum(sharpe)),\"sharpe_basis\":\"\(sharpeBasis)\"," +
+        "\"dsr\":\(ledgerNum(dsr)),\"source_file\":\"\(sourceFile)\"}\n"
+    guard let d = line.data(using: .utf8) else { return }
+    if let h = FileHandle(forWritingAtPath: path) { h.seekToEndOfFile(); h.write(d); h.closeFile() }
+    else { FileManager.default.createFile(atPath: path, contents: d) }
+}
+// Panel is asserted fixed above (S=61,T=1253,7 industries,926 earnings entries) — hardcode its identity.
+let ledgerPanelID = "us61-largecap-5y/yahoo-2021-2026-earnexcl"
+let ledgerRun = ledgerRunID("momsign-60candidate-grid-v1")
+
 // MARK: - Grid (spec section 8)
 
 let lookbacksFull = [5, 10, 21, 63, 126]
@@ -461,6 +492,8 @@ struct ResultRow {
 
 var resultRows: [ResultRow] = []
 print("\n=== PRIMARY RESULTS (trials=60) + SENSITIVITY (trials=15, per-variant×arm-group V) ===")
+let ledgerFilePath = ledgerPath()
+var ledgerAppended = 0
 for c in candidates {
     let panel = panelFor(c.arm)
     let wfn = weightFnFor(c.variant)
@@ -482,7 +515,17 @@ for c in candidates {
     let numsPart = String(format: "lb=%2d hd=%2d rebals=%3d meanGross=%+.5f%% meanNet=%+.5f%% DSR60=%.3f DSR15=%.3f",
                           c.lb, c.hd, sim60.rebalances.count, row.meanGrossPct, row.meanNetPct, dsr60, dsr15)
     print("  VAR=\(c.variant) ARM=\(c.arm.padding(toLength: 7, withPad: " ", startingAt: 0)) \(numsPart)  net-\(tag60) clears60=\(sim60.clears ? "YES" : "no")  |  net-\(tag15) clears15=\(sim15.clears ? "YES" : "no")")
+    if let lp = ledgerFilePath {
+        let excl = c.arm == "WITH" ? "with" : "without"
+        ledgerAppend(path: lp, run: ledgerRun, family: "momentum-sign", panel: ledgerPanelID,
+                     config: "variant=\(c.variant),lb=\(c.lb),hd=\(c.hd),excl=\(excl)", role: "trial",
+                     meanNetPct: row.meanNetPct, sharpe: fullSharpe(sim60.rebalances.map { $0.netReturn }),
+                     sharpeBasis: "full-series-net-per-rebalance", dsr: dsr60.isFinite ? dsr60 : nil,
+                     sourceFile: "tools/momsign_ablation/main.swift")
+        ledgerAppended += 1
+    }
 }
+if let lp = ledgerFilePath { print("LEDGER: appended \(ledgerAppended) arms → \(lp)") }
 
 // MARK: - Variant B beta guard: EQW-long benchmark + paired diff series (spec section 7 & 9)
 

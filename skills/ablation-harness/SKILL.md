@@ -203,6 +203,14 @@ null is cited by the very source comments it validated (see the STANDING NOTE in
 4. Net-of-cost applied and labeled (gross figures labeled GROSS wherever shown).
 5. Limitations + "did NOT establish" section written; multiple-comparisons count disclosed.
 6. Indexed per research-memory §4, even (especially) if null.
+7. **Trial registry:** the `tools/altdata_ablation` and `tools/momsign_ablation` runners append one
+   JSONL line per config to `research/trials_ledger.jsonl` automatically (always-on; opt out only
+   with `TRIALS_LEDGER=off`) — check the run's `LEDGER: appended N arms → <path>` verdict line. A
+   session-local runner copy that couldn't resolve the repo-root `research/` dir produces a
+   `trials_ledger_fragment.jsonl` instead — merge that fragment into `research/trials_ledger.jsonl`
+   (append its lines; the registry dedups on `(run,config)`, keep-last) and cite the LEDGER line in
+   the write-up. See `research/trials_ledger.jsonl`'s schema and `tools/trials_registry.py
+   --selfcheck` for the consumption helper.
 
 ## Provenance and maintenance
 

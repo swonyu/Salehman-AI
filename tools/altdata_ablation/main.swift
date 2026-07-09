@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 // Scratch runner for the IRRX net-of-cost ablation. It reuses the VERBATIM shipped
 // StockSageNetCostSim + StockSageDeflatedSharpe (compiled alongside) — zero reimplementation,
@@ -50,6 +51,42 @@ if let p = pj.provenance { print("PROVENANCE: \(p)") }
 let lookbacks = [5, 10, 21, 63, 126]
 let holds = [5, 10, 21]
 
+// MARK: - Trials ledger (research/trials_ledger.jsonl; ALWAYS-ON, opt-out via TRIALS_LEDGER=off —
+// see the "TRIAL REGISTRY" design: an omitted arm silently under-deflates every future DSR, the
+// dangerous direction; a duplicated arm just dedups. RUN_ID env overrides the deterministic id.)
+func ledgerPath() -> String? {
+    let env = ProcessInfo.processInfo.environment
+    if let p = env["TRIALS_LEDGER"] { return p == "off" ? nil : p }
+    let cwd = FileManager.default.currentDirectoryPath
+    return FileManager.default.fileExists(atPath: cwd + "/research") ? cwd + "/research/trials_ledger.jsonl" : "trials_ledger_fragment.jsonl"
+}
+func slug(_ s: String) -> String {
+    var out = ""
+    for c in s.lowercased() { out.append(c.isLetter || c.isNumber ? c : "-") }
+    while out.contains("--") { out = out.replacingOccurrences(of: "--", with: "-") }
+    return String(out.prefix(48)).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+}
+func ledgerRunID(_ seed: String) -> String {
+    if let id = ProcessInfo.processInfo.environment["RUN_ID"] { return id }
+    let hash = SHA256.hash(data: Data(seed.utf8)).compactMap { String(format: "%02x", $0) }.joined()
+    return "\(String(ISO8601DateFormatter().string(from: Date()).prefix(10)))_\(hash.prefix(8))"
+}
+func ledgerNum(_ d: Double?) -> String { guard let d = d, d.isFinite else { return "null" }; return String(d) }
+func ledgerAppend(path: String, run: String, family: String, panel: String, config: String, role: String,
+                   meanNetPct: Double?, sharpe: Double?, sharpeBasis: String, dsr: Double?, sourceFile: String) {
+    let date = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+    let line = "{\"date\":\"\(date)\",\"run\":\"\(run)\",\"family\":\"\(family)\",\"panel\":\"\(panel)\"," +
+        "\"config\":\"\(config)\",\"role\":\"\(role)\",\"meanNetPct\":\(ledgerNum(meanNetPct))," +
+        "\"sharpe\":\(ledgerNum(sharpe)),\"sharpe_basis\":\"\(sharpeBasis)\"," +
+        "\"dsr\":\(ledgerNum(dsr)),\"source_file\":\"\(sourceFile)\"}\n"
+    guard let d = line.data(using: .utf8) else { return }
+    if let h = FileHandle(forWritingAtPath: path) { h.seekToEndOfFile(); h.write(d); h.closeFile() }
+    else { FileManager.default.createFile(atPath: path, contents: d) }
+}
+let ledgerPanelID = "\(S)x\(T)-panel/" + slug(pj.provenance ?? "unspecified")
+let ledgerGridSeed = (pj.provenance ?? "") + lookbacks.map(String.init).joined(separator: ",") + "|" + holds.map(String.init).joined(separator: ",")
+let ledgerRun = ledgerRunID(ledgerGridSeed)
+
 func fullSharpe(_ xs: [Double]) -> Double? {
     let n = xs.count; guard n >= 4 else { return nil }
     let m = xs.reduce(0,+)/Double(n)
@@ -63,7 +100,7 @@ struct ConfigNet { let lb: Int; let hd: Int; let meanNet: Double }
 struct RunResult { let configs: [ConfigNet]; let bestOOS: Double; let bestCfg: String }
 
 @discardableResult
-func run(_ panel: StockSageNetCostSim.Panel, label: String) -> RunResult {
+func run(_ panel: StockSageNetCostSim.Panel, label: String, role: String = "trial", excl: String = "without") -> RunResult {
     // Pass 1: gather each config's net full-series Sharpe → trial variance for the DSR deflation.
     var trialSharpes: [Double] = []
     var series: [(Int,Int,[Double])] = []
@@ -83,6 +120,8 @@ func run(_ panel: StockSageNetCostSim.Panel, label: String) -> RunResult {
     print("\n=== \(label) · \(nTrials) configs · varTrialSharpe=\(String(format: "%.4f", varTrial)) ===")
     var bestOOS = -Double.infinity; var bestCfg = ""; var anyClears = false
     var configs: [ConfigNet] = []
+    let lp = ledgerPath()
+    var ledgerAppended = 0
     for lb in lookbacks { for hd in holds {
         guard let sim = StockSageNetCostSim.simulate(panel, lookback: lb, hold: hd, roundTripBps: rtBps,
                                                      folds: 3, embargo: 1, trials: nTrials, varTrialSharpe: varTrial)
@@ -94,9 +133,17 @@ func run(_ panel: StockSageNetCostSim.Panel, label: String) -> RunResult {
         configs.append(ConfigNet(lb: lb, hd: hd, meanNet: sim.meanNet))
         print(String(format: "  lb=%2d hd=%2d  rebals=%3d  meanGross=%+.5f meanNet=%+.5f  net-%@ DSR=%.3f  clears=%@",
                      lb, hd, sim.rebalances.count, sim.meanGross, sim.meanNet, tag, oos, sim.clearsNetOfCost ? "YES" : "no"))
+        if let lp = lp {
+            ledgerAppend(path: lp, run: ledgerRun, family: "reversal-irrx", panel: ledgerPanelID,
+                         config: "lb=\(lb),hd=\(hd),excl=\(excl)", role: role, meanNetPct: sim.meanNet * 100,
+                         sharpe: fullSharpe(sim.netReturns), sharpeBasis: "full-series-net-per-rebalance",
+                         dsr: oos.isFinite ? oos : nil, sourceFile: "tools/altdata_ablation/main.swift")
+            ledgerAppended += 1
+        }
     }}
     print(String(format: "  → BEST net DSR = %.3f (%@);  ANY config clears DSR>0.95: %@",
                  bestOOS, bestCfg, anyClears ? "YES" : "NO"))
+    if let lp = lp { print("LEDGER: appended \(ledgerAppended) arms → \(lp)") }
     return RunResult(configs: configs, bestOOS: bestOOS, bestCfg: bestCfg)
 }
 
@@ -123,17 +170,17 @@ func printFlipVsHold(_ label: String, forward: RunResult, reversed: RunResult) {
                  forward.bestOOS, forward.bestCfg, reversed.bestOOS, reversed.bestCfg))
 }
 
-let forwardWithout = run(panelWithout, label: "WITHOUT earnings exclusion (industry-relative reversal)")
+let forwardWithout = run(panelWithout, label: "WITHOUT earnings exclusion (industry-relative reversal)", role: "trial", excl: "without")
 var forwardWith: RunResult? = nil
-if !excluded.isEmpty { forwardWith = run(panelWith, label: "WITH earnings-window exclusion (full IRRX)") }
+if !excluded.isEmpty { forwardWith = run(panelWith, label: "WITH earnings-window exclusion (full IRRX)", role: "trial", excl: "with") }
 else { print("\n(no earnings-exclusion data in panel → IRRX variant skipped)") }
 
 if ProcessInfo.processInfo.environment["REVERSED"] == "1" {
     let panelWithoutRev = reversedPanel(panelWithout)
-    let reversedWithout = run(panelWithoutRev, label: "REVERSED WITHOUT earnings exclusion")
+    let reversedWithout = run(panelWithoutRev, label: "REVERSED WITHOUT earnings exclusion", role: "diagnostic", excl: "without")
     var reversedWith: RunResult? = nil
     if !excluded.isEmpty {
-        reversedWith = run(reversedPanel(panelWith), label: "REVERSED WITH earnings-window exclusion (full IRRX)")
+        reversedWith = run(reversedPanel(panelWith), label: "REVERSED WITH earnings-window exclusion (full IRRX)", role: "diagnostic", excl: "with")
     }
 
     printFlipVsHold("WITHOUT earnings exclusion", forward: forwardWithout, reversed: reversedWithout)
