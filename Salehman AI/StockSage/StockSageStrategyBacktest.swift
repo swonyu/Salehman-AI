@@ -49,6 +49,13 @@ struct StrategyBacktest: Sendable, Equatable {
     var passesHonestSignificance: Bool {
         isSignificant && clearsMultipleTestingBar && (momentCorrectedTStat <= 0 || momentCorrectedTStat > 3.0)
     }
+    /// The DSR seal may render its green "PASS" ONLY when the sample is also statistically meaningful.
+    /// `deflatedSharpe.passes` is `dsr > 0.95` and DSR populates at n≥4, so a high small-sample Sharpe
+    /// can clear 0.95 at <100 trades — which would sit a green seal beside this panel's own "not
+    /// meaningful yet" verdict (#8, the invariant `passesHonestSignificance` documents above). The DSR
+    /// NUMBER still always displays; this gates only the seal glyph/word/color. Mirrors the per-symbol
+    /// PSR `psr > 0.95 && isSignificant` gate (round-g FIX-4).
+    var deflatedSharpeShowsPass: Bool { (deflatedSharpe?.passes ?? false) && isSignificant }
     var significanceVerdict: String {
         if !isSignificant { return "Only \(totalTrades) trades — the aggregate isn't statistically meaningful yet." }
         let adjKnown = momentCorrectedTStat > 0

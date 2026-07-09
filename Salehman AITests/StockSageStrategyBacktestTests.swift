@@ -55,6 +55,34 @@ struct StockSageStrategyBacktestTests {
         #expect(bt(trades: 200, t: 4.0, adj: 0).passesHonestSignificance)
     }
 
+    @Test func deflatedSharpeSealRequiresMeaningfulSample() {
+        // #8: the green DSR "PASS" seal (deflatedSharpeShowsPass) may light ONLY when the sample is
+        // statistically meaningful (≥100 trades). DSR.passes is dsr>0.95 and DSR populates at n≥4, so
+        // a high small-sample Sharpe can clear 0.95 — that must NOT light a green seal beside the
+        // "<100 trades, not meaningful yet" verdict. Mirrors the per-symbol PSR gate (round-g FIX-4).
+        func bt(trades: Int, dsr: Double) -> StrategyBacktest {
+            StrategyBacktest(symbolsTested: 1, symbolsWithTrades: 1, symbolsProfitable: 1,
+                             totalTrades: trades, wins: trades / 2, blendedWinRate: 0.5, avgR: 0.1,
+                             totalR: 1, worstDrawdownR: 1,
+                             deflatedSharpe: .init(psr: dsr, dsr: dsr, trials: 5), caveat: "x")
+        }
+        // DSR clears its 0.95 bar, but only 50 trades → seal WITHHELD (the load-bearing straddle:
+        // passes is true while deflatedSharpeShowsPass is false — a regression dropping `&& isSignificant`
+        // fails right here).
+        let thin = bt(trades: 50, dsr: 0.99)
+        #expect(thin.deflatedSharpe?.passes == true)   // the raw DSR bar IS cleared…
+        #expect(!thin.isSignificant)                    // …but the sample isn't meaningful…
+        #expect(!thin.deflatedSharpeShowsPass)          // …so the seal stays dark (#8).
+        // DSR clears the bar AND ≥100 trades → seal shows.
+        #expect(bt(trades: 150, dsr: 0.99).deflatedSharpeShowsPass)
+        // ≥100 trades but DSR below the bar → no seal (unchanged behaviour).
+        #expect(!bt(trades: 150, dsr: 0.50).deflatedSharpeShowsPass)
+        // No DSR computed at all → no seal.
+        #expect(!StrategyBacktest(symbolsTested: 1, symbolsWithTrades: 1, symbolsProfitable: 1,
+                                  totalTrades: 150, wins: 75, blendedWinRate: 0.5, avgR: 0.1,
+                                  totalR: 1, worstDrawdownR: 1, caveat: "x").deflatedSharpeShowsPass)
+    }
+
     @Test func pooledTStatFromTrades() {
         // No trades supplied → tStat 0 (default, behaviour unchanged).
         #expect(StockSageStrategyBacktest.aggregate([result(trades: 10, wins: 6, totalR: 5, maxDD: 3)]).tStat == 0)

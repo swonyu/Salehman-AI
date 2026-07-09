@@ -4618,19 +4618,30 @@ struct MarketsView: View {
                 // of "real edge" (StockSageDeflatedSharpe.Result.passes). The per-symbol panel shows
                 // PSR only (no selection-bias term); this panel shows both so the two read together.
                 if s.totalTrades > 0, let d = s.deflatedSharpe {
-                    let dpass = d.passes
+                    // #8 (mirrors round-g FIX-4 for the per-symbol PSR): the green DSR seal must not
+                    // sit beside this panel's own "<100 trades, not meaningful yet" verdict. DSR
+                    // populates at n≥4 and a high small-sample Sharpe can clear 0.95, so gate the
+                    // glyph/word/color on isSignificant too (deflatedSharpeShowsPass). The DSR NUMBER
+                    // still always shows — only the PASS seal/word is withheld until the sample is
+                    // statistically meaningful.
+                    let dpass = s.deflatedSharpeShowsPass
+                    let dWord = s.isSignificant ? (dpass ? "PASS (honest bar >95%)" : "UNPROVEN (honest bar >95%)")
+                                                : "UNPROVEN (sample too small — <100 trades)"
                     HStack(alignment: .firstTextBaseline, spacing: DS.Space.xs) {
                         Image(systemName: dpass ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                             .font(.system(size: mvFont10))
                         Text(String(format: "Deflated Sharpe (selection-bias haircut, ~%d variants tried): DSR %.0f%% — %@.",
-                                    d.trials, d.dsr * 100, dpass ? "PASS (honest bar >95%)" : "UNPROVEN (honest bar >95%)"))
+                                    d.trials, d.dsr * 100, dWord))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .font(.caption2)
                     .foregroundStyle(dpass ? DS.Palette.successSoft : DS.Palette.warningSoft)
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(String(format: "Deflated Sharpe, selection bias haircut for %d variants. DSR %.0f percent. %@.",
-                                               d.trials, d.dsr * 100, dpass ? "Passes the honest bar" : "Unproven, below honest bar"))
+                                               d.trials, d.dsr * 100,
+                                               dpass ? "Passes the honest bar"
+                                                     : (s.isSignificant ? "Unproven, below honest bar"
+                                                                        : "Unproven, sample too small under 100 trades")))
                     .help(StockSageDeflatedSharpe.caveat)
                 }
                 Text(s.caveat).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
