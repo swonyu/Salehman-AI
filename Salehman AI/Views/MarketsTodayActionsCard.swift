@@ -62,12 +62,12 @@ struct MarketsTodayActionsCard: View {
                 // F8 (2026-07-09): cross-reference the OTHER direction — this list's own #1 vs
                 // the global "Do this now" CTA's pick (a different lens: highest gross EV, not
                 // fastest EV/day). Copy-only; renders nothing when either is nil or they agree.
-                if let globalBestSymbol, let first = plans.first?.symbol, globalBestSymbol != first {
+                if let globalBestSymbol, let first = shownPlans.first?.symbol, globalBestSymbol != first {
                     Text("The 'Do this now' CTA leads with \(globalBestSymbol) instead — different lens (highest gross EV, not fastest EV/day).")
                         .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if executableOnly {
-                    Text("Executable now includes only rows that currently clear or caution on the pre-trade gate.")
+                    Text("Executable now includes only rows that currently clear or caution on the pre-trade gate and are fundable (≥1 share) at your account size.")
                         .font(.system(size: 8)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -387,8 +387,11 @@ struct MarketsTodayActionsCard: View {
             if let held = plan.heldShares { label += ", you hold \(numShares(held)) shares" }
             if let closed = plan.closedTradeCount { label += ", \(closed) closed trades in your journal" }
             // D1 (rotation-3 triage): spoken counterpart of the visible staleAsOf line above.
+            // F-review fix (2026-07-10, S5): no trailing period — every successor clause below
+            // prepends its own ". " separator (mirrors the crown-divergence hasSuffix(".") fix
+            // at MarketsView.swift ~4772); a trailing period here doubled up into "..".
             if let staleAsOf {
-                label += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering."
+                label += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering"
             }
             // F04-parity: nil gate ⇒ risk % wasn't supplied — mirror the sheet chip's a11y wording
             // ("Pre-trade gate: risk percent not set", MarketsView.swift ~5993) instead of forcing

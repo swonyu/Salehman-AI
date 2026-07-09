@@ -3533,6 +3533,12 @@ struct MarketsView: View {
         // cache-served idea whose price bar (`priceAsOf`) is not from today, even when
         // `generatedAt` itself is fresh (cache-served-as-fresh honesty gap).
         let boardIsStale = Self.cardIsStale(generatedAt: idea.generatedAt, now: Date(), priceAsOf: idea.priceAsOf)
+        // S3 (settle triage 2026-07-10): boardIsStale ORs two axes (analysis >4h OR price not
+        // from today) but the chip/a11y wording below used to claim only the analysis axis —
+        // split on the same axis D3 already uses for bestOpportunityCard/CTA (price takes
+        // wording priority when both fire, mirroring the `if let staleAsOf {} else if
+        // analysisStaleOnly {}` precedence there).
+        let priceIsStale = Self.staleAsOfPrice(idea.priceAsOf, now: Date()) != nil
         // QA-4+F1 (density rework): ONE seam for which conditional chips are
         // visible — see IdeaChipPlan's doc for the priority order + why the
         // action badge/EV chip stay uncounted. Computed once per card; both the
@@ -3564,8 +3570,8 @@ struct MarketsView: View {
                 if visibleChips.contains(.stale) {
                     Image(systemName: "clock.badge.exclamationmark")
                         .font(.system(size: mvFont10)).foregroundStyle(DS.Palette.warningSoft)
-                        .help("This idea's analysis is over 4h old — tap Refresh for a current read")
-                        .accessibilityLabel("This idea's analysis is stale — over 4 hours old")
+                        .help(priceIsStale ? "This idea's price is not from today — tap Refresh for a current read" : "This idea's analysis is over 4h old — tap Refresh for a current read")
+                        .accessibilityLabel(priceIsStale ? "This idea's price is stale — not from today" : "This idea's analysis is stale — over 4 hours old")
                 }
                 // Risk warnings first: earnings and floor before EV.
                 if visibleChips.contains(.earnings) {
@@ -3855,7 +3861,7 @@ struct MarketsView: View {
             // The explicit label on a .combine element REPLACES the synthesized child labels,
             // so the staleness clock badge's own accessibilityLabel is never spoken — convey
             // it here (the opacity dimming is invisible to VoiceOver too).
-            if boardIsStale { label += ", this idea's analysis is over 4 hours old" }
+            if boardIsStale { label += priceIsStale ? ", this idea's price is not from today" : ", this idea's analysis is over 4 hours old" }
             // A11Y-01 (2026-07-07 fix round; QA-4+F1 2026-07-07 fix round): every remaining
             // badge/chip/metric below this element is also silenced by .combine — mirror EACH
             // render condition above in the SAME order they appear on screen, reusing the
@@ -3891,6 +3897,13 @@ struct MarketsView: View {
                 label += String(format: ", velocity %+.3fR per day", vel)
             }
             label += ", price \(adaptivePrice(idea.price))"
+            // S4 (settle triage 2026-07-10, A11Y-01 contract): round-J's per-idea source tag
+            // ("Yahoo · 31m" / "cached · 3h" / "sample") is pixels-only — this .combine element's
+            // explicit label replaces every child label, so VoiceOver never heard it. Reuses the
+            // SAME call the render site makes (~3746) so it can never desync from the pixels.
+            if let src = Self.sourceTagLabel(isSampleData: store.isSampleData, loadedFromCache: store.loadedFromCache, priceAsOf: idea.priceAsOf, now: Date()) {
+                label += " (\(src))"
+            }
             if let stop = a.stopPrice, idea.price > 0 {
                 let stopPct = abs(idea.price - stop) / idea.price * 100
                 label += ", stop \(adaptivePrice(stop)) (\(String(format: "%.1f%%", stopPct)))"
@@ -4067,10 +4080,14 @@ struct MarketsView: View {
                 var s = "Best opportunity: \(idea.symbol), \(idea.advice.action.rawValue), estimated EV \(String(format: "%.2f", ev.evR)) R gross, entry \(adaptivePrice(idea.price))"
                 if let stop = idea.advice.stopPrice { s += ", stop \(adaptivePrice(stop))" }
                 if let target = idea.advice.targetPrice { s += ", target \(adaptivePrice(target))" }
+                // F-review fix (2026-07-10, S5): no trailing period on either clause — every
+                // successor below prepends its own ". " separator (same class as the
+                // crown-divergence hasSuffix(".") fix a few lines down); a trailing period here
+                // doubled up into "..".
                 if let staleAsOf {
-                    s += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering."
+                    s += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering"
                 } else if analysisStaleOnly {
-                    s += ". Analysis over 4h old — re-scan for a current read."
+                    s += ". Analysis over 4h old — re-scan for a current read"
                 }
                 if let firstScanCaption { s += ". \(firstScanCaption)" }
                 if let ep = store.earnings[idea.symbol.uppercased()], ep.isWarning {
@@ -4208,7 +4225,7 @@ struct MarketsView: View {
                              + (cardGate?.decision == .blocked ? " — gate: do NOT trade at this risk %" : ""))
                             .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(cardGate?.decision == .blocked ? DS.Palette.dangerSoft
-                                             : (ps.pctOfAccount > 100 ? DS.Palette.warningSoft : DS.Palette.successSoft))
+                                             : (ps.pctOfAccount > 100 || ps.shares == 0 ? DS.Palette.warningSoft : DS.Palette.successSoft))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Text(MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix)
@@ -4732,13 +4749,17 @@ struct MarketsView: View {
                 mode: .equityExecutableFirst, max: 1).first?.symbol
             let crownDivergenceSuffix = (todayFirstSymbol != nil && todayFirstSymbol != idea.symbol)
                 ? " Today's plan leads with \(todayFirstSymbol!) — different lens." : ""
-            let sizeInfo: (text: String, isWarning: Bool) = {
+            // Settle S1 review fix: isWarning drives the TINT (over-account OR unfundable 0-share);
+            // exceedsAccount alone keys the spoken "exceeds account balance" claim — a $0/0-share
+            // position does not exceed the balance, and summaryLine already speaks its honest
+            // "below the 1-share minimum" suffix (honesty floor: never speak a false clause).
+            let sizeInfo: (text: String, isWarning: Bool, exceedsAccount: Bool) = {
                 if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                    let rp = StockSageInput.percent(sizerRiskPct),
                    let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
-                    return (StockSagePositionSizer.summaryLine(ps, riskPct: rp), ps.pctOfAccount > 100)
+                    return (StockSagePositionSizer.summaryLine(ps, riskPct: rp), ps.pctOfAccount > 100 || ps.shares == 0, ps.pctOfAccount > 100)
                 }
-                return ("Set account to size — add one in the position sizer below.", false)
+                return ("Set account to size — add one in the position sizer below.", false, false)
             }()
             let accessibilityText: String = {
                 var s = "Do this now: \(idea.symbol), \(idea.advice.action.rawValue), estimated EV \(String(format: "%.2f", ev.evR)) R gross, entry \(adaptivePrice(idea.price))"
@@ -4746,12 +4767,12 @@ struct MarketsView: View {
                 // C1 wave: the size line carries the loss-not-profit honesty tail and the
                 // >100%-of-account warning tint — VoiceOver gets the same facts.
                 s += ", " + sizeInfo.text
-                if sizeInfo.isWarning { s += ". Size warning: position exceeds account balance" }
+                if sizeInfo.exceedsAccount { s += ". Size warning: position exceeds account balance" }
                 if let variance { s += String(format: ", typical 24-hour range plus or minus %.1f percent", variance) }
                 if let staleAsOf {
-                    s += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering."
+                    s += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering"
                 } else if analysisStaleOnly {
-                    s += ". Analysis over 4h old — re-scan for a current read."
+                    s += ". Analysis over 4h old — re-scan for a current read"
                 }
                 if let g = ctaGate {
                     s += ". Pre-trade gate: \(g.decision == .blocked ? "do not trade" : g.decision.rawValue)."
