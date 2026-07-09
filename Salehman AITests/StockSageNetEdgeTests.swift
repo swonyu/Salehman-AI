@@ -201,4 +201,42 @@ struct StockSageNetEdgeTests {
         #expect(e.breakEvenWinRate! > 0.2)            // capped ≈ 0.275, not an absurd ≈0.014 bar
         #expect(!e.clearsCost(estWinProb: 0.05))      // a 5% win rate must NOT clear a real 50:1-capped bar
     }
+
+    // MARK: - costsDisplayLabel (F-round-j FIX 1: DISPLAY-only band for crypto)
+
+    @Test func costsDisplayLabelShowsFlatPointForNonCrypto() {
+        // Hand-derived from the literal defaultCosts constants (spec, not the code under test):
+        // FX 4+3=7bps, index 5+3=8bps, intl 20+10=30bps, US large-cap 8+5=13bps.
+        #expect(NE.costsDisplayLabel(forSymbol: "EURUSD=X", advDollar: nil) == "~7bps est. FX")
+        #expect(NE.costsDisplayLabel(forSymbol: "^GSPC", advDollar: nil) == "~8bps est. index")
+        #expect(NE.costsDisplayLabel(forSymbol: "2222.SR", advDollar: nil) == "~30bps est. intl")
+        #expect(NE.costsDisplayLabel(forSymbol: "AAPL", advDollar: nil) == "~13bps est. US large-cap")
+    }
+
+    @Test func costsDisplayLabelShowsTierAwareBandForCrypto() {
+        // Hand-derived from the literal CryptoCostEstimate band constants (the wave-2 plan's
+        // hand-derivation, restated in the source comment above cryptoCosts): major 21–54,
+        // large 34–86, mid 70–180, thin 160–440. Tier selection: BTC/ETH → major; else by
+        // thinBelow=2_000_000 / deepAbove=50_000_000 on advDollar; nil advDollar → mid (never
+        // assumed deep — the honesty floor `cryptoTier` already documents and this test pins).
+        #expect(NE.costsDisplayLabel(forSymbol: "BTC-USD", advDollar: nil) == "~21–54bps est. crypto")
+        #expect(NE.costsDisplayLabel(forSymbol: "ETH-USD", advDollar: 1) == "~21–54bps est. crypto")   // major overrides ADV
+        #expect(NE.costsDisplayLabel(forSymbol: "SOL-USD", advDollar: 60_000_000) == "~34–86bps est. crypto")     // large
+        #expect(NE.costsDisplayLabel(forSymbol: "SOL-USD", advDollar: nil) == "~70–180bps est. crypto")           // unknown ADV → mid, not deep
+        #expect(NE.costsDisplayLabel(forSymbol: "SOL-USD", advDollar: 10_000_000) == "~70–180bps est. crypto")    // mid
+        #expect(NE.costsDisplayLabel(forSymbol: "ALT-USD", advDollar: 500_000) == "~160–440bps est. crypto")      // thin — the honesty-critical case
+        // The flat 70bps default must NEVER appear for crypto now that the band exists — this is
+        // the whole point of the fix (a thin alt is not the same risk as BTC).
+        #expect(!NE.costsDisplayLabel(forSymbol: "ALT-USD", advDollar: 500_000).contains("70bps"))
+    }
+
+    @Test func costsDisplayLabelNeverChangesTheUnderlyingGateMath() {
+        // FIX 1 is DISPLAY-only: defaultCosts (feeds evaluate/clearsCost/the gate) must stay
+        // byte-identical regardless of what costsDisplayLabel renders.
+        let before = NE.defaultCosts(forSymbol: "BTC-USD")
+        _ = NE.costsDisplayLabel(forSymbol: "BTC-USD", advDollar: 500_000)
+        let after = NE.defaultCosts(forSymbol: "BTC-USD")
+        #expect(before == after)
+        #expect(after.roundTripBps == 70)   // gate math untouched
+    }
 }

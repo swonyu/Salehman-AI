@@ -234,4 +234,20 @@ extension StockSageNetEdge {
                                       assetClass: "crypto", isEstimate: true)
         }
     }
+
+    /// DISPLAY-ONLY label for the round-trip cost line: a single point ("~13bps est. US
+    /// large-cap") everywhere EXCEPT crypto, where a flat point is dishonest (BTC and a thin alt
+    /// share one 70bps default) — crypto gets the tier-aware LOW–HIGH band this file already
+    /// computes ("~160–440bps est. crypto"). Does not change `defaultCosts`, `roundTripBps`, or
+    /// any value feeding the gate/ranking math — those still read `defaultCosts(forSymbol:)`
+    /// untouched. Pure; nil `advDollar` still yields a band (honesty floor: unknown liquidity
+    /// tiers to `.mid`, per `cryptoTier`, never to "no band").
+    nonisolated static func costsDisplayLabel(forSymbol symbol: String, advDollar: Double?) -> String {
+        let costs = defaultCosts(forSymbol: symbol)
+        guard costs.assetClass == "crypto" else {
+            return "~\(Int(costs.roundTripBps))bps est. \(costs.assetClass)"
+        }
+        let band = cryptoCosts(forSymbol: symbol, advDollar: advDollar)
+        return "~\(Int(band.estimateLowBps))–\(Int(band.estimateHighBps))bps est. crypto"
+    }
 }

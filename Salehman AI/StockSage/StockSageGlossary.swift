@@ -44,7 +44,10 @@ enum MoneyVelocityCopy {
     /// The forward growth projection's caveat — the highest-risk honesty surface.
     nonisolated static let growthProjection = "Assumes your past edge persists — it may not, and real variance lowers this. NOT a prediction."
     /// Compact tail for the Today-tab "Best bet" stat tile (rendered after the EV figure).
-    nonisolated static let bestBetTile = "EV · estimate"
+    /// "gross" qualifier added (round-J 2026-07-09, re-landed) — every other EV surface labels
+    /// gross/net; this tile's underlying figure (best.ev.evR, TodayView) is gross, so the tag
+    /// must say so too.
+    nonisolated static let bestBetTile = "gross EV · estimate"
     /// TOM-tilt disclosure suffix for every `bestOpportunity`-CROWNED surface (C1 wave HIGH,
     /// extended to the Today tile in-turn 2026-07-09): the owner's KEEP ratification is
     /// premised on UI-disclosure, and the tilt crowns on every sort and tab. Centralized here

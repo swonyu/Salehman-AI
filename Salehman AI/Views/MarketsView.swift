@@ -3690,7 +3690,14 @@ struct MarketsView: View {
                     ideaMetric("Vel.", String(format: "%+.3fR/d", vel), color: DS.Palette.successSoft)
                         .help("Gross EV/day. The board ORDERS by net-adjusted growth rate (costs + variance haircuts), which can differ — two cards with similar gross Vel. may rank apart.")
                 }
-                ideaMetric("Price", adaptivePrice(idea.price))
+                // F-round-j FIX 2: per-idea provenance tag, subtle caption under the price —
+                // reuses the SAME isSampleData/loadedFromCache truth the top banner keys on, so
+                // it can never contradict it; live path ages THIS symbol's own priceAsOf.
+                if let src = Self.sourceTagLabel(isSampleData: store.isSampleData, loadedFromCache: store.loadedFromCache, priceAsOf: idea.priceAsOf, now: Date()) {
+                    ideaMetric("Price", adaptivePrice(idea.price), sub: src, subColor: .secondary)
+                } else {
+                    ideaMetric("Price", adaptivePrice(idea.price))
+                }
                 if let stop = a.stopPrice, idea.price > 0 {
                     // Stop distance % in parentheses — glanceable risk without
                     // opening the sheet. price > 0 guard matches rewardRisk()'s own pattern — a
@@ -5929,7 +5936,12 @@ struct MarketsView: View {
                         let c = ne.costErodesEdge ? DS.Palette.warningSoft : DS.Palette.textSecondary
                         // F27 (factored): same logic as fullPlanText, now via the shared helper.
                         let financingNote = StockSageExpectedValue.financingNoteSuffix(rate: finRate, days: finDays)
-                        let pre = "After ~\(Int(costs.roundTripBps))bps est. \(costs.assetClass) costs\(financingNote): "
+                        // DISPLAY-only: crypto shows the engine's tier-aware LOW–HIGH band instead
+                        // of the flat 70bps point (a thin alt is honestly 160–440bps); every other
+                        // asset class is byte-identical to before. Does not touch `ne`/`costs`
+                        // (still `defaultCosts`) — only this label text.
+                        let costLabel = StockSageNetEdge.costsDisplayLabel(forSymbol: idea.symbol, advDollar: store.liquidity[idea.symbol.uppercased()]?.avgDollarVolume)
+                        let pre = "After \(costLabel) costs\(financingNote): "
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "scissors").font(.system(size: mvFont11)).foregroundStyle(c)
                             // Gross→net fusion (UI wave #1): when both resolve, render as ONE Text unit
@@ -5982,7 +5994,10 @@ struct MarketsView: View {
                             winProb: ev.winProbEstimate),
                            let netR = ne.netExpectancyR {
                             let financingNote = StockSageExpectedValue.financingNoteSuffix(rate: finRate, days: finDays)
-                            let deductionLabel = "Round-trip costs (~\(Int(costs.roundTripBps))bps \(costs.assetClass))\(financingNote)"
+                            // DISPLAY-only band for crypto — see costsDisplayLabel above; same
+                            // reasoning, same non-crypto byte-identical fallback.
+                            let costLabel = StockSageNetEdge.costsDisplayLabel(forSymbol: idea.symbol, advDollar: store.liquidity[idea.symbol.uppercased()]?.avgDollarVolume)
+                            let deductionLabel = "Round-trip costs (\(costLabel))\(financingNote)"
                             let netColor = netR < 0 ? DS.Palette.dangerSoft : DS.Palette.successSoft
                             // F3 dedup: Gross-expectancy row label carries the "(~N% est. win ×
                             // R:R)" annotation the deleted standalone EV sentence used to print —
@@ -6750,6 +6765,28 @@ struct MarketsView: View {
         guard let priceAsOf, StockSageScanChunking.utcDayKey(priceAsOf) != StockSageScanChunking.utcDayKey(now)
         else { return nil }
         return priceAsOf
+    }
+
+    /// DISPLAY-ONLY per-idea provenance tag ("Yahoo · 12m" / "cached · 3h" / "sample") — the
+    /// card already tells you the price STATE (live/stale/cached badges above); this adds the
+    /// SOURCE, reusing the SAME three truths the top banner keys on (`isSampleData`,
+    /// `loadedFromCache`) so a row can never contradict the banner. Sample and cache are
+    /// GLOBAL board states — checked first, exactly mirroring `sampleBanner`/`cachedBanner`'s own
+    /// precedence — so every row on a sample/cached board reads the same as the banner. Only the
+    /// live path is per-idea: `priceAsOf` ages this ONE symbol's own last bar. Age uses the same
+    /// m/h/d thresholds as `cachedBannerText`. nil `priceAsOf` on a live board → nil (HONESTY_FLOOR:
+    /// unknown renders nothing, never a fabricated "0m").
+    static func sourceTagLabel(isSampleData: Bool, loadedFromCache: Bool, priceAsOf: Date?, now: Date) -> String? {
+        if isSampleData { return "sample" }
+        if loadedFromCache { return "cached" }
+        guard let priceAsOf else { return nil }
+        let secs = now.timeIntervalSince(priceAsOf)
+        let age: String
+        if secs < 60 { age = "just now" }
+        else if secs < 3600 { age = "\(Int(secs / 60))m" }
+        else if secs < 86_400 { age = "\(Int(secs / 3600))h" }
+        else { age = "\(Int(secs / 86_400))d" }
+        return "Yahoo · \(age)"
     }
 
     private func signalBlocks(_ value: Double, color: Color) -> some View {
