@@ -3899,6 +3899,8 @@ struct MarketsView: View {
             // honest than the export. Honest-nil (F04): no chip when risk % isn't set.
             let cardGate: TradeGateVerdict? = parsedRiskFraction != nil
                 ? tradeGateVerdict(for: idea, inputs: tradeGateInputs(for: idea)) : nil
+            // PERF: netEVR feeds both the visible sub metric and the spoken label — once.
+            let cardNetEV = StockSageExpectedValue.netEVR(for: idea, calibration: store.convictionCalibration)
             // Spoken full order (precomputed OUTSIDE the ViewBuilder so the multi-clause concat does
             // not tip the card body over the type-checker budget). Earnings warning and over-size
             // caveat are folded in here so VoiceOver hears them (the .accessibilityLabel below
@@ -3925,7 +3927,7 @@ struct MarketsView: View {
                 // VO walk 2026-07-09: the label override silences every child Text — the net
                 // estimate, the sized order (the CTA used to speak it on this tab before the
                 // dedup), and the tilt disclosure must be IN the label or they are pixels-only.
-                if let net = StockSageExpectedValue.netEVR(for: idea, calibration: store.convictionCalibration) {
+                if let net = cardNetEV {
                     s += String(format: ", about %+.2f R net estimated", net)
                 }
                 if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
@@ -3964,7 +3966,7 @@ struct MarketsView: View {
                         Text(idea.symbol).font(.system(size: mvFont16, weight: .bold, design: .rounded)).foregroundStyle(.white)
                         ideaMetric("Est. EV", String(format: "%+.2fR (gross)", ev.evR),
                                    color: DS.Palette.successSoft,
-                                   sub: StockSageExpectedValue.netEVR(for: idea, calibration: store.convictionCalibration).map { String(format: "≈%+.2fR net est.", $0) },
+                                   sub: cardNetEV.map { String(format: "≈%+.2fR net est.", $0) },
                                    subColor: .secondary)
                             .help(StockSageGlossary.explain(.ev))
                         ideaMetric("R:R (gross)", String(format: "%.1f:1", ev.rewardR))
@@ -4119,10 +4121,11 @@ struct MarketsView: View {
                         .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     // Hierarchy lens HIGH (2026-07-09): the plan's TOTAL capital requirement was
                     // invisible — say it whenever the full deployment exceeds the account.
-                    if plan.positions.reduce(0.0, { $0 + $1.notional }) > plan.account {
+                    let planTotalNotional = plan.positions.reduce(0.0) { $0 + $1.notional }   // PERF: once, not 3×
+                    if planTotalNotional > plan.account {
                         Text(String(format: "⚠︎ Deploying the FULL plan needs ≈$%.0f of notional on a $%.0f account (%.0f%%) — deploy partially or with margin; each line still risks only its stated %% at its stop.",
-                                    plan.positions.reduce(0.0, { $0 + $1.notional }), plan.account,
-                                    plan.positions.reduce(0.0, { $0 + $1.notional }) / plan.account * 100))
+                                    planTotalNotional, plan.account,
+                                    planTotalNotional / plan.account * 100))
                             .font(.system(size: mvFont9, weight: .medium)).foregroundStyle(DS.Palette.warningSoft)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -4423,6 +4426,12 @@ struct MarketsView: View {
             // Round-H: same stale-price gap as bestOpportunityCard — this CTA renders the
             // identical sized/placeable order globally, not just on the Ideas tab.
             let staleAsOf = Self.staleAsOfPrice(idea.priceAsOf, now: Date())
+            // PERF (2026-07-09 cleanup of this day's own waves): compute once per body
+            // evaluation — the gate verdict was computed TWICE (gateLabel + gateColor
+            // closures) and netEVR twice (evText + accessibilityText).
+            let ctaGate: TradeGateVerdict? = parsedRiskFraction != nil
+                ? tradeGateVerdict(for: idea, inputs: tradeGateInputs(for: idea)) : nil
+            let ctaNetEV = StockSageExpectedValue.netEVR(for: idea, calibration: store.convictionCalibration)
             let sizeInfo: (text: String, isWarning: Bool) = {
                 if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                    let rp = StockSageInput.percent(sizerRiskPct),
@@ -4442,11 +4451,11 @@ struct MarketsView: View {
                 if let staleAsOf {
                     s += ". Price as of \(staleAsOf.formatted(.relative(presentation: .named))) — not live; re-price before ordering."
                 }
-                if parsedRiskFraction != nil, let g = tradeGateVerdict(for: idea, inputs: tradeGateInputs(for: idea)) {
+                if let g = ctaGate {
                     s += ". Pre-trade gate: \(g.decision == .blocked ? "do not trade" : g.decision.rawValue)."
                 }
                 // VO walk 2026-07-09: speak the net estimate + tilt disclosure (pixels-only otherwise).
-                if let net = StockSageExpectedValue.netEVR(for: idea, calibration: store.convictionCalibration) {
+                if let net = ctaNetEV {
                     s += String(format: ", about %+.2f R net estimated", net)
                 }
                 if !tomTiltDisclosureSuffix.isEmpty {
@@ -4465,18 +4474,10 @@ struct MarketsView: View {
                 sizeText: sizeInfo.text,
                 sizeIsWarning: sizeInfo.isWarning,
                 evText: String(format: "Est. EV %+.2fR (gross)", ev.evR)
-                    + (StockSageExpectedValue.netEVR(for: idea, calibration: store.convictionCalibration).map { String(format: " · ≈%+.2fR net est.", $0) } ?? ""),
-                gateLabel: {
-                    guard parsedRiskFraction != nil,
-                          let g = tradeGateVerdict(for: idea, inputs: tradeGateInputs(for: idea)) else { return nil }
-                    return g.decision == .blocked ? "DO NOT TRADE" : g.decision.rawValue.uppercased()
-                }(),
-                gateColor: {
-                    guard parsedRiskFraction != nil,
-                          let g = tradeGateVerdict(for: idea, inputs: tradeGateInputs(for: idea)) else { return .clear }
-                    return g.decision == .blocked ? DS.Palette.danger
-                         : (g.decision == .caution ? DS.Palette.warningSoft.opacity(0.85) : DS.Palette.successSoft.opacity(0.85))
-                }(),
+                    + (ctaNetEV.map { String(format: " · ≈%+.2fR net est.", $0) } ?? ""),
+                gateLabel: ctaGate.map { $0.decision == .blocked ? "DO NOT TRADE" : $0.decision.rawValue.uppercased() },
+                gateColor: ctaGate.map { $0.decision == .blocked ? DS.Palette.danger
+                         : ($0.decision == .caution ? DS.Palette.warningSoft.opacity(0.85) : DS.Palette.successSoft.opacity(0.85)) } ?? .clear,
                 caveatText: MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix,
                 varianceText: variance.map { String(format: "Typical 24h range ±%.1f%% — size down for 24/7.", $0) },
                 staleAsOfText: staleAsOf.map { "⚠︎ Price as of \($0.formatted(.relative(presentation: .named))) — not live; re-price before ordering." },
