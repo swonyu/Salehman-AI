@@ -205,11 +205,16 @@ struct StockSageNetEdgeTests {
     // MARK: - costsDisplayLabel (F-round-j FIX 1: DISPLAY-only band for crypto)
 
     @Test func costsDisplayLabelShowsFlatPointForNonCrypto() {
-        // Hand-derived from the literal defaultCosts constants (spec, not the code under test):
-        // FX 4+3=7bps, index 5+3=8bps, intl 20+10=30bps, US large-cap 8+5=13bps.
+        // Hand-derived from the RATIFIED cost table (spec, not the code under test):
+        // FX 4+3=7bps; index 5+3=8bps; generic intl 20+10=30bps; US large-cap 8+5=13bps;
+        // .SR Tadawul 20+10+30fee=60bps and EM-suffix 20+10+30fee=60bps per the 2026-07-09
+        // re-ratification (RESEARCH_2026-07-03_current_era_costs.md §2 + gated-scope §1) —
+        // round-J's original fixture predated those tiers (caught by the re-land re-gate).
         #expect(NE.costsDisplayLabel(forSymbol: "EURUSD=X", advDollar: nil) == "~7bps est. FX")
         #expect(NE.costsDisplayLabel(forSymbol: "^GSPC", advDollar: nil) == "~8bps est. index")
-        #expect(NE.costsDisplayLabel(forSymbol: "2222.SR", advDollar: nil) == "~30bps est. intl")
+        #expect(NE.costsDisplayLabel(forSymbol: "SAP.DE", advDollar: nil) == "~30bps est. intl")
+        #expect(NE.costsDisplayLabel(forSymbol: "2222.SR", advDollar: nil) == "~60bps est. intl (Tadawul)")
+        #expect(NE.costsDisplayLabel(forSymbol: "RELIANCE.NS", advDollar: nil) == "~60bps est. intl (EM)")
         #expect(NE.costsDisplayLabel(forSymbol: "AAPL", advDollar: nil) == "~13bps est. US large-cap")
     }
 
