@@ -3613,9 +3613,13 @@ struct MarketsView: View {
             // Rationale first, regime token last — regime provides context
             // but action badge already carries the directional signal; the first rationale bullet
             // is the most actionable skip/open signal and deserves the first fixation.
+            // lineLimit(2) is a deliberate board-density clamp — but a clamped bullet must
+            // never be UNREACHABLE (2026-07-09, harvested Copilot HELD finding #3): the full
+            // rationale (all bullets, not just the displayed prefix(2)) is one hover away.
             Text(a.rationale.prefix(2).joined(separator: " · ") + " · " + a.regime.rawValue)
                 .font(.caption).foregroundStyle(.secondary)
                 .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                .help(a.rationale.joined(separator: "\n") + "\n\nRegime: " + a.regime.rawValue)
         }
         .padding(IdeaSpace.cardPad)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -4009,7 +4013,10 @@ struct MarketsView: View {
                             ideaMetric("Shares", "\(p.shares)")
                             ideaMetric("At risk", String(format: "$%.0f", p.dollarsAtRisk), color: DS.Palette.warningSoft)
                             ideaMetric("Notional", String(format: "$%.0f", p.notional))
-                            ideaMetric("EV", String(format: "%+.2fR (gross)", p.evR), color: DS.Palette.successSoft)
+                            // "Est. EV" (2026-07-09, harvested Copilot HELD finding #2): same
+                            // estimate class as the best-opp card's "Est. EV" — an unlabeled "EV"
+                            // here read as a firmer number than the identical figure one card up.
+                            ideaMetric("Est. EV", String(format: "%+.2fR (gross)", p.evR), color: DS.Palette.successSoft)
                             Spacer(minLength: 0)
                         }
                     }
@@ -4305,7 +4312,7 @@ struct MarketsView: View {
                 stopText: idea.advice.stopPrice.map { "stop \(adaptivePrice($0))" },
                 sizeText: sizeInfo.text,
                 sizeIsWarning: sizeInfo.isWarning,
-                evText: String(format: "EV %+.2fR (gross)", ev.evR),
+                evText: String(format: "Est. EV %+.2fR (gross)", ev.evR),   // "Est. EV" everywhere (2026-07-09 label sweep)
                 caveatText: MoneyVelocityCopy.bestOpportunity,
                 varianceText: variance.map { String(format: "Typical 24h range ±%.1f%% — size down for 24/7.", $0) },
                 staleAsOfText: staleAsOf.map { "⚠︎ Price as of \($0.formatted(.relative(presentation: .named))) — not live; re-price before ordering." },
@@ -6668,7 +6675,7 @@ struct BestOpportunityActionCard: View {
     let stopText: String?        // "stop 178.50"
     let sizeText: String         // sized line OR "Set account to size…"
     let sizeIsWarning: Bool      // true when the sized notional exceeds the account
-    let evText: String           // "EV +0.62R"
+    let evText: String           // "Est. EV +0.62R (gross)"
     let caveatText: String       // MoneyVelocityCopy.bestOpportunity — the honesty tail
     let varianceText: String?    // crypto-only 24h range line; nil for equities
     /// Round-H: non-nil ⇒ entry/stop/size above are off a stale (prior-UTC-day) cache price —
