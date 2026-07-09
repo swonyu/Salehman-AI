@@ -1,0 +1,11 @@
+# Computed 2026-07-09 by profitability-quality SURVEY agent. Inputs in same dir: qmj_monthly.xlsx (AQR author dataset, USA col, 1957.07-2026.04), QUAL.json/SPY.json (Yahoo v8 chart, 1mo, adjclose incl dividends).
+series,window,n_months,ann_return_pct,ann_vol_pct,sharpe,t_stat
+AQR_USA_QMJ_longshort,1957.07-2026.04,826,+3.87,7.87,0.49,4.07
+AQR_USA_QMJ_longshort,1957.07-2012.12_prepub,666,+4.17,7.45,0.56,4.17
+AQR_USA_QMJ_longshort,2013.01-2026.04_postpub,160,+2.62,9.46,0.28,1.01
+AQR_USA_QMJ_longshort,2015.01-2026.04,136,+2.45,9.96,0.25,0.83
+AQR_USA_QMJ_longshort,2020.01-2026.04,76,-0.60,11.72,-0.05,-0.13
+series,window,years,QUAL_CAGR_pct,SPY_CAGR_pct,excess_pct_yr,tracking_error_pct,info_ratio
+QUAL_vs_SPY_longonly_live,2015.01-2026.07,11.5,13.37,14.10,-0.73,2.95,-0.21
+QUAL_vs_SPY_longonly_live,2013.08-2026.07,12.9,13.89,14.46,-0.57,2.91,-0.16
+QUAL_vs_SPY_longonly_live,2020.01-2026.07,6.5,14.18,15.56,-1.38,3.46,-0.33
