@@ -91,8 +91,15 @@ enum StockSageAdvisor {
         /// Turn-of-month (TOM) ranking tilt — ACTIVATED 2026-07-09 by explicit owner direction
         /// ("WIRE ACTIVATE"), after the same-day research chain (probe → sweep → max-t → holdout →
         /// LOOMO → nonparam → exact sign-flip → cost-stress → LOSO, all indexed in research/INDEX.md)
-        /// recorded the evidence as INTERIM/underpowered on the 1y cache horizon. Activation is an
-        /// owner call, not an evidence promotion — the research lane stays OPEN.
+        /// recorded the evidence as INTERIM/underpowered on the 1y cache horizon.
+        ///
+        /// RATIFIED 2026-07-09 (later same day, owner chose option "a" with the powered evidence in
+        /// hand): the multi-year panel (10 ETFs × 10y, n=120 — RESEARCH_2026-07-09_tom_etf_multiyear_panel.md)
+        /// returned POWERED NULL (locked-config DSR 0.831, effect ≈0 in 2021–26), and the owner ruled
+        /// KEEP — the tilt stays on as a deliberate, DISCLOSED owner preference, explicitly NOT an
+        /// evidence promotion. It stays harm-bounded by construction: capped ±0.03, ≥3-sample
+        /// reliability-weighted, |t|<1 noise-gated, direction-aware, and disclosed in the ideas header.
+        /// The TOM research lane's multi-year exit clause is ANSWERED (lane closed).
         ///
         /// Gates ONLY `StockSageExpectedValue.seasonalityRankBonus` — a small additive rank tilt in
         /// `rankByEV` + `bestOpportunity` (velocity surfaces exempt). There is intentionally still NO

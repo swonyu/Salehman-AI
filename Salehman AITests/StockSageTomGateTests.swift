@@ -3,8 +3,9 @@ import Foundation
 @testable import Salehman_AI
 
 // TOM state pin. History: shipped as a default-OFF status lock (2026-07-09 morning, research
-// chain underpowered), then ACTIVATED the same day by explicit owner direction ("WIRE
-// ACTIVATE") — an owner call, not an evidence promotion; the research lane stays OPEN.
+// chain underpowered), ACTIVATED the same day by explicit owner direction ("WIRE ACTIVATE"),
+// then RATIFIED KEEP later that day with the powered-NULL multi-year panel in hand (owner
+// option "a" — a deliberate disclosed preference, not an evidence promotion; TOM lane CLOSED).
 // This suite pins the RATIFIED state so any silent flip (either direction) fails loudly.
 //
 // Every test acquires `TomFlagTestLock` (2026-07-09 review fix): the flag is a process-global
@@ -16,7 +17,7 @@ struct StockSageTomGateTests {
         TomFlagTestLock.lock.lock()
         defer { TomFlagTestLock.lock.unlock() }
         #expect(StockSageAdvisor.turnOfMonthEnabled == true,
-                "TOM was owner-activated 2026-07-09 (\"WIRE ACTIVATE\"); changing this default is an owner decision — update this pin only with a cited owner order")
+                "TOM was owner-activated 2026-07-09 (\"WIRE ACTIVATE\") and RATIFIED KEEP the same day with the powered-NULL multi-year panel in hand (option \"a\" — a deliberate disclosed preference, not an evidence promotion); changing this default is an owner decision — update this pin only with a cited owner order")
     }
 
     @Test func seasonalityBonusIsInertWhenFlagIsOff() {
