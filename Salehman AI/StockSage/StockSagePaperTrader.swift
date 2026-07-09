@@ -232,9 +232,13 @@ final class StockSagePaperTradeStore: ObservableObject {
         save()
     }
 
-    func remove(_ id: UUID) { trades.removeAll { $0.id == id }; save() }
+    // Deletions are explicit user intent — they BYPASS the reconciling save below (a merged
+    // save would resurrect the removed record from disk). ponytail: no tombstones — a
+    // CONCURRENT process's next merged save can still resurrect a removed trade; add
+    // tombstoned ids if removal-under-concurrency ever matters.
+    func remove(_ id: UUID) { trades.removeAll { $0.id == id }; save(reconciling: false) }
     /// Owner "clear paper history" — wipes the paper record only (the real journal is untouched).
-    func reset() { trades = []; save() }
+    func reset() { trades = []; save(reconciling: false) }
 
     private func load() {
         guard let data = defaults.data(forKey: key),
@@ -242,7 +246,30 @@ final class StockSagePaperTradeStore: ObservableObject {
         trades = decoded
     }
 
-    private func save() {
+    /// LOST-UPDATE FIX (2026-07-09 — found from LIVE data, not review: GE/SAN.MC/O39.SI each
+    /// carried TWO open trades while the store held ZERO closes. Impossible in one process —
+    /// step() only re-opens a symbol after a close — so a SECOND app instance (the owner's app
+    /// and QA launches share this Mac) had clobbered the whole-array key with its stale
+    /// in-memory copy, resurrecting closed trades as open and losing the closes forever.
+    /// Reconcile with the on-disk truth before writing:
+    ///   • per id, a CLOSED record beats an open one (a close is terminal — markToMarket only
+    ///     ever moves open→closed, and `isOpen` is computed from `closedAt`);
+    ///   • ids this process has never seen (another process's opens) are preserved, appended.
+    /// Deletions pass `reconciling: false` (see remove/reset).
+    private func save(reconciling: Bool = true) {
+        if reconciling,
+           let data = defaults.data(forKey: key),
+           let disk = try? JSONDecoder().decode([TradeRecord].self, from: data) {
+            var mineIds = Set(trades.map(\.id))
+            for d in disk {
+                if let i = trades.firstIndex(where: { $0.id == d.id }) {
+                    if trades[i].isOpen && !d.isOpen { trades[i] = d }   // disk close wins
+                } else if !mineIds.contains(d.id) {
+                    trades.append(d)                                     // foreign trade — never drop
+                    mineIds.insert(d.id)
+                }
+            }
+        }
         if let data = try? JSONEncoder().encode(trades) {
             defaults.set(data, forKey: key)
         }

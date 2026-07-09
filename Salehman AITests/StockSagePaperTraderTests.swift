@@ -400,4 +400,60 @@ struct StockSagePaperTraderTests {
         #expect(fs.deflated.dsr == fs.deflated.psr)         // trials:1 ⇒ DSR == PSR
         #expect(fs.passesForwardBar == fs.deflated.passes)  // milestone bar reflects dsr > 0.95
     }
+
+    // MARK: save() cross-process reconciliation (LOST-UPDATE FIX, 2026-07-09 — from live data:
+    // GE/SAN.MC/O39.SI double-opened while the store held zero closes; a second app instance's
+    // stale whole-array save had resurrected closed trades. Two stores on ONE suite simulate
+    // the two processes.)
+
+    @Test func staleProcessSaveCannotResurrectAClosedTrade() {
+        let (a, defaults, suite) = isolatedStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let t = StockSagePaperTrader.open(from: idea("AAA", price: 100, .buy, stop: 90, target: 120), at: d(0))!
+        a.add(t)
+        // Process B loads while AAA is open.
+        let b = StockSagePaperTradeStore(defaults: defaults, key: "stocksage.papertrades.v1")
+        #expect(b.trades.first?.isOpen == true)
+        // Process A closes AAA and saves.
+        var closed = t
+        closed.exitPrice = 88.5
+        closed.closedAt = d(5)
+        a.applyClose(closed)
+        // Process B (stale open copy in memory) saves — e.g. by adding an unrelated trade.
+        let other = StockSagePaperTrader.open(from: idea("BBB", price: 50, .buy, stop: 45, target: 60), at: d(1))!
+        b.add(other)
+        // The disk truth must still hold AAA CLOSED (pre-fix: B's whole-array write resurrected it open).
+        let final = StockSagePaperTradeStore(defaults: defaults, key: "stocksage.papertrades.v1")
+        let aaa = final.trades.first { $0.symbol == "AAA" }
+        #expect(aaa?.isOpen == false)
+        #expect(aaa?.closedAt == d(5))
+        #expect(final.trades.contains { $0.symbol == "BBB" })   // B's own open persisted too
+    }
+
+    @Test func foreignOpensSurviveAStaleSave() {
+        let (a, defaults, suite) = isolatedStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        // Process B loads an EMPTY store, then A opens a trade, then B saves its (empty) state
+        // via an unrelated add — A's trade must survive (pre-fix: B's write dropped it).
+        let b = StockSagePaperTradeStore(defaults: defaults, key: "stocksage.papertrades.v1")
+        let t = StockSagePaperTrader.open(from: idea("AAA", price: 100, .buy, stop: 90, target: 120), at: d(0))!
+        a.add(t)
+        let other = StockSagePaperTrader.open(from: idea("BBB", price: 50, .buy, stop: 45, target: 60), at: d(1))!
+        b.add(other)
+        let final = StockSagePaperTradeStore(defaults: defaults, key: "stocksage.papertrades.v1")
+        #expect(Set(final.trades.map(\.symbol)) == ["AAA", "BBB"])
+    }
+
+    @Test func resetAndRemoveStillDeleteDespiteTheReconcilingSave() {
+        let (a, defaults, suite) = isolatedStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let t = StockSagePaperTrader.open(from: idea("AAA", price: 100, .buy, stop: 90, target: 120), at: d(0))!
+        a.add(t)
+        // remove() bypasses reconciliation — the record must NOT come back from disk.
+        a.remove(t.id)
+        #expect(StockSagePaperTradeStore(defaults: defaults, key: "stocksage.papertrades.v1").trades.isEmpty)
+        a.add(t)
+        a.reset()
+        #expect(StockSagePaperTradeStore(defaults: defaults, key: "stocksage.papertrades.v1").trades.isEmpty)
+    }
 }
