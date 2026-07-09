@@ -4137,7 +4137,8 @@ struct MarketsView: View {
         let s = riskFrac != nil ? rawSummary : MoneyVelocitySummary(
             bestSymbol: rawSummary.bestSymbol, bestEV: rawSummary.bestEV,
             fastestSymbol: rawSummary.fastestSymbol, fastestVelocity: rawSummary.fastestVelocity,
-            weeklyR: rawSummary.weeklyR, weeklyRNet: rawSummary.weeklyRNet)
+            weeklyR: rawSummary.weeklyR, weeklyRNet: rawSummary.weeklyRNet,
+            weeklyTopCount: rawSummary.weeklyTopCount)
         // Whether a Brake WOULD have shown had risk % been set — gates the explicit nil-state below.
         let hadBrakeContent = rawSummary.worstRunLosses != nil
         // PERF-MVCARD: computed once, reused at both the visual warning below and the a11y-label
@@ -4181,12 +4182,12 @@ struct MarketsView: View {
                             // F03/F44 SETTLED 2026-07-09 (owner lifted the netting gate): the
                             // headline is NET — the decision-relevant number after est. frictions.
                             // Gross stays one hover away, labeled, never hidden.
-                            ideaMetric("Est./week", String(format: "%+.1fR", netWk), sub: "net of est. costs, top 3", subColor: .secondary)
+                            ideaMetric("Est./week", String(format: "%+.1fR", netWk), sub: "net of est. costs, top \(s.weeklyTopCount ?? 3)", subColor: .secondary)
                                 .help(weeklyGrossHelp(String(format: "Net of estimated costs — sums the top fast-lane NET velocities%@. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income.", s.weeklyR.map { String(format: " (gross %+.1fR before costs)", $0) } ?? ""), netFigure: true))
                         } else if let wk = s.weeklyR {
                             // Fallback when the net figure can't be formed: the labeled gross
                             // (F03/F44's original disposition) — never a fabricated net.
-                            ideaMetric("Est./week", String(format: "%+.1fR", wk), sub: "gross, if you run top 3", subColor: .secondary)
+                            ideaMetric("Est./week", String(format: "%+.1fR", wk), sub: "gross, if you run top \(s.weeklyTopCount ?? 3)", subColor: .secondary)
                                 .help(weeklyGrossHelp("Gross, before costs — sums the top fast-lane GROSS velocities. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income."))
                         }
                         Spacer(minLength: 0)
@@ -4273,7 +4274,7 @@ struct MarketsView: View {
                     if let netWk = s.weeklyRNet {
                         t += String(format: ". Estimated %+.1f R per week net of estimated costs", netWk)
                         if let wk = s.weeklyR { t += String(format: ", gross %+.1f R before costs", wk) }
-                        t += ", top 3 — an estimate, not income"
+                        t += ", top \(s.weeklyTopCount ?? 3) — an estimate, not income"
                     } else if let wk = s.weeklyR {
                         t += String(format: ". Estimated %+.1f R per week gross, before costs — an estimate, not income", wk)
                     }

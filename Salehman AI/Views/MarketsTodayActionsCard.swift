@@ -58,9 +58,6 @@ struct MarketsTodayActionsCard: View {
                         .font(.system(size: 8)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
 
-                executionRecommendationPanel(shownPlans)
-                paperOutcomePanel
-
                 if shownPlans.isEmpty {
                     // F04-parity (C1 wave): with no risk % every gate is honestly nil — "lower
                     // risk %" would misdiagnose unevaluated rows as risk-blocked.
@@ -74,6 +71,12 @@ struct MarketsTodayActionsCard: View {
                         row(i + 1, plan)
                     }
                 }
+
+                // C7c (2026-07-09): panels sit BELOW the rows — the ranked setups are the card's
+                // load-bearing content; the execution/paper commentary describes them and was
+                // pushing #1 below the fold as the panels grew.
+                executionRecommendationPanel(shownPlans)
+                paperOutcomePanel
 
                 HStack(spacing: 6) {
                     Spacer()
@@ -312,6 +315,9 @@ struct MarketsTodayActionsCard: View {
                         .help({
                             var text = StockSageConvictionScaler.caveat
                             text += String(format: " Scaled risk shown: %.2f%%.", scaledPct)
+                            // C7b: three per-name risk numbers can now coexist on one screen —
+                            // say how they relate instead of leaving the reader to reconcile.
+                            text += " How this relates: the share count on this row uses your flat base risk %; this line is the conviction/regime scaling of that base for THIS single trade; the Deploy-capital card's Risk column is the portfolio allocator's figure (half-Kelly + heat cap), a different question."
                             return text
                         }())
                 }

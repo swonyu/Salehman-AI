@@ -43,6 +43,7 @@ struct MoneyVelocitySummary: Sendable, Equatable {
     let fastestVelocity: Double?
     let weeklyR: Double?          // est. weekly R running the top setups (GROSS — see weeklyRNet)
     let weeklyRNet: Double?       // same, net of est. frictions (F03/F44: the decision-relevant headline)
+    let weeklyTopCount: Int?      // how many setups the weekly figures actually sum (min(3, lane)) — the "top N" claim
     let worstRunLosses: Int?      // worst losing streak in the journal (the brake)
     let worstRunDrawdownPct: Double?  // that streak at the modeled risk % → account drawdown
     let riskFraction: Double      // the per-trade risk the drawdown brake was modeled at (so the label can't drift)
@@ -50,9 +51,11 @@ struct MoneyVelocitySummary: Sendable, Equatable {
 
     nonisolated init(bestSymbol: String? = nil, bestEV: Double? = nil, fastestSymbol: String? = nil,
                      fastestVelocity: Double? = nil, weeklyR: Double? = nil, weeklyRNet: Double? = nil,
+                     weeklyTopCount: Int? = nil,
                      worstRunLosses: Int? = nil,
                      worstRunDrawdownPct: Double? = nil, riskFraction: Double = 0.01) {
         self.bestSymbol = bestSymbol; self.bestEV = bestEV; self.weeklyRNet = weeklyRNet
+        self.weeklyTopCount = weeklyTopCount
         self.fastestSymbol = fastestSymbol; self.fastestVelocity = fastestVelocity
         self.weeklyR = weeklyR; self.worstRunLosses = worstRunLosses
         self.worstRunDrawdownPct = worstRunDrawdownPct; self.riskFraction = riskFraction
@@ -1099,6 +1102,11 @@ enum StockSageExpectedValue {
             // shows; earnings/liquidity passed so it equals the fast-lane strip's own net line
             // (the same number rendered twice must be identical).
             weeklyRNet: netExpectedWeeklyR(ideas, tradingDays: tradingDaysForLane(ideas, holds: holds, calibration: calibration), holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity),
+            // C7a (2026-07-09): the card's "top 3" subtitle overstated when the lane held fewer —
+            // expose the count the weekly sums ACTUALLY use. Lane membership is earnings/
+            // liquidity-independent (they adjust only the sort key), so the bare lane's count
+            // is exact for both the gross and net figures.
+            weeklyTopCount: Swift.min(3, fastLane(ideas, holds: holds, calibration: calibration).count),
             worstRunLosses: dd?.losses,
             worstRunDrawdownPct: dd?.drawdownPct,
             riskFraction: fraction)
