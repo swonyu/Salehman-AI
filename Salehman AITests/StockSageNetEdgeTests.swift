@@ -59,8 +59,16 @@ struct StockSageNetEdgeTests {
         #expect(NE.defaultCosts(forSymbol: "EURUSD=X").assetClass == "FX")
         #expect(NE.defaultCosts(forSymbol: "EURUSD=X").roundTripBps == 7)
         #expect(NE.defaultCosts(forSymbol: "^GSPC").assetClass == "index")
-        #expect(NE.defaultCosts(forSymbol: "2222.SR").assetClass == "intl")
-        #expect(NE.defaultCosts(forSymbol: "2222.SR").roundTripBps == 30)
+        // RE-RATIFIED 2026-07-09 (owner lifted the cost-table gate): .SR = Tadawul tier, 60 bps
+        // RT per RESEARCH_2026-07-03_current_era_costs.md §2 (fees alone 24–36 bps RT, 3/3) —
+        // hand-derived: spread 20 + slippage 10 + fees 30 = 60. Was intl/30 (dangerous-direction
+        // understatement on the Saudi-first core).
+        #expect(NE.defaultCosts(forSymbol: "2222.SR").assetClass == "intl (Tadawul)")
+        #expect(NE.defaultCosts(forSymbol: "2222.SR").roundTripBps == 60)
+        // Non-Saudi intl stays at the ratified liquid default (research §2: 30 ACCURATE for
+        // liquid intl) — the re-tier must not leak past the .SR suffix.
+        #expect(NE.defaultCosts(forSymbol: "7203.T").assetClass == "intl")
+        #expect(NE.defaultCosts(forSymbol: "7203.T").roundTripBps == 30)
         #expect(NE.defaultCosts(forSymbol: "AAPL").assetClass == "US large-cap")
         #expect(NE.defaultCosts(forSymbol: "AAPL").roundTripBps == 13)
         // Crypto's wider spread must eat strictly more of the same setup than a US large-cap.

@@ -309,6 +309,27 @@ struct StockSageExpectedValueTests {
         #expect(!EV.summary([]).hasContent)                      // empty → nothing to show
     }
 
+    @Test func summaryWeeklyRNetIsRealAndStrictlyBelowGross() {
+        // F03/F44 net-headline (owner gate lifted 2026-07-09): the summary must carry the NET
+        // weekly figure the card headlines. Contract, all hand-derivable from the cost spec:
+        // (1) net exists whenever gross does on a positive-velocity lane; (2) net < gross
+        // STRICTLY (BTC-USD carries 70bps RT crypto frictions — costs can only subtract);
+        // (3) net equals the standalone netExpectedWeeklyR under identical inputs (the card's
+        // number and the fast-lane strip's own net line must be the same number).
+        let saved = StockSageConvictionCalibration.candidateSelectorEnabled
+        defer { StockSageConvictionCalibration.candidateSelectorEnabled = saved }
+        StockSageConvictionCalibration.candidateSelectorEnabled = false
+        let b = idea("BTC-USD", action: .strongBuy, conviction: 0.9, stop: 90, target: 130)
+        let s = EV.summary([b])
+        #expect(s.weeklyRNet != nil)
+        #expect(s.weeklyR != nil)
+        #expect((s.weeklyRNet ?? 0) < (s.weeklyR ?? 0))
+        let standalone = EV.netExpectedWeeklyR([b],
+                                               tradingDays: EV.tradingDaysForLane([b], holds: .defaults, calibration: nil),
+                                               holds: .defaults, calibration: nil)
+        #expect(s.weeklyRNet == standalone)
+    }
+
     @Test func summaryIncludesWorstRunDrawdownBrake() {
         let b = idea("BTC-USD", action: .strongBuy, conviction: 0.9, stop: 90, target: 130)
         // 3 closed losers in a row → worst run 3; at 1%/trade → 1 − 0.99^3 = 0.029701.

@@ -20,10 +20,32 @@ A "⚠️ pending confirmation" note attached to shipped work is a violation, no
 
 ## How — the operational procedure (ideas-tab workstream)
 
-**1. Check the parked owner-gate list before planning.** **CANONICAL REGISTRY — this is the "§1" every other skill cites: the single source of truth for owner gates; every other skill points here and never restates the list (a copy is a divergence waiting to happen).** Currently gated (as of 2026-07-02; see `RANKING_BACKLOG.md` + `AUDIT_2026-07-02_ideas_board.md`):
+**1. Check the parked owner-gate list before planning.** **CANONICAL REGISTRY — this is the "§1" every other skill cites: the single source of truth for owner gates; every other skill points here and never restates the list (a copy is a divergence waiting to happen).**
+
+> **🟢 REGISTRY RETIRED AS A GATE CLASS — 2026-07-09, owner directive (verbatim): "nothing is owner gated i allow u."**
+> Owner-decision gates no longer block; the deciding session makes the call ON THE EVIDENCE and
+> ships it through the normal pipeline (gate → log → bundle → map → CI → visual QA where UI-visible).
+> What this does NOT lift (these were never owner-gates): the honesty floor, the empirical-validation
+> bar for ranking/engine changes ("any ranking change needs empirical validation" stands — the owner
+> lift replaces only the "or owner sign-off" branch), spec-fidelity, and data-blocked items (permission
+> does not create data). Same-day dispositions of every open item:
+> - **RANKING #10 — SETTLED: KEEP the EV-quality `bestOpportunity` default** (velocity stays opt-in).
+>   Evidence: the corpus's strongest single retail finding is that turnover/speed-chasing is the #1
+>   net-return killer (Barber-Odean, RESEARCH_2026-06-27_money_fast_conviction); no ablation shows a
+>   velocity-first default improves outcomes; velocity is already fully surfaced (fast lane, strip
+>   FASTEST, Today card). Re-open only with a measured velocity-default edge.
+> - **F03/F44 — SETTLED: NET headline shipped** (summary card Est./week + $/week headline net of est.
+>   frictions, labeled; gross one hover away; VelocityHistory deliberately keeps recording GROSS for
+>   cross-session trend continuity — the false-"fading"-step hazard the original gate named).
+> - **Cost table — RE-RATIFIED with one revision:** `.SR` → dedicated Tadawul tier 60bps RT
+>   (research §2 dangerous-direction fix); US 13 / liquid intl 30 / crypto 70 / FX 7 / index 8
+>   ratified as-is (FX/ETF deliberately err SAFE; crypto 70 = Kraken-class midpoint — venue-aware
+>   input would be a feature, not a ratification).
+>
+> Historical list below kept for the record (as of 2026-07-02; see `RANKING_BACKLOG.md` + `AUDIT_2026-07-02_ideas_board.md`):
 - **RANKING #10** — flipping MarketsView's `bestOpportunity` default to `preferVelocity: true` (shipped opt-in only; the default flip is a product decision).
 - ~~**F01/F02** — identity-calibration semantics~~ ✅ **CLOSED 2026-07-04 (owner-approved "do it", clamp option).** F02 provenance shipped earlier (`method`→"assumed", never "measured"); F01 closed by clamping the thin-split identity (n∈[30,43]) to the prior in `buildIdentity(clampToPrior:)` — winProb ≤ 0.35+0.23·c, low-conviction untouched, OOS-validated winner (n≥44) stays raw/byte-identical. Test-lock updated + falsifiability-probed; AUDIT §5 #1. No longer a gate.
-- **F08** — canonical term "Conviction" vs "Signal strength" (blocks the unification sweep and the F21 reword).
+- ~~**F08** — canonical term "Conviction" vs "Signal strength"~~ ✅ **CLOSED 2026-07-03 (owner-selected "Signal strength" @ 07cbe6b/f68bf0e; rawValue kept stable so no @AppStorage sort reset).**
 - ~~**F10** — decimal-comma locale policy~~ ✅ **CLOSED 2026-07-04 (owner-approved "do it").** `StockSageInput.clean` is now grouping-aware: 3-digit groups → thousands, a lone comma + 1–2 trailing digits (no period) → the Saudi decimal ("2,5"→2.5), else nil. Fixes the silent 10× risk error; hand-derived truth table + 3 tests (falsifiability-probed); AUDIT §5 #3. No longer a gate. (F04 raw-`Double()` unification CLOSED 2026-07-07 @ 1ab7354 — `ideas-card/ux-wave-3` merged after explicit owner release ("all 3") + pre-merge visual QA; sheet and Today families now parse identically.)
 - **F03/F44 weekly-rollup netting/labeling** — `expectedWeeklyR` gross vs net: relabels a headline number and netting creates a false "fading" step vs prior gross VelocityHistory snapshots (AUDIT §5 pairs F03 and F44 as one decision).
 Plus the standing honesty-floor rule: **any** ranking change needs empirical validation or owner sign-off — new gates get added here, never quietly bypassed.

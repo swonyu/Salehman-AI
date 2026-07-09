@@ -41,16 +41,18 @@ struct MoneyVelocitySummary: Sendable, Equatable {
     let bestEV: Double?
     let fastestSymbol: String?    // highest EV/day (fast lane)
     let fastestVelocity: Double?
-    let weeklyR: Double?          // est. weekly R running the top setups
+    let weeklyR: Double?          // est. weekly R running the top setups (GROSS — see weeklyRNet)
+    let weeklyRNet: Double?       // same, net of est. frictions (F03/F44: the decision-relevant headline)
     let worstRunLosses: Int?      // worst losing streak in the journal (the brake)
     let worstRunDrawdownPct: Double?  // that streak at the modeled risk % → account drawdown
     let riskFraction: Double      // the per-trade risk the drawdown brake was modeled at (so the label can't drift)
     nonisolated var hasContent: Bool { bestSymbol != nil || fastestSymbol != nil || weeklyR != nil }
 
     nonisolated init(bestSymbol: String? = nil, bestEV: Double? = nil, fastestSymbol: String? = nil,
-                     fastestVelocity: Double? = nil, weeklyR: Double? = nil, worstRunLosses: Int? = nil,
+                     fastestVelocity: Double? = nil, weeklyR: Double? = nil, weeklyRNet: Double? = nil,
+                     worstRunLosses: Int? = nil,
                      worstRunDrawdownPct: Double? = nil, riskFraction: Double = 0.01) {
-        self.bestSymbol = bestSymbol; self.bestEV = bestEV
+        self.bestSymbol = bestSymbol; self.bestEV = bestEV; self.weeklyRNet = weeklyRNet
         self.fastestSymbol = fastestSymbol; self.fastestVelocity = fastestVelocity
         self.weeklyR = weeklyR; self.worstRunLosses = worstRunLosses
         self.worstRunDrawdownPct = worstRunDrawdownPct; self.riskFraction = riskFraction
@@ -1093,6 +1095,10 @@ enum StockSageExpectedValue {
             fastestVelocity: fastest.flatMap { netVelocity(for: $0, holds: holds, calibration: calibration) },
             // Honest cadence: an all-crypto lane re-cycles ~7 days/week, equity ~5.
             weeklyR: expectedWeeklyR(ideas, tradingDays: tradingDaysForLane(ideas, holds: holds, calibration: calibration), holds: holds, calibration: calibration),
+            // F03/F44 (owner gate lifted 2026-07-09): the NET figure is the headline the card
+            // shows; earnings/liquidity passed so it equals the fast-lane strip's own net line
+            // (the same number rendered twice must be identical).
+            weeklyRNet: netExpectedWeeklyR(ideas, tradingDays: tradingDaysForLane(ideas, holds: holds, calibration: calibration), holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity),
             worstRunLosses: dd?.losses,
             worstRunDrawdownPct: dd?.drawdownPct,
             riskFraction: fraction)
@@ -1113,8 +1119,15 @@ enum StockSageExpectedValue {
             lines.append("\(n). Fastest compounding: \(sym) — est. \(String(format: "%+.2f", v))R/day net (faster turnover, more variance).")
             n += 1
         }
-        if let wk = s.weeklyR {
-            // F03/F44: weeklyR sums GROSS velocities — say so in the copyable artifact.
+        if let netWk = s.weeklyRNet {
+            // F03/F44 net headline (2026-07-09): the copyable artifact carries the SAME
+            // decision-relevant net figure the card headlines, with gross beside it labeled —
+            // a pasted plan must never revert to the number the card demoted to hover-only.
+            let grossPart = s.weeklyR.map { String(format: " (gross %+.1fR before costs)", $0) } ?? ""
+            lines.append("\(n). Run the top setups: ~\(String(format: "%+.1f", netWk))R/week net of est. frictions\(grossPart) — an estimate assuming you take and re-cycle them, not income.")
+            n += 1
+        } else if let wk = s.weeklyR {
+            // Labeled-gross fallback when the net figure can't form — never a fabricated net.
             lines.append("\(n). Run the top setups: ~\(String(format: "%+.1f", wk))R/week gross, before costs — an estimate assuming you take and re-cycle them, not income.")
             n += 1
         }

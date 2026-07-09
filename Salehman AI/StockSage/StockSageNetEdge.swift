@@ -53,6 +53,15 @@ enum StockSageNetEdge {
         if s.hasSuffix("-USD") { return CostAssumption(spreadBps: 30, slippageBps: 20, assetClass: "crypto", takerFeeBps: 20) } // 70bps incl. ~0.1%/fill taker
         if s.hasSuffix("=X")   { return CostAssumption(spreadBps: 4,  slippageBps: 3,  assetClass: "FX") }          // 7bps
         if s.hasPrefix("^")    { return CostAssumption(spreadBps: 5,  slippageBps: 3,  assetClass: "index") }       // 8bps
+        if s.hasSuffix(".SR")  {
+            // Tadawul re-tier (2026-07-09; owner lifted the cost-table gate: "nothing is owner
+            // gated i allow u"). Numbers from RESEARCH_2026-07-03_current_era_costs.md §2
+            // (3/3-verified): Saudi fees alone ~12–18 bps/side → 24–36 bps RT BEFORE spread, so
+            // the flat intl 30 was DANGEROUS-direction on the app's own Saudi-first core (the
+            // gate passed losers). 60 bps = the bottom of the research's 60–100 EM band:
+            // fees ≈30 (takerFeeBps) + the intl default's spread/slippage 20+10.
+            return CostAssumption(spreadBps: 20, slippageBps: 10, assetClass: "intl (Tadawul)", takerFeeBps: 30)   // 60bps
+        }
         if s.contains(".")     { return CostAssumption(spreadBps: 20, slippageBps: 10, assetClass: "intl") }        // 30bps
         return CostAssumption(spreadBps: 8, slippageBps: 5, assetClass: "US large-cap")                             // 13bps
     }

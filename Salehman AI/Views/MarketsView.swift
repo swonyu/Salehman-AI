@@ -311,6 +311,10 @@ struct MarketsView: View {
             if !store.lastScanCancelled && !store.scanThrottled {
                 let snap = StockSageExpectedValue.summary(store.ideas, trades: journal.trades, holds: velocityHolds, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, seasonality: store.seasonality, calibration: store.convictionCalibration)
                 if let wk = snap.weeklyR {
+                    // Deliberately still the GROSS figure (F03/F44 net-headline, 2026-07-09):
+                    // the durable per-day history must keep comparing like-with-like across
+                    // sessions recorded before the netting — switching the RECORDED metric
+                    // would fake a "since last session" drop equal to the friction estimate.
                     velocityHistory.record(weeklyR: wk, bestSymbol: snap.bestSymbol, fastestSymbol: snap.fastestSymbol)
                 }
             }
@@ -1986,11 +1990,20 @@ struct MarketsView: View {
     /// NOT provably identical to the caller's earnings/liquidity-aware `lane`, so deduping it
     /// would risk a silently wrong turnover count; nil defaults to the pre-existing derivation
     /// so no call site is required to change).
-    private func weeklyGrossHelp(_ base: String, tradingDays: Double? = nil) -> String {
+    /// `netFigure: true` (F03/F44 review fix, 2026-07-09): the turnover note's tail calls the
+    /// annotated number "this gross figure" — TRUE for the gross fallback, FALSE for the net
+    /// headline (which already charges frictions per re-cycle). The net branch swaps that tail
+    /// for the net-true phrasing instead of inheriting a mislabel onto the card's money number.
+    private func weeklyGrossHelp(_ base: String, tradingDays: Double? = nil, netFigure: Bool = false) -> String {
         var s = base
         let days = tradingDays ?? StockSageExpectedValue.tradingDaysForLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration)
-        if let note = StockSageExpectedValue.weeklyTurnoverNote(
+        if var note = StockSageExpectedValue.weeklyTurnoverNote(
             store.ideas, tradingDays: days, holds: velocityHolds, calibration: store.convictionCalibration) {
+            if netFigure {
+                note = note.replacingOccurrences(
+                    of: "every re-entry pays the est. round-trip frictions this gross figure excludes",
+                    with: "every re-entry pays the est. round-trip frictions — already charged in this net figure")
+            }
             s += "\n\n" + note
         }
         s += "\n\n" + StockSageRefuseList.policyNote
@@ -4095,7 +4108,7 @@ struct MarketsView: View {
         let s = riskFrac != nil ? rawSummary : MoneyVelocitySummary(
             bestSymbol: rawSummary.bestSymbol, bestEV: rawSummary.bestEV,
             fastestSymbol: rawSummary.fastestSymbol, fastestVelocity: rawSummary.fastestVelocity,
-            weeklyR: rawSummary.weeklyR)
+            weeklyR: rawSummary.weeklyR, weeklyRNet: rawSummary.weeklyRNet)
         // Whether a Brake WOULD have shown had risk % been set — gates the explicit nil-state below.
         let hadBrakeContent = rawSummary.worstRunLosses != nil
         // PERF-MVCARD: computed once, reused at both the visual warning below and the a11y-label
@@ -4134,9 +4147,15 @@ struct MarketsView: View {
                                 }
                             }
                         }
-                        if let wk = s.weeklyR {
-                            // F03/F44: weeklyR sums GROSS velocities — label it, and caveat that the
-                            // sum can include floor-demoted ideas the "Fastest" pick excludes.
+                        if let netWk = s.weeklyRNet {
+                            // F03/F44 SETTLED 2026-07-09 (owner lifted the netting gate): the
+                            // headline is NET — the decision-relevant number after est. frictions.
+                            // Gross stays one hover away, labeled, never hidden.
+                            ideaMetric("Est./week", String(format: "%+.1fR", netWk), sub: "net of est. frictions, top 3", subColor: .secondary)
+                                .help(weeklyGrossHelp(String(format: "Net of estimated frictions — sums the top fast-lane NET velocities%@. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income.", s.weeklyR.map { String(format: " (gross %+.1fR before costs)", $0) } ?? ""), netFigure: true))
+                        } else if let wk = s.weeklyR {
+                            // Fallback when the net figure can't be formed: the labeled gross
+                            // (F03/F44's original disposition) — never a fabricated net.
                             ideaMetric("Est./week", String(format: "%+.1fR", wk), sub: "gross, if you run top 3", subColor: .secondary)
                                 .help(weeklyGrossHelp("Gross, before costs — sums the top fast-lane GROSS velocities. It can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. An estimate, not income."))
                         }
@@ -4147,15 +4166,17 @@ struct MarketsView: View {
                     // weeklyR field is expectedWeeklyR(ideas, tradingDaysForLane(ideas, holds, calibration),
                     // holds, calibration), called here with the same ideas/holds/calibration), so this
                     // avoids a second full fastLane + fastLaneConcentration recompute.
-                    if let wk = s.weeklyR, let acct = StockSageInput.positiveAmount(sizerAccount), let rp = StockSageInput.percent(sizerRiskPct) {
+                    if let wk = s.weeklyRNet ?? s.weeklyR, let acct = StockSageInput.positiveAmount(sizerAccount), let rp = StockSageInput.percent(sizerRiskPct) {
+                        // F03/F44: dollars line follows the headline — net when available,
+                        // labeled gross fallback otherwise (never a fabricated net).
                         let usd = wk * acct * (rp / 100)
-                        Text(String(format: "≈ +$%.0f/week at $%.0f acct, %.1f%% risk — %@", usd, acct, rp, MoneyVelocityCopy.weeklyDollars))
+                        Text(String(format: "≈ +$%.0f/week at $%.0f acct, %.1f%% risk — %@", usd, acct, rp, s.weeklyRNet != nil ? MoneyVelocityCopy.weeklyDollarsNet : MoneyVelocityCopy.weeklyDollars))
                             .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)   // neutral: an estimate, not a realized gain
-                            .help("Gross, before costs — weekly R × the dollar value of 1R. Can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. NOT income.")
+                            .help((s.weeklyRNet != nil ? "Net of est. costs — weekly R × the dollar value of 1R. " : "Gross, before costs — weekly R × the dollar value of 1R. ") + "Can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. NOT income.")
                     }
                     if let d = velocityHistory.lastDelta, abs(d) >= 0.05 {
-                        Text(String(format: "Since last session: weekly-R %@ %.1fR — %@", d >= 0 ? "↑" : "↓", abs(d), MoneyVelocityCopy.ownHistory))
+                        Text(String(format: "Since last session: gross weekly-R %@ %.1fR — %@", d >= 0 ? "↑" : "↓", abs(d), MoneyVelocityCopy.ownHistory))
                             .font(.system(size: mvFont8))
                             .foregroundStyle(d >= 0 ? DS.Palette.successSoft : DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                     }
@@ -4172,7 +4193,7 @@ struct MarketsView: View {
                             Image(systemName: rising ? "arrow.up.right" : (fading ? "arrow.down.right" : "arrow.right"))
                                 .font(.system(size: mvFont8, weight: .bold))
                                 .foregroundStyle(rising ? DS.Palette.successSoft : (fading ? DS.Palette.warningSoft : .secondary))
-                            Text(String(format: "Your opportunity set is %@ (recent wk-R %+.1f vs %+.1f early) — %@",
+                            Text(String(format: "Your opportunity set is %@ (recent gross wk-R %+.1f vs %+.1f early) — %@",
                                         t.direction.rawValue, t.recentAvg, t.earlyAvg, MoneyVelocityCopy.ownHistory))
                                 .font(.system(size: mvFont8)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                             if velocityHistory.series.count >= 2 {
