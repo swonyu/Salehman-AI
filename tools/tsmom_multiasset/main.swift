@@ -164,7 +164,14 @@ func irrxWeightFn(_ panel: Panel, _ t: Int, _ lookback: Int, _ excluded: Set<Int
 
 // MARK: - TSMOM signal + arms (the reimplemented logic under test)
 
-let SKIP = 21   // the shipped 12-1 skip (StockSageIndicators.timeSeriesMomentum skipRecent default)
+// The shipped 12-1 skip (StockSageIndicators.timeSeriesMomentum skipRecent default). Env
+// TSMOM_SKIP overrides for the PRE-REGISTERED no-skip variant (PREREG_2026-07-09_noskip.md);
+// default 21 keeps every print byte-identical to the parent run.
+let SKIP = Int(ProcessInfo.processInfo.environment["TSMOM_SKIP"] ?? "") ?? 21
+// Trials-accounting overrides for data-suggested variants: the variant must pay for the parent
+// run's selection too (trials pooled across runs; varTrialSharpe precomputed over the union).
+let TRIALS_PRIMARY = Int(ProcessInfo.processInfo.environment["TSMOM_TRIALS"] ?? "") ?? 54
+let VARTRIAL_OVERRIDE = Double(ProcessInfo.processInfo.environment["TSMOM_VARTRIAL"] ?? "")
 
 /// Cumulative simple return over u ∈ [t−lb, t−skip) — by Π(1+r) = P_end/P_start this is EXACTLY
 /// the shipped price-ratio timeSeriesMomentum anchored at "now" = t (closes index n−1 = t:
@@ -317,7 +324,7 @@ runPortValidation()
 
 // MARK: - Signal spot-check (consumed by the standalone Python hand-derivation)
 
-print("\n=== SIGNAL SPOT-CHECK (t=252, lb=252, skip=21 — hand-derive these from the panel JSON) ===")
+print("\n=== SIGNAL SPOT-CHECK (t=252, lb=252, skip=\(SKIP) — hand-derive these from the panel JSON) ===")
 for sym in [0, 5, 9] {   // SPY, TLT, GLD in the frozen order
     let m = tsmom(panel, sym, 252, 252) ?? Double.nan
     let v = trailingVol63(panel, sym, 252) ?? Double.nan
@@ -393,11 +400,15 @@ var eqwLedgered = Set<String>()
 let ledgerFilePath = ledgerPath()
 var ledgerAppended = 0
 
-print("\n=== PRIMARY RESULTS (trials=54) + SENSITIVITY (trials=27/rt-leg) + EQW PAIRED-DIFF ===")
+let vPrimary = (VARTRIAL_OVERRIDE?.isFinite == true) ? VARTRIAL_OVERRIDE! : V54
+if TRIALS_PRIMARY != 54 || VARTRIAL_OVERRIDE != nil {
+    print("TRIALS OVERRIDE (pre-registered variant accounting): trials=\(TRIALS_PRIMARY), varTrialSharpe=\(String(format: "%.4f", vPrimary)) (pooled across runs per PREREG)")
+}
+print("\n=== PRIMARY RESULTS (trials=\(TRIALS_PRIMARY)) + SENSITIVITY (trials=27/rt-leg) + EQW PAIRED-DIFF ===")
 for c in candidates {
     let wfn = weightFnFor(c.arm, c.lb)
     guard let sim54 = simulateGeneric(panel, lookback: c.lb, hold: c.hd, roundTripBps: c.rt, weightFn: wfn,
-                                       folds: 3, embargo: 1, trials: 54, varTrialSharpe: V54) else { continue }
+                                       folds: 3, embargo: 1, trials: TRIALS_PRIMARY, varTrialSharpe: vPrimary) else { continue }
     let V27 = rtLegVariance(c.rt)
     guard let sim27 = simulateGeneric(panel, lookback: c.lb, hold: c.hd, roundTripBps: c.rt, weightFn: wfn,
                                        folds: 3, embargo: 1, trials: 27, varTrialSharpe: V27) else { continue }
@@ -409,7 +420,7 @@ for c in candidates {
     guard netArm.count == netEQW.count, netArm.count >= 4 else { continue }
     let d = zip(netArm, netEQW).map { $0 - $1 }
     let meanD = d.reduce(0, +) / Double(d.count)
-    let diffVerdict = StockSageNetCostSim.verdict(d, trials: 54, varTrialSharpe: V54)
+    let diffVerdict = StockSageNetCostSim.verdict(d, trials: TRIALS_PRIMARY, varTrialSharpe: vPrimary)
     let diffDSR = diffVerdict?.dsr ?? Double.nan
     let diffPasses = diffVerdict?.passes ?? false
 
@@ -441,16 +452,17 @@ for c in candidates {
                         lfExposure: lfExposure)
     resultRows.append(row)
     let expStr = lfExposure.map { String(format: " exp=%.2f", $0) } ?? ""
-    print(String(format: "  ARM=%@ lb=%3d hd=%2d rt=%2.0f rebals=%3d meanGross=%+.5f%% meanNet=%+.5f%% turn=%.3f DSR54=%.3f(net-%@) clears54=%@ DSR27=%.3f | EQWdiff mean(d)=%+.6f diffDSR=%.3f diffPasses=%@%@",
+    print(String(format: "  ARM=%@ lb=%3d hd=%2d rt=%2.0f rebals=%3d meanGross=%+.5f%% meanNet=%+.5f%% turn=%.3f DSR%d=%.3f(net-%@) clears%d=%@ DSR27=%.3f | EQWdiff mean(d)=%+.6f diffDSR=%.3f diffPasses=%@%@",
                  c.arm, c.lb, c.hd, c.rt, row.rebalCount, row.meanGrossPct, row.meanNetPct, meanTurn,
-                 dsr54v, tag54, sim54.clears ? "YES" : "no", dsr27v, meanD, diffDSR, diffPasses ? "YES" : "no", expStr))
+                 TRIALS_PRIMARY, dsr54v, tag54, TRIALS_PRIMARY, sim54.clears ? "YES" : "no", dsr27v, meanD, diffDSR, diffPasses ? "YES" : "no", expStr))
     if sim54.clears && meanD <= 0 {
-        print("    ⚠ BETA ARTIFACT: clears54 absolute DSR but mean(netArm-netEQW) <= 0 — not incremental edge over always-long beta.")
+        print("    ⚠ BETA ARTIFACT: clears\(TRIALS_PRIMARY) absolute DSR but mean(netArm-netEQW) <= 0 — not incremental edge over always-long beta.")
     }
 
     if let lp = ledgerFilePath {
+        let skipSuffix = SKIP == 21 ? "" : ",skip=\(SKIP)"
         ledgerAppend(path: lp, run: ledgerRun, family: "tsmom-multiasset", panel: ledgerPanelID,
-                     config: "arm=\(c.arm),lb=\(c.lb),hd=\(c.hd),rt=\(Int(c.rt))", role: "trial",
+                     config: "arm=\(c.arm),lb=\(c.lb),hd=\(c.hd),rt=\(Int(c.rt))\(skipSuffix)", role: "trial",
                      meanNetPct: row.meanNetPct, sharpe: candidateSharpes[candidateKey(c)],
                      sharpeBasis: "full-series-net-per-rebalance", dsr: dsr54v.isFinite ? dsr54v : nil,
                      sourceFile: "tools/tsmom_multiasset/main.swift")
@@ -477,10 +489,10 @@ if let lp = ledgerFilePath { print("LEDGER: appended \(ledgerAppended) arms → 
 if let best = resultRows.max(by: { $0.dsr54 < $1.dsr54 }) {
     let wfn = weightFnFor(best.arm, best.lb)
     if let simHist = simulateGeneric(panel, lookback: best.lb, hold: best.hd, roundTripBps: best.rt, weightFn: wfn,
-                                      folds: 3, embargo: 1, trials: 54 + 308, varTrialSharpe: V54) {
+                                      folds: 3, embargo: 1, trials: TRIALS_PRIMARY + 308, varTrialSharpe: vPrimary) {
         let d = simHist.netVerdictOOS?.dsr ?? simHist.netVerdictFull?.dsr ?? Double.nan
-        print(String(format: "\nREGISTRY-INFORMED (informational): best config ARM=%@ lb=%d hd=%d rt=%.0f at trials=362 (54 + 308 registry census) → DSR=%.3f",
-                     best.arm, best.lb, best.hd, best.rt, d))
+        print(String(format: "\nREGISTRY-INFORMED (informational): best config ARM=%@ lb=%d hd=%d rt=%.0f at trials=%d (%d + 308 registry census) → DSR=%.3f",
+                     best.arm, best.lb, best.hd, best.rt, TRIALS_PRIMARY + 308, TRIALS_PRIMARY, d))
     }
 }
 
@@ -521,8 +533,8 @@ var anyClears = false
 var anyClearsWithDiff = false
 for arm in arms {
     if let b = resultRows.filter({ $0.arm == arm }).max(by: { $0.dsr54 < $1.dsr54 }) {
-        print(String(format: "  BEST ARM=%@: lb=%d hd=%d rt=%.0f net-%@ DSR54=%.3f clears=%@ | EQWdiff diffDSR=%.3f diffPasses=%@",
-                     arm, b.lb, b.hd, b.rt, b.tag54, b.dsr54, b.clears54 ? "YES" : "no", b.diffDSR, b.diffPasses ? "YES" : "no"))
+        print(String(format: "  BEST ARM=%@: lb=%d hd=%d rt=%.0f net-%@ DSR%d=%.3f clears=%@ | EQWdiff diffDSR=%.3f diffPasses=%@",
+                     arm, b.lb, b.hd, b.rt, b.tag54, TRIALS_PRIMARY, b.dsr54, b.clears54 ? "YES" : "no", b.diffDSR, b.diffPasses ? "YES" : "no"))
         if b.clears54 { anyClears = true }
         if b.clears54 && b.diffPasses { anyClearsWithDiff = true }
     }

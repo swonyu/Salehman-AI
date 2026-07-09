@@ -46,3 +46,17 @@
 
 ## Artifacts
 `tools/tsmom_multiasset/{fetch_panel.py, panel_tsmom_multiasset.json, main.swift, build_and_run.sh, run_output_2026-07-09.txt}` · trials ledger run `2026-07-09_tsmom_multiasset_v1` (72 arms) · this file.
+
+---
+
+## UPDATE 2026-07-09 (late — PRE-REGISTERED no-skip variant: the probe observation, closed NULL)
+
+The verify probe's observation (no-skip construction beat the leak mutant) was run down the same night as a **pre-registered** variant — `tools/tsmom_multiasset/PREREG_2026-07-09_noskip.md`, written before any variant number was computed, post-hoc origin disclosed, decision rule committed in advance.
+
+**Design:** identical frozen panel, arms, and grid; SKIP=0 via env (`TSMOM_SKIP`; default 21 regression-gated **byte-identical** to the parent run's stdout before the variant ran). **Trials accounting pays for the parent run's selection: trials=108** (54 prior + 54 new arms), varTrialSharpe pooled over all 108 full-series net Sharpes (V108=0.0157, prior Sharpes read from the ledger).
+
+**Result — NULL by the committed rule.** Best absolute net-OOS DSR108 = **0.969** (LF lb=252 hd=42 rt=8 — the same cell as the parent near-miss); 2 absolute clears, **both beta artifacts** (mean(netArm−netEQW) ≤ 0, diffDSR = 0.000); **"clears absolute AND EQW paired-diff: NO"** across all 54 variant configs. Removing the skip did lift the momentum family broadly (best LS 0.398, best VS 0.422 — both above their skip-21 siblings, still deep null), but nothing beats holding the basket. Registry-informed deflation (trials=416): best 0.935 — below the bar even absolute. REVERSED: 2/27 flips, both on null LS/VS lb252/hd63 cells (inert); the near-miss LF cell holds sign. Internal consistency: pass-A vs final rows identical mod trials-dependent columns. Ledger: 72 arms appended, run `2026-07-09_tsmom_noskip_v1`, configs suffixed `,skip=0`.
+
+**Verification (proportionate — machinery unchanged from the 3/3-verified parent):** default-behavior regression gate byte-identical; independent recompile+rerun of the variant + env-plumbing diff audit + Python spot-recompute by a background verifier — **NOT-REFUTED**: the git diff contains exactly the four intended change groups (env plumbing, print interpolation, vPrimary substitution, ledger skip-suffix) with defaults collapsing to the parent's literals; SKIP=0 no-look-ahead re-confirmed (max signal index t−1, forward window disjoint); reproduction stdout **byte-identical** (126/126 lines, cmp clean, mod the LEDGER line); Python recompute of LF skip=0 lb=252 hd=21 rt=13: meanNetPct 0.5120560754508485 = ledger value exactly (diff 0), Sharpe 0.2572309469473370 vs ledger to one ulp (5.6e-17).
+
+**Disposition:** the probe observation is closed — recent-month-inclusive cross-asset momentum is ALSO dominated by the EQW basket net-of-cost on this decade. The TSMOM family (12-1 AND no-skip, long/flat, long-short, vol-scaled) is closed NULL on the multi-asset substrate. Nothing wired; fences stand. Artifacts: `PREREG_2026-07-09_noskip.md`, `run_output_2026-07-09_noskip.txt`, ledger run `2026-07-09_tsmom_noskip_v1`.
