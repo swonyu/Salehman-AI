@@ -239,9 +239,16 @@ enum QASnapshots {
         let saved = store.trades
         let now = Date()
         store.qaSeed([
+            // Realized-cost capture (2026-07-09): this ONE trade carries a hand-derived fill
+            // pair so the per-trade slip caption is a captured pixel state — entry BUY
+            // 190→190.19 = (0.19/190)·10⁴ = +10.0 bps adverse; exit SELL 194→193.90 =
+            // (0.10/194)·10⁴ = +5.2 bps adverse. Only 2 measurable legs total keeps the
+            // panel summary in its "not enough fill data" (<5 legs) prompt state — both new
+            // branches deterministic in one capture.
             TradeRecord(symbol: "NVDA", side: .long, entry: 190, stop: 185, target: 200,
                         shares: 10, openedAt: now.addingTimeInterval(-86_400 * 10),
-                        exitPrice: 194, closedAt: now.addingTimeInterval(-86_400 * 5)),   // realizedR = +0.8
+                        exitPrice: 194, closedAt: now.addingTimeInterval(-86_400 * 5),   // realizedR = +0.8
+                        plannedEntry: 190, entryFill: 190.19, plannedExit: 194, exitFill: 193.90),
             TradeRecord(symbol: "NVDA", side: .long, entry: 190, stop: 185, target: 200,
                         shares: 10, openedAt: now.addingTimeInterval(-86_400 * 4),
                         exitPrice: 188.5, closedAt: now.addingTimeInterval(-86_400 * 2)),  // realizedR = -0.3
@@ -384,6 +391,10 @@ enum QASnapshots {
         // session.start() (the mic) — an offscreen QA render must not trigger it.
         // ── Responsive: narrow widths catch layout breaks on the flexible tabs ──
         snap(TodayView(),     "today_narrow",     "Today @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
+        // Realized-cost capture (2026-07-09): the journal panel (portfolio section) was never
+        // a captured surface — the restructured closed-trade rows (HStack→VStack + slip
+        // caption) and the measured-slippage summary line get a deterministic fixture here.
+        snap(MarketsView(qaSection: .portfolio), "markets_journal", "Markets — Portfolio/Journal panel (seeded closed trades: one with a hand-derived fill pair ⇒ slip caption; summary in the <5-legs prompt state)", .init(width: 1000, height: 3400), in: dir)
         snap(MarketsView(qaSection: .watchlist), "markets_narrow", "Markets @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)
         snap(MarketsView(qaSection: .ideas), "markets_ideas_narrow", "Markets Ideas board @ 560pt — responsive / chip-wrap check", .init(width: 560, height: 2800), in: dir)
         snap(KnowledgeView(), "knowledge_narrow", "Knowledge @ 560pt — responsive / layout-break check", .init(width: 560, height: 760), in: dir)

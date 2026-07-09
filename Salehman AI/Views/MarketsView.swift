@@ -156,9 +156,16 @@ struct MarketsView: View {
     /// The idea's conviction when this draft was prefilled FROM an idea (nil for a manual trade) —
     /// recorded on the TradeRecord so the journal can calibrate conviction→win-rate from real fills.
     @State private var draftConviction: Double? = nil
+    /// Optional realized-cost capture: the price the plan quoted vs. the actual fill, at entry.
+    /// Measurement only — never a P&L input (see TradeRecord.entrySlippageBps).
+    @State private var draftPlannedEntry = ""
+    @State private var draftEntryFill = ""
     /// Inline close-a-trade: the open trade being closed + its exit-price field.
     @State private var closingTradeID: UUID?
     @State private var closeExitText = ""
+    /// Optional realized-cost capture at exit — mirrors draftPlannedEntry/draftEntryFill.
+    @State private var closePlannedExitText = ""
+    @State private var closeExitFillText = ""
     @State private var pendingJournalDeleteID: UUID?
     /// Detail-sheet position sizer inputs.
     @AppStorage("marketsSizerAccount") private var sizerAccount = "10000"
@@ -1954,6 +1961,7 @@ struct MarketsView: View {
                 }
             }
 
+            measuredSlippageLine
             Text(StockSageJournal.caveat).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(DS.Space.sm)
@@ -1967,6 +1975,21 @@ struct MarketsView: View {
         )
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+    }
+
+    /// Realized-vs-assumed execution cost summary — measurement/display only (see the fence on
+    /// StockSageJournal.measuredSlippage). Plain caption2 text, no color-coded verdict.
+    private var measuredSlippageLine: some View {
+        let slip = StockSageJournal.measuredSlippage(journal.trades)
+        let text: String
+        if let slip, slip.meetsFloor {
+            text = String(format: "Measured slippage: median %+.1f bps/leg over %d legs (your fills) — assumed: %.1f bps/leg (half the asset-class round-trip table).",
+                          slip.medianBps, slip.legs, slip.assumedMedianBpsPerLeg)
+        } else {
+            let n = slip?.legs ?? 0
+            text = "Not enough fill data — enter fill prices to measure your real costs (\(n) of 5 legs)."
+        }
+        return Text(text).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 
     private func healthColor(_ v: SystemHealth.Verdict) -> Color {
@@ -2097,6 +2120,13 @@ struct MarketsView: View {
                 journalField("Target", text: $draftTarget)
                 journalField("Shares", text: $draftShares)
             }
+            HStack(spacing: DS.Space.sm) {
+                journalField("Planned px (opt)", text: $draftPlannedEntry, width: 100)
+                    .help("What the plan quoted when you decided to enter. Measures your real execution cost vs. the plan — never changes P&L.")
+                journalField("Fill px (opt)", text: $draftEntryFill, width: 100)
+                    .help("Your actual entry fill price. Measures your real execution cost vs. the plan — never changes P&L.")
+                Spacer(minLength: 0)
+            }
             journalField("Note (optional)", text: $draftNote, width: 280)
             HStack(spacing: 10) {
                 Button { saveDraftTrade() } label: {
@@ -2137,6 +2167,13 @@ struct MarketsView: View {
         if let tgt = StockSageInput.positiveAmount(draftTarget) {
             guard draftSide == .long ? tgt > e : tgt < e else { return false }
         }
+        // Optional realized-cost fields: blank is fine (never fabricated), but a TYPED,
+        // unparseable value blocks save rather than silently dropping to nil.
+        let plannedEntryOK = draftPlannedEntry.trimmingCharacters(in: .whitespaces).isEmpty
+            || StockSageInput.positiveAmount(draftPlannedEntry) != nil
+        let entryFillOK = draftEntryFill.trimmingCharacters(in: .whitespaces).isEmpty
+            || StockSageInput.positiveAmount(draftEntryFill) != nil
+        guard plannedEntryOK, entryFillOK else { return false }
         return true
     }
 
@@ -2149,10 +2186,13 @@ struct MarketsView: View {
         let trade = TradeRecord(symbol: draftSymbol.trimmingCharacters(in: .whitespaces).uppercased(),
                                 side: draftSide, entry: e, stop: st, target: StockSageInput.positiveAmount(draftTarget),
                                 shares: sh, openedAt: Date(),
-                                note: trimmedNote.isEmpty ? nil : trimmedNote, conviction: draftConviction)
+                                note: trimmedNote.isEmpty ? nil : trimmedNote, conviction: draftConviction,
+                                plannedEntry: StockSageInput.positiveAmount(draftPlannedEntry),
+                                entryFill: StockSageInput.positiveAmount(draftEntryFill))
         journal.add(trade)
         draftSymbol = ""; draftEntry = ""; draftStop = ""; draftTarget = ""; draftShares = ""; draftNote = ""
         draftConviction = nil
+        draftPlannedEntry = ""; draftEntryFill = ""
         draftSide = .long
         withAnimation(.easeOut(duration: 0.15)) { showAddTrade = false }
     }
@@ -2216,6 +2256,7 @@ struct MarketsView: View {
                 }
                 Button {
                     closeExitText = mark.map { adaptivePrice($0) } ?? ""
+                    closePlannedExitText = ""; closeExitFillText = ""
                     withAnimation(.easeOut(duration: 0.12)) { closingTradeID = (closingTradeID == trade.id) ? nil : trade.id }
                 } label: {
                     Text(closingTradeID == trade.id ? "Cancel" : "Close").font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.secondary)
@@ -2242,12 +2283,21 @@ struct MarketsView: View {
             if closingTradeID == trade.id {
                 HStack(spacing: DS.Space.sm) {
                     journalField("Exit px", text: $closeExitText, width: 80)
+                    journalField("Plan px (opt)", text: $closePlannedExitText, width: 100)
+                        .help("What the plan quoted when you decided to exit. Measures your real execution cost vs. the plan — never changes P&L.")
+                    journalField("Fill px (opt)", text: $closeExitFillText, width: 100)
+                        .help("Your actual exit fill price. Measures your real execution cost vs. the plan — never changes P&L.")
                     Button {
-                        if let exit = StockSageInput.positiveAmount(closeExitText) { journal.close(trade.id, exitPrice: exit); closingTradeID = nil }
+                        guard let exit = StockSageInput.positiveAmount(closeExitText) else { return }
+                        journal.close(trade.id, exitPrice: exit,
+                                     plannedExit: StockSageInput.positiveAmount(closePlannedExitText),
+                                     exitFill: StockSageInput.positiveAmount(closeExitFillText))
+                        closingTradeID = nil
+                        closePlannedExitText = ""; closeExitFillText = ""
                     } label: {
                         Text("Confirm close").font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.white)
                             .padding(.horizontal, 10).padding(.vertical, 5).background(DS.Palette.danger, in: Capsule())
-                    }.buttonStyle(LuxPressStyle()).disabled(StockSageInput.positiveAmount(closeExitText) == nil)
+                    }.buttonStyle(LuxPressStyle()).disabled(!closeIsValid)
                     Spacer(minLength: 0)
                 }
             }
@@ -2255,6 +2305,17 @@ struct MarketsView: View {
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(a11y)
+    }
+
+    /// Confirm-close gate: exit price required + parseable; the two optional realized-cost
+    /// fields may be blank but block close if typed-and-unparseable (never silently drop to nil).
+    private var closeIsValid: Bool {
+        guard StockSageInput.positiveAmount(closeExitText) != nil else { return false }
+        let plannedOK = closePlannedExitText.trimmingCharacters(in: .whitespaces).isEmpty
+            || StockSageInput.positiveAmount(closePlannedExitText) != nil
+        let fillOK = closeExitFillText.trimmingCharacters(in: .whitespaces).isEmpty
+            || StockSageInput.positiveAmount(closeExitFillText) != nil
+        return plannedOK && fillOK
     }
 
     /// Color the per-position live verdict by urgency: red stop-hit, amber near-stop, green
@@ -2282,19 +2343,32 @@ struct MarketsView: View {
             pnlText = "—"
             pnlColor = .secondary
         }
-        return HStack(spacing: DS.Space.sm) {
-            Text(trade.symbol).font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white.opacity(0.85)).frame(width: 64, alignment: .leading).lineLimit(1)
-            Text("\(adaptivePrice(trade.entry))→\(exitStr)").font(.caption2).foregroundStyle(.secondary)
-            Spacer()
-            Text(pnlText).font(.system(size: mvFont11, weight: .semibold))
-                .foregroundStyle(pnlColor)
-            if let r = trade.realizedR {
-                Text(String(format: "%+.2fR", r)).font(.caption2).foregroundStyle(.secondary).frame(width: 48, alignment: .trailing)
+        // Per-leg realized slippage — "—" for a nil leg (never fabricate 0), shown only when at
+        // least one leg has data.
+        let slipLine: String? = {
+            guard trade.entrySlippageBps != nil || trade.exitSlippageBps != nil else { return nil }
+            let entryStr = trade.entrySlippageBps.map { String(format: "%+.1f bps", $0) } ?? "—"
+            let exitStr = trade.exitSlippageBps.map { String(format: "%+.1f bps", $0) } ?? "—"
+            return "slip: entry \(entryStr) · exit \(exitStr)"
+        }()
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: DS.Space.sm) {
+                Text(trade.symbol).font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white.opacity(0.85)).frame(width: 64, alignment: .leading).lineLimit(1)
+                Text("\(adaptivePrice(trade.entry))→\(exitStr)").font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Text(pnlText).font(.system(size: mvFont11, weight: .semibold))
+                    .foregroundStyle(pnlColor)
+                if let r = trade.realizedR {
+                    Text(String(format: "%+.2fR", r)).font(.caption2).foregroundStyle(.secondary).frame(width: 48, alignment: .trailing)
+                }
+                Button { pendingJournalDeleteID = trade.id } label: {
+                    Image(systemName: "trash").font(.system(size: mvFont9)).foregroundStyle(.secondary)
+                }.buttonStyle(.plain)
+                .accessibilityLabel("Delete \(trade.symbol) from journal")
             }
-            Button { pendingJournalDeleteID = trade.id } label: {
-                Image(systemName: "trash").font(.system(size: mvFont9)).foregroundStyle(.secondary)
-            }.buttonStyle(.plain)
-            .accessibilityLabel("Delete \(trade.symbol) from journal")
+            if let slipLine {
+                Text(slipLine).font(.caption2).foregroundStyle(.secondary)
+            }
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)

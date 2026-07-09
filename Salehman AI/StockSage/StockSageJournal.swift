@@ -32,17 +32,51 @@ struct TradeRecord: Codable, Sendable, Equatable, Identifiable {
     /// calibrate EV/sizing — their own executions (fills, slippage, discipline), not just the
     /// sample backtest. Manual trades without a conviction are simply excluded from the fit.
     var conviction: Double?
+    /// The price the plan quoted when the owner decided to ENTER — for measuring real execution
+    /// cost against the plan. Optional + defaulted (old records decode as nil); never a P&L input.
+    let plannedEntry: Double?
+    /// The actual entry fill. Optional + defaulted; never a P&L input.
+    let entryFill: Double?
+    /// The price quoted when the owner decided to EXIT (set at close time). Optional + defaulted.
+    var plannedExit: Double?
+    /// The actual exit fill (set at close time). Optional + defaulted.
+    var exitFill: Double?
 
     init(id: UUID = UUID(), symbol: String, side: Side, entry: Double, stop: Double,
          target: Double?, shares: Double, openedAt: Date,
-         exitPrice: Double? = nil, closedAt: Date? = nil, note: String? = nil, conviction: Double? = nil) {
+         exitPrice: Double? = nil, closedAt: Date? = nil, note: String? = nil, conviction: Double? = nil,
+         plannedEntry: Double? = nil, entryFill: Double? = nil, plannedExit: Double? = nil, exitFill: Double? = nil) {
         self.id = id; self.symbol = symbol; self.side = side
         self.entry = entry; self.stop = stop; self.target = target
         self.shares = shares; self.openedAt = openedAt
         self.exitPrice = exitPrice; self.closedAt = closedAt; self.note = note; self.conviction = conviction
+        self.plannedEntry = plannedEntry; self.entryFill = entryFill
+        self.plannedExit = plannedExit; self.exitFill = exitFill
     }
 
     nonisolated var isOpen: Bool { closedAt == nil }
+
+    /// Cost-positive, direction-adjusted slippage in bps of the planned price for one execution
+    /// leg. Positive = you paid more than planned (a buy filled higher, or a sell filled lower);
+    /// negative = price improvement. nil (never fabricated) unless both prices are positive finite.
+    nonisolated static func legSlippageBps(planned: Double, fill: Double, isBuy: Bool) -> Double? {
+        guard planned > 0, fill > 0, planned.isFinite, fill.isFinite else { return nil }
+        return ((isBuy ? fill - planned : planned - fill) / planned) * 10_000
+    }
+
+    /// Entry-leg slippage — nil unless BOTH plannedEntry and entryFill are set. A long enters via
+    /// a BUY; a short enters via a SELL.
+    nonisolated var entrySlippageBps: Double? {
+        guard let p = plannedEntry, let f = entryFill else { return nil }
+        return Self.legSlippageBps(planned: p, fill: f, isBuy: side == .long)
+    }
+
+    /// Exit-leg slippage — nil unless BOTH plannedExit and exitFill are set AND the trade is
+    /// closed. A long exits via a SELL; a short exits via a BUY.
+    nonisolated var exitSlippageBps: Double? {
+        guard !isOpen, let p = plannedExit, let f = exitFill else { return nil }
+        return Self.legSlippageBps(planned: p, fill: f, isBuy: side == .short)
+    }
 
     /// Risk per share defined at entry (entry→stop distance).
     nonisolated var riskPerShare: Double { abs(entry - stop) }
@@ -229,6 +263,17 @@ struct HoldingPeriod: Sendable, Equatable {
 struct JournalRisk: Sendable, Equatable {
     let maxConsecutiveLosses: Int
     let maxDrawdownR: Double   // worst peak→trough of cumulative R (positive magnitude)
+}
+
+/// The owner's REALIZED execution cost, measured from their own logged fills — vs. the
+/// asset-class ASSUMED cost the engine's cost table uses for the same legs. Display only: see
+/// the fence on `StockSageJournal.measuredSlippage`.
+struct MeasuredSlippage: Sendable, Equatable {
+    let medianBps: Double               // median SIGNED bps/leg over the owner's fills (negative = price improvement)
+    let assumedMedianBpsPerLeg: Double   // median of defaultCosts(symbol).roundTripBps/2 over the SAME legs — apples-to-apples
+    let legs: Int
+    let minLegs: Int                    // 5
+    nonisolated var meetsFloor: Bool { legs >= minLegs }
 }
 
 /// An honest one-glance verdict on the journal's realized track record.
@@ -715,6 +760,33 @@ enum StockSageJournal {
             return (count: closed.count, totalR: total == 0 ? 0 : total, rDefinedCount: rs.count)
         }
     }
+
+    /// Sorted-array median: odd → middle element, even → mean of the two middles. Private —
+    /// `measuredSlippage` is the only caller.
+    private nonisolated static func median(_ xs: [Double]) -> Double {
+        let sorted = xs.sorted()
+        let n = sorted.count
+        return n % 2 == 1 ? sorted[n / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2
+    }
+
+    // MEASURES AND DISPLAYS ONLY. Nothing here feeds NetEdge, the cost table, or any gate —
+    // NetEdge/defaultCosts/trade-gate behavior is byte-identical. Feeding measured costs into the
+    // gate is a future evidence-gated change.
+    /// The owner's realized per-leg execution cost (entry + exit legs of CLOSED trades) vs. the
+    /// asset-class ASSUMED cost for those same legs (half the round-trip table — one leg). nil
+    /// with zero legs; `meetsFloor` (n >= minLegs, default 5) gates whether the UI trusts it.
+    nonisolated static func measuredSlippage(_ trades: [TradeRecord], minLegs: Int = 5) -> MeasuredSlippage? {
+        var measured: [Double] = []
+        var assumed: [Double] = []
+        for t in trades where !t.isOpen {
+            let assumedPerLeg = StockSageNetEdge.defaultCosts(forSymbol: t.symbol).roundTripBps / 2
+            if let s = t.entrySlippageBps { measured.append(s); assumed.append(assumedPerLeg) }
+            if let s = t.exitSlippageBps { measured.append(s); assumed.append(assumedPerLeg) }
+        }
+        guard !measured.isEmpty else { return nil }
+        return MeasuredSlippage(medianBps: median(measured), assumedMedianBpsPerLeg: median(assumed),
+                                legs: measured.count, minLegs: minLegs)
+    }
 }
 
 // MARK: - Persisted journal store
@@ -760,10 +832,14 @@ final class StockSageJournalStore: ObservableObject {
         save()
     }
 
-    func close(_ id: UUID, exitPrice: Double, at date: Date = Date()) {
+    func close(_ id: UUID, exitPrice: Double, plannedExit: Double? = nil, exitFill: Double? = nil, at date: Date = Date()) {
         guard exitPrice > 0, let i = trades.firstIndex(where: { $0.id == id }) else { return }
         trades[i].exitPrice = exitPrice
         trades[i].closedAt = date
+        // Review 2026-07-09: nil params never WIPE an already-captured measurement — a
+        // future caller using the old close(id:exitPrice:) shape must not erase fills.
+        if plannedExit != nil { trades[i].plannedExit = plannedExit }
+        if exitFill != nil { trades[i].exitFill = exitFill }
         save()
     }
 
