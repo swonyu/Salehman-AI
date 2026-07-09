@@ -128,6 +128,7 @@ enum StockSageTodayPlan {
     nonisolated static func rankedActions(_ ideas: [StockSageIdea], account: Double?, riskFraction: Double?,
                                          holds: VelocityHoldDays = .defaults,
                                          calibration: StockSageConvictionCalibration? = nil,
+                                         marketRegime: MarketRegime? = nil,
                                          earnings: [String: EarningsProximity] = [:],
                                          liquidity: [String: LiquidityProfile] = [:],
                                          positions: [PortfolioPosition] = [],
@@ -167,6 +168,12 @@ enum StockSageTodayPlan {
                 shares = ps.shares
                 dollarsAtRisk = ps.dollarsAtRisk
             }
+            let scaledRiskFraction: Double? = rf > 0
+                ? StockSageConvictionScaler.scaledRiskFraction(
+                    base: rf,
+                    conviction: idea.advice.conviction,
+                    regimeBias: marketRegime?.sizingBias ?? 1.0)
+                : nil
             // fastLane() ranks by a demotion-adjusted key (velocityRankKey) but does NOT filter
             // out below-floor/low-conviction ideas — they just sink in the ordering. So a row in
             // this top-N list CAN still be one of them; surface the SAME flags the main ideas
@@ -184,7 +191,9 @@ enum StockSageTodayPlan {
                                        heldShares: heldShares, closedTradeCount: closedTradeCount,
                                        priceAsOf: idea.priceAsOf,
                                        action: idea.advice.action, regime: idea.advice.regime,
-                                       daysToEarnings: daysToEarnings))
+                                       daysToEarnings: daysToEarnings,
+                                       scaledRiskFraction: scaledRiskFraction,
+                                       regimeBias: marketRegime?.sizingBias))
         }
         if case .equityExecutableFirst = mode {
             out.sort { a, b in
@@ -319,5 +328,11 @@ struct TodayActionPlan: Sendable, Equatable, Identifiable {
     var regime: TradeAdvice.Regime = .range
     /// Days until the next earnings event for this symbol, when available (display-only).
     var daysToEarnings: Int? = nil
+    /// Conviction/regime-scaled per-trade risk fraction (display-only). nil when no base
+    /// risk fraction was supplied by the caller.
+    var scaledRiskFraction: Double? = nil
+    /// Regime sizing bias used in scaled-risk computation (display-only). nil when no
+    /// market regime is available.
+    var regimeBias: Double? = nil
     nonisolated var id: String { symbol }
 }

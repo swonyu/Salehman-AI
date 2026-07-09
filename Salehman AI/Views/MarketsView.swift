@@ -4502,6 +4502,7 @@ struct MarketsView: View {
             riskFraction: StockSageInput.percent(sizerRiskPct).map { $0 / 100 },
             holds: velocityHolds,
             calibration: store.convictionCalibration,
+            marketRegime: store.regime,
             earnings: store.earnings,
             liquidity: store.liquidity,
             // TODAY-PARITY: same held/journal awareness the ideas board's Held/Traded chips

@@ -421,4 +421,39 @@ struct StockSageTodayPlanRankedTests {
         let bLine = text.split(separator: "\n").first { $0.contains(". B") }
         #expect(bLine.map { !$0.contains("holds") } ?? false)
     }
+
+    @Test func rankedActionsCarriesConvictionScaledRiskUsingRegimeBias() {
+        let ideas = [clearIdea("A", conviction: 0.9), clearIdea("B", conviction: 0.5, riskAbs: 3, rewardAbs: 15)]
+        let regime = MarketRegime(state: .trendingBull,
+                                  riskScore: 0.7,
+                                  signals: ["uptrend"],
+                                  sizingBias: 1.2,
+                                  caveat: "x")
+        let plans = StockSageTodayPlan.rankedActions(
+            ideas,
+            account: nil,
+            riskFraction: 0.01,
+            marketRegime: regime,
+            max: 2)
+        #expect(!plans.isEmpty)
+        for p in plans {
+            #expect(p.scaledRiskFraction != nil)
+            #expect(p.regimeBias == 1.2)
+            let conviction = p.symbol == "A" ? 0.9 : 0.5
+            let expected = StockSageConvictionScaler.scaledRiskFraction(base: 0.01,
+                                                                         conviction: conviction,
+                                                                         regimeBias: 1.2)
+            #expect(p.scaledRiskFraction.map { abs($0 - expected) < 1e-12 } == true)
+        }
+    }
+
+    @Test func rankedActionsLeavesScaledRiskNilWhenRiskFractionMissing() {
+        let ideas = [clearIdea("A"), clearIdea("B", conviction: 0.9, riskAbs: 3, rewardAbs: 15)]
+        let plans = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: nil, max: 2)
+        #expect(!plans.isEmpty)
+        for p in plans {
+            #expect(p.scaledRiskFraction == nil)
+            #expect(p.regimeBias == nil)
+        }
+    }
 }

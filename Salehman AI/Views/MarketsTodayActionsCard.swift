@@ -271,6 +271,18 @@ struct MarketsTodayActionsCard: View {
                             .lineLimit(1)
                     }
                 }
+                if let scaled = plan.scaledRiskFraction {
+                    let scaledPct = scaled * 100
+                    let biasText = plan.regimeBias.map { String(format: " (regime ×%.2f)", $0) } ?? ""
+                    Text(String(format: "Conviction-scaled risk: %.2f%%%@ — scales size, not odds.", scaledPct, biasText))
+                        .font(.system(size: font8)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help({
+                            var text = StockSageConvictionScaler.caveat
+                            text += String(format: " Scaled risk shown: %.2f%%.", scaledPct)
+                            return text
+                        }())
+                }
             }
             .padding(.horizontal, DS.Space.sm).padding(.vertical, 6)
             .background(DS.Bezel.cardFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
