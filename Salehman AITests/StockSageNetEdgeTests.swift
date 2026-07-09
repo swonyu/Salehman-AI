@@ -65,8 +65,15 @@ struct StockSageNetEdgeTests {
         // understatement on the Saudi-first core).
         #expect(NE.defaultCosts(forSymbol: "2222.SR").assetClass == "intl (Tadawul)")
         #expect(NE.defaultCosts(forSymbol: "2222.SR").roundTripBps == 60)
-        // Non-Saudi intl stays at the ratified liquid default (research §2: 30 ACCURATE for
-        // liquid intl) — the re-tier must not leak past the .SR suffix.
+        // EM re-tier (2026-07-09; owner lifted the cost-table gate). RELIANCE.NS (India NSE)
+        // moves off the flat intl 30 to 'intl (EM)' / 60bps per
+        // RESEARCH_2026-07-03_current_era_costs.md §2 (60–100+bps small/illiquid/EM band;
+        // per-order minimums alone 52–120bps RT, CONFIRMED 2/3) — hand-derived spread 20 +
+        // slippage 10 + fees 30 = 60.
+        #expect(NE.defaultCosts(forSymbol: "RELIANCE.NS").assetClass == "intl (EM)")
+        #expect(NE.defaultCosts(forSymbol: "RELIANCE.NS").roundTripBps == 60)
+        // Non-Saudi, non-EM intl stays at the ratified liquid default (research §2: 30 ACCURATE
+        // for liquid intl) — the re-tier must not leak past the .SR/EM suffixes.
         #expect(NE.defaultCosts(forSymbol: "7203.T").assetClass == "intl")
         #expect(NE.defaultCosts(forSymbol: "7203.T").roundTripBps == 30)
         #expect(NE.defaultCosts(forSymbol: "AAPL").assetClass == "US large-cap")
@@ -76,6 +83,58 @@ struct StockSageNetEdgeTests {
         let eCr = NE.evaluate(entry: 100, stop: 90, target: 130, spreadBps: cr.spreadBps, slippageBps: cr.slippageBps)!
         let eUs = NE.evaluate(entry: 100, stop: 90, target: 130, spreadBps: us.spreadBps, slippageBps: us.slippageBps)!
         #expect(eCr.netRR < eUs.netRR)
+    }
+
+    @Test func emSuffixTierRoutesEveryUniverseMarketToTheSame60bps() {
+        // One representative symbol per EM suffix — universe members (StockSageQuoteService.swift
+        // groups) except 500325.BO: a realistic BSE code with NO catalog entry today (the .BO
+        // suffix is inert until one exists; any future .BO name lands on the HIGHER tier). Per EM
+        // suffix — all must land on 'intl (EM)' / 60bps / takerFeeBps 30. Citation:
+        // RESEARCH_2026-07-03_current_era_costs.md §2, same derivation as above.
+        for sym in ["RELIANCE.NS", "500325.BO", "600519.SS", "PETR4.SA", "AMXB.MX",
+                    "EMAAR.AE", "QNBK.QA", "COMI.CA", "NPN.JO"] {
+            let c = NE.defaultCosts(forSymbol: sym)
+            #expect(c.assetClass == "intl (EM)", "\(sym) assetClass")
+            #expect(c.roundTripBps == 60, "\(sym) roundTripBps")
+            #expect(c.takerFeeBps == 30, "\(sym) takerFeeBps")
+        }
+        // Developed-market suffixes stay on the liquid intl default — the EM branch must not
+        // leak past its own suffix list.
+        for sym in ["7203.T", "SHEL.L", "0700.HK", "SAP.DE", "RY.TO"] {
+            let c = NE.defaultCosts(forSymbol: sym)
+            #expect(c.assetClass == "intl", "\(sym) assetClass")
+            #expect(c.roundTripBps == 30, "\(sym) roundTripBps")
+        }
+        // Korea/Taiwan: MSCI classifies both EM, but the universe's holdings there
+        // (005930.KS Samsung, 2330.TW TSMC) trade at developed-grade microstructure — the
+        // EM fee-band evidence cannot honestly be cited for them, so they're deliberately
+        // excluded from `emSuffixes` and stay on the liquid intl default.
+        #expect(NE.defaultCosts(forSymbol: "005930.KS").assetClass == "intl")
+        #expect(NE.defaultCosts(forSymbol: "005930.KS").roundTripBps == 30)
+        #expect(NE.defaultCosts(forSymbol: "2330.TW").assetClass == "intl")
+        #expect(NE.defaultCosts(forSymbol: "2330.TW").roundTripBps == 30)
+        // .SR precedent untouched — the EM branch must not shadow or relabel the
+        // measured Tadawul tier.
+        #expect(NE.defaultCosts(forSymbol: "2222.SR").assetClass == "intl (Tadawul)")
+        #expect(NE.defaultCosts(forSymbol: "2222.SR").roundTripBps == 60)
+        // Prefix-ordering guard: the `^` branch must keep beating both the .SR and EM checks.
+        #expect(NE.defaultCosts(forSymbol: "^TASI.SR").assetClass == "index")
+        #expect(NE.defaultCosts(forSymbol: "^TASI.SR").roundTripBps == 8)
+        // US fallback untouched.
+        #expect(NE.defaultCosts(forSymbol: "AAPL").assetClass == "US large-cap")
+        #expect(NE.defaultCosts(forSymbol: "AAPL").roundTripBps == 13)
+        #expect(NE.defaultCosts(forSymbol: "BRK-B").assetClass == "US large-cap")   // dash, no dot
+        #expect(NE.defaultCosts(forSymbol: "BRK-B").roundTripBps == 13)
+        // Direction assert (mirrors the crypto-vs-US check above): on an identical setup, EM
+        // net R:R < liquid-intl net R:R < US net R:R (strictly worsening cost tiers).
+        let em = NE.defaultCosts(forSymbol: "RELIANCE.NS")
+        let intl = NE.defaultCosts(forSymbol: "7203.T")
+        let us = NE.defaultCosts(forSymbol: "AAPL")
+        let eEm = NE.evaluate(entry: 100, stop: 90, target: 130, spreadBps: em.spreadBps, slippageBps: em.slippageBps, takerFeeBps: em.takerFeeBps)!
+        let eIntl = NE.evaluate(entry: 100, stop: 90, target: 130, spreadBps: intl.spreadBps, slippageBps: intl.slippageBps, takerFeeBps: intl.takerFeeBps)!
+        let eUs2 = NE.evaluate(entry: 100, stop: 90, target: 130, spreadBps: us.spreadBps, slippageBps: us.slippageBps, takerFeeBps: us.takerFeeBps)!
+        #expect(eEm.netRR < eIntl.netRR)
+        #expect(eIntl.netRR < eUs2.netRR)
     }
 
     @Test func worksForShortsAndGuardsDegenerate() {

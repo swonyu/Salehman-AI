@@ -46,6 +46,13 @@ enum StockSageNetEdge {
         }
     }
 
+    /// Genuinely-EM suffixes only (RESEARCH_2026-07-03_current_era_costs.md §2's 60–100+bps
+    /// band). Deliberately EXCLUDES .KS/.TW — MSCI labels Korea/Taiwan EM, but the universe's
+    /// holdings there (005930.KS, 2330.TW) trade at developed-grade microstructure, and
+    /// deliberately excludes every developed-market suffix (.L .DE .PA .AS .MC .MI .ST .SW .SI
+    /// .T .HK .AX .TO) — those stay on the liquid intl default, which §2 ratifies as accurate.
+    private nonisolated static let emSuffixes: [String] = [".NS", ".BO", ".SS", ".SA", ".MX", ".AE", ".QA", ".CA", ".JO"]
+
     /// Pick a sensible round-trip cost estimate from the symbol's asset class (suffix).
     /// Crypto widest, FX majors tightest; foreign single-listings wider than US large-caps.
     nonisolated static func defaultCosts(forSymbol symbol: String) -> CostAssumption {
@@ -61,6 +68,16 @@ enum StockSageNetEdge {
             // gate passed losers). 60 bps = the bottom of the research's 60–100 EM band:
             // fees ≈30 (takerFeeBps) + the intl default's spread/slippage 20+10.
             return CostAssumption(spreadBps: 20, slippageBps: 10, assetClass: "intl (Tadawul)", takerFeeBps: 30)   // 60bps
+        }
+        if emSuffixes.contains(where: s.hasSuffix) {
+            // EM re-tier (2026-07-09; owner lifted the cost-table gate). 60bps = the BOTTOM of
+            // RESEARCH_2026-07-03_current_era_costs.md §2's 60–100+bps small/illiquid/EM band
+            // (per-order minimums alone 52–120bps RT, CONFIRMED 2/3): spread 20 + slippage 10
+            // (same as the intl default below) + fees 30. UNLIKE .SR's fee leg (Tadawul-
+            // measured, 24–36bps RT, 3/3), this 30 is a band-derived ESTIMATE, not a
+            // per-market measurement — band bottom, not midpoint, is the largest increase the
+            // evidence generically supports. See `emSuffixes` doc for the exclusion rationale.
+            return CostAssumption(spreadBps: 20, slippageBps: 10, assetClass: "intl (EM)", takerFeeBps: 30)  // 60bps
         }
         if s.contains(".")     { return CostAssumption(spreadBps: 20, slippageBps: 10, assetClass: "intl") }        // 30bps
         return CostAssumption(spreadBps: 8, slippageBps: 5, assetClass: "US large-cap")                             // 13bps
