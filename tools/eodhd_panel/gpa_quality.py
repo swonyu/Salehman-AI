@@ -147,7 +147,10 @@ def run_leg(names, sigmap, wdates, wpos, lag, fresh, tag):
                 if cur is None: continue
                 if cur[1] + lag < p - fresh + 1:            # freshness on (shifted) filed pos
                     stale += 1; continue
-                dvw = [nm["dv"][j] for j in range(p - 62, p + 1) if not math.isnan(nm["dv"][j])]
+                # FIX 2026-07-10 (post-run audit B6, proven inert for the completed run — p=0 was
+                # necessarily skipped, <30 eligible): clamp the dv window; Python negative indices
+                # would read the FUTURE tail of the array.
+                dvw = [nm["dv"][j] for j in range(max(0, p - 62), p + 1) if not math.isnan(nm["dv"][j])]
                 if not dvw: continue
                 elig.append(code); liq[code] = statistics.median(dvw); sig[code] = cur[3]
             stale_drops[(H, p)] = stale
@@ -211,7 +214,7 @@ def placebo_leg(names, sigmap, wdates, seed):
                 for av, fp_, end, g in reversed(evs):
                     if av <= p: cur = (av, fp_, end, g); break
                 if cur is None or cur[1] < p - FRESH + 1: continue
-                dvw = [nm["dv"][j] for j in range(p - 62, p + 1) if not math.isnan(nm["dv"][j])]
+                dvw = [nm["dv"][j] for j in range(max(0, p - 62), p + 1) if not math.isnan(nm["dv"][j])]
                 if not dvw: continue
                 elig.append(code); liq[code] = statistics.median(dvw); sig[code] = cur[3]
             if len(elig) < MIN_NAMES:

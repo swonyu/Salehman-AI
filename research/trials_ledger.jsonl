@@ -741,3 +741,9 @@
 {"family": "reversal-survfree", "run": "67749d7", "panel": "eodhd-us-delisted+active-2026-07-10", "arm": "lb63/hd10/LOWLIQ", "sharpe": -0.07881375067057554, "dsr": 4.477236934273445e-09, "n": 660, "verdict": "null"}
 {"family": "reversal-survfree", "run": "67749d7", "panel": "eodhd-us-delisted+active-2026-07-10", "arm": "lb63/hd21/FULL", "sharpe": -0.038341735438797, "dsr": 0.0004060964116400944, "n": 314, "verdict": "null"}
 {"family": "reversal-survfree", "run": "67749d7", "panel": "eodhd-us-delisted+active-2026-07-10", "arm": "lb63/hd21/LOWLIQ", "sharpe": -0.10816665100015588, "dsr": 2.1864712282207033e-06, "n": 314, "verdict": "null"}
+{"family": "gpa-quality", "run": "961002e", "panel": "eodhd-us-delisted+active-2026-07-10+edgar-facts", "arm": "FULL/H63", "sharpe": 0.038768182423099505, "dsr": 0.15142978885423494, "n": 64, "verdict": "null"}
+{"family": "gpa-quality", "run": "961002e", "panel": "eodhd-us-delisted+active-2026-07-10+edgar-facts", "arm": "FULL/H126", "sharpe": 0.0870861262205083, "dsr": 0.3255800224993388, "n": 31, "verdict": "null"}
+{"family": "gpa-quality", "run": "961002e", "panel": "eodhd-us-delisted+active-2026-07-10+edgar-facts", "arm": "FULL/H252", "sharpe": -0.12128629275862261, "dsr": 0.1301634331701918, "n": 15, "verdict": "null"}
+{"family": "gpa-quality", "run": "961002e", "panel": "eodhd-us-delisted+active-2026-07-10+edgar-facts", "arm": "LOWLIQ/H63", "sharpe": 0.08390125491171947, "dsr": 0.25227812830057966, "n": 64, "verdict": "null"}
+{"family": "gpa-quality", "run": "961002e", "panel": "eodhd-us-delisted+active-2026-07-10+edgar-facts", "arm": "LOWLIQ/H126", "sharpe": 0.03163629880322421, "dsr": 0.22389982548761764, "n": 31, "verdict": "null"}
+{"family": "gpa-quality", "run": "961002e", "panel": "eodhd-us-delisted+active-2026-07-10+edgar-facts", "arm": "LOWLIQ/H252", "sharpe": -0.2350124098478721, "dsr": 0.04896150172509666, "n": 15, "verdict": "null"}
