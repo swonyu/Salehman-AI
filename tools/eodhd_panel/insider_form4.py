@@ -53,9 +53,16 @@ def derive(nm):
     return {"prints": [j for j in range(len(nm["open"])) if not math.isnan(nm["open"][j])]}
 
 
-def run_leg(names, avmap, wdates, lag, tag, tail_max):
-    """avmap: code -> sorted availability bar list. Returns arms[(scope,H)] block dicts."""
+def run_leg(names, avmap, wdates, lag, tag, tail_max, mapped=None):
+    """avmap: code -> sorted availability bar list. Returns arms[(scope,H)] block dicts.
+    FIX 2026-07-10 (post-run 2-lens finding, verdict-inert — NULL strengthened): the prereg pins
+    eligibility "...AND CIK-mapped" (unmapped names excluded from BOTH books); the completed run
+    omitted it (~11.2% of EQW unmapped), which FLATTERED the diff (+19.5bp/t=1.67 as-built vs
+    +16.6bp/t=1.39 prereg-faithful — measured independently by BOTH verification lenses). Pass
+    `mapped` = the CIK-mapped code set to enforce the faithful book on future runs."""
     N = len(wdates)
+    if mapped is not None:
+        names = [nm for nm in names if nm["code"] in mapped]
     ders = {nm["code"]: derive(nm) for nm in names}
     byc = {nm["code"]: nm for nm in names}
     arms = {}
@@ -180,6 +187,9 @@ def main():
     print(f"prep done: clean={len(clean)} screened={len(screened)} rejections={rej}")
 
     ev = json.load(open(EVENTS))["events"]
+    # FIX 2026-07-10 (see run_leg doc): enforce the prereg's CIK-mapped eligibility on future runs.
+    _m = json.load(open(os.path.join(BASE, "edgar_cik_map.json")))
+    mapped = set(_m["mapped"]) | set(_m.get("mapped_screened", {}))
     avmap = {}
     for code, lst in ev.items():
         avs = sorted(bisect.bisect_right(wdates, fd) for fd, _ in lst)
@@ -189,16 +199,16 @@ def main():
           f"events mapped: {sum(len(v) for v in avmap.values())}")
 
     print("\n=== BASE leg ===", flush=True)
-    base = run_leg(clean, avmap, wdates, 0, "base", tail_max)
+    base = run_leg(clean, avmap, wdates, 0, "base", tail_max, mapped)
     print("=== S1' lag +5 leg ===", flush=True)
-    lagl = run_leg(clean, avmap, wdates, LAG, "lag", tail_max)
+    lagl = run_leg(clean, avmap, wdates, LAG, "lag", tail_max, mapped)
     print("=== S2b no-screen leg ===", flush=True)
-    s2b = run_leg(clean + screened, avmap, wdates, 0, "s2b", tail_max)
+    s2b = run_leg(clean + screened, avmap, wdates, 0, "s2b", tail_max, mapped)
     print("=== S1'' placebo x3 ===", flush=True)
     plac = []
     for seed in (1, 2, 3):
         pm = placebo_avmap(avmap, clean, wdates, seed)
-        plac.append(run_leg(clean, pm, wdates, 0, f"plac{seed}", tail_max))
+        plac.append(run_leg(clean, pm, wdates, 0, f"plac{seed}", tail_max, mapped))
 
     keys = [(scope, H) for scope, _ in SCOPES for H in HORIZONS]
     srs = {}

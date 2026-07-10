@@ -747,3 +747,7 @@
 {"family": "gpa-quality", "run": "961002e", "panel": "eodhd-us-delisted+active-2026-07-10+edgar-facts", "arm": "LOWLIQ/H63", "sharpe": 0.08390125491171947, "dsr": 0.25227812830057966, "n": 64, "verdict": "null"}
 {"family": "gpa-quality", "run": "961002e", "panel": "eodhd-us-delisted+active-2026-07-10+edgar-facts", "arm": "LOWLIQ/H126", "sharpe": 0.03163629880322421, "dsr": 0.22389982548761764, "n": 31, "verdict": "null"}
 {"family": "gpa-quality", "run": "961002e", "panel": "eodhd-us-delisted+active-2026-07-10+edgar-facts", "arm": "LOWLIQ/H252", "sharpe": -0.2350124098478721, "dsr": 0.04896150172509666, "n": 15, "verdict": "null"}
+{"family": "insider-form4", "run": "147fe80", "panel": "eodhd-us-delisted+active-2026-07-10+sec-form345", "arm": "FULL/H21", "sharpe": 0.11745170086765208, "dsr": 0.8348047122153774, "n": 203, "verdict": "null"}
+{"family": "insider-form4", "run": "147fe80", "panel": "eodhd-us-delisted+active-2026-07-10+sec-form345", "arm": "FULL/H63", "sharpe": 0.06832307885073544, "dsr": 0.5595575295332792, "n": 68, "verdict": "null"}
+{"family": "insider-form4", "run": "147fe80", "panel": "eodhd-us-delisted+active-2026-07-10+sec-form345", "arm": "LOWLIQ/H21", "sharpe": 0.05246533185042614, "dsr": 0.5149139857789089, "n": 203, "verdict": "null"}
+{"family": "insider-form4", "run": "147fe80", "panel": "eodhd-us-delisted+active-2026-07-10+sec-form345", "arm": "LOWLIQ/H63", "sharpe": 0.0024092852499274318, "dsr": 0.3488810555614412, "n": 68, "verdict": "null"}
