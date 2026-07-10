@@ -524,4 +524,37 @@ struct StockSageTodayPlanRankedTests {
         let text = StockSageTodayPlan.copyAllText(plans)
         #expect(!text.contains("conviction-scaled risk"))
     }
+
+    // F6 (OWNER-SIGNED 2026-07-10, AskUserQuestion selection "Ship F6 (net-first crowning)";
+    // spec: plans/TRIAGE_2026-07-09_fastest_dollar_audit.md UPDATE section). The audit verified
+    // .equityExecutableFirst crowned by RAW EV/day while net velocity was computed and DISCARDED.
+    // HAND-DERIVED diverging fixture — the cost differential flips gross vs net order:
+    //   TIGHT: entry 100, stop 99  (risk  $1), target 104.1 → rewardR 4.1
+    //   WIDE:  entry 100, stop 90  (risk $10), target 140.0 → rewardR 4.0
+    // Same conviction/action/class ⇒ identical sort buckets (equity, gate nil, no floor/
+    // low-conviction/earnings) — ONLY the final velocity tiebreak decides.
+    // GROSS: evR = p·rewardR − (1−p), same p and hold for both ⇒ gross gap = p·(4.1−4.0)
+    //   = p·0.1 R in TIGHT's favor, and p ≤ min(c, 0.35+0.23c) = 0.557 ⇒ gap ≤ 0.056 R.
+    // NET: US round-trip default 13bps of entry ≈ $0.13/share; in R units 0.13/1 = 0.13 R
+    //   against TIGHT but 0.13/10 = 0.013 R against WIDE — a 0.117 R differential that
+    //   exceeds the ≤0.056 R gross gap ⇒ NET order flips to WIDE (≈2× margin; exact engine
+    //   legs — spread/slippage split, reward caps — cannot close it).
+    // Pre-F6 code crowned TIGHT — this test FAILS on the old tiebreak by construction.
+    @Test func equityExecutableFirstCrownsByNetVelocityWhenCostsFlipTheOrder() throws {
+        let tight = idea("TIGHT", conviction: 0.9, stop: 99, target: 104.1)
+        let wide  = idea("WIDE",  conviction: 0.9, stop: 90, target: 140)
+        let ideas = [tight, wide]
+        // Divergence sanity via the engine's own getters — the behavior under test is that the
+        // crown follows NET, not that either value equals a constant:
+        let gTight = try #require(StockSageExpectedValue.velocity(for: tight))
+        let gWide  = try #require(StockSageExpectedValue.velocity(for: wide))
+        let nTight = try #require(StockSageExpectedValue.netVelocity(for: tight))
+        let nWide  = try #require(StockSageExpectedValue.netVelocity(for: wide))
+        #expect(gTight > gWide)          // gross crowns TIGHT…
+        #expect(nWide > nTight)          // …net crowns WIDE (the cost differential)
+        let plans = StockSageTodayPlan.rankedActions(ideas, account: nil, riskFraction: nil,
+                                                     mode: .equityExecutableFirst, max: 2)
+        #expect(plans.first?.symbol == "WIDE")   // the owner-signed net-first crown
+        #expect(plans.first?.netVelocityRank != nil)
+    }
 }

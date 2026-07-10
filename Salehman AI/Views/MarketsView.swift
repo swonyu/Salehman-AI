@@ -5734,6 +5734,25 @@ struct MarketsView: View {
                 // "est." added to match sheet's "After ~13bps est. … costs" wording.
                 plan += String(format: "\nNet R:R (after ~%dbps est. %@ costs%@): %.1f:1 (gross %.1f:1)",
                                Int(costs.roundTripBps), costs.assetClass, financingNote, ne.netRR, ne.grossRR)
+                // F2 (owner-signed 2026-07-10): export parity for the per-order-minimum
+                // disclosure the on-screen ledger shows — same guards, same wording.
+                if costs.perOrderMinimum > 0,
+                   let acct = StockSageInput.positiveAmount(sizerAccount),
+                   let rp = StockSageInput.percent(sizerRiskPct),
+                   let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop),
+                   ps.shares > 0,
+                   let neSized = StockSageNetEdge.evaluate(
+                       entry: idea.price, stop: stop, target: target,
+                       spreadBps: costs.spreadBps, slippageBps: costs.slippageBps,
+                       takerFeeBps: costs.takerFeeBps,
+                       annualFinancingRate: finRate, holdDays: finDays,
+                       perOrderMinimum: costs.perOrderMinimum,
+                       orderNotional: Double(ps.shares) * idea.price),
+                   neSized.costPerShare > ne.costPerShare + 1e-9 {
+                    let liftedBps = neSized.costPerShare / idea.price * 10_000
+                    plan += String(format: "\n⚠ At your %d-share order, per-order broker minimums lift est. costs to ~%.0fbps — net R:R %.1f:1 at this size.",
+                                   ps.shares, liftedBps, neSized.netRR)
+                }
                 if let be = ne.breakEvenWinRate {
                     plan += String(format: " — needs >%.1f%% win-rate net", be * 100)
                 }
@@ -6222,16 +6241,48 @@ struct MarketsView: View {
                             // that sentence carried, moved onto this row so it isn't lost.
                             let grossLabel = String(format: "Gross expectancy (~%.0f%% est. win × %.1f:1)",
                                                      ev.winProbEstimate * 100, ev.rewardR)
+                            // F2 (owner-signed 2026-07-10): ADDITIVE per-order-minimum disclosure.
+                            // The three rank-consistent rows above/below stay byte-identical (the
+                            // 2026-07-02 no-divergence contract with netEVR); when the sizer knows
+                            // the order AND flat per-order broker minimums LIFT the effective cost
+                            // (intl tiers; see CostAssumption.perOrderMinimum), a fourth line says
+                            // so at YOUR order size. nil on US/index/FX (minimum 0), unsized
+                            // sizer, 0-share floors, or when bps already dominate.
+                            let f2MinNote: String? = {
+                                guard costs.perOrderMinimum > 0,
+                                      let acct = StockSageInput.positiveAmount(sizerAccount),
+                                      let rp = StockSageInput.percent(sizerRiskPct),
+                                      let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop),
+                                      ps.shares > 0,
+                                      let neSized = StockSageNetEdge.evaluate(
+                                          entry: idea.price, stop: stop, target: target,
+                                          spreadBps: costs.spreadBps, slippageBps: costs.slippageBps,
+                                          takerFeeBps: costs.takerFeeBps,
+                                          annualFinancingRate: finRate, holdDays: finDays,
+                                          winProb: ev.winProbEstimate,
+                                          perOrderMinimum: costs.perOrderMinimum,
+                                          orderNotional: Double(ps.shares) * idea.price),
+                                      neSized.costPerShare > ne.costPerShare + 1e-9 else { return nil }
+                                let liftedBps = neSized.costPerShare / idea.price * 10_000
+                                return String(format: "At your %d-share order, per-order broker minimums lift est. costs to ~%.0fbps — net R:R %.1f:1 at this size.",
+                                              ps.shares, liftedBps, neSized.netRR)
+                            }()
                             VStack(alignment: .leading, spacing: 3) {
                                 ledgerRow(grossLabel, String(format: "%+.2fR", ev.evR), color: .white)
                                     .help(StockSageExpectedValue.caveat)
                                 ledgerRow(deductionLabel, String(format: "−%.2fR", ev.evR - netR), color: DS.Palette.textSecondary)
                                 ledgerRow("Net expectancy", String(format: "%+.2fR", netR), color: netColor)
+                                if let f2MinNote {
+                                    Text(f2MinNote)
+                                        .font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
                             }
                             .padding(.top, 2)
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel(String(format: "Gross expectancy %+.2fR (~%.0f%% estimated win rate times %.1f to 1 reward to risk), minus %@, net expectancy %+.2fR",
-                                                       ev.evR, ev.winProbEstimate * 100, ev.rewardR, deductionLabel, netR))
+                                                       ev.evR, ev.winProbEstimate * 100, ev.rewardR, deductionLabel, netR)
+                                                + (f2MinNote.map { ". " + $0 } ?? ""))
                         }
                     }
                 }

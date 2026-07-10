@@ -237,7 +237,11 @@ enum StockSageDecisionSnapshotBuilder {
         if floorFlag.isDeranked { reasons.append(.belowNetCostFloor) }
         if case .demoted = earningsFlag { reasons.append(.earningsImminent) }
         if liq?.tier == .thin { reasons.append(.liquidityThin) }
-        if !clearsCostAfterFrictions(idea, calibration: calibration) { reasons.append(.costFails) }
+        // F2 (owner-signed 2026-07-10): the sized gate path passes the order notional so flat
+        // per-order minimums (intl tiers) can bite; unsized calls (account/risk unset, or a
+        // 0-share floor) stay byte-identical (the cost fn guards notional greater than 0).
+        let f2Notional: Double? = size.map { Double($0.shares) * idea.price }
+        if !clearsCostAfterFrictions(idea, calibration: calibration, orderNotional: f2Notional) { reasons.append(.costFails) }
         if let regime {
             if bannedFromTopRank(idea: idea, regime: regime) { reasons.append(.regimeBanned) }
         }
@@ -280,7 +284,8 @@ enum StockSageDecisionSnapshotBuilder {
     // Mirrors StockSageExpectedValue's internal cost-gate semantics (private there).
     private nonisolated static func clearsCostAfterFrictions(
         _ idea: StockSageIdea,
-        calibration: StockSageConvictionCalibration?
+        calibration: StockSageConvictionCalibration?,
+        orderNotional: Double? = nil
     ) -> Bool {
         guard let stop = idea.advice.stopPrice, let target = idea.advice.targetPrice else { return true }
         let costs = StockSageNetEdge.defaultCosts(forSymbol: idea.symbol)
@@ -290,7 +295,9 @@ enum StockSageDecisionSnapshotBuilder {
                                                  slippageBps: costs.slippageBps,
                                                  takerFeeBps: costs.takerFeeBps,
                                                  annualFinancingRate: rate,
-                                                 holdDays: days) else { return true }
+                                                 holdDays: days,
+                                                 perOrderMinimum: costs.perOrderMinimum,
+                                                 orderNotional: orderNotional) else { return true }
         let p = StockSageExpectedValue.winProbEstimate(conviction: idea.advice.conviction, calibration: calibration)
         return ne.clearsCost(estWinProb: p)
     }

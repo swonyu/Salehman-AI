@@ -209,7 +209,8 @@ enum StockSageTodayPlan {
             let heldShares = holdingsBySymbol[idea.symbol.uppercased()]?.shares
             let closedTradeCount = historyBySymbol[idea.symbol.uppercased()]?.count
             let daysToEarnings = earnings[idea.symbol.uppercased()]?.daysUntil
-            out.append(TodayActionPlan(symbol: idea.symbol, velocity: v, entry: entry, stop: stop, target: target,
+            let netV = StockSageExpectedValue.netVelocity(for: idea, holds: holds, calibration: calibration)
+            out.append(TodayActionPlan(symbol: idea.symbol, velocity: v, netVelocityRank: netV, entry: entry, stop: stop, target: target,
                                        shares: shares, dollarsAtRisk: dollarsAtRisk, gate: snap.gate,
                                        isCrypto: idea.symbol.uppercased().hasSuffix("-USD"),
                                        netCostFloorFlag: floorFlag, isLowConviction: lowConviction,
@@ -249,8 +250,10 @@ enum StockSageTodayPlan {
             guard let days = plan.daysToEarnings else { return 0 }
             return days <= 3 ? 1 : 0
         }()
-        // Higher velocity still matters once executable filters tie.
-        return (equityBucket, gateBucket, floorBucket, convictionBucket, earningsBucket, -plan.velocity)
+        // Higher velocity still matters once executable filters tie — NET velocity since the
+        // owner-signed F6 ruling (2026-07-10; the audit's verified finding was that net was
+        // computed and discarded here). Gross fallback when net is unavailable (nil-contract).
+        return (equityBucket, gateBucket, floorBucket, convictionBucket, earningsBucket, -(plan.netVelocityRank ?? plan.velocity))
     }
 
     /// "Copy all N" clipboard text for a ranked list — one line per plan (symbol, velocity,
@@ -265,7 +268,7 @@ enum StockSageTodayPlan {
         let orderDesc: String = {
             switch mode {
             case .fastestCompounding:    return "by velocity (EV/day)"
-            case .equityExecutableFirst: return "executable equities first (equity before 24/7 crypto, gate-clear before blocked), then fastest raw EV/day"
+            case .equityExecutableFirst: return "executable equities first (equity before 24/7 crypto, gate-clear before blocked), then fastest net EV/day (est. costs deducted; gross when net is unavailable)"
             }
         }()
         var lines = ["Today's ranked actions — top \(plans.count), \(orderDesc). Estimates, not advice; a per-trade risk cap always applies."]
@@ -341,6 +344,13 @@ enum StockSageTodayPlan {
 struct TodayActionPlan: Sendable, Equatable, Identifiable {
     let symbol: String
     let velocity: Double   // EV per day (R), the fastLane ranking number
+    /// NET EV/day (est. costs deducted) — the `.equityExecutableFirst` final tiebreak since the
+    /// OWNER-SIGNED F6 ruling (2026-07-10, "Ship F6 (net-first crowning)" —
+    /// plans/TRIAGE_2026-07-09_fastest_dollar_audit.md UPDATE section): the audit verified net
+    /// velocity was computed per row and discarded while the crown used the raw number.
+    /// nil (cost/hold inputs unavailable) ⇒ the ordering key falls back to gross `velocity` —
+    /// nil-contract: a net figure is never fabricated.
+    var netVelocityRank: Double? = nil
     let entry: Double
     let stop: Double
     let target: Double
