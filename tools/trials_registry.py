@@ -28,7 +28,12 @@ def load_rows(paths):
                     if not line:
                         continue
                     obj = json.loads(line)
-                    key = (obj.get("run"), obj.get("config"))
+                    # FIX 2026-07-10 (composite-run audit F10): arm-keyed records (the 2026-07-10
+                    # panel runners write "arm", not "config") collapsed to ONE row per run under
+                    # a (run, config=None) key — future censuses would UNDER-count selection
+                    # history (under-deflation, the dangerous direction). Dedup on whichever
+                    # identity key the record carries.
+                    key = (obj.get("run"), obj.get("config") if obj.get("config") is not None else obj.get("arm"))
                     rows[key] = obj
         except FileNotFoundError:
             print(f"WARN: {path} not found — skipped", file=sys.stderr)

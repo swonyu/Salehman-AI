@@ -347,6 +347,9 @@ def main():
         s2a_d = dsr_of(a["d_w"], bP); s2b_d = dsr_of(s2b[k]["d_w"], bP)
         lmu = (sum(lagl[k]["d"]) / len(lagl[k]["d"])) if lagl[k]["d"] else 0.0
         s1 = (mu >= 0) == (lmu >= 0)
+        # FIX 2026-07-10 (audit F8): the prereg's pinned S5 form includes this assert; the run
+        # omitted it (equality held by construction — single guarded append site, audit-verified).
+        assert len(d) == len(a["dg"]) == len(a["dm"]), f"S5 block mismatch on {k}"
         inc_g = [x - y for x, y in zip(d, a["dg"])]
         inc_m = [x - y for x, y in zip(d, a["dm"])]
         s5_ok = sum(inc_g) > 0 and sum(inc_m) > 0
