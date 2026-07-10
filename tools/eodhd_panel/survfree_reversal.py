@@ -249,7 +249,10 @@ def main():
         sr, sk, ku, _ = srs[k]
         per = rt / 2 / 1e4
         w_nets = [g - t * per for g, t in zip(a["w_r"], a["turn"])]
-        b_nets = net_series(s2b[k], rt)
+        # FIX 2026-07-10 (post-run audit F1, verdict-inert for the completed run): S2b must be the
+        # no-screen WINSORIZED series per the prereg; the run used the no-screen gross ("g") —
+        # conservative/veto-tightening direction, disclosed in the detail file.
+        b_nets = [g - t * per for g, t in zip(s2b[k]["w_r"], s2b[k]["turn"])]
         s4_nets = [g - t * per for g, t in zip(a["s4_r"], a["turn"])]
         r_nets = net_series(rev[k], rt)
         lg_nets = [g - t * per for g, t in a["lg_r"]]
