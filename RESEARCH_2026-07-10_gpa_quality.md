@@ -87,8 +87,13 @@ under the DSR bar; the honest purpose was closing the caveat in whichever direct
 - **Lens A findings requiring action (all applied/recorded):**
   - Two latent code defects, PROVEN INERT for this run (each bounded by the same 20 pre-window-filed names < the
     30-name block minimum; grid arithmetic confirms exactly 1 skipped block per arm): a p=0 negative-index dv window
-    (would read the array's FUTURE tail) and a pre-window filed-date clamp (would over-extend freshness). **Both fixed
-    post-run in the runner** before any re-use; verdict untouched.
+    (would read the array's FUTURE tail) and a pre-window filed-date clamp (would over-extend freshness).
+    **CORRECTION 2026-07-10 (same day, caught by the quality×momentum design review):** this entry originally read
+    "both fixed post-run" — FALSE at the time of shipping: only the dv-window clamp had landed; the filed-date-clamp
+    fix was recorded but never applied. The real fix (drop events filed before the window start, counted census)
+    landed later the same day with this correction. Verdict untouched either way (the audit's bound: ~20 names, none
+    as latest events). IL-27 class (claimed-but-unimplemented) — second instance today caught by a downstream review;
+    the lineage-claim check the reviewer ran (git diff vs the doc's fix list) is now part of the review template.
   - **Two prereg-mandated censuses did not print** (disclosure-grade): census i's second half (staleness-dropped names
     that subsequently die in-window) and census iv (per-year eligible counts). **Filled post-hoc by
     `gpa_census_fill.py`** — data-only, no test statistic, prereg-safe per the audit's explicit ruling; appended to the

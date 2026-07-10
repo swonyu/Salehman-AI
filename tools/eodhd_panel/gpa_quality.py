@@ -275,6 +275,7 @@ def main():
 
     # signal events -> master positions
     sigmap, no_rev_census, usable = {}, 0, 0
+    pre_window_dropped = [0]
     split = {"delisted": [0, 0], "active": [0, 0]}   # [have_facts, usable]
     for nm in clean + screened:
         code = nm["code"]
@@ -288,6 +289,14 @@ def main():
         no_rev_census += no_rev
         pos_evs = []
         for end, filed, g in evs:
+            # FIX 2026-07-10 (audit latent defect B7 — the earlier "both fixed post-run" record was
+            # WRONG, only the dv clamp had landed; corrected in the research doc the same day):
+            # a pre-window filed date clamps to position 0 and would read "fresh" until bar 377,
+            # over-extending freshness. Drop such events, counted. Verdict-inert for the completed
+            # run per the audit's bound (~20 names, none as latest events).
+            if filed < WIN_LO:
+                pre_window_dropped[0] += 1
+                continue
             av = bisect.bisect_right(wdates, filed)          # first bar STRICTLY AFTER filed
             fp_ = av                                          # filed position proxy on master axis
             if av < N:
@@ -297,6 +306,7 @@ def main():
             usable += 1
             split[cls][1] += 1
     print(f"CENSUS: usable-signal names {usable} (pinned-tag extraction; the acceptance census's 54% was a floor)")
+    print(f"CENSUS pre-window-filed events dropped (audit B7 fix): {pre_window_dropped[0]}")
     print(f"CENSUS assets-but-no-revenue-tags: {no_rev_census}")
     print(f"CENSUS usable split: delisted facts={split['delisted'][0]} usable={split['delisted'][1]} | "
           f"active facts={split['active'][0]} usable={split['active'][1]}")
