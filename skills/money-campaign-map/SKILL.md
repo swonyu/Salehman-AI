@@ -17,6 +17,44 @@ as done). For HOW to run one empirical study, use `skills/ablation-harness`. For
 use `research-memory`. For a per-iteration improvement wave, use `wave-cycle`. Before editing
 any engine file, use `stocksage-mental-model`. For the merge pipeline, use `shipping-changes`.
 
+## THE FASTEST WAYS TO MAKE MONEY (owner question, answered by measurement — added 2026-07-10 on owner directive)
+
+Ranked by measured $-impact per unit time, with every number sourced in `research/INDEX.md`. With DSR ≈ 0 everywhere
+ever measured, "fastest" decomposes into four real levers and one standing warning — there is no fifth lever hiding.
+
+1. **Stop the leaks — cost discipline (the single largest MEASURED lever: ~1–1.7%/mo of avoided cost, week-horizon
+   research).** Status: SHIPPED end-to-end — refuse-list + turnover labels, net-first Today-plan crowning (F6),
+   per-order commission minimums (F2), `.SR`/EM cost tiers, execution-timing `sessionNote`, limit-vs-marketable
+   advisory (sign-flips to marketable when urgent). **Owner actions that add money THIS WEEK:** trade off the
+   Today-plan's net-first order; use the order-type advisory; enter near the close per the session note; and log fills
+   on 5+ legs — the journal's realized-cost capture (shipped 2026-07-09) then replaces assumed costs with YOUR measured
+   slippage, which sharpens every net number the engine shows you.
+2. **Don't die — survivable-max sizing.** Half-Kelly 0.5× (never raise: ≥2× Kelly → growth below risk-free), 20%
+   per-name cap, vol-regime brake, correlation-aware de-weighting — all SHIPPED. "Worse model + better sizing beats
+   better model + worse sizing" (verified 2-1); the highest-turnover retail cohort loses −7pp/yr and the WHOLE gap is
+   costs+churn (Barber-Odean). Fast compounding is mostly not-interrupting compounding.
+3. **Take the full 1× market return — and refuse leverage at current rates (CLOSED-NEGATIVE, 2026-07-09 measured).**
+   Margin at mainstream brokers = −2 to −5%/yr geometric drag at 1.5–2× (11.825% sub-$25k rates vs ~8.6% expected
+   return); IBKR ≈ breakeven; 2× LETFs net ~+1.1–2.0%/yr expected with −σ²/yr path drag; the no-edge half-Kelly
+   ceiling is **0.68× < 1×**. Unlevered, diversified, fully-deployed 1× beta + levers #1–#2 IS the fastest prudent
+   compounding available without an edge. (Option-income/VRP also CLOSED: premium real, but PUT/BXM lag the index
+   ~7pt/yr gross over the last decade — opportunity cost, not income.)
+4. **Hunt a real edge at hours-per-test, not decades-per-test.** Forward-test power analysis (2026-07-10): proving
+   even a 3× version of the measured edge live needs ~691 trades (2.7–6.6 years); the measured edge itself needs
+   ~6,220 (decades). A pre-registered panel ablation answers the same question in HOURS. The survivorship-free panel
+   (34,701 series, owner's EODHD purchase) is live and closed FOUR families on its first day (2026-07-10): momentum-crash
+   REFUTE-CONFIRMED, MAX/BAB/IVOL long-tilts NULL, survivorship-free reversal NULL 0/24 incl. the cost-tier kill
+   (write-up shipping same session). Remaining unexplored: non-price data classes (quality GP/A = low-priority
+   incremental candidate), and anything new through Phase 5→6 below.
+5. **Standing warning — the fastest ways to LOSE money are already fenced.** The 7 verified anti-edges below, leverage
+   (#3), option-income, day-trading (>80% lose net; <1% persistently skilled), and felt conviction (overconfidence —
+   the gap is costs). Any "fast money" idea that arrives as a story instead of a DSR>0.95 measurement goes through
+   Phase 6 or it does not ship.
+
+**The honest bottom line:** speed = (avoided costs) + (survivable max size at unlevered 1×) + (hours-per-test search on
+survivorship-free data) + (drift-detection on your own fills). None of these is alpha; all of them are measured; the
+engine's job is maximizing #1–#3 while #4 keeps looking.
+
 ## Definitions (each term once)
 
 | Term | Meaning here |
@@ -158,6 +196,10 @@ mandatory "did NOT establish" section.
    "Looks better on the board" is not a result.
 
 ## Solution menu (ranked; each row's obligation is mandatory before building)
+
+> STATUS FRESHNESS (2026-07-10): rows 1–3 are SETTLED — #1 shipped (refuse-list + F6/F2 + tiers), #2 shipped, #3 CLOSED
+> NULL (full-IRRX 2026-07-09; survivorship-free breadth 2026-07-10). Row 4's empirical clause answered (cap-vs-continuous
+> + split re-run → no promotion). The LIVE menu is the "FASTEST WAYS" section above + Phase 5 frontier picks.
 
 | # | Lever | Expected size (sourced, 2026-07-02) | Derivation obligation | Promotion gate |
 |---|---|---|---|---|
