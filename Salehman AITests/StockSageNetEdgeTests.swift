@@ -244,4 +244,52 @@ struct StockSageNetEdgeTests {
         #expect(before == after)
         #expect(after.roundTripBps == 70)   // gate math untouched
     }
+    // MARK: - F2 per-order commission minimums (OWNER-SIGNED 2026-07-10, "Ship F2" — TRIAGE
+    // fastest-dollar UPDATE section; citation: IBKR tiered intl ≈ €1.30/order minimum, 26bps
+    // one-way on a €500 XETRA order, RESEARCH_2026-07-03_current_era_costs.md §2).
+
+    // Byte-identity pin: nil orderNotional must be EXACTLY the pre-F2 result even when a
+    // minimum is supplied — the entire fence for every existing call site.
+    @Test func evaluateWithNilNotionalIsByteIdenticalDespiteAMinimum() throws {
+        let base = try #require(NE.evaluate(entry: 100, stop: 90, target: 140,
+                                            spreadBps: 20, slippageBps: 10))
+        let withMin = try #require(NE.evaluate(entry: 100, stop: 90, target: 140,
+                                               spreadBps: 20, slippageBps: 10,
+                                               perOrderMinimum: 1.30, orderNotional: nil))
+        #expect(base == withMin)
+    }
+
+    // Hand-derived boundary straddle (spec, not code output): entry 100, risk 10, reward 40,
+    // 30bps ⇒ bps cost 0.30/share; round-trip minimum per share = 2·1.30/shares.
+    //   SMALL (4 sh, notional 400): 0.65 > 0.30 ⇒ MINIMUM DOMINATES; cost 0.30+0.65 = 0.95
+    //     ⇒ netRR = (40−0.95)/(10+0.95) = 39.05/10.95.
+    //   LARGE (1000 sh): 0.0026 ≪ 0.30 ⇒ BPS DOMINATE; cost 0.3026
+    //     ⇒ netRR = 39.6974/10.3026 — a hair BELOW the bps-only 39.70/10.30 (increase-only).
+    @Test func perOrderMinimumDominatesSmallOrdersAndVanishesOnLarge() throws {
+        let small = try #require(NE.evaluate(entry: 100, stop: 90, target: 140,
+                                             spreadBps: 20, slippageBps: 10,
+                                             perOrderMinimum: 1.30, orderNotional: 400))
+        #expect(abs(small.netRR - 39.05 / 10.95) < 1e-12)
+        let large = try #require(NE.evaluate(entry: 100, stop: 90, target: 140,
+                                             spreadBps: 20, slippageBps: 10,
+                                             perOrderMinimum: 1.30, orderNotional: 100_000))
+        #expect(abs(large.netRR - 39.6974 / 10.3026) < 1e-12)
+        let bpsOnly = try #require(NE.evaluate(entry: 100, stop: 90, target: 140,
+                                               spreadBps: 20, slippageBps: 10))
+        // Increase-only in both regimes: sized cost can never be BELOW the bps-only cost.
+        #expect(small.netRR < large.netRR)
+        #expect(large.netRR < bpsOnly.netRR)
+    }
+
+    // Tier pins (ratified table + F2): intl tiers carry the cited 1.30 minimum; US/index/FX/
+    // crypto are DELIBERATELY 0 (zero-commission era / percentage-fee venues).
+    @Test func defaultCostsCarryPerOrderMinimumOnIntlTiersOnly() {
+        #expect(NE.defaultCosts(forSymbol: "SAP.DE").perOrderMinimum == 1.30)
+        #expect(NE.defaultCosts(forSymbol: "2222.SR").perOrderMinimum == 1.30)
+        #expect(NE.defaultCosts(forSymbol: "RELIANCE.NS").perOrderMinimum == 1.30)
+        #expect(NE.defaultCosts(forSymbol: "AAPL").perOrderMinimum == 0)
+        #expect(NE.defaultCosts(forSymbol: "^GSPC").perOrderMinimum == 0)
+        #expect(NE.defaultCosts(forSymbol: "EURUSD=X").perOrderMinimum == 0)
+        #expect(NE.defaultCosts(forSymbol: "BTC-USD").perOrderMinimum == 0)
+    }
 }

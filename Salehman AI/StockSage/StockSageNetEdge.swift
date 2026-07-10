@@ -39,10 +39,21 @@ enum StockSageNetEdge {
         /// Round-trip taker/exchange fee (both fills), bps of entry. Dominant on crypto; ~0 on
         /// commission-free equity brokers. Defaulted so existing constructions stay valid.
         let takerFeeBps: Double
+        /// F2 (OWNER-SIGNED 2026-07-10, "Ship F2 (per-order minimums)" — TRIAGE fastest-dollar
+        /// UPDATE section): flat per-order commission MINIMUM in account currency, ONE side.
+        /// Dominates small intl orders (IBKR tiered intl ≈ €1.30/order minimum — 26 bps one-way
+        /// on a €500 XETRA order; RESEARCH_2026-07-03_current_era_costs.md §2, BankerOnWheels
+        /// 2025, CONFIRMED 2/3; band-bottom, increase-only — the 18f1590 EM-tier discipline).
+        /// 0 for US large-cap/index/FX/crypto: zero-commission era / percentage-fee venues —
+        /// a deliberate no-op, not an omission. Only bites when `evaluate` is given an
+        /// `orderNotional` (sized surfaces); bps-only callers are byte-identical.
+        let perOrderMinimum: Double
         nonisolated var roundTripBps: Double { spreadBps + slippageBps + takerFeeBps }
-        nonisolated init(spreadBps: Double, slippageBps: Double, assetClass: String, takerFeeBps: Double = 0) {
+        nonisolated init(spreadBps: Double, slippageBps: Double, assetClass: String,
+                         takerFeeBps: Double = 0, perOrderMinimum: Double = 0) {
             self.spreadBps = spreadBps; self.slippageBps = slippageBps
             self.assetClass = assetClass; self.takerFeeBps = takerFeeBps
+            self.perOrderMinimum = perOrderMinimum
         }
     }
 
@@ -67,7 +78,7 @@ enum StockSageNetEdge {
             // the flat intl 30 was DANGEROUS-direction on the app's own Saudi-first core (the
             // gate passed losers). 60 bps = the bottom of the research's 60–100 EM band:
             // fees ≈30 (takerFeeBps) + the intl default's spread/slippage 20+10.
-            return CostAssumption(spreadBps: 20, slippageBps: 10, assetClass: "intl (Tadawul)", takerFeeBps: 30)   // 60bps
+            return CostAssumption(spreadBps: 20, slippageBps: 10, assetClass: "intl (Tadawul)", takerFeeBps: 30, perOrderMinimum: 1.30)   // 60bps + F2 per-order min (IBKR tiered intl, research §2)
         }
         if emSuffixes.contains(where: s.hasSuffix) {
             // EM re-tier (2026-07-09; owner lifted the cost-table gate). 60bps = the BOTTOM of
@@ -77,9 +88,9 @@ enum StockSageNetEdge {
             // measured, 24–36bps RT, 3/3), this 30 is a band-derived ESTIMATE, not a
             // per-market measurement — band bottom, not midpoint, is the largest increase the
             // evidence generically supports. See `emSuffixes` doc for the exclusion rationale.
-            return CostAssumption(spreadBps: 20, slippageBps: 10, assetClass: "intl (EM)", takerFeeBps: 30)  // 60bps
+            return CostAssumption(spreadBps: 20, slippageBps: 10, assetClass: "intl (EM)", takerFeeBps: 30, perOrderMinimum: 1.30)  // 60bps + F2 per-order min (IBKR tiered intl, research §2)
         }
-        if s.contains(".")     { return CostAssumption(spreadBps: 20, slippageBps: 10, assetClass: "intl") }        // 30bps
+        if s.contains(".")     { return CostAssumption(spreadBps: 20, slippageBps: 10, assetClass: "intl", perOrderMinimum: 1.30) }        // 30bps + F2 per-order min (IBKR tiered intl, research §2)
         return CostAssumption(spreadBps: 8, slippageBps: 5, assetClass: "US large-cap")                             // 13bps
     }
 
@@ -124,15 +135,29 @@ enum StockSageNetEdge {
                                      spreadBps: Double = 0, slippageBps: Double = 0,
                                      commissionPerShare: Double = 0, takerFeeBps: Double = 0,
                                      annualFinancingRate: Double = 0, holdDays: Double = 0,
-                                     winProb: Double? = nil) -> NetEdge? {
+                                     winProb: Double? = nil,
+                                     perOrderMinimum: Double = 0, orderNotional: Double? = nil) -> NetEdge? {
         let grossReward = abs(target - entry)
         let grossRisk = abs(entry - stop)
         guard grossReward > 0, grossRisk > 0, entry > 0 else { return nil }
 
         // Financing leg: rate·calendarDays/365 (calendar-day basis by design; see the map entry).
         let financingCost = entry * Swift.max(0, annualFinancingRate) * Swift.max(0, holdDays) / 365
+        // F2 (owner-signed 2026-07-10): flat per-order commission minimums dominate small intl
+        // orders (see CostAssumption.perOrderMinimum for the research citation). Applied ONLY
+        // when the caller knows the order size — nil `orderNotional` keeps every existing call
+        // site byte-identical. Increase-only by construction: the round-trip commission per
+        // share becomes max(commissionPerShare, 2·perOrderMinimum/shares) — both sides' order
+        // minimums spread across the order's shares; it can never LOWER a cost.
+        let effectiveCommission: Double = {
+            let base = Swift.max(0, commissionPerShare)
+            guard perOrderMinimum > 0, let notional = orderNotional, notional > 0 else { return base }
+            let shares = notional / entry
+            guard shares.isFinite, shares > 0 else { return base }
+            return Swift.max(base, 2 * perOrderMinimum / shares)
+        }()
         let cost = Swift.max(0, spreadBps + slippageBps + takerFeeBps) / 10_000 * entry
-            + Swift.max(0, commissionPerShare) + financingCost
+            + effectiveCommission + financingCost
         let grossRR = grossReward / grossRisk
         // Net figures (netRR/netExpectancyR/breakEvenWinRate) are derived from the SAME 50:1
         // ceiling StockSageExpectedValue.ev() already applies to rewardR — a hair-thin stop
