@@ -428,7 +428,14 @@ def main():
     print("\n=== PASS 1/3: PRIMARY forward ===", flush=True)
     fwd = run_pass(prepped, mkt_ret, wdates, "fwd")
     print("=== PASS 2/3: PRIMARY reversed (S1) ===", flush=True)
-    rev = run_pass(reversed_names(prepped), array("d", reversed(mkt_ret)), wdates, "rev")
+    # FIX 2026-07-10 (post-run audit F1, verdict-inert for the completed run — S1 veto-only, unreached):
+    # the market must be reversed at PRICE level and returns recomputed (like the names), NOT the
+    # forward return array reversed (sign + one-bar misalignment; forward beta 1.0 came back -0.21).
+    wclose_rev = list(reversed(wclose))
+    mkt_ret_rev = array("d", [NAN] * N)
+    for j in range(1, N):
+        mkt_ret_rev[j] = wclose_rev[j] / wclose_rev[j - 1] - 1.0
+    rev = run_pass(reversed_names(prepped), mkt_ret_rev, wdates, "rev")
     print("=== PASS 3/3: S2b no-screen universe forward ===", flush=True)
     s2b = run_pass(prepped + screened, mkt_ret, wdates, "s2b")
 

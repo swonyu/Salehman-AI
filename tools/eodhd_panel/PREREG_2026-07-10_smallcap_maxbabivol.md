@@ -1,6 +1,8 @@
 # PRE-REGISTRATION — MAX / low-beta / low-IVOL LONG-leg re-test on the survivorship-free panel's small/retail segment
-(written 2026-07-10 ~15:00, revised ~15:30 after adversarial design review [verdict COMMIT-WITH-FIXES, all mandatory +
+(written 2026-07-10 ~14:40, revised ~15:00 after adversarial design review [verdict COMMIT-WITH-FIXES, all mandatory +
 recommended fixes applied], committed BEFORE any test statistic was computed on this panel for these families)
+[header clock-typo corrected post-run per audit F12 — the original read "written ~15:00, revised ~15:30", impossible
+against the 15:02:46 commit stamp; git ancestry (prereg 1601771 → runner a85b7a9 → results 15:22) proves the discipline]
 
 **Why this test:** the 2026-07-03 nulls for MAX/lottery, low-beta/BAB-long and low-IVOL all carry the same explicit caveat:
 the 18-mega-cap substrate "excludes the small/retail-heavy segment where the published effect is strongest — conservative
