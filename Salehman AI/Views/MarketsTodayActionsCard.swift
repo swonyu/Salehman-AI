@@ -57,7 +57,7 @@ struct MarketsTodayActionsCard: View {
                 }
                 Text("Top \(shownPlans.count) setups, sized and gated — equities before 24/7 crypto, gate-clear before blocked, then fastest; do #1 first, unless it's blocked.")
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Text("Within those buckets, faster raw EV/day ranks first — unlike the Fast lane above, which ranks by growth rate (log-growth at ½-Kelly), so the two cards can order the same names differently.")
+                Text("Within those buckets, faster NET EV/day (est. costs deducted; gross when net is unavailable) ranks first — unlike the Fast lane above, which ranks by growth rate (log-growth at ½-Kelly), so the two cards can order the same names differently.")
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 // F8 (2026-07-09): cross-reference the OTHER direction — this list's own #1 vs
                 // the global "Do this now" CTA's pick (a different lens: highest gross EV, not
