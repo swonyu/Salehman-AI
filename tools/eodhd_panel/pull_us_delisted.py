@@ -24,8 +24,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import eodhd_mcp as M
 
-UNIVERSE = os.path.expanduser(
-    "~/.claude/salehman-universe/eodhd_acceptance_2026-07-10/delisted_all.jsonl")
+UNIVERSE = os.path.expanduser(os.environ.get("EODHD_UNIVERSE",
+    "~/.claude/salehman-universe/eodhd_acceptance_2026-07-10/delisted_all.jsonl"))
 OUTDIR = os.path.expanduser("~/.claude/salehman-universe/panels/eodhd_us_delisted/raw")
 STATE = os.path.expanduser("~/.claude/salehman-universe/panels/eodhd_us_delisted/pull_state.json")
 WARRANT_SUFFIX = re.compile(r"-(WT|WS|U|R)$")

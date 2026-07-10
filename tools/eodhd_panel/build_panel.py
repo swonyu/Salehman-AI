@@ -75,6 +75,9 @@ def build_one(code, rec):
         except (ValueError, AttributeError):
             flags.append("unparseable_split")
             continue
+        if new <= 0 or old <= 0:   # degenerate vendor record (e.g. "1/0") — cannot adjust across it
+            flags.append("degenerate_split_ratio")
+            continue
         if d > delist:
             flags.append("successor_splits_dropped")   # ETRM rename class
             continue

@@ -20,3 +20,12 @@
 
 ## Order of work
 Single Sonnet implementer in a worktree (WIP commits) → Fable review → fix pass → my independent gate on merged tree → ship via pipeline → pixel QA (fixtures: markets_ideas + blocked + nilrisk + journal as touched).
+
+## UPDATE 2026-07-10 (~08:00) — OWNER RULED: SHIP BOTH staged items
+Owner selection (AskUserQuestion, verbatim options chosen): **"Ship F6 (net-first crowning)"** + **"Ship F2 (per-order minimums)"**. F6's ranking-change bar is satisfied by owner sign-off (honesty-floor rule: "empirical validation or owner sign-off"). EODHD purchase: owner "ill do it later" — stays parked, owner-executed.
+
+### F6 spec (ranking change, owner-signed)
+`StockSageTodayPlan` `.equityExecutableFirst` tiebreak: raw/gross EV-day → NET velocity (already computed per row, currently discarded — the audit's verified finding). Update the sort-explainer copy ("then fastest raw EV/day" → net wording) + any help/glossary siblings. Existing ordering tests: re-pin to the NEW ratified behavior citing this owner ruling (TOM-gate-test precedent — spec change, not assertion-editing). Fixture: hand-derive a case where gross and net order DIVERGE (cost differential flips ranks) and pin net-first wins.
+
+### F2 spec (cost-model change, owner-signed; increase-only, nil-safe)
+`StockSageNetEdge.CostAssumption` gains `perOrderMinimum: Double` (absolute currency per order, default 0). Values BY ASSET CLASS from RESEARCH_2026-07-03_current_era_costs.md (the EM tier comment already cites "per-order minimums alone 52–120bps RT" on small orders): US large-cap/index-ETF/FX = 0 (zero-commission era — deliberate no-op); intl/EM/Tadawul = the research-cited per-order minimum (implementer reads the research §2 and cites the exact figure per tier; band-bottom, increase-only — same discipline as the EM tier ship 18f1590). `evaluate()` gains an optional `orderNotional: Double? = nil`: when nil → byte-identical to today (all existing call sites unchanged); when provided → each side's commission = max(existing commission leg, perOrderMinimum), i.e. effective cost can only INCREASE. Wire notional ONLY at the sized call sites (detail-sheet net-edge ledger + gate verdict paths where account+risk are set and shares are known). Tests: hand-derived boundary straddle where minimum dominates bps (small notional) vs bps dominates (large notional); byte-identity pin for nil-notional.
