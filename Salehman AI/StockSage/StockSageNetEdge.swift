@@ -47,6 +47,10 @@ enum StockSageNetEdge {
         /// 0 for US large-cap/index/FX/crypto: zero-commission era / percentage-fee venues —
         /// a deliberate no-op, not an omission. Only bites when `evaluate` is given an
         /// `orderNotional` (sized surfaces); bps-only callers are byte-identical.
+        /// APPROXIMATION (review-noted): applied in the symbol's QUOTE currency while the
+        /// citation is EUR — SAR/INR-quoted names understate the euro-equivalent minimum.
+        /// Direction stays increase-only (never more permissive than pre-F2), consistent
+        /// with the band-bottom discipline; an FX-aware minimum would be a future revision.
         let perOrderMinimum: Double
         nonisolated var roundTripBps: Double { spreadBps + slippageBps + takerFeeBps }
         nonisolated init(spreadBps: Double, slippageBps: Double, assetClass: String,

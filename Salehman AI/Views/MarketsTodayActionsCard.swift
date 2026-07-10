@@ -63,7 +63,7 @@ struct MarketsTodayActionsCard: View {
                 // the global "Do this now" CTA's pick (a different lens: highest gross EV, not
                 // fastest EV/day). Copy-only; renders nothing when either is nil or they agree.
                 if let globalBestSymbol, let first = shownPlans.first?.symbol, globalBestSymbol != first {
-                    Text("The 'Do this now' CTA leads with \(globalBestSymbol) instead — different lens (highest gross EV, not fastest EV/day).")
+                    Text("The 'Do this now' CTA leads with \(globalBestSymbol) instead — different lens (highest gross EV, not fastest net EV/day).")
                         .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if executableOnly {
