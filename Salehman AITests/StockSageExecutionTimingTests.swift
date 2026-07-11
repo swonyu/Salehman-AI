@@ -41,4 +41,14 @@ struct StockSageExecutionTimingTests {
         #expect(!ET.caveat.isEmpty)
         #expect(ET.caveat.lowercased().contains("not a promise"))
     }
+
+    @Test func noteCarriesTheMeasuredExecutionCurve() {
+        // 2026-07-11 intraday-curve measurement (method pinned pre-result): the pinned decision
+        // rule returned REVISE-ADVISORY — the note must carry the measured facts: the close's
+        // liquidity depth, its slightly-above-midday ranges, and the avoid-the-open warning.
+        let note = ET.sessionNote(action: .buy, regime: .bullTrend)!.lowercased()
+        #expect(note.contains("deepest liquidity"))
+        #expect(note.contains("measured"))
+        #expect(note.contains("open is the costliest"))
+    }
 }

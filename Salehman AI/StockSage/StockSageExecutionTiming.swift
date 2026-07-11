@@ -31,13 +31,22 @@ enum StockSageExecutionTiming {
     /// position overnight) captures more of the historical edge than a mid-session entry. nil for
     /// non-trending (`.range`) or non-actionable (`.hold`/`.avoid`) advice — this is specifically
     /// the momentum-family finding, not a generic timing tip.
+    ///
+    /// The execution-cost sentence carries MEASURED numbers (2026-07-11 intraday curve, 64 US
+    /// names × ~80 days of 1-minute bars, method pinned pre-result — see
+    /// tools/eodhd_panel/METHOD_2026-07-11_intraday_curve.md + intraday_curve.json): close bucket
+    /// = 20.0% of session volume (3.7× midday) at minute-ranges ~20% above midday (9.7 vs 8.1bp
+    /// median); opening bucket ≈ 3× midday ranges. Display-only; proxies, not realized spreads.
     nonisolated static func sessionNote(action: TradeAdvice.Action, regime: TradeAdvice.Regime) -> String? {
         guard action == .strongBuy || action == .buy || action == .sell || action == .reduce else { return nil }
         switch regime {
         case .bullTrend, .bearTrend:
             return "Trend/momentum premia are documented to accrue almost entirely OVERNIGHT — " +
                    "entering near the close (to hold the position overnight) has historically captured " +
-                   "more of this edge than a mid-session entry."
+                   "more of this edge than a mid-session entry. Measured on this universe (2026-07, " +
+                   "64 names): the close has the session's deepest liquidity (~20% of volume) at " +
+                   "minute-ranges slightly above midday; the open is the costliest window (~3× midday " +
+                   "ranges) — avoid it for these entries."
         case .range:
             return nil
         }
