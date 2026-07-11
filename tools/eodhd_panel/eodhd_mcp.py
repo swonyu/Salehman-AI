@@ -3,19 +3,59 @@
 Token read from Keychain at runtime; never printed.
 Usage: eodhd_mcp.py <tool_name> '<json_args>' [outfile]
 Prints result to stdout (or writes to outfile and prints byte count)."""
-import json, subprocess, sys, urllib.request
+import json, subprocess, sys, time, urllib.parse, urllib.request
 
 URL = "https://mcp.eodhd.com/v2/mcp"
+TOKEN_URL = "https://mcp.eodhd.com/token"
+CACHE_ITEM = "salehman-eodhd-mcp-token"   # dedicated Keychain item; never the shared blob
+
+
+def _keychain_read(service):
+    r = subprocess.run(["security", "find-generic-password", "-s", service, "-w"],
+                       capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else None
+
 
 def token():
-    raw = subprocess.run(["security", "find-generic-password", "-s",
-                          "Claude Code-credentials", "-w"],
-                         capture_output=True, text=True).stdout
-    d = json.loads(raw)
-    for k, v in d["mcpOAuth"].items():
-        if "eodhd" in k.lower():
-            return v["accessToken"]
-    raise SystemExit("no eodhd token")
+    """Access-token resolution (2026-07-11, after the first MCP-session expiry):
+    1. the dedicated cache item (written by our own refresh), if unexpired;
+    2. the shared Claude Code credentials blob's access token (fresh after the owner
+       re-auths in their window);
+    3. an OAuth refresh-token grant using the blob's refresh token — MAY FAIL if the
+       server strictly rotates refresh tokens and one was already consumed; the fix
+       then is the owner reconnecting the MCP server once in their window.
+    Tokens are never printed; the shared blob is never written (other servers live in it)."""
+    raw = _keychain_read(CACHE_ITEM)
+    if raw:
+        try:
+            c = json.loads(raw)
+            if c.get("expiresAt", 0) > time.time() + 60:
+                return c["accessToken"]
+        except (json.JSONDecodeError, KeyError):
+            pass
+    blob = _keychain_read("Claude Code-credentials")
+    d = json.loads(blob) if blob else {}
+    ent = next((v for k, v in d.get("mcpOAuth", {}).items() if "eodhd" in k.lower()), None)
+    if ent is None:
+        raise SystemExit("no eodhd credentials in keychain")
+    if ent.get("expiresAt", 0) / 1000 > time.time() + 60:
+        return ent["accessToken"]
+    body = urllib.parse.urlencode({"grant_type": "refresh_token",
+                                   "refresh_token": ent["refreshToken"],
+                                   "client_id": ent["clientId"]}).encode()
+    req = urllib.request.Request(TOKEN_URL, data=body,
+                                 headers={"Content-Type": "application/x-www-form-urlencoded"})
+    try:
+        r = json.load(urllib.request.urlopen(req, timeout=30))
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"eodhd token refresh failed (HTTP {e.code}) — reconnect the MCP "
+                         "server once in the owner's Claude Code window") from e
+    tok = r["access_token"]
+    subprocess.run(["security", "add-generic-password", "-U", "-s", CACHE_ITEM, "-a", "salehman",
+                    "-w", json.dumps({"accessToken": tok,
+                                      "expiresAt": int(time.time()) + int(r.get("expires_in", 3600))})],
+                   capture_output=True, text=True)
+    return tok
 
 TOK = token()
 
