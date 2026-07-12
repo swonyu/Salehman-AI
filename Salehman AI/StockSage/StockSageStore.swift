@@ -1363,6 +1363,10 @@ final class StockSageStore: ObservableObject {
     @Published private(set) var correlation: CorrelationMatrix?
     @Published private(set) var isLoadingAnalytics = false
     @Published private(set) var analyticsError: String?
+    /// Audit 2026-07-12 pass-3 (finding ③): the analytics blend weights holdings by pence-normalized
+    /// price×shares but does NOT FX-convert cross-currency (this path fetches no =X rates). True when
+    /// the analyzed holdings span >1 quote currency → the panel discloses the weights are approximate.
+    @Published private(set) var analyticsWeightsApproximate = false
 
     /// Fetch each holding's history and compute the portfolio risk/return suite
     /// (Sharpe/Sortino/Calmar, max drawdown, VaR, correlation → diversification).
@@ -1396,7 +1400,12 @@ final class StockSageStore: ObservableObject {
             let dr = StockSagePortfolioAnalytics.datedReturns(dates: h.dates, closes: h.closes)
             guard !dr.isEmpty else { continue }
             symbols.append(p.symbol)
-            weights.append(price * p.shares)
+            // Audit 2026-07-12 pass-3 (finding ③): normalize pence-quoted listings (.L/.JO ÷100) so a
+            // London holding isn't ~100× over-weighted in the risk-stat blend. FX cross-currency
+            // conversion (SAR/EUR→USD) is NOT applied here — this path fetches no =X rates — so the
+            // weights remain approximate for multi-currency books; the panel discloses that (see
+            // portfolioAnalyticsUnconverted). Pence is the ~100× error and is fixed unconditionally.
+            weights.append(StockSageCurrency.majorUnitValue(symbol: p.symbol, rawValue: price * p.shares))
             datedHoldingReturns.append(dr)
         }
         guard !symbols.isEmpty else {
@@ -1423,6 +1432,10 @@ final class StockSageStore: ObservableObject {
         }
         let computed = await Task.detached { StockSagePortfolioAnalytics.compute(holdings: alignedHoldings) }.value
         analytics = computed
+        // Disclose (finding ③): weights are pence-normalized but NOT FX-converted, so a book spanning
+        // >1 quote currency has approximate weights — the panel shows a caveat instead of implying the
+        // blend is exact. Keyed on the ANALYZED symbols (those that loaded), not all positions.
+        analyticsWeightsApproximate = Set(symbols.map { StockSageCurrency.conversionCurrencyForSymbol($0) }).count > 1
         if computed == nil {
             analyticsError = "Not enough overlapping history across your holdings yet."
         }

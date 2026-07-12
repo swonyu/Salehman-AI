@@ -865,9 +865,14 @@ struct MarketsView: View {
     }
 
     private func priceAlertRow(_ a: PriceAlert) -> some View {
-        // Whether this alert's symbol has no live price — only meaningful when we have live data
-        // (sample/cache state has incomplete prices by design, so we avoid false warnings there).
-        let noQuote = !store.isSampleData && !store.loadedFromCache && currentPrice(a.symbol) == nil
+        // Audit 2026-07-12 pass-3 (finding ②): the monitor's checkPriceAlerts fetches EVERY armed
+        // alert's symbol independently (StockSageMonitor.checkPriceAlerts → fetchQuotes(armed symbols)),
+        // NOT just board symbols — so an off-board ticker's alert DOES fire. currentPrice reads only the
+        // board (store.symbols), so a nil there for an OFF-BOARD symbol is not evidence the alert can't
+        // fire; asserting "no quote / cannot fire" would make a user delete a working alert. Only warn
+        // for a symbol that IS on the board yet has no price (genuinely unquotable this session).
+        let onBoard = store.symbols.contains { $0.symbol.uppercased() == a.symbol.uppercased() }
+        let noQuote = !store.isSampleData && !store.loadedFromCache && onBoard && currentPrice(a.symbol) == nil
         return HStack(spacing: 10) {
             Text(a.symbol).font(.system(size: mvFont13, weight: .bold, design: .rounded)).foregroundStyle(.white)
             // ALERT-FMT-1 (round-3 honesty hunt): was bare `.formatted()`, diverging from the
@@ -2659,6 +2664,14 @@ struct MarketsView: View {
                 // When an error is also present the numbers below are from a previous book — flag them.
                 if store.analyticsError != nil {
                     Text("Showing previous analysis — re-run Analyze for updated numbers.")
+                        .font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // Audit 2026-07-12 pass-3 (finding ③): the risk blend weights holdings by value but
+                // does NOT FX-convert across currencies, so a multi-currency book's weights (and thus
+                // every stat below) are approximate. Disclose rather than imply exactness.
+                if store.analyticsWeightsApproximate {
+                    Text("⚠︎ Multi-currency book — these stats weight holdings by local-currency value without FX conversion, so the blend is approximate. Single-currency books are exact.")
                         .font(.caption2).foregroundStyle(DS.Palette.warningSoft)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -5814,9 +5827,19 @@ struct MarketsView: View {
                 // keys on BOTH rate > 0 AND days > 0 (FX/index sells have 0 hold days → $0 financing;
                 // a rate-only guard would falsely claim financing was modeled when nothing was charged).
                 let financingNote = StockSageExpectedValue.financingNoteSuffix(rate: finRate, days: finDays)
-                // "est." added to match sheet's "After ~13bps est. … costs" wording.
-                plan += String(format: "\nNet R:R (after ~%dbps est. %@ costs%@): %.1f:1 (gross %.1f:1)",
-                               Int(costs.roundTripBps), costs.assetClass, financingNote, ne.netRR, ne.grossRR)
+                // Audit 2026-07-12 pass-3 (finding ④): mirror the ON-SCREEN sheet's cost label — for
+                // crypto that is the tier BAND (costsDisplayLabel), not the flat 70bps point, and when
+                // the band exceeds the priced floor, carry the "net is optimistic" disclosure into the
+                // paste too. Otherwise the exported artifact (pasted into a broker) reads MORE
+                // authoritative than the UI it came from — a gross-optimism-as-net breach. Non-crypto
+                // is byte-identical to the old "~Nbps est. <class>" wording (costsDisplayLabel matches).
+                let costLabel = StockSageNetEdge.costsDisplayLabel(forSymbol: idea.symbol,
+                                                                   advDollar: store.liquidity[idea.symbol.uppercased()]?.avgDollarVolume)
+                let optimismNote = StockSageNetEdge.costsOptimismSentence(forSymbol: idea.symbol,
+                                                                          advDollar: store.liquidity[idea.symbol.uppercased()]?.avgDollarVolume)
+                plan += String(format: "\nNet R:R (after %@ costs%@): %.1f:1 (gross %.1f:1)",
+                               costLabel, financingNote, ne.netRR, ne.grossRR)
+                if let optimismNote { plan += "\n  ⚠ " + optimismNote }
                 // F2 (owner-signed 2026-07-10): export parity for the per-order-minimum
                 // disclosure the on-screen ledger shows — same guards, same wording.
                 if costs.perOrderMinimum > 0,
@@ -5866,8 +5889,13 @@ struct MarketsView: View {
                 plan += "\n⚠ " + gap.verdict
             }
         }
-        let exportHoldings = portfolio.positions.map {
-            (symbol: $0.symbol, value: holdingValue($0.symbol, perShare: currentPrice($0.symbol) ?? $0.costBasis, shares: $0.shares))
+        // Audit 2026-07-12 pass-3: FX-convert to USD (mirror the on-screen what-if + allocation panel)
+        // so the exported concentration % isn't distorted by a 1:1 multi-currency sum.
+        let exportFX = fxRatesToUSD
+        let exportHoldings = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
+            guard let rate = exportFX[conversionCurrencyForSymbol(p.symbol)] else { return nil }
+            return (symbol: p.symbol,
+                    value: holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares) * rate)
         }
         if !exportHoldings.isEmpty {
             let bookTotal = exportHoldings.reduce(0) { $0 + $1.value }
@@ -6601,9 +6629,16 @@ struct MarketsView: View {
                     }
                 }
 
-                // What-if concentration (class + sector)
-                let whatIfHoldings = portfolio.positions.map {
-                    (symbol: $0.symbol, value: holdingValue($0.symbol, perShare: currentPrice($0.symbol) ?? $0.costBasis, shares: $0.shares))
+                // What-if concentration (class + sector). Audit 2026-07-12 pass-3: FX-convert to USD
+                // (mirror the allocation panel) — summing SAR/JPY/EUR holdings at 1:1 with USD makes the
+                // "% of book" and the >60% CONCENTRATED warning point at the wrong currency's holdings.
+                // holdingValue already pence-normalizes; the × rate adds cross-currency conversion.
+                // Untracked-FX holdings are excluded (no rate) rather than summed 1:1 — same as allocation.
+                let whatIfFX = fxRatesToUSD
+                let whatIfHoldings = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
+                    guard let rate = whatIfFX[conversionCurrencyForSymbol(p.symbol)] else { return nil }
+                    return (symbol: p.symbol,
+                            value: holdingValue(p.symbol, perShare: currentPrice(p.symbol) ?? p.costBasis, shares: p.shares) * rate)
                 }
                 if !whatIfHoldings.isEmpty {
                     let bookTotal = whatIfHoldings.reduce(0) { $0 + $1.value }
