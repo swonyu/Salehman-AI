@@ -27,6 +27,13 @@ struct MarketsView: View {
         /// Shown name. `conviction`'s rawValue stays "Conviction" as the stable
         /// @AppStorage("marketsIdeaSort") identity key; F08 renames only the label.
         var label: String { self == .conviction ? "Signal strength" : rawValue }
+        /// Audit 2026-07-12 (ideas-card): the picker OFFERS only these. `momentumWeighted` is EXCLUDED
+        /// because its momentum multiplier is inert with the default empty `closes` — it produced a
+        /// list byte-identical to `.velocity` while the UI claimed a momentum factor was applied (a
+        /// mislabel). The case stays in the enum so a previously-persisted @AppStorage value still
+        /// decodes and works (falls through to the velocity order it always produced); it just can't be
+        /// newly selected. Re-add it here only once per-symbol closes are actually threaded into the rank.
+        static var pickerCases: [IdeaSort] { allCases.filter { $0 != .momentumWeighted } }
     }
     // Default to money-velocity (EV per day) — the "fastest money" objective: a quick small edge
     // compounds faster than a slow large one. (Existing users keep whatever they last picked.)
@@ -3185,7 +3192,7 @@ struct MarketsView: View {
             } else {
                 HStack(spacing: DS.Space.sm) {
                     Menu {
-                        ForEach(IdeaSort.allCases, id: \.self) { s in
+                        ForEach(IdeaSort.pickerCases, id: \.self) { s in
                             Button { ideaSort = s } label: { Label(s.label, systemImage: ideaSort == s ? "checkmark" : "") }
                         }
                     } label: {
@@ -5617,19 +5624,34 @@ struct MarketsView: View {
                 }
                 if let acct = parsedAccount, let rf = parsedRiskFraction,
                    let ps = StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: entry, stop: stop) {
-                    let leveraged = ps.pctOfAccount > 100
+                    // F4 (audit 2026-07-12): ps.notional/dollarsAtRisk/pctOfAccount and `entry` are in the
+                    // SYMBOL's own currency, but `acct` is USD. A native-vs-USD compare inflates ~100× for a
+                    // pence stock → false leverage/liquidation warnings on an unleveraged cash position, and
+                    // over-/under-states the "% of account". Convert the native amounts to USD (pence-normalized
+                    // × FX rate) before every account comparison; untracked FX → factor 1 (prior behavior).
+                    let usdFactor: Double = {
+                        guard let rate = fxRatesToUSD[conversionCurrencyForSymbol(idea.symbol)] else { return 1 }
+                        // majorUnitValue handles the pence ÷100; divide by the raw amount to get a pure scale.
+                        let normalized = StockSageCurrency.majorUnitValue(symbol: idea.symbol, rawValue: 1)
+                        return normalized * rate
+                    }()
+                    let notionalUSD = ps.notional * usdFactor
+                    let atRiskUSD = ps.dollarsAtRisk * usdFactor
+                    let pctOfAccountUSD = notionalUSD / acct * 100
+                    let leveraged = pctOfAccountUSD > 100
                     if ps.shares >= 1 {
                         HStack(spacing: DS.Space.sm) {
                             ideaMetric("Shares", "\(ps.shares)", color: DS.Palette.accent)
-                            ideaMetric("At risk", String(format: "$%.0f", ps.dollarsAtRisk), color: DS.Palette.dangerSoft)
-                            ideaMetric("Notional", String(format: "$%.0f", ps.notional))
-                            ideaMetric("% acct", String(format: "%.0f%%", ps.pctOfAccount),
+                            ideaMetric("At risk", StockSageCurrency.approxAmount(ps.dollarsAtRisk, symbol: idea.symbol), color: DS.Palette.dangerSoft)
+                            ideaMetric("Notional", StockSageCurrency.approxAmount(ps.notional, symbol: idea.symbol))
+                            ideaMetric("% acct", String(format: "%.0f%%", pctOfAccountUSD),
                                        color: leveraged ? DS.Palette.dangerSoft : .white)
                             Spacer(minLength: 0)
                         }
                         // % of account from the FLOORED dollars-at-risk (was the requested risk %, which
-                        // overstates the loss it sits beside once shares round down).
-                        Text("Sizes the LOSS: a stop-out at \(adaptivePrice(stop)) costs ~$\(String(format: "%.0f", ps.dollarsAtRisk)) (\(String(format: "%.2f", ps.dollarsAtRisk / acct * 100))% of the account). Not a profit promise.")
+                        // overstates the loss it sits beside once shares round down). USD-converted so a
+                        // non-USD holding's loss reads against the USD account correctly.
+                        Text("Sizes the LOSS: a stop-out at \(adaptivePrice(stop)) costs ~$\(String(format: "%.0f", atRiskUSD)) (\(String(format: "%.2f", atRiskUSD / acct * 100))% of the account). Not a profit promise.")
                             .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     } else {
                         // Floored to 0 shares: the budget cannot fund even one share at this stop. Saying
@@ -5648,7 +5670,10 @@ struct MarketsView: View {
                     // Leverage truth: liquidation distance + can-lose-more-than-account (replaces the static string).
                     // isShort matters: a short's wipe-out is entry·(1 + 1/L), ABOVE entry — the long
                     // formula would print a "liquidation" price on the side where the short PROFITS.
-                    if leveraged, let lev = StockSageLeverage.assess(account: acct, notional: ps.notional, entry: entry,
+                    // F4: leverage compares notional to the USD account — pass the USD-converted notional so
+                    // a pence/SAR position isn't falsely flagged leveraged. `entry` stays native (the
+                    // liquidation PRICE it derives is legitimately in the symbol's own currency).
+                    if leveraged, let lev = StockSageLeverage.assess(account: acct, notional: notionalUSD, entry: entry,
                                                                      isShort: isShortIdea) {
                         Text("⚠︎ " + lev.verdict)
                             .font(.system(size: mvFont9))
@@ -5658,16 +5683,21 @@ struct MarketsView: View {
                             .accessibilityLabel("Leverage warning. " + lev.verdict)
                     }
                     // Gap risk: a stop is a TRIGGER, not a fill — show the worst-case 20% gap-through loss.
+                    // F4 (audit 2026-07-12): the loss is computed from native-currency entry/stop/shares, so
+                    // the loss-vs-equity ratio needs the account in the SAME (native) currency — else a pence
+                    // stock's loss vs a USD account falsely reads "MORE than you have / owe the broker". Pass
+                    // acct converted to the symbol's currency (÷ usdFactor); untracked FX → usdFactor 1 (no-op).
                     let gapSide: TradeSide = isShortIdea ? .short : .long
+                    let acctNative = acct / usdFactor
                     if let gap = StockSageGapRisk.scenario(side: gapSide, entry: entry, stop: stop,
-                                                           shares: Double(ps.shares), gapPct: 0.20, accountEquity: acct) {
+                                                           shares: Double(ps.shares), gapPct: 0.20, accountEquity: acctNative) {
                         // BUGHUNT_NEWENGINES #2 residual: the row keeps the single 20% headline;
                         // the hover tooltip now carries the FULL what-if ladder (weekend 5% /
                         // earnings 8% / crypto-flash 20% / halt-reopen 35%) — the "a stop is not
                         // a fill" table, without adding card height. Illustrative magnitudes,
                         // never probabilities (the caveat leads the tooltip and says so).
                         let ladder = StockSageGapRisk.worstCase(side: gapSide, entry: entry, stop: stop,
-                                                                shares: Double(ps.shares), accountEquity: acct)
+                                                                shares: Double(ps.shares), accountEquity: acctNative)
                             .map { "• " + $0.verdict }.joined(separator: "\n")
                         Text("⚠︎ " + gap.verdict)
                             .font(.system(size: mvFont9))
@@ -5920,8 +5950,13 @@ struct MarketsView: View {
         // inputs as the on-screen rows; no line when they don't resolve (never fabricated).
         if let stop = a.stopPrice, let acct = parsedAccount, let ps = size {
             let gapSide: TradeSide = (a.action == .sell || a.action == .reduce) ? .short : .long
+            // F4 (audit 2026-07-12): gap loss is native-currency, so the account must be in the same
+            // currency for an honest loss-vs-equity ratio (export parity with the on-screen fix above).
+            let usdFactor = fxRatesToUSD[conversionCurrencyForSymbol(idea.symbol)].map {
+                StockSageCurrency.majorUnitValue(symbol: idea.symbol, rawValue: 1) * $0
+            } ?? 1
             if let gap = StockSageGapRisk.scenario(side: gapSide, entry: idea.price, stop: stop,
-                                                   shares: Double(ps.shares), gapPct: 0.20, accountEquity: acct) {
+                                                   shares: Double(ps.shares), gapPct: 0.20, accountEquity: acct / usdFactor) {
                 plan += "\n⚠ " + gap.verdict
             }
         }

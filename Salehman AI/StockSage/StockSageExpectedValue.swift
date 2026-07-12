@@ -1291,6 +1291,35 @@ enum StockSageExpectedValue {
         return pairs > 0 ? sum / Double(pairs) : nil
     }
 
+    /// Audit 2026-07-12 (ideas-card, laneCorrelation date-alignment): the closes-only overload above
+    /// tail-index-pairs the two lanes' returns, so a crypto 7-day week vs an equity 5-day week
+    /// correlates MISMATCHED calendar days (every crypto weekend bar shifts the pairing) — a
+    /// meaningless number shown with a confident hedge verdict. This dated overload aligns EACH
+    /// crypto×equity pair to its common calendar days (StockSagePortfolioAnalytics.alignByDate)
+    /// before correlating, so the number measures the real cross-lane co-movement. Pure/testable;
+    /// nil when no pair shares ≥2 common days. Same zero-variance exclusion as the sibling.
+    nonisolated static func laneCorrelation(crypto: [StockSageIdea], equity: [StockSageIdea],
+                                            dated histories: [String: [(date: Date, ret: Double)]]) -> Double? {
+        func series(_ ideas: [StockSageIdea]) -> [[(date: Date, ret: Double)]] {
+            ideas.compactMap { histories[$0.symbol.uppercased()] }.filter { $0.count >= 2 }
+        }
+        let cryptoSeries = series(crypto), equitySeries = series(equity)
+        guard !cryptoSeries.isEmpty, !equitySeries.isEmpty else { return nil }
+        var sum = 0.0, pairs = 0
+        for c in cryptoSeries {
+            for e in equitySeries {
+                // Align this pair to its shared calendar days, THEN correlate. A pair with <2 common
+                // days, or a zero-variance leg, is UNDEFINED → excluded (never counted as an
+                // uncorrelated 0), same as the closes-only sibling.
+                let aligned = StockSagePortfolioAnalytics.alignByDate([c, e])
+                guard aligned.count == 2,
+                      let corr = StockSagePortfolioAnalytics.correlation(aligned[0], aligned[1]) else { continue }
+                sum += corr; pairs += 1
+            }
+        }
+        return pairs > 0 ? sum / Double(pairs) : nil
+    }
+
     nonisolated static let caveat =
         "EV uses an ESTIMATED win probability from conviction (not a real probability) and a −1R loss. It ranks payoff, it doesn't predict it — size with the cap and a stop."
 }

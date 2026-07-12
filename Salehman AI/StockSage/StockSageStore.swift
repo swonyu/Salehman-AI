@@ -1540,8 +1540,13 @@ final class StockSageStore: ObservableObject {
         laneCorrelationValue = nil
         let histories = await StockSageQuoteService.fetchHistories(for: symbols)
         guard !Task.isCancelled else { return }
+        // Audit 2026-07-12: use the DATE-ALIGNED laneCorrelation (crypto 7-day vs equity 5-day weeks
+        // must correlate by calendar date, not tail array index). datedReturns from dates+closes.
+        let datedReturns = histories.mapValues {
+            StockSagePortfolioAnalytics.datedReturns(dates: $0.dates, closes: $0.closes)
+        }
         let result = StockSageExpectedValue.laneCorrelation(
-            crypto: split.crypto, equity: split.equity, histories: histories.mapValues(\.closes))
+            crypto: split.crypto, equity: split.equity, dated: datedReturns)
         // F11: stamp the fingerprint ONLY on a non-nil result; clear it on failure/cancellation.
         // If the fetch failed (result==nil), clearing the fingerprint ensures the next call is NOT
         // blocked by the guard above — allowing a retry after a network miss. A cancelled stale

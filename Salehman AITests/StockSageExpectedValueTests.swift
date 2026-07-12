@@ -41,6 +41,41 @@ struct StockSageExpectedValueTests {
                       spark: [])
     }
 
+    // Audit 2026-07-12 (ideas-card laneCorrelation date-alignment): the dated overload aligns each
+    // crypto×equity pair by CALENDAR DATE before correlating, so a crypto 7-day week vs an equity
+    // 5-day week no longer correlates mismatched days (the tail-index bug). This test proves the
+    // dated path pairs by shared date: give the two lanes returns that are PERFECTLY correlated on
+    // their COMMON days but padded with extra crypto-only (weekend) days — date-alignment must
+    // recover ≈+1, whereas raw tail-index pairing of the unequal-length arrays would not.
+    @Test func laneCorrelationDatedAlignsByCalendarDateNotTailIndex() {
+        let day = 86_400.0
+        func d(_ i: Int) -> Date { Date(timeIntervalSince1970: Double(i) * day) }
+        // Equity trades days 0..3 (a "week"); returns +1,+2,+3.
+        let equityDated: [(date: Date, ret: Double)] = [(d(0), 1), (d(1), 2), (d(2), 3)]
+        // Crypto trades the SAME days 0..3 with the SAME returns (ρ=+1 on common days) PLUS two
+        // weekend days (4,5) that the equity lane never has — these must be dropped by alignment.
+        let cryptoDated: [(date: Date, ret: Double)] = [(d(0), 1), (d(1), 2), (d(2), 3), (d(4), 9), (d(5), -9)]
+        let histories = ["BTC-USD": cryptoDated, "AAPL": equityDated]
+        let cryptoIdea = idea("BTC-USD", conviction: 0.7, stop: 90, target: 120)
+        let equityIdea = idea("AAPL", conviction: 0.7, stop: 90, target: 120)
+        let corr = EV.laneCorrelation(crypto: [cryptoIdea], equity: [equityIdea], dated: histories)
+        // Aligned to the 3 shared days, the two return series are identical → correlation ≈ +1.
+        #expect(corr != nil)
+        #expect(abs(corr! - 1.0) < 1e-9)
+    }
+
+    @Test func laneCorrelationDatedIsNilWithoutTwoSharedDays() {
+        let day = 86_400.0
+        func d(_ i: Int) -> Date { Date(timeIntervalSince1970: Double(i) * day) }
+        // Zero calendar overlap → no correlatable pair → nil (never a fabricated 0/±1).
+        let crypto: [(date: Date, ret: Double)] = [(d(0), 1), (d(1), 2)]
+        let equity: [(date: Date, ret: Double)] = [(d(10), 1), (d(11), 2)]
+        let corr = EV.laneCorrelation(crypto: [idea("BTC-USD", conviction: 0.7, stop: 90, target: 120)],
+                                      equity: [idea("AAPL", conviction: 0.7, stop: 90, target: 120)],
+                                      dated: ["BTC-USD": crypto, "AAPL": equity])
+        #expect(corr == nil)
+    }
+
     @Test func isLowConvictionMirrorsTheExactRankKeyThreshold() {
         // Named, testable mirror of `idea.advice.conviction < minConvictionToRank` — must agree
         // with every rank-key function's internal comparison at the boundary itself.
