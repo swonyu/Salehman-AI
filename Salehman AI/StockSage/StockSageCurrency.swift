@@ -82,6 +82,25 @@ enum StockSageCurrency {
         return currencyForSuffix[suffix] ?? suffix
     }
 
+    /// The DENOMINATION currency of a symbol's price×shares — the correct key for converting a
+    /// holding's value TO `base` (USD). Differs from `currencyForSymbol` (the EXPOSURE leg, right
+    /// for risk semantics) ONLY for FX pairs: a `…USD=X` pair's price is ALREADY in USD (its quote
+    /// leg), so it must key as USD (rate 1) — using the exposure leg there re-multiplies an
+    /// already-USD amount by the pair rate (rate²), inflating the value ~8–27%. Every
+    /// portfolio-VALUATION path (headline total, allocation, currency-exposure, rebalance, open-heat)
+    /// must key on THIS, not `currencyForSymbol`. Non-FX symbols fall through to `currencyForSymbol`.
+    /// (Audit 2026-07-12 pass-2: extracted here from MarketsView so the 5 call sites share one tested
+    /// accessor and can't drift — the bug was exactly one caller keying off the exposure leg.)
+    nonisolated static func conversionCurrencyForSymbol(_ symbol: String, base: String = "USD") -> String {
+        let s = symbol.uppercased()
+        if s.hasSuffix("=X") {
+            let pair = String(s.dropLast(2))
+            guard pair.count == 6 else { return base }
+            return String(pair.suffix(3))   // quote leg = trailing 3 chars (EURUSD=X → USD; USDJPY=X → JPY)
+        }
+        return currencyForSymbol(symbol, base: base)
+    }
+
     /// L10N-01: format a figure in a SYMBOL's own quote currency (not converted) so it never
     /// misreads as USD. USD keeps the familiar "≈$188" prefix; any other currency renders
     /// "≈188 SAR"-style (code suffix) — a 1120.SR risk number in raw SAR shown with a bare "$"

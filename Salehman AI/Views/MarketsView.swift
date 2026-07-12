@@ -1048,14 +1048,10 @@ struct MarketsView: View {
     /// the exposure leg there would multiply an already-USD amount by the rate again — rate²).
     /// Non-=X symbols fall back to currencyForSymbol as before.
     private func conversionCurrencyForSymbol(_ symbol: String, base: String = "USD") -> String {
-        let s = symbol.uppercased()
-        if s.hasSuffix("=X") {
-            let pair = String(s.dropLast(2))
-            guard pair.count == 6 else { return base }
-            // Quote leg = trailing 3 characters (e.g. EURUSD=X → "USD"; USDJPY=X → "JPY")
-            return String(pair.suffix(3))
-        }
-        return StockSageCurrency.currencyForSymbol(symbol, base: base)
+        // Canonical, unit-tested logic lives in StockSageCurrency (extracted 2026-07-12 pass-2 so
+        // every valuation call site shares one accessor). Kept as a thin instance method so the
+        // existing call sites read unchanged.
+        StockSageCurrency.conversionCurrencyForSymbol(symbol, base: base)
     }
 
     /// Portfolio cost & value in USD. Each holding's value AND cost go through holdingValue (so the
@@ -1415,7 +1411,9 @@ struct MarketsView: View {
         let rebalHoldings = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
             guard targetSymbols.contains(p.symbol.uppercased()),
                   let price = currentPrice(p.symbol),
-                  let rate = rebalFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
+                  // Audit 2026-07-12 pass-2 (finding C): key on the QUOTE leg (conversionCurrencyForSymbol),
+                  // not the exposure leg — else an already-USD …USD=X pair is multiplied by the rate again (rate²).
+                  let rate = rebalFX[conversionCurrencyForSymbol(p.symbol)] else { return nil }
             return (symbol: p.symbol,
                     value: holdingValue(p.symbol, perShare: price, shares: p.shares) * rate)
         }
@@ -1481,7 +1479,8 @@ struct MarketsView: View {
         // These holdings are already named by unpricedHoldings at the headline total.
         let holdings = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
             guard let price = currentPrice(p.symbol),
-                  let rate = allocFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
+                  // Audit 2026-07-12 pass-2 (finding B): quote leg, not exposure leg (rate² fix, see rebalance).
+                  let rate = allocFX[conversionCurrencyForSymbol(p.symbol)] else { return nil }
             return (symbol: p.symbol,
                     value: holdingValue(p.symbol, perShare: price, shares: p.shares) * rate)
         }
@@ -1511,8 +1510,11 @@ struct MarketsView: View {
                 guard let price = currentPrice(pos.symbol) else { return nil }
                 let raw = price * pos.shares
                 // London .L is quoted in pence — normalize to pounds so GBP isn't inflated ~100×.
+                // Audit 2026-07-12 pass-2 (finding A, HIGH): key on the QUOTE leg — an already-USD …USD=X
+                // pair keys as "USD", gets subtracted from the FX-rate set below, and stays at rate 1,
+                // matching the headline USD total (the exposure leg re-multiplied it by the rate → rate²).
                 return (value: StockSageCurrency.majorUnitValue(symbol: pos.symbol, rawValue: raw),
-                        currency: StockSageCurrency.currencyForSymbol(pos.symbol))
+                        currency: conversionCurrencyForSymbol(pos.symbol))
             }
             let fxRates: [String: Double] = Dictionary(uniqueKeysWithValues:
                 Set(ccyHoldings.map(\.currency)).subtracting(["USD"]).compactMap { ccy -> (String, Double)? in
@@ -2040,7 +2042,11 @@ struct MarketsView: View {
                     if let acct = StockSageInput.positiveAmount(sizerAccount),
                        let heat = StockSagePortfolioHeat.compute(
                             openTrades: journal.open.compactMap { t -> (shares: Double, entry: Double, stop: Double)? in
-                                let ccy = StockSageCurrency.currencyForSymbol(t.symbol)
+                                // Audit 2026-07-12 pass-2 (4th site, found by grepping every caller — NOT in
+                                // the audit's 3): key on the QUOTE leg — a …USD=X trade's entry/stop are already
+                                // USD, so the exposure leg would re-multiply by the rate (rate²), inflating open
+                                // heat and skewing the risk gate that feeds sizing. Same root cause as A/B/C.
+                                let ccy = conversionCurrencyForSymbol(t.symbol)
                                 var rate: Double = 1
                                 if ccy != "USD" {
                                     if let r = currentPrice("\(ccy)USD=X"), r > 0 { rate = r }

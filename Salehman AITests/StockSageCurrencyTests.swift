@@ -151,4 +151,43 @@ struct StockSageCurrencyTests {
         #expect(StockSageCurrency.adaptivePrice(0.0099) == "0.009900") // just under 0.01 → 6dp tier
         #expect(StockSageCurrency.adaptivePrice(-0.104) == "-0.1040")  // sign preserved, tier by magnitude
     }
+
+    // MARK: - Audit 2026-07-12 pass-2 — conversionCurrencyForSymbol (the rate² FX-pair fix)
+    //
+    // The DENOMINATION (quote) leg is the correct key for converting a holding TO USD. For a
+    // `…USD=X` pair the price is ALREADY in USD (quote leg), so it must key as "USD" (rate 1) — the
+    // EXPOSURE leg (currencyForSymbol) would key it as the base currency and re-multiply by the
+    // pair rate (rate²), inflating the value ~8–27%. This pins the contract for all 5 valuation
+    // call sites (headline total, allocation, currency-exposure, rebalance, open-heat).
+    @Test func conversionCurrencyKeysOnQuoteLegNotExposureLeg() {
+        // The bug's exact shape: EURUSD=X exposure leg is EUR, but its price is in USD.
+        #expect(StockSageCurrency.currencyForSymbol("EURUSD=X") == "EUR")          // exposure leg (risk)
+        #expect(StockSageCurrency.conversionCurrencyForSymbol("EURUSD=X") == "USD") // quote leg (valuation)
+        #expect(StockSageCurrency.conversionCurrencyForSymbol("GBPUSD=X") == "USD")
+        // USD-leading pair: quote leg is the non-USD currency, so it DOES need conversion (not rate²).
+        #expect(StockSageCurrency.conversionCurrencyForSymbol("USDJPY=X") == "JPY")
+        #expect(StockSageCurrency.conversionCurrencyForSymbol("USDSAR=X") == "SAR")
+        // A cross (no USD leg) keys on its quote leg.
+        #expect(StockSageCurrency.conversionCurrencyForSymbol("EURGBP=X") == "GBP")
+        // Non-FX symbols fall through to currencyForSymbol unchanged (the two agree).
+        for sym in ["AAPL", "1120.SR", "VOD.L", "BTC-USD", "^GSPC"] {
+            #expect(StockSageCurrency.conversionCurrencyForSymbol(sym) == StockSageCurrency.currencyForSymbol(sym))
+        }
+        // Malformed =X (not a 6-char pair) is safe: base.
+        #expect(StockSageCurrency.conversionCurrencyForSymbol("XYZ=X") == "USD")
+    }
+
+    // The honesty invariant the whole fix exists for: a single EURUSD=X holding priced at 1.08
+    // must value at price×shares in USD (rate 1), NOT price×shares×1.08 (rate²). Proven at the
+    // accessor level — the rate the valuation path looks up is keyed by conversionCurrencyForSymbol,
+    // and "USD" is subtracted from the FX-rate set / maps to 1.0, so no second multiply happens.
+    @Test func usdQuotedFXPairValuesAtRateOneNotRateSquared() {
+        let holding = "EURUSD=X"
+        // The valuation key is USD → the FX-rate table (which excludes/1.0-maps USD) applies rate 1.
+        #expect(StockSageCurrency.conversionCurrencyForSymbol(holding) == "USD")
+        // Contrast: the OLD (buggy) key was the exposure leg EUR, which the FX table would have
+        // multiplied by the EURUSD rate — the rate² inflation. This assertion documents the bug's
+        // signature so a regression (reverting the key) fails here.
+        #expect(StockSageCurrency.currencyForSymbol(holding) != StockSageCurrency.conversionCurrencyForSymbol(holding))
+    }
 }
