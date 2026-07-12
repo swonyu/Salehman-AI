@@ -68,6 +68,59 @@ def gauge():
     return out
 
 
+def _closed_rows():
+    """Closed trades with derived R + fields, for the behavioral breakdown."""
+    r = subprocess.run(["defaults", "export", DOMAIN, "-"], capture_output=True)
+    if r.returncode != 0:
+        return []
+    d = plistlib.loads(r.stdout)
+    kk = next((k for k in d if "papertrade" in k.lower().replace(".", "")), KEY if KEY in d else None)
+    arr = _deep(d[kk]) if kk else None
+    if not isinstance(arr, list):
+        return []
+    out = []
+    for t in arr:
+        if not (isinstance(t, dict) and t.get("closedAt")):
+            continue
+        e, x, s = t.get("entry"), t.get("exitPrice"), t.get("stop")
+        side = (t.get("side") or "Long").lower()
+        if not (e and x and s) or e == s:
+            continue
+        long = "long" in side or "buy" in side
+        R = (x - e) / (e - s) if long else (e - x) / (s - e)
+        tg = t.get("target")
+        if tg and ((long and x >= tg * 0.997) or (not long and x <= tg * 1.003)):
+            how = "hit target"
+        elif (long and x <= s * 1.003) or (not long and x >= s * 0.997):
+            how = "hit/through stop"
+        else:
+            how = "closed early"
+        out.append({"R": R, "how": how, "conviction": t.get("conviction"), "symbol": t.get("symbol")})
+    return out
+
+
+def detail():
+    rows = _closed_rows()
+    if not rows:
+        print("no closed trades to break down"); return
+    import collections
+    n = len(rows)
+    exits = collections.Counter(r["how"] for r in rows)
+    print("\nBEHAVIORAL BREAKDOWN (descriptive — n too small for a verdict):")
+    print(f"  HOW they closed (target break-even at 2:1 needs ~33% hitting target):")
+    for how, c in exits.most_common():
+        rr = [r["R"] for r in rows if r["how"] == how]
+        print(f"    {how:18s} {c:2d}/{n} ({c/n:.0%})  avgR {statistics.mean(rr):+.2f}")
+    convs = [(r["conviction"], r["R"]) for r in rows if r["conviction"] is not None]
+    if len(convs) > 3 and len({c for c, _ in convs}) > 1:
+        cs = [c for c, _ in convs]; rs = [r for _, r in convs]
+        mc, mr = statistics.mean(cs), statistics.mean(rs)
+        sc, sr = statistics.pstdev(cs), statistics.pstdev(rs)
+        corr = sum((c - mc) * (r - mr) for c, r in convs) / (len(convs) * sc * sr) if sc and sr else 0
+        print(f"  CONVICTION vs result: corr {corr:+.2f}  "
+              f"({'your conviction has signal' if corr > 0.15 else 'conviction is NOT predicting your outcomes — the overconfidence trap, live'})")
+
+
 def main():
     g = gauge()
     if "--json" in sys.argv:
@@ -81,6 +134,8 @@ def main():
         print(f"  {g['disposition']}")
         print("  NOTE: this is the owner's own trading behavior, not an engine edge; at 1-3d holds "
               "it tests the fenced short-horizon regime (week-horizon research: net-negative at retail).")
+        if "--detail" in sys.argv:
+            detail()
 
 
 if __name__ == "__main__":
