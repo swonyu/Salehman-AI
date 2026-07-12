@@ -456,4 +456,63 @@ struct StockSagePaperTraderTests {
         a.reset()
         #expect(StockSagePaperTradeStore(defaults: defaults, key: "stocksage.papertrades.v1").trades.isEmpty)
     }
+
+    // MARK: - scoreboard(_:latestClose:) — the bias-corrected forward bracket
+    //
+    // The closed-only read is selection-biased (fast stop-outs resolve before slow targets), so
+    // scoreboard() marks still-open LONGS to the latest close for a second bound. Realized ≈ lower
+    // (loser-enriched) and full ≈ upper (open marks lean optimistic); the truth sits between them.
+
+    private func closed(_ sym: String, entry: Double, stop: Double, exit: Double) -> TradeRecord {
+        TradeRecord(symbol: sym, side: .long, entry: entry, stop: stop, target: nil, shares: 1,
+                    openedAt: d(0), exitPrice: exit, closedAt: d(5))
+    }
+    private func open(_ sym: String, entry: Double, stop: Double, side: TradeRecord.Side = .long) -> TradeRecord {
+        TradeRecord(symbol: sym, side: side, entry: entry, stop: stop, target: nil, shares: 1, openedAt: d(0))
+    }
+
+    @Test func scoreboardBracketsRealizedAndFull() {
+        // Realized: +3R (exit 130), +2R (exit 120), −1R (exit 90) → realized avg = 4/3, win 2/3.
+        // Open long C marked at 105 → unrealized (105−100)/10 = +0.5R. Open D has no price → dropped.
+        let trades = [closed("A", entry: 100, stop: 90, exit: 130),
+                      closed("B", entry: 100, stop: 90, exit: 120),
+                      closed("L", entry: 100, stop: 90, exit: 90),
+                      open("C", entry: 100, stop: 90),
+                      open("D", entry: 100, stop: 90)]
+        let sb = StockSagePaperTrader.scoreboard(trades, latestClose: ["C": 105])!
+        #expect(sb.realizedN == 3)
+        #expect(abs(sb.realizedAvgR - 4.0 / 3.0) < 1e-9)
+        #expect(abs(sb.realizedWinRate - 2.0 / 3.0) < 1e-9)
+        // Full = [+3, +2, −1, +0.5] → avg 4.5/4 = 1.125, win 3/4 = 0.75, one open marked.
+        #expect(sb.fullN == 4)
+        #expect(abs(sb.fullAvgR - 1.125) < 1e-9)
+        #expect(abs(sb.fullWinRate - 0.75) < 1e-9)
+        #expect(sb.openMarked == 1)
+        #expect(abs(sb.resolvedFrac - 0.75) < 1e-9)   // 3 realized / 4 evaluable
+    }
+
+    @Test func scoreboardNilUnderFourEvaluable() {
+        // Two realized + one markable open = 3 < 4 → nil (too thin to read).
+        let trades = [closed("A", entry: 100, stop: 90, exit: 130),
+                      closed("B", entry: 100, stop: 90, exit: 110),
+                      open("C", entry: 100, stop: 90)]
+        #expect(StockSagePaperTrader.scoreboard(trades, latestClose: ["C": 105]) == nil)
+    }
+
+    @Test func scoreboardSkipsShortsAndDegenerateAndMissingPrice() {
+        // Only LONG opens with a price and entry≠stop get marked. A short, an entry==stop, and a
+        // priced-but-absent symbol are all dropped — leaving 4 realized so the result is defined.
+        let trades = [closed("A", entry: 100, stop: 90, exit: 130),
+                      closed("B", entry: 100, stop: 90, exit: 120),
+                      closed("E", entry: 100, stop: 90, exit: 110),
+                      closed("F", entry: 100, stop: 90, exit: 105),
+                      open("S", entry: 100, stop: 90, side: .short),   // short → skipped
+                      open("Z", entry: 100, stop: 100),                // entry==stop → skipped (div-by-0)
+                      open("M", entry: 100, stop: 90)]                 // no latestClose entry → skipped
+        let sb = StockSagePaperTrader.scoreboard(trades, latestClose: ["S": 80, "Z": 110])!
+        #expect(sb.openMarked == 0)
+        #expect(sb.fullN == 4)          // only the 4 realized
+        #expect(sb.realizedN == 4)
+        #expect(sb.resolvedFrac == 1.0) // nothing open counted → fully resolved
+    }
 }

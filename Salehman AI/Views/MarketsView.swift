@@ -121,6 +121,7 @@ struct MarketsView: View {
     @ObservedObject private var store = StockSageStore.shared
     @ObservedObject private var portfolio = StockSagePortfolio.shared
     @ObservedObject private var journal = StockSageJournalStore.shared
+    @ObservedObject private var paperStore = StockSagePaperTradeStore.shared
     @State private var briefing = ""
     @State private var briefingGeneratedAt: Date? = nil
     @State private var loadingBriefing = false
@@ -1121,6 +1122,7 @@ struct MarketsView: View {
             if !portfolio.positions.isEmpty { riskParityPanel }
             if !portfolio.positions.isEmpty { portfolioAnalyticsPanel }
             correlationHeatmapPanel
+            forwardScoreboardPanel   // engine's bias-corrected paper track vs the owner's own journal
             tradeJournalPanel   // records the owner's actual trades + realized P&L/R
             kellySizerPanel   // a standalone calculator — useful with or without holdings
         }
@@ -1655,6 +1657,81 @@ struct MarketsView: View {
     }
 
     // MARK: Trade journal
+
+    /// Forward scoreboard — the engine's paper track marked HONESTLY (bias-corrected bracket), and
+    /// the contrast against the owner's own journal. Display-only; reads published state, changes
+    /// nothing in scoring/sizing. The whole point is to show the CORRECT number: the closed-only read
+    /// is selection-biased (fast stop-outs resolve first), so both bounds + the caveat are shown.
+    private func rTxt(_ r: Double) -> String { String(format: "%+.2fR", r) }
+
+    private var forwardScoreboardPanel: some View {
+        VStack(alignment: .leading, spacing: DS.Space.sm) {
+            HStack(spacing: DS.Space.sm) {
+                Image(systemName: "gauge.with.dots.needle.33percent").font(.system(size: mvFont16)).foregroundStyle(DS.Palette.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Forward scoreboard").font(DS.Typography.titleM).foregroundStyle(.white)
+                    Text("The engine's paper track, marked forward — vs the trades you actually take.")
+                        .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+
+            if let sb = paperStore.scoreboard {
+                // Two bounds that BRACKET the truth. Closed-only over-represents fast losers; the
+                // full-book mark leans optimistic (open winners can reverse). Neither is an edge claim.
+                HStack(spacing: 1) {
+                    scoreCell(title: "Closed only", value: sb.realizedN > 0 ? rTxt(sb.realizedAvgR) : "—",
+                              sub: "\(sb.realizedN) resolved", tint: sb.realizedAvgR < 0 ? DS.Palette.danger : .white)
+                    scoreCell(title: "Full book", value: rTxt(sb.fullAvgR),
+                              sub: "\(sb.fullN) marked", tint: sb.fullAvgR < 0 ? DS.Palette.danger : DS.Palette.successSoft)
+                    scoreCell(title: "Resolved", value: String(format: "%.0f%%", sb.resolvedFrac * 100),
+                              sub: "\(sb.openMarked) open", tint: .white)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+                Text("The truth sits between the two. Only \(String(format: "%.0f%%", sb.resolvedFrac * 100)) has closed, and stops resolve before targets, so “closed only” over-states the loss; the full-book mark counts open positions at their current price (unrealized — they can still reverse). Both are typically ≈0 — the engine's value is risk-discipline, not a proven edge.")
+                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(paperStore.trades.isEmpty
+                     ? "No paper trades yet — the engine opens one per long idea on each scan."
+                     : "Run a scan to update — the scoreboard needs current prices to mark the open book.")
+                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 10)
+            }
+
+            // The contrast: engine vs the owner's own realized trades.
+            let ownEdge = journal.edgeStats
+            if ownEdge.closedWithR > 0 {
+                Text("Your own realized track: \(rTxt(ownEdge.expectancyR)) over \(ownEdge.closedWithR) closed — \(paperStore.scoreboard.map { ownEdge.expectancyR > $0.fullAvgR ? "ahead of the engine so far" : "behind the engine so far" } ?? "logged"). Both small; read at ~100 each.")
+                    .font(.caption2).foregroundStyle(DS.Palette.accent).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Your own journal is empty — log the trades you actually take (below) to measure YOUR edge against the engine's track. That's the one experiment no dataset can run for you.")
+                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text(StockSagePaperTrader.caveat)
+                .font(.system(size: mvFont10)).foregroundStyle(.secondary.opacity(0.8)).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(DS.Space.md)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Bezel.cardFill)
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .strokeBorder(DS.Bezel.coreInnerHighlight, lineWidth: 0.5)
+            }
+        )
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).stroke(DS.Palette.surfaceStroke, lineWidth: 1))
+    }
+
+    private func scoreCell(title: String, value: String, sub: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title.uppercased()).font(.system(size: mvFont10, weight: .semibold)).foregroundStyle(.secondary).tracking(0.5)
+            Text(value).font(.system(size: mvFont16, weight: .bold, design: .rounded)).foregroundStyle(tint)
+                .contentTransition(.numericText())
+            Text(sub).font(.system(size: mvFont10)).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .background(DS.Palette.surfaceAlt)
+    }
 
     private var tradeJournalPanel: some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {

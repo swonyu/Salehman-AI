@@ -148,6 +148,52 @@ enum StockSagePaperTrader {
         "Paper (fake-money) forward test — the engine auto-opens each long idea and marks it to a "
         + "NET-OF-COST fill, closing on stop/target/time-stop. It measures the rules going forward, "
         + "out-of-sample; it is NOT the owner's real trades and does NOT feed win-rate calibration."
+
+    /// BIAS-CORRECTED forward read. The closed-only `forwardStats` is SELECTION-BIASED — a stop is a
+    /// near boundary hit quickly, a 2× target a far one hit slowly, so the trades that close FIRST
+    /// over-represent losers (measured 2026-07-12: closed-only −0.50R on ~8% resolved vs +0.07R on
+    /// the full book). This brackets the truth by ALSO marking each still-open long to its latest
+    /// close: realized-only from below, full-book from above. The open marks are UNREALIZED (an open
+    /// winner can still reverse to its stop) and GROSS (no exit cost netted yet), so they lean
+    /// OPTIMISTIC — the truth sits between the two bounds and converges as the book resolves. Neither
+    /// bound is an edge claim; both are typically ≈0 (value is risk-discipline, not alpha).
+    ///
+    /// PURE + testable: `latestClose` (symbol→latest close) is passed in — the store builds it from
+    /// the scan's histories. Unrealized R for a long = (close − entry) / (entry − stop). nil under 4
+    /// evaluable trades (too thin for any read).
+    nonisolated static func scoreboard(_ trades: [TradeRecord],
+                                       latestClose: [String: Double]) -> PaperForwardScoreboard? {
+        let realized = trades.filter { !$0.isOpen }.compactMap { $0.realizedR }
+        var full = realized
+        var marked = 0
+        for t in trades where t.isOpen && t.side == .long {
+            guard let c = latestClose[t.symbol.uppercased()], c > 0, t.entry != t.stop else { continue }
+            full.append((c - t.entry) / (t.entry - t.stop))   // unrealized R at the latest close
+            marked += 1
+        }
+        guard full.count >= 4 else { return nil }
+        func avg(_ a: [Double]) -> Double { a.isEmpty ? 0 : a.reduce(0, +) / Double(a.count) }
+        func win(_ a: [Double]) -> Double { a.isEmpty ? 0 : Double(a.filter { $0 > 0 }.count) / Double(a.count) }
+        return PaperForwardScoreboard(realizedN: realized.count, realizedAvgR: avg(realized),
+                                      realizedWinRate: win(realized), fullN: full.count,
+                                      fullAvgR: avg(full), fullWinRate: win(full), openMarked: marked)
+    }
+}
+
+/// A bias-corrected forward read on the paper book (see `StockSagePaperTrader.scoreboard`). Two
+/// bounds — closed-only realized R, and the full book with still-open longs marked to their latest
+/// close — that bracket the truth. Labeled PAPER + "unrealized marks lean optimistic" at any surface.
+struct PaperForwardScoreboard: Sendable, Equatable {
+    let realizedN: Int          // closed trades with a defined R (the biased lower bound's basis)
+    let realizedAvgR: Double
+    let realizedWinRate: Double
+    let fullN: Int              // realized + open-marked (the optimistic upper bound's basis)
+    let fullAvgR: Double
+    let fullWinRate: Double
+    let openMarked: Int
+    /// Fraction of the evaluable book that has actually RESOLVED (closed). Low ⇒ the closed-only read
+    /// is heavily selection-biased and the full-book mark carries most of the weight.
+    nonisolated var resolvedFrac: Double { fullN > 0 ? Double(realizedN) / Double(fullN) : 0 }
 }
 
 /// A FORWARD, out-of-sample, net-of-cost read on the paper track record — the campaign's milestone
@@ -202,6 +248,16 @@ final class StockSagePaperTradeStore: ObservableObject {
     /// The FORWARD net-of-cost milestone read (DSR/PSR) on the paper record — the honest "is the engine
     /// actually good, going forward?" gauge. nil until ≥4 paper trades have closed.
     var forwardStats: PaperForwardStats? { StockSagePaperTrader.forwardStats(trades) }
+
+    /// The BIAS-CORRECTED forward scoreboard — recomputed each scan from the scan's histories (needs
+    /// current prices to mark still-open trades, so it is nil until a scan has run this session).
+    @Published private(set) var scoreboard: PaperForwardScoreboard?
+
+    /// Recompute the scoreboard from the latest per-symbol closes (the scan's histories). Called from
+    /// `StockSageStore.updatePaperTrades` where those histories are in hand.
+    func updateScoreboard(latestClose: [String: Double]) {
+        scoreboard = StockSagePaperTrader.scoreboard(trades, latestClose: latestClose)
+    }
 
     func hasOpen(symbol: String) -> Bool {
         trades.contains { $0.isOpen && $0.symbol.uppercased() == symbol.uppercased() }

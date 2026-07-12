@@ -739,6 +739,14 @@ final class StockSageStore: ObservableObject {
         // MEM-01a: one mutation + ONE UserDefaults save instead of a per-call re-encode of the
         // whole (growing) array for every close and every open this cycle.
         store.apply(closes: closes, opens: opens)
+        // Bias-corrected forward scoreboard: mark still-open trades to the latest close so the
+        // closed-only selection bias (fast stop-outs resolve first) is corrected. Latest close per
+        // symbol, from THIS scan's histories.
+        var latestClose: [String: Double] = [:]
+        for (sym, h) in histories {
+            if let c = h.closes.last, c > 0 { latestClose[sym.uppercased()] = c }
+        }
+        store.updateScoreboard(latestClose: latestClose)
     }
 
     /// Re-fetch ONLY the symbols the last scan couldn't price and merge them in, re-ranking.
