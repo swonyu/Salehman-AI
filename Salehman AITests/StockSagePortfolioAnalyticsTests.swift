@@ -171,6 +171,27 @@ struct StockSagePortfolioAnalyticsTests {
         #expect(m[1][0] == 0)
     }
 
+    // Audit 2026-07-12 (ideas-card F3): the parallel defined-ness mask lets the heatmap render an
+    // undefined (zero-variance) pair as "—" instead of a fabricated green "0.0 independent" cell.
+    // The mask must flag exactly the pairs where correlationMatrix stored the display-only 0, and
+    // leave a genuinely-measured pair (and the diagonal) defined.
+    @Test func correlationDefinedMaskFlagsTheUndefinedZeroVariancePair() {
+        let a: [Double] = [0.1, 0.2, 0.3, 0.15]     // real variation
+        let b: [Double] = [0.3, 0.1, 0.25, 0.2]     // real variation
+        let flat: [Double] = [100, 100, 100, 100]   // zero variance → undefined vs anything
+        let mask = PA.correlationDefinedMask([a, b, flat])
+        // Diagonal always defined (self-correlation is 1).
+        #expect(mask[0][0] && mask[1][1] && mask[2][2])
+        // a vs b: both vary → defined.
+        #expect(mask[0][1] && mask[1][0])
+        // flat vs anything: undefined → false (the cell the heatmap must render as "—").
+        #expect(!mask[0][2] && !mask[2][0])
+        #expect(!mask[1][2] && !mask[2][1])
+        // And the mask lines up with where the matrix stored its display-only 0.
+        let m = PA.correlationMatrix([a, b, flat])
+        #expect(m[0][2] == 0 && !mask[0][2])   // undefined pair: matrix 0, mask false — the exact contract.
+    }
+
     @Test func computeDoesNotTreatAFlatHoldingAsMaximallyDiversifying() {
         // A flat (zero-variance) holding paired with a real one used to make avgCorrelation()
         // silently read as 0 ("perfectly diversifying") — the worst possible mis-read, since a

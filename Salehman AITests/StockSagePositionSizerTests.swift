@@ -33,6 +33,23 @@ struct StockSagePositionSizerTests {
         #expect(line.lowercased().contains("loss"))      // honesty: sizes the loss
     }
 
+    // Audit 2026-07-12 (ideas-card F1): `dollarsAtRisk` is in the SYMBOL's own currency, so a
+    // hardcoded "$" mis-stated a non-USD row ~3.75× (SAR) / ~100× (pence). Threading `symbol`
+    // renders the amount in its true currency; the default (symbol: "") stays "$" byte-identical.
+    @Test func summaryLineLabelsAtRiskInTheSymbolsOwnCurrency() {
+        let ps = PS.size(account: 10000, riskFraction: 0.01, entry: 100, stop: 90)!   // dollarsAtRisk == 100
+        // No symbol → keeps the "$" form (backward-compatible default).
+        #expect(PS.summaryLine(ps, riskPct: 1).contains("$100"))
+        // A .SR symbol → the at-risk amount reads in SAR, NOT "$" (the exact bug).
+        let sr = PS.summaryLine(ps, riskPct: 1, symbol: "2222.SR")
+        #expect(sr.contains("SAR"))
+        #expect(!sr.contains("$100"))
+        // A USD symbol → still "$".
+        #expect(PS.summaryLine(ps, riskPct: 1, symbol: "AAPL").contains("$100"))
+        // Pence (.L): still labeled — the currency, never a bare "$" (the ~100× mislabel).
+        #expect(PS.summaryLine(ps, riskPct: 1, symbol: "VOD.L").contains("GBP"))
+    }
+
     // F1/F3 (2026-07-09): whole-share flooring can round a real setup to 0 shares while the idea
     // still holds a top rank slot — the sized-order line must say so. Straddle at the 1-share
     // boundary: $100 account, 1% risk → $1 budget. stop-distance 2 → budget/risk = 0.5 → floors

@@ -1442,8 +1442,11 @@ final class StockSageStore: ObservableObject {
 
         // Heatmap from the date-aligned holding return vectors.
         if symbols.count >= 2, (holdingVecs.first?.count ?? 0) >= 5 {
+            // F3 (audit 2026-07-12): carry the defined-ness mask so the heatmap renders an undefined
+            // (zero-variance) pair as "—" instead of a fabricated green "0.0 independent" cell.
             correlation = CorrelationMatrix(symbols: symbols,
-                                            matrix: StockSagePortfolioAnalytics.correlationMatrix(holdingVecs))
+                                            matrix: StockSagePortfolioAnalytics.correlationMatrix(holdingVecs),
+                                            defined: StockSagePortfolioAnalytics.correlationDefinedMask(holdingVecs))
         } else {
             correlation = nil
         }

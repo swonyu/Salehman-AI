@@ -32,6 +32,17 @@ struct PortfolioAnalytics: Sendable, Equatable {
 struct CorrelationMatrix: Sendable, Equatable {
     let symbols: [String]
     let matrix: [[Double]]
+    /// Audit 2026-07-12 (ideas-card F3): parallel defined-ness mask (see `correlationDefinedMask`).
+    /// `false` = the pair is undefined (zero-variance series) and `matrix` holds a display-only 0 that
+    /// must render as "—", not a green "independent" cell. Defaults to all-defined so existing
+    /// construction (and decode of any older value) is unchanged; the heatmap builder populates it.
+    var defined: [[Bool]] = []
+    /// Is cell (i,j) a genuinely measured correlation? Out-of-range or empty mask → treat as defined
+    /// (fail toward the prior behavior, never crash).
+    nonisolated func isDefined(_ i: Int, _ j: Int) -> Bool {
+        guard i < defined.count, j < defined[i].count else { return true }
+        return defined[i][j]
+    }
 }
 
 enum StockSagePortfolioAnalytics {
@@ -261,6 +272,28 @@ enum StockSagePortfolioAnalytics {
             }
         }
         return m
+    }
+
+    /// Audit 2026-07-12 (ideas-card F3): which cells of `correlationMatrix` are DEFINED. An undefined
+    /// pair (a zero-variance / constant series — e.g. a halted or delisted-but-in-book holding) is
+    /// stored as `0` in the matrix for display, which the heatmap would otherwise paint as a green
+    /// "0.0 independent" cell — a fabricated diversification claim on a mathematically-undefined
+    /// value. This parallel mask lets the heatmap render such cells as a neutral "—" instead, WITHOUT
+    /// changing `correlationMatrix`'s return (three other consumers rely on the `0` fallback — the
+    /// allocation-optimizer reads it straight into a covariance, so NaN there would poison it). The
+    /// diagonal is always defined (a series' self-correlation is 1). Same shape as `correlationMatrix`.
+    nonisolated static func correlationDefinedMask(_ series: [[Double]]) -> [[Bool]] {
+        let n = series.count
+        var mask = Array(repeating: Array(repeating: true, count: n), count: n)
+        guard n >= 2 else { return mask }
+        for i in 0..<n {
+            for j in (i + 1)..<n {
+                let defined = correlation(series[i], series[j]) != nil
+                mask[i][j] = defined
+                mask[j][i] = defined
+            }
+        }
+        return mask
     }
 
     /// Average pairwise correlation across holdings (1 holding → 1 = fully concentrated). A pair

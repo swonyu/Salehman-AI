@@ -1618,12 +1618,18 @@ struct MarketsView: View {
                                     .frame(width: 46, alignment: .leading).lineLimit(1)
                                 ForEach(c.symbols.indices, id: \.self) { j in
                                     let v = c.matrix[i][j]
-                                    Rectangle().fill(correlationColor(v))
+                                    // F3 (audit 2026-07-12): an undefined pair (zero-variance series)
+                                    // holds a display-only 0 — render it as a neutral "—", never a
+                                    // green "0.0 independent" cell that fabricates a diversification claim.
+                                    let defined = c.isDefined(i, j)
+                                    Rectangle().fill(defined ? correlationColor(v) : DS.Palette.surfaceAlt)
                                         .frame(width: 26, height: 18)
-                                        .overlay(Text(String(format: "%.1f", v))
-                                            .font(.system(size: mvFont7, weight: .bold)).foregroundStyle(.white.opacity(0.92)))
+                                        .overlay(Text(defined ? String(format: "%.1f", v) : "—")
+                                            .font(.system(size: mvFont7, weight: .bold)).foregroundStyle(.white.opacity(defined ? 0.92 : 0.5)))
                                         .accessibilityElement(children: .ignore)
-                                        .accessibilityLabel("\(c.symbols[i]) vs \(c.symbols[j]), correlation \(String(format: "%.1f", v))")
+                                        .accessibilityLabel(defined
+                                            ? "\(c.symbols[i]) vs \(c.symbols[j]), correlation \(String(format: "%.1f", v))"
+                                            : "\(c.symbols[i]) vs \(c.symbols[j]), correlation undefined — one series has no price variation over the window")
                                 }
                             }
                         }
@@ -1636,7 +1642,8 @@ struct MarketsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                Text("Pairwise daily-return correlation over the overlapping window — lower (greener) off-diagonal = better diversified.")
+                // F5 (audit 2026-07-12): disclose the thin-sample floor + the "—" undefined cell.
+                Text("Pairwise daily-return correlation over the overlapping window — lower (greener) off-diagonal = better diversified. Computed on as few as ~5 overlapping days for a freshly-added name, so a few-point cell is a weak estimate, not a settled relationship; a “—” cell is undefined (a series with no price variation).")
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             .padding(DS.Space.sm)
@@ -4207,7 +4214,7 @@ struct MarketsView: View {
                 if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                    let rp = StockSageInput.percent(sizerRiskPct),
                    let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
-                    s += ". Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp))"
+                    s += ". Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp, symbol: idea.symbol))"
                 }
                 if !tomTiltDisclosureSuffix.isEmpty {
                     s += ". Ranking includes a small seasonal month tilt."
@@ -4317,7 +4324,7 @@ struct MarketsView: View {
                         // Blocked-fixture QA 2026-07-09: a green sized order directly under a
                         // DO-NOT-TRADE chip read as two voices — the size line now names the
                         // refusal itself (and drops the go-green tint) when the gate blocks.
-                        Text("Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp))"
+                        Text("Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp, symbol: idea.symbol))"
                              + (cardGate?.decision == .blocked ? " — gate: do NOT trade at this risk %" : ""))
                             .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(cardGate?.decision == .blocked ? DS.Palette.dangerSoft
@@ -4468,11 +4475,15 @@ struct MarketsView: View {
                         .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     // Hierarchy lens HIGH (2026-07-09): the plan's TOTAL capital requirement was
                     // invisible — say it whenever the full deployment exceeds the account.
-                    let planTotalNotional = plan.positions.reduce(0.0) { $0 + $1.notional }   // PERF: once, not 3×
-                    if planTotalNotional > plan.account {
-                        Text(String(format: "⚠︎ Deploying the FULL plan needs ≈$%.0f of notional on a $%.0f account (%.0f%%) — deploy partially or with margin; each line still risks only its stated %% at its stop.",
-                                    planTotalNotional, plan.account,
-                                    planTotalNotional / plan.account * 100))
+                    // F7 (audit 2026-07-12): each notional is in the symbol's OWN currency — summing
+                    // SAR + USD + pence raw is meaningless (the old "≈$53,000 (530%)"). deployPlanTotalUSD
+                    // FX-converts each to USD before summing and reports how many had no tracked rate.
+                    let deployTotal = deployPlanTotalUSD(plan)
+                    if deployTotal.usd > plan.account {
+                        Text(String(format: "⚠︎ Deploying the FULL plan needs ≈$%.0f of notional on a $%.0f account (%.0f%%) — deploy partially or with margin; each line still risks only its stated %% at its stop.%@",
+                                    deployTotal.usd, plan.account,
+                                    deployTotal.usd / plan.account * 100,
+                                    deployTotal.untracked > 0 ? " (\(deployTotal.untracked) non-USD position\(deployTotal.untracked == 1 ? "" : "s") excluded from this total — no tracked FX rate.)" : ""))
                             .font(.system(size: mvFont9, weight: .medium)).foregroundStyle(DS.Palette.warningSoft)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -4493,14 +4504,33 @@ struct MarketsView: View {
     /// One Deploy-capital position row — extracted (VO walk 2026-07-09) so the row can be ONE
     /// combined, self-identifying VoiceOver stop: the "⚠︎ exceeds account" chip was a bare
     /// floating stop whose row attribution was only inferable from linear order.
+    /// F7 (audit 2026-07-12): the deploy plan's total capital requirement, FX-converted to the USD
+    /// account currency. Each position's notional is in its own currency, so a raw sum across
+    /// SAR/USD/pence is meaningless; this converts each (pence-normalized × rate) and reports how many
+    /// positions had no tracked FX rate (excluded from the sum rather than added 1:1). Pure.
+    private func deployPlanTotalUSD(_ plan: CapitalAllocation) -> (usd: Double, untracked: Int) {
+        let fx = fxRatesToUSD
+        var usd = 0.0, untracked = 0
+        for pos in plan.positions {
+            if let rate = fx[conversionCurrencyForSymbol(pos.symbol)] {
+                usd += StockSageCurrency.majorUnitValue(symbol: pos.symbol, rawValue: pos.notional) * rate
+            } else {
+                untracked += 1
+            }
+        }
+        return (usd, untracked)
+    }
+
     @ViewBuilder private func deployPositionRow(_ p: AllocatedPosition, planAccount: Double) -> some View {
         HStack(spacing: 12) {
             Text(p.symbol).font(.system(size: mvFont13, weight: .bold, design: .rounded)).foregroundStyle(.white)
                 .frame(width: 64, alignment: .leading)
             ideaMetric("Risk", String(format: "%.2f%%", p.riskFraction * 100))
             ideaMetric("Shares", "\(p.shares)")
-            ideaMetric("At risk", String(format: "$%.0f", p.dollarsAtRisk), color: DS.Palette.warningSoft)
-            ideaMetric("Notional", String(format: "$%.0f", p.notional))
+            // F2 (audit 2026-07-12): at-risk / notional are in the symbol's OWN currency — label them
+            // as such (approxAmount → "≈200 SAR" not "$200"), same fix as the idea-card "At risk".
+            ideaMetric("At risk", StockSageCurrency.approxAmount(p.dollarsAtRisk, symbol: p.symbol), color: DS.Palette.warningSoft)
+            ideaMetric("Notional", StockSageCurrency.approxAmount(p.notional, symbol: p.symbol))
             // "Est. EV" (2026-07-09, harvested Copilot HELD finding #2): same
             // estimate class as the best-opp card's "Est. EV" — an unlabeled "EV"
             // here read as a firmer number than the identical figure one card up.
@@ -4509,7 +4539,13 @@ struct MarketsView: View {
             // Hierarchy lens HIGH (2026-07-09): the smaller per-card plan warns at
             // >100%-of-account, but THIS plan — the portfolio-level one — showed a
             // $15,978 notional on a $10,000 account with no flag.
-            if p.notional > planAccount {
+            // F2 (audit 2026-07-12): compare the notional to the account in the SAME currency (USD) —
+            // a native SAR/pence notional vs a USD account either falsely trips (pence ~100×) or misses.
+            // When the symbol's FX rate is untracked, fall back to the raw compare (prior behavior).
+            let notionalUSD = fxRatesToUSD[conversionCurrencyForSymbol(p.symbol)].map {
+                StockSageCurrency.majorUnitValue(symbol: p.symbol, rawValue: p.notional) * $0
+            } ?? p.notional
+            if notionalUSD > planAccount {
                 Text("⚠︎ exceeds account")
                     .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
                     .lineLimit(1).fixedSize()
@@ -4853,7 +4889,7 @@ struct MarketsView: View {
                 if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                    let rp = StockSageInput.percent(sizerRiskPct),
                    let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
-                    return (StockSagePositionSizer.summaryLine(ps, riskPct: rp), ps.pctOfAccount > 100 || ps.shares == 0, ps.pctOfAccount > 100)
+                    return (StockSagePositionSizer.summaryLine(ps, riskPct: rp, symbol: idea.symbol), ps.pctOfAccount > 100 || ps.shares == 0, ps.pctOfAccount > 100)
                 }
                 return ("Set account to size — add one in the position sizer below.", false, false)
             }()
