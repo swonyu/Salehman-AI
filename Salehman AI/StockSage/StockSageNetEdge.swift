@@ -279,4 +279,32 @@ extension StockSageNetEdge {
         let band = cryptoCosts(forSymbol: symbol, advDollar: advDollar)
         return "~\(Int(band.estimateLowBps))–\(Int(band.estimateHighBps))bps est. crypto"
     }
+
+    /// Honesty disclosure for the crypto band-vs-priced mismatch (audit 2026-07-12, finding #1).
+    /// The displayed net R:R / verdict are computed by `evaluate()` at the FLAT `defaultCosts` (70bps
+    /// crypto) — deliberately, so the sheet's net can never disagree with the ranking net (the
+    /// 2026-07-02 rank-consistency contract; re-pointing `defaultCosts` is a separate owner-reviewed
+    /// change). But `costsDisplayLabel` shows the honest tier BAND. When the band's LOW exceeds the
+    /// flat cost actually priced (the thin tier: 160 > 70), the net below is OPTIMISTIC relative to the
+    /// band the header states — a real 160–440bps deduction would push net R:R lower, plausibly through
+    /// the "skip" verdict. This suffix discloses that so the label and the number can't be read as one
+    /// cost assumption. Empty when the flat priced cost is within/above the band low (mid/large/BTC-ETH,
+    /// where the priced 70bps is not below what the user is told) → non-crypto and safe-tier byte-identical.
+    nonisolated static func costsDisplayNote(forSymbol symbol: String, advDollar: Double?) -> String {
+        let costs = defaultCosts(forSymbol: symbol)
+        guard costs.assetClass == "crypto" else { return "" }
+        let band = cryptoCosts(forSymbol: symbol, advDollar: advDollar)
+        guard band.estimateLowBps > costs.roundTripBps else { return "" }
+        return " — net below is priced at the ~\(Int(costs.roundTripBps))bps floor, so it is OPTIMISTIC vs this band; your real thin-alt cost is higher"
+    }
+
+    /// Standalone-sentence form of `costsDisplayNote` for the itemized ledger (a full caption row,
+    /// not an inline suffix). nil (no row) unless the crypto band's low exceeds the flat priced cost.
+    nonisolated static func costsOptimismSentence(forSymbol symbol: String, advDollar: Double?) -> String? {
+        let costs = defaultCosts(forSymbol: symbol)
+        guard costs.assetClass == "crypto" else { return nil }
+        let band = cryptoCosts(forSymbol: symbol, advDollar: advDollar)
+        guard band.estimateLowBps > costs.roundTripBps else { return nil }
+        return "Net above is priced at the ~\(Int(costs.roundTripBps))bps crypto floor — OPTIMISTIC vs the ~\(Int(band.estimateLowBps))–\(Int(band.estimateHighBps))bps this thin alt really costs; your true net is lower."
+    }
 }

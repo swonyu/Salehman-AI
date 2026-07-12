@@ -74,4 +74,33 @@ struct StockSageCryptoHonestyTests {
         let c = StockSageCryptoHonesty.caveat.lowercased()
         #expect(c.contains("estimate") && c.contains("past performance") && !c.contains("guarantee"))
     }
+
+    // MARK: - Audit 2026-07-12 #1 — crypto band-vs-priced optimism disclosure
+    //
+    // The detail sheet shows the tier BAND (costsDisplayLabel) but computes net R:R / verdict at the
+    // flat `defaultCosts` (70bps crypto) to keep the displayed net == the ranking net (rank-consistency
+    // contract). When the band's LOW exceeds the flat priced cost (the THIN tier, 160 > 70), the net is
+    // OPTIMISTIC vs the header — costsDisplayNote / costsOptimismSentence disclose exactly that, and MUST
+    // stay empty everywhere the priced 70bps is not below what the label states (mid/large/BTC-ETH/non-crypto).
+    @Test func cryptoOptimismNoteFiresOnlyWhenBandLowExceedsPricedCost() {
+        let priced = StockSageNetEdge.defaultCosts(forSymbol: "TST-USD").roundTripBps  // flat 70 crypto
+        // THIN: advDollar < thinBelow ⇒ band 160–440, low 160 > 70 ⇒ note fires.
+        let thinAdv = StockSageLiquidity.thinBelow - 1
+        let thinBand = StockSageNetEdge.cryptoCosts(forSymbol: "ALT-USD", advDollar: thinAdv)
+        #expect(thinBand.estimateLowBps > priced)                                       // premise
+        #expect(!StockSageNetEdge.costsDisplayNote(forSymbol: "ALT-USD", advDollar: thinAdv).isEmpty)
+        #expect(StockSageNetEdge.costsOptimismSentence(forSymbol: "ALT-USD", advDollar: thinAdv) != nil)
+        // The disclosure must name the direction honestly (optimistic / floor), never imply a guarantee.
+        let sentence = StockSageNetEdge.costsOptimismSentence(forSymbol: "ALT-USD", advDollar: thinAdv)!.lowercased()
+        #expect(sentence.contains("optimistic") && sentence.contains("floor") && !sentence.contains("guarantee"))
+
+        // majorBTCETH: band 21–54, low 21 < 70 ⇒ priced cost is CONSERVATIVE, no note (safe direction).
+        #expect(StockSageNetEdge.cryptoCosts(forSymbol: "BTC-USD", advDollar: nil).estimateLowBps < priced)
+        #expect(StockSageNetEdge.costsDisplayNote(forSymbol: "BTC-USD", advDollar: nil).isEmpty)
+        #expect(StockSageNetEdge.costsOptimismSentence(forSymbol: "BTC-USD", advDollar: nil) == nil)
+
+        // Non-crypto: never a crypto-band note.
+        #expect(StockSageNetEdge.costsDisplayNote(forSymbol: "AAPL", advDollar: nil).isEmpty)
+        #expect(StockSageNetEdge.costsOptimismSentence(forSymbol: "AAPL", advDollar: nil) == nil)
+    }
 }

@@ -1700,7 +1700,7 @@ struct MarketsView: View {
             // The contrast: engine vs the owner's own realized trades.
             let ownEdge = journal.edgeStats
             if ownEdge.closedWithR > 0 {
-                Text("Your own realized track: \(rTxt(ownEdge.expectancyR)) over \(ownEdge.closedWithR) closed — \(paperStore.scoreboard.map { ownEdge.expectancyR > $0.fullAvgR ? "ahead of the engine so far" : "behind the engine so far" } ?? "logged"). Both small; read at ~100 each.")
+                Text("Your own realized track: \(rTxt(ownEdge.expectancyR)) over \(ownEdge.closedWithR) closed — \(paperStore.scoreboard.map { ownEdge.expectancyR > $0.realizedAvgR ? "ahead of the engine so far" : "behind the engine so far" } ?? "logged"). Both small; read at ~100 each.")
                     .font(.caption2).foregroundStyle(DS.Palette.accent).fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("Your own journal is empty — log the trades you actually take (below) to measure YOUR edge against the engine's track. That's the one experiment no dataset can run for you.")
@@ -6254,6 +6254,10 @@ struct MarketsView: View {
                         // asset class is byte-identical to before. Does not touch `ne`/`costs`
                         // (still `defaultCosts`) — only this label text.
                         let costLabel = StockSageNetEdge.costsDisplayLabel(forSymbol: idea.symbol, advDollar: store.liquidity[idea.symbol.uppercased()]?.avgDollarVolume)
+                        // Audit 2026-07-12 #1: when the crypto band's low > the flat cost `evaluate`
+                        // actually priced (thin tier), disclose that the net below is optimistic vs
+                        // the band the header states — the net figure stays at the ranking cost.
+                        let costNote = StockSageNetEdge.costsDisplayNote(forSymbol: idea.symbol, advDollar: store.liquidity[idea.symbol.uppercased()]?.avgDollarVolume)
                         let pre = "After \(costLabel) costs\(financingNote): "
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "scissors").font(.system(size: mvFont11)).foregroundStyle(c)
@@ -6264,8 +6268,8 @@ struct MarketsView: View {
                                 ? grossToNetText(
                                     prefix: pre + "R:R ", grossLabel: String(format: "%.1f:1 (gross)", ne.grossRR),
                                     netLabel: String(format: "%.1f:1 (net)", ne.netRR),
-                                    suffix: ". \(ne.verdict)", font: .caption2, color: c)
-                                : Text(pre + ne.verdict).font(.caption2).foregroundStyle(c))
+                                    suffix: ". \(ne.verdict)\(costNote)", font: .caption2, color: c)
+                                : Text(pre + ne.verdict + costNote).font(.caption2).foregroundStyle(c))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .help("Nets an asset-class round-trip spread+slippage estimate (crypto widest, FX/large-cap tightest) — and, for a short, the overnight borrow/margin cost of holding the expected duration — out of the reward:risk. Your real costs differ — wide-margin trades barely notice; thin scalps can lose the whole edge.")
                         }
@@ -6349,6 +6353,15 @@ struct MarketsView: View {
                                     .help(StockSageExpectedValue.caveat)
                                 ledgerRow(deductionLabel, String(format: "−%.2fR", ev.evR - netR), color: DS.Palette.textSecondary)
                                 ledgerRow("Net expectancy", String(format: "%+.2fR", netR), color: netColor)
+                                // Audit 2026-07-12 #1: the deduction/net rows above are priced at the
+                                // flat ranking cost; when the crypto band's low exceeds it, say the net
+                                // is optimistic vs the band label. Empty (no row) on every non-thin case.
+                                let cryptoOptimismSentence = StockSageNetEdge.costsOptimismSentence(forSymbol: idea.symbol, advDollar: store.liquidity[idea.symbol.uppercased()]?.avgDollarVolume)
+                                if let cryptoOptimismSentence {
+                                    Text(cryptoOptimismSentence)
+                                        .font(.caption2).foregroundStyle(DS.Palette.warningSoft)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
                                 if let f2MinNote {
                                     Text(f2MinNote)
                                         .font(.caption2).foregroundStyle(DS.Palette.warningSoft)

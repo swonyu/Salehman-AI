@@ -208,6 +208,16 @@ struct MarketsTodayActionsCard: View {
                                 fwd.passesForwardBar ? "passes bar" : "below bar"))
                         .font(.system(size: 8)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         .help(StockSageDeflatedSharpe.caveat)
+                    // Audit 2026-07-12 #2: forwardStats is CLOSED-ONLY, which is selection-biased —
+                    // stops resolve before targets, so early closes over-represent losers (the exact
+                    // bias the Portfolio scoreboard fixes). Disclose the resolved fraction + the
+                    // over-states-the-loss caveat so this DSR isn't read as an honest forward verdict.
+                    let openCount = paperStore.trades.count - fwd.closed
+                    if openCount > 0 {
+                        Text(String(format: "…on the %d closed of %d — stops resolve before targets, so this closed-only read OVER-STATES the loss (%d still open, unmarked here). See the Portfolio → Forward scoreboard for the full-book bound.",
+                                    fwd.closed, paperStore.trades.count, openCount))
+                            .font(.system(size: 8)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             .padding(.horizontal, 8).padding(.vertical, 6)
