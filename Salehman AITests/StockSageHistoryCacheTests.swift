@@ -52,6 +52,34 @@ struct StockSageHistoryCacheTests {
         #expect(cache.entries.first?.symbol == "AAA")
     }
 
+    // Audit 2026-07-12 (concurrency R2): two detached scan savers can land out of order; the serial
+    // CacheWriter funnels every write through nonShrinkMerge so a smaller SAME-DAY write never drops
+    // symbols a larger same-day write already persisted. These pin the pure decision (no disk).
+    @Test func nonShrinkMergeKeepsSameDaySupersetOnDiskFromASmallerCandidate() {
+        let day = Date(timeIntervalSince1970: 100 * 86_400)   // any fixed UTC day
+        // Disk holds a large same-day cache (the full scan); candidate is a smaller cancel save.
+        let disk = HC.from(histories: ["AAA": history("AAA", bars: 5), "BBB": history("BBB", bars: 5), "CCC": history("CCC", bars: 5)],
+                           universe: ["AAA", "BBB", "CCC"], savedAt: day)
+        let candidate = HC.from(histories: ["AAA": history("AAA", bars: 5)], universe: ["AAA"], savedAt: day)
+        let result = HC.nonShrinkMerge(disk: disk, candidate: candidate)
+        // The smaller candidate must NOT shrink the same-day disk cache — all 3 symbols survive.
+        #expect(Set(result.priceHistories().keys) == ["AAA", "BBB", "CCC"])
+    }
+
+    @Test func nonShrinkMergeLetsANewDayReplaceAndASupersetPassThrough() {
+        let d1 = Date(timeIntervalSince1970: 100 * 86_400), d2 = Date(timeIntervalSince1970: 101 * 86_400)
+        let disk = HC.from(histories: ["OLD": history("OLD", bars: 5)], universe: ["OLD"], savedAt: d1)
+        // Different UTC day → the candidate legitimately REPLACES (no stale merge across days).
+        let nextDay = HC.from(histories: ["NEW": history("NEW", bars: 5)], universe: ["NEW"], savedAt: d2)
+        #expect(Set(HC.nonShrinkMerge(disk: disk, candidate: nextDay).priceHistories().keys) == ["NEW"])
+        // Same day but candidate is a SUPERSET → passes through unchanged (no merge needed).
+        let superset = HC.from(histories: ["OLD": history("OLD", bars: 5), "EXTRA": history("EXTRA", bars: 5)],
+                               universe: ["OLD", "EXTRA"], savedAt: d1)
+        #expect(Set(HC.nonShrinkMerge(disk: disk, candidate: superset).priceHistories().keys) == ["OLD", "EXTRA"])
+        // No disk → candidate as-is.
+        #expect(Set(HC.nonShrinkMerge(disk: nil, candidate: superset).priceHistories().keys) == ["OLD", "EXTRA"])
+    }
+
     // 4. Schema-version + corruption guard: wrong version → nil; malformed JSON → nil; current → non-nil.
     @Test func decodeRejectsWrongVersionAndMalformed() throws {
         let wrong = HC(schemaVersion: 999, entries: [], savedAt: Date(timeIntervalSince1970: 0))

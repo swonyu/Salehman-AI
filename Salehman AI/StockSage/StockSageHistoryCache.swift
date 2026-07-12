@@ -110,6 +110,47 @@ nonisolated struct StockSageHistoryCache: Codable, Sendable, Equatable {
         try? data.write(to: url, options: .atomic)
     }
 
+    /// Audit 2026-07-12 (concurrency R2): the ideas-card scan launches cache writers from unstructured
+    /// `Task.detached` closures (a full-scan save + a cancel best-effort save). `.atomic` on
+    /// `write(to:)` prevents a torn READ but does NOT order two independent whole-file replacements —
+    /// so a cancel save (smaller, same-day) landing AFTER a still-in-flight full-scan save (larger)
+    /// SHRINKS a same-day-fresh cache, dropping symbols the next scan must re-fetch (the 429 risk this
+    /// cache exists to avoid). `cancelSaveDecision`'s non-shrink proof only covers the cache read at
+    /// scan start, not a concurrently-queued larger write. THE FIX: funnel every write through one
+    /// serial actor that reads-merges-writes atomically inside its isolation — two writers can neither
+    /// reorder nor interleave, and a same-UTC-day on-disk superset is never shrunk. Callers use
+    /// `await saveSerialized()` instead of the fire-and-forget `save()`.
+    func saveSerialized() async {
+        await CacheWriter.shared.write(self)
+    }
+
+    /// PURE non-shrink merge decision (unit-testable without disk — mirrors `cancelSaveDecision`'s
+    /// separation). Given the on-disk cache (nil if none) and the candidate about to be written,
+    /// returns what should ACTUALLY be written: the candidate unchanged, EXCEPT when disk holds a
+    /// SAME-UTC-day cache whose symbols are not a subset of the candidate's — then merge (candidate
+    /// wins per-symbol) so a smaller same-day write can never drop names a larger same-day write
+    /// already persisted. Different-day or subset-disk → candidate as-is (a new day legitimately
+    /// replaces; a superset candidate needs no merge).
+    nonisolated static func nonShrinkMerge(disk: StockSageHistoryCache?, candidate: StockSageHistoryCache) -> StockSageHistoryCache {
+        guard let disk else { return candidate }
+        let diskKeys = Set(disk.priceHistories().keys), candKeys = Set(candidate.priceHistories().keys)
+        guard StockSageScanChunking.utcDayKey(disk.savedAt) == StockSageScanChunking.utcDayKey(candidate.savedAt),
+              !diskKeys.isSubset(of: candKeys) else { return candidate }
+        let merged = disk.priceHistories().merging(candidate.priceHistories()) { _, new in new }
+        // The union of both symbol sets IS the valid universe (each side was already universe-filtered).
+        return StockSageHistoryCache.from(histories: merged, universe: diskKeys.union(candKeys), savedAt: candidate.savedAt)
+    }
+
+    /// Serial funnel for all HistoryCache writes (see `saveSerialized`). Actor isolation makes the
+    /// read-merge-write one indivisible, ordered operation — two detached scan savers can neither
+    /// reorder nor interleave, so a same-day cache is never shrunk by a late-landing smaller write.
+    actor CacheWriter {
+        static let shared = CacheWriter()
+        func write(_ candidate: StockSageHistoryCache) {
+            StockSageHistoryCache.nonShrinkMerge(disk: StockSageHistoryCache.load(), candidate: candidate).save()
+        }
+    }
+
     // MARK: Panel builder for the net-cost sim (offline validation)
 
     /// Build a `StockSageNetCostSim.Panel` from cached histories, aligned on the DATE axis

@@ -507,7 +507,9 @@ final class StockSageStore: ObservableObject {
                                                      accumulated: scan.accumulatedHistories,
                                                      priorCacheHistories: cachePriceHistories,
                                                      nowDayKey: StockSageScanChunking.utcDayKey(Date())) {
-                Task.detached { StockSageHistoryCache.from(histories: toSave, universe: historyUniverse, savedAt: Date()).save() }
+                // Concurrency R2: serialize through CacheWriter so this cancel save can't reorder past
+                // a still-in-flight full-scan save and shrink a same-day-fresh cache.
+                Task.detached { await StockSageHistoryCache.from(histories: toSave, universe: historyUniverse, savedAt: Date()).saveSerialized() }
             }
             // CANCEL NAMES COVERAGE (post-ship critique fleet, orchestrator-confirmed): a cancel
             // can land AFTER one or more chunks already published to the board (`ideas` was set
@@ -553,7 +555,9 @@ final class StockSageStore: ObservableObject {
         // result, so an unconditional whole-file replace stays honest — unlike the cancel path
         // above, which needs `cancelSaveDecision` to avoid shrinking a same-day cache.
         let historiesToSave = accumulatedHistories
-        Task.detached { StockSageHistoryCache.from(histories: historiesToSave, universe: historyUniverse, savedAt: Date()).save() }
+        // Concurrency R2: serialize through CacheWriter (same funnel as the cancel save above) so two
+        // detached savers can neither reorder nor shrink a same-day cache.
+        Task.detached { await StockSageHistoryCache.from(histories: historiesToSave, universe: historyUniverse, savedAt: Date()).saveSerialized() }
 
         // SCAN-END-ONCE (plan step 2): everything below runs exactly once, over the FULL
         // accumulated result — same order/guards as the pre-chunking single-shot scan.
@@ -715,6 +719,15 @@ final class StockSageStore: ObservableObject {
                 ideas = ranked
             }
 
+            // Audit 2026-07-12 (concurrency R1): a per-chunk watchdog timeout truncates the universe
+            // scan to a PARTIAL board, but it set neither wasCancelled nor throttled — so the partial
+            // board was returned as a COMPLETE success (ideasUpdated stamped fresh) and poisoned the
+            // durable per-day money-velocity trend (MarketsView's record guard only skips on
+            // lastScanCancelled||scanThrottled). A timeout is functionally the SAME "scan stopped
+            // early, board is partial" state as a throttle trip, so raise the SAME signal: the
+            // velocity guard skips it AND the partial-board banner surfaces the truncation — one
+            // point, zero new plumbing.
+            if chunkTimedOut, !throttled { throttled = true; onThrottle?() }
             if chunkTimedOut || (chunkIndex > 0 && throttled) { break }
         }
 
