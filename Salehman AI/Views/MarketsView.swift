@@ -4462,7 +4462,10 @@ struct MarketsView: View {
                         Button {
                             var lines = ["Capital allocation — \(String(format: "$%.0f", plan.account)) account, heat \(String(format: "%.1f%%", plan.totalHeat * 100)) (cap \(String(format: "%.0f%%", plan.maxHeat * 100)))."]
                                 + plan.positions.map { p in
-                                    var line = "\(p.symbol): \(p.shares) sh · \(String(format: "%.2f%%", p.riskFraction * 100)) risk · \(String(format: "$%.0f", p.dollarsAtRisk)) at risk · \(String(format: "$%.0f", p.notional)) notional · Est. EV \(String(format: "%+.2fR (gross)", p.evR))"
+                                    // Audit 2026-07-12 (export-parity): at-risk/notional are native
+                                    // currency — label each in its own currency (approxAmount), matching
+                                    // the on-screen deploy row and never a false "$" for a .SR/.L name.
+                                    var line = "\(p.symbol): \(p.shares) sh · \(String(format: "%.2f%%", p.riskFraction * 100)) risk · \(StockSageCurrency.approxAmount(p.dollarsAtRisk, symbol: p.symbol)) at risk · \(StockSageCurrency.approxAmount(p.notional, symbol: p.symbol)) notional · Est. EV \(String(format: "%+.2fR (gross)", p.evR))"
                                     // D2: mirror StockSageTodayPlan.copyAllText's per-line stale-price
                                     // suffix verbatim — same utcDayKey check, same wording.
                                     if let staleAsOf = MarketsView.staleAsOfPrice(ideaBySymbol[p.symbol]?.priceAsOf, now: Date()) {

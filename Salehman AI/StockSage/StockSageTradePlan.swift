@@ -54,12 +54,21 @@ enum StockSageTradePlan {
             lines.append("Chandelier exit: ~\(adaptivePrice(cl)) — a STARTING trailing level; move it up as new highs print, never down. An exit rule, not a target.")
         }
         if let ps = size {
-            lines.append(String(format: "Size: %d shares · $%.0f at risk · %.0f%% of account",
-                                ps.shares, ps.dollarsAtRisk, ps.pctOfAccount))
+            // Audit 2026-07-12 (export-parity): dollarsAtRisk is in the SYMBOL's own currency (SAR for
+            // 2222.SR, pence for .L), so a hardcoded "$" mislabeled the pasted-into-broker figure
+            // ~3.75×/100× AND diverged from the now-currency-correct on-screen sheet. approxAmount
+            // renders the true currency (+ the pence ÷100), matching every other "at risk" surface.
+            let atRisk = StockSageCurrency.approxAmount(ps.dollarsAtRisk, symbol: symbol)
+            lines.append(String(format: "Size: %d shares · %@ at risk · %.0f%% of account",
+                                ps.shares, atRisk, ps.pctOfAccount))
             // Mirror the on-screen leverage warning so the pasted plan can't understate risk.
+            // NOTE: pctOfAccount compares native notional to the account currency — for a non-USD
+            // symbol on a USD account this can over-warn (safe direction: it never HIDES leverage).
+            // The MarketsView export call site is where the FX-correct pct lives; here we keep the
+            // engine pure and label the amount in its own currency.
             if ps.pctOfAccount > 100 {
-                lines.append(String(format: "⚠ Notional exceeds the account — needs margin/leverage; a gap THROUGH the stop can lose well more than the $%.0f stated risk.",
-                                    ps.dollarsAtRisk))
+                lines.append(String(format: "⚠ Notional exceeds the account — needs margin/leverage; a gap THROUGH the stop can lose well more than the %@ stated risk.",
+                                    atRisk))
             }
         }
         if !flags.isEmpty {

@@ -31,6 +31,25 @@ struct StockSageTradePlanTests {
         #expect(plan.contains("Not a guarantee"))          // the caveat is always present
     }
 
+    // Audit 2026-07-12 (export-parity): the pasted-into-broker plan hardcoded "$" on the
+    // native-currency dollarsAtRisk, so a .SR/.L idea's Size line was ~3.75×/100× mislabeled AND
+    // diverged from the now-currency-correct on-screen sheet. Hand-derived: entry 100, stop 95 →
+    // risk/share 5; account 10000 × 1% = 100 budget ÷ 5 = 20 shares; dollarsAtRisk = 20×5 = 100 (SAR,
+    // no minor-unit ÷100). approxAmount(100, "1120.SR") == "≈100 SAR" — the Size line must read the
+    // symbol's own currency, never a bare "$".
+    @Test func sizeLineLabelsAtRiskInTheSymbolsOwnCurrencyNotDollars() {
+        let size = StockSagePositionSizer.size(account: 10_000, riskFraction: 0.01, entry: 100, stop: 95)
+        // A Saudi symbol → SAR, not "$".
+        let sr = StockSageTradePlan.text(symbol: "1120.SR", market: "Tadawul", price: 100,
+                                         advice: advice(), rewardRisk: nil, size: size, flags: [])
+        #expect(sr.contains("20 shares · ≈100 SAR at risk"))
+        #expect(!sr.contains("$100 at risk"))
+        // A USD symbol → still "$" (approxAmount keeps the dollar prefix for USD).
+        let us = StockSageTradePlan.text(symbol: "AAPL", market: "NASDAQ", price: 100,
+                                         advice: advice(), rewardRisk: nil, size: size, flags: [])
+        #expect(us.contains("≈$100 at risk"))
+    }
+
     @Test func planMirrorsTheLeverageWarning() {
         // entry 400, stop 399 → risk/share 1; $100 budget → 100 sh, notional $40k = 400% → leveraged.
         let lev = StockSagePositionSizer.size(account: 10_000, riskFraction: 0.01, entry: 400, stop: 399)
