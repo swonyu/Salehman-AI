@@ -1043,8 +1043,16 @@ enum StockSageExpectedValue {
                                                calibration: StockSageConvictionCalibration? = nil) -> String? {
         guard let trips = assumedWeeklyRoundTrips(ideas, maxConcurrent: maxConcurrent, tradingDays: tradingDays,
                                                   holds: holds, calibration: calibration) else { return nil }
+        // Audit 2026-07-12 (wave-2 #5): the label said "the top 3" regardless of how many lane members
+        // actually have a hold — contradicting the card subtitle ("top 1") when the lane is thinner.
+        // Count the REAL members the round-trip figure covers (same lane + hold filter as
+        // assumedWeeklyRoundTrips), so the label and the number describe the same setups.
+        let laneCount = fastLane(ideas, holds: holds, calibration: calibration)
+            .prefix(Swift.max(0, maxConcurrent))
+            .filter { (expectedHoldDays(for: $0, holds: holds) ?? 0) > 0 }
+            .count
         return String(format: "Assumes ≈%.1f round trips across the top %d this week — every re-entry pays the est. round-trip costs this gross figure excludes (turnover is the #1 documented edge-killer at this horizon).",
-                      trips, Swift.max(0, maxConcurrent))
+                      trips, laneCount)
     }
 
     /// Trading days per week for the fast lane. Equities trade ~5 days; crypto is 24/7 (~7).

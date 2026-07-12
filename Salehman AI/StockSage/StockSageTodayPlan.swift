@@ -109,7 +109,8 @@ enum StockSageTodayPlan {
             var size = ""
             if let acct = account, acct > 0, rf > 0,
                let ps = StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: entry, stop: s) {
-                size = " — \(ps.shares) shares ≈ $\(Int(ps.dollarsAtRisk.rounded())) at risk (\(Int(ps.pctOfAccount.rounded()))% of acct)"
+                // Audit 2026-07-12 (wave-2 #1): currency-correct at-risk (native currency + pence ÷100).
+                size = " — \(ps.shares) shares \(StockSageCurrency.approxAmount(ps.dollarsAtRisk, symbol: idea.symbol)) at risk (\(Int(ps.pctOfAccount.rounded()))% of acct)"
                 // F-review export-parity fix (2026-07-10, wave-7 rule): the on-screen row already
                 // discloses this (StockSagePositionSizer.summaryLine, MarketsTodayActionsCard's
                 // unfundableSuffix) — a copied plan silent on it reads as a placeable order.
@@ -280,7 +281,7 @@ enum StockSageTodayPlan {
                 + " — \(String(format: "%+.3fR/day gross", p.velocity))"
                 + " | entry \(fmt(p.entry)) stop \(fmt(p.stop)) target \(fmt(p.target))"
             if let sh = p.shares, let dr = p.dollarsAtRisk {
-                line += " | \(sh) sh (≈$\(Int(dr.rounded())) at risk)"
+                line += " | \(sh) sh (\(StockSageCurrency.approxAmount(dr, symbol: p.symbol)) at risk)"   // wave-2 #1: currency-correct
                 // F-review export-parity fix (2026-07-10, wave-7 rule): mirrors row(_:_:)'s visible
                 // unfundableSuffix (MarketsTodayActionsCard.swift) — the on-screen row already
                 // discloses a floored-to-0 setup; the export must too, or it reads as placeable.

@@ -46,9 +46,28 @@ struct StockSageExecutionTimingTests {
         // 2026-07-11 intraday-curve measurement (method pinned pre-result): the pinned decision
         // rule returned REVISE-ADVISORY — the note must carry the measured facts: the close's
         // liquidity depth, its slightly-above-midday ranges, and the avoid-the-open warning.
+        // No symbol (default "") is treated as US → the measured curve shows (backward-compat).
         let note = ET.sessionNote(action: .buy, regime: .bullTrend)!.lowercased()
         #expect(note.contains("deepest liquidity"))
         #expect(note.contains("measured"))
         #expect(note.contains("open is the costliest"))
+    }
+
+    // Audit 2026-07-12 (wave-2 #6): the measured intraday curve was measured on 64 US names, so it
+    // must NOT be presented as applicable to a Tadawul/.L/.T listing. The market-agnostic
+    // overnight-premia rationale still shows for all trend ideas; the US-ET microstructure sentence
+    // drops for non-US symbols.
+    @Test func measuredCurveIsUSOnlyButOvernightRationaleIsUniversal() {
+        // US symbol → keeps the measured microstructure sentence.
+        let us = ET.sessionNote(action: .buy, regime: .bullTrend, symbol: "AAPL")!.lowercased()
+        #expect(us.contains("measured") && us.contains("open is the costliest"))
+        // Tadawul → overnight rationale stays, measured US curve DROPS.
+        let sr = ET.sessionNote(action: .sell, regime: .bearTrend, symbol: "1120.SR")!.lowercased()
+        #expect(sr.contains("overnight"))                    // market-agnostic rationale kept
+        #expect(!sr.contains("measured on this us universe")) // US-only curve dropped
+        #expect(!sr.contains("64"))                          // the "64 names" measurement gone
+        // London pence + Tokyo → same (non-USD).
+        #expect(!ET.sessionNote(action: .buy, regime: .bullTrend, symbol: "BP.L")!.lowercased().contains("64"))
+        #expect(!ET.sessionNote(action: .buy, regime: .bullTrend, symbol: "7203.T")!.lowercased().contains("64"))
     }
 }

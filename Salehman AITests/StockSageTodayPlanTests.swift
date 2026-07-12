@@ -34,10 +34,15 @@ struct StockSageTodayPlanTests {
     // riskPerShare = |100-90| = 10; riskBudget = 10,000 × 0.01 = 100; shares = floor(100/10) = 10;
     // dollarsAtRisk = 10 × 10 = 100; pctOfAccount = (10 × 100)/10,000 × 100 = 10%.
     @Test func sizeSegmentDollarFigureCarriesADollarSign() {
+        // AAPL is USD, so the at-risk amount correctly reads "$100". Audit 2026-07-12 (wave-2 #1):
+        // the size segment now routes through StockSageCurrency.approxAmount (so a NON-USD symbol
+        // reads its own currency instead of a false "$") — for a USD symbol approxAmount returns
+        // "≈$100" (no space after ≈), so the exact string tightened from "≈ $100" to "≈$100". The
+        // value is unchanged and still correct; only the format was normalized to the shared helper.
         let i = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
         let plan = StockSageTodayPlan.build(idea: i, ev: StockSageExpectedValue.ev(for: i),
                                             account: 10_000, riskFraction: 0.01)
-        #expect(plan.contains("10 shares ≈ $100 at risk (10% of acct)"))
+        #expect(plan.contains("10 shares ≈$100 at risk (10% of acct)"))
     }
 
     @Test func sampleDataIsFlaggedInTheCopiedPlan() {

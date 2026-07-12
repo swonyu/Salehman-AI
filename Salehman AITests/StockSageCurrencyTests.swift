@@ -89,9 +89,12 @@ struct StockSageCurrencyTests {
     }
 
     @Test func approxAmountUsesCurrencyCodeSuffixForNonUSDSymbols() {
-        #expect(CC.approxAmount(188, symbol: "1120.SR") == "≈188 SAR")  // the exact misread case
-        #expect(CC.approxAmount(400, symbol: "BP.L") == "≈400 GBP")
-        #expect(CC.approxAmount(1000, symbol: "7203.T") == "≈1000 JPY")
+        #expect(CC.approxAmount(188, symbol: "1120.SR") == "≈188 SAR")  // the exact misread case (SAR: no pence)
+        // Audit 2026-07-12 (wave-2 #3): a .L listing is quoted in PENCE, so a raw 400p at-risk amount
+        // is £4, NOT £400. The prior assertion "≈400 GBP" ENCODED the ~100× bug — re-derived from the
+        // spec (StockSageCurrency minorUnitSuffixes ÷100 for .L/.JO), not edited toward the old output.
+        #expect(CC.approxAmount(400, symbol: "BP.L") == "≈4 GBP")
+        #expect(CC.approxAmount(1000, symbol: "7203.T") == "≈1000 JPY")   // JPY: no minor-unit ÷100
     }
 
     @Test func guardsNothingConvertible() {

@@ -1066,6 +1066,17 @@ struct MarketsView: View {
         StockSageCurrency.conversionCurrencyForSymbol(symbol, base: base)
     }
 
+    /// Audit 2026-07-12 (ideas-card wave-2 #2): `ps.pctOfAccount` compares a NATIVE-currency notional
+    /// to the (USD) account, so a JPY/SAR/pence winner reads 100×/3.75×/100× over → a FALSE "exceeds
+    /// account" / leverage warning on an unleveraged cash position. This returns the notional as a %
+    /// of the account in ONE currency: notional (pence-normalized × FX rate) ÷ account. Untracked FX
+    /// → falls back to the raw `ps.pctOfAccount` (prior behavior). Display-only; `ps` is unchanged.
+    private func pctOfAccountUSD(_ ps: PositionSize, symbol: String, account: Double) -> Double {
+        guard account > 0 else { return ps.pctOfAccount }
+        guard let rate = fxRatesToUSD[conversionCurrencyForSymbol(symbol)] else { return ps.pctOfAccount }
+        return StockSageCurrency.majorUnitValue(symbol: symbol, rawValue: ps.notional) * rate / account * 100
+    }
+
     /// Portfolio cost & value in USD. Each holding's value AND cost go through holdingValue (so the
     /// .L-pence ÷100 is applied to BOTH — the P&L unit matches) then × its CCY→USD rate, so we never
     /// sum GBP + USD at 1:1. Holdings whose currency has no tracked rate are EXCLUDED (see
@@ -4206,7 +4217,7 @@ struct MarketsView: View {
                 if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                    let rp = StockSageInput.percent(sizerRiskPct),
                    let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop),
-                   ps.pctOfAccount > 100 {
+                   pctOfAccountUSD(ps, symbol: idea.symbol, account: acct) > 100 {   // wave-2 #2: USD-correct, no false leverage
                     s += ". Size warning: position exceeds account balance."
                 }
                 if let g = cardGate {
@@ -4335,7 +4346,7 @@ struct MarketsView: View {
                              + (cardGate?.decision == .blocked ? " — gate: do NOT trade at this risk %" : ""))
                             .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(cardGate?.decision == .blocked ? DS.Palette.dangerSoft
-                                             : (ps.pctOfAccount > 100 || ps.shares == 0 ? DS.Palette.warningSoft : DS.Palette.successSoft))
+                                             : (pctOfAccountUSD(ps, symbol: idea.symbol, account: acct) > 100 || ps.shares == 0 ? DS.Palette.warningSoft : DS.Palette.successSoft))   // wave-2 #2
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Text(MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix)
@@ -4937,7 +4948,9 @@ struct MarketsView: View {
                 if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                    let rp = StockSageInput.percent(sizerRiskPct),
                    let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
-                    return (StockSagePositionSizer.summaryLine(ps, riskPct: rp, symbol: idea.symbol), ps.pctOfAccount > 100 || ps.shares == 0, ps.pctOfAccount > 100)
+                    // wave-2 #2: USD-correct pct so a non-USD winner isn't falsely flagged "exceeds account".
+                    let pctUSD = pctOfAccountUSD(ps, symbol: idea.symbol, account: acct)
+                    return (StockSagePositionSizer.summaryLine(ps, riskPct: rp, symbol: idea.symbol), pctUSD > 100 || ps.shares == 0, pctUSD > 100)
                 }
                 return ("Set account to size — add one in the position sizer below.", false, false)
             }()
@@ -4974,6 +4987,14 @@ struct MarketsView: View {
                     if !s.hasSuffix(".") { s += "." }
                     s += crownDivergenceSuffix
                 }
+                // Audit 2026-07-12 (wave-2 #4): the sibling bestOpportunityCard discloses "first scan
+                // in progress — best-so-far, order may change"; this global CTA crowns the same
+                // provisional pick and must say so too (a11y parity — the visible caption is added
+                // to BestOpportunityActionCard below via firstScanCaption).
+                if let firstScanCaption = Self.firstScanProgressCaption(isLoadingIdeas: store.isLoadingIdeas, ideasUpdated: store.ideasUpdated, progress: store.ideasProgress) {
+                    if !s.hasSuffix(".") { s += "." }
+                    s += " " + firstScanCaption
+                }
                 return s
             }()
             BestOpportunityActionCard(
@@ -4991,7 +5012,10 @@ struct MarketsView: View {
                 gateLabel: ctaGate.map { $0.decision == .blocked ? "DO NOT TRADE" : $0.decision.rawValue.uppercased() },
                 gateColor: ctaGate.map { $0.decision == .blocked ? DS.Palette.danger
                          : ($0.decision == .caution ? DS.Palette.warningSoft.opacity(0.85) : DS.Palette.successSoft.opacity(0.85)) } ?? .clear,
-                caveatText: MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix + crownDivergenceSuffix,
+                // wave-2 #4: append the first-scan "best-so-far, order may change" caption (sibling
+                // bestOpportunityCard already shows it) so this global crown discloses it's provisional.
+                caveatText: MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix + crownDivergenceSuffix
+                    + (Self.firstScanProgressCaption(isLoadingIdeas: store.isLoadingIdeas, ideasUpdated: store.ideasUpdated, progress: store.ideasProgress).map { " " + $0 } ?? ""),
                 varianceText: variance.map { String(format: "Typical 24h range ±%.1f%% — size down for 24/7.", $0) },
                 staleAsOfText: staleAsOf.map { "⚠︎ Price as of \($0.formatted(.relative(presentation: .named))) — not live; re-price before ordering." }
                     ?? (analysisStaleOnly ? "⚠︎ Analysis over 4h old — re-scan for a current read." : nil),

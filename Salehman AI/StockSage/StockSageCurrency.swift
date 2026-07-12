@@ -107,7 +107,13 @@ enum StockSageCurrency {
     /// misreads ~3.75× (SAR/USD).
     nonisolated static func approxAmount(_ v: Double, symbol: String) -> String {
         let ccy = currencyForSymbol(symbol)
-        return ccy == "USD" ? String(format: "≈$%.0f", v) : String(format: "≈%.0f %@", v, ccy)
+        // Audit 2026-07-12 (ideas-card wave-2 #3): every caller passes a RAW native-currency amount
+        // (dollarsAtRisk / notional = shares × native price), so a pence-quoted listing (.L/.JO) arrives
+        // in PENCE — normalize to the major unit (÷100) before formatting, or "4000p" renders as
+        // "≈4000 GBP" (~100× overstated) instead of "≈40 GBP". Non-pence symbols are unaffected
+        // (majorUnitValue is identity for them).
+        let mv = majorUnitValue(symbol: symbol, rawValue: v)
+        return ccy == "USD" ? String(format: "≈$%.0f", mv) : String(format: "≈%.0f %@", mv, ccy)
     }
 
     /// ALERT-FMT-1: single shared adaptive price formatter — was quadruplicated byte-identically

@@ -986,7 +986,7 @@ final class StockSageStore: ObservableObject {
                 // Execution-timing advisory (week-horizon velocity research #2): flag-only, never
                 // touches score/conviction/sizing — see StockSageExecutionTiming's header for the
                 // evidence and the .bullTrend/.bearTrend-only gate.
-                if let timingNote = StockSageExecutionTiming.sessionNote(action: advice.action, regime: advice.regime) {
+                if let timingNote = StockSageExecutionTiming.sessionNote(action: advice.action, regime: advice.regime, symbol: sym.symbol) {   // wave-2 #6: US-gated microstructure
                     extraNotes.append("⏱ " + timingNote)
                 }
                 if !extraNotes.isEmpty {

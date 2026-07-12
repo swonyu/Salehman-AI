@@ -37,16 +37,26 @@ enum StockSageExecutionTiming {
     /// tools/eodhd_panel/METHOD_2026-07-11_intraday_curve.md + intraday_curve.json): close bucket
     /// = 20.0% of session volume (3.7× midday) at minute-ranges ~20% above midday (9.7 vs 8.1bp
     /// median); opening bucket ≈ 3× midday ranges. Display-only; proxies, not realized spreads.
-    nonisolated static func sessionNote(action: TradeAdvice.Action, regime: TradeAdvice.Regime) -> String? {
+    /// Audit 2026-07-12 (ideas-card wave-2 #6): `symbol` gates the MEASURED intraday-microstructure
+    /// sentence — that curve was measured on 64 US names, so it must NOT be presented as applicable
+    /// to a Tadawul/`.L`/`.T` listing (whose session/auction structure differs entirely). The
+    /// overnight-premia rationale (first sentence, market-agnostic — Lou-Polk-Skouras) always shows;
+    /// the US-ET execution-cost sentence shows ONLY for USD-quoted symbols. `symbol` defaults to ""
+    /// (treated as USD → prior behavior byte-identical) so an un-updated caller is unchanged.
+    nonisolated static func sessionNote(action: TradeAdvice.Action, regime: TradeAdvice.Regime,
+                                        symbol: String = "") -> String? {
         guard action == .strongBuy || action == .buy || action == .sell || action == .reduce else { return nil }
         switch regime {
         case .bullTrend, .bearTrend:
-            return "Trend/momentum premia are documented to accrue almost entirely OVERNIGHT — " +
-                   "entering near the close (to hold the position overnight) has historically captured " +
-                   "more of this edge than a mid-session entry. Measured on this universe (2026-07, " +
-                   "64 names): the close has the session's deepest liquidity (~20% of volume) at " +
-                   "minute-ranges slightly above midday; the open is the costliest window (~3× midday " +
-                   "ranges) — avoid it for these entries."
+            let base = "Trend/momentum premia are documented to accrue almost entirely OVERNIGHT — " +
+                       "entering near the close (to hold the position overnight) has historically captured " +
+                       "more of this edge than a mid-session entry."
+            // The measured microstructure numbers are US-only; show them only for US-listed symbols.
+            let isUS = symbol.isEmpty || StockSageCurrency.currencyForSymbol(symbol) == "USD"
+            guard isUS else { return base }
+            return base + " Measured on this US universe (2026-07, 64 names): the close has the " +
+                   "session's deepest liquidity (~20% of volume) at minute-ranges slightly above midday; " +
+                   "the open is the costliest window (~3× midday ranges) — avoid it for these entries."
         case .range:
             return nil
         }

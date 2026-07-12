@@ -132,7 +132,7 @@ struct MarketsTodayActionsCard: View {
             // C1 wave (2026-07-09): the order-type + timing guidance is US-EQUITY retail research
             // (near-close entry, overnight premia) — a 24/7 crypto pick has no close and no
             // session, so it gets neither the equity order text nor the session timing note.
-            let timing = plan.isCrypto ? nil : StockSageExecutionTiming.sessionNote(action: plan.action, regime: plan.regime)
+            let timing = plan.isCrypto ? nil : StockSageExecutionTiming.sessionNote(action: plan.action, regime: plan.regime, symbol: plan.symbol)   // wave-2 #6: US-gated microstructure
             let blocked = plan.gate?.decision == .blocked
             let color: Color = blocked ? DS.Palette.dangerSoft : (urgentEvent ? DS.Palette.warningSoft : DS.Palette.successSoft)
             // F04-consistency (nilrisk-fixture QA, 2026-07-09): an UNEVALUATED gate (no risk %
@@ -320,7 +320,11 @@ struct MarketsTodayActionsCard: View {
                         // slot here — say so, matching StockSagePositionSizer.summaryLine's same
                         // disclosure on the idea card / CTA / sheet. No demotion, display-only.
                         let unfundableSuffix = sh == 0 ? " — below 1-share minimum at your account size" : ""
-                        Text("· \(sh) sh (≈$\(Int(dr.rounded())) at risk)\(heldSuffix)\(unfundableSuffix)")
+                        // Audit 2026-07-12 (wave-2 #1): dollarsAtRisk is in the symbol's OWN currency
+                        // (SAR for 2222.SR, pence for .L), so a hardcoded "$" mislabeled it ~3.75×/100×.
+                        // approxAmount renders the true currency (+ the pence ÷100) — same fix as the
+                        // idea-card "At risk" / Size-it-now line.
+                        Text("· \(sh) sh (\(StockSageCurrency.approxAmount(dr, symbol: plan.symbol)) at risk)\(heldSuffix)\(unfundableSuffix)")
                             .font(.system(size: font9)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
@@ -387,7 +391,7 @@ struct MarketsTodayActionsCard: View {
             // the entry/stop/target/size the row exists to convey (audit L2-01, 2026-07-07).
             label += ". Entry \(adaptivePrice(plan.entry)), stop \(adaptivePrice(plan.stop)), target \(adaptivePrice(plan.target))"
             if let sh = plan.shares, let dr = plan.dollarsAtRisk {
-                label += ", \(sh) shares, about $\(Int(dr.rounded())) at risk"
+                label += ", \(sh) shares, about \(StockSageCurrency.approxAmount(dr, symbol: plan.symbol)) at risk"   // wave-2 #1: currency-correct
                 // F1/F3 a11y parity with the visible row's unfundableSuffix above.
                 if sh == 0 { label += ", below the 1-share minimum at this account size" }
             }
