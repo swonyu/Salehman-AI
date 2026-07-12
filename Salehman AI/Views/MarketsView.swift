@@ -4601,6 +4601,47 @@ struct MarketsView: View {
         }
     }
 
+    /// Audit 2026-07-12 (ideas-card LANE 2 — "why this rank"): an honest, display-only decomposition
+    /// of WHY this idea sits where it does on the EV board. It calls the SAME term functions the
+    /// ranker uses (`StockSageExpectedValue.rankExplanation`), so the breakdown provably matches the
+    /// real sort key — never a plausible-but-fabricated story (the honesty-floor failure the whole
+    /// audit fenced). Shows nothing when only the base EV drove the rank (no adjustments to explain)
+    /// or for a nil-EV idea. Only rendered on the EV sort (the key it decomposes); other sorts use a
+    /// different key, so showing this there would misattribute the order.
+    @ViewBuilder private func whyThisRankSection(_ idea: StockSageIdea) -> some View {
+        if ideaSort == .ev,
+           let exp = StockSageExpectedValue.rankExplanation(for: idea, regime: store.regime,
+                                                            earnings: store.earnings, liquidity: store.liquidity,
+                                                            seasonality: store.seasonality,
+                                                            calibration: store.convictionCalibration),
+           !exp.activeAdjustments.isEmpty {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Why this rank")
+                    .font(.system(size: fontChipLabel, weight: .semibold)).foregroundStyle(.secondary)
+                    .accessibilityAddTraits(.isHeader)
+                // The base EV rank key, then each adjustment that ACTUALLY moved it — the same terms
+                // rankByEV sums. A boost reads green, a demotion reads amber; magnitudes are the raw
+                // rank-key deltas (not returns), so they're labeled as ranking weight, not P&L.
+                Text("Ranked on estimated EV, then adjusted:")
+                    .font(.caption2).foregroundStyle(.secondary)
+                ForEach(Array(exp.activeAdjustments.enumerated()), id: \.offset) { _, adj in
+                    HStack(spacing: 5) {
+                        Image(systemName: adj.delta >= 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                            .font(.system(size: mvFont9)).foregroundStyle(adj.delta >= 0 ? DS.Palette.successSoft : DS.Palette.warningSoft)
+                        Text("\(adj.delta >= 0 ? "Boosted" : "Demoted") — \(adj.label)")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                Text("These are ranking weights (why it sorts where it does), not returns. The rank orders by estimated payoff — it doesn't predict it.")
+                    .font(.system(size: mvFont9)).foregroundStyle(.secondary.opacity(0.8)).fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 2)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Why this rank. Ranked on estimated EV, then adjusted: "
+                + exp.activeAdjustments.map { "\($0.delta >= 0 ? "boosted" : "demoted") by \($0.label)" }.joined(separator: ", "))
+        }
+    }
+
     // Preattentive assumed-vs-measured chrome for calibrationChip (Gemini UI-wave #6, LOW risk).
     // Keyed on the SAME `assumed` condition the icon/color already use — one condition, two
     // encodings, no new semantic tier. No DS chip-stroke token existed to extend, so values are
@@ -6481,6 +6522,7 @@ struct MarketsView: View {
                         }
                     }
                 }
+                whyThisRankSection(idea)   // audit 2026-07-12 LANE 2: honest EV-rank decomposition
                 if let vel = StockSageExpectedValue.velocity(for: idea, holds: velocityHolds, calibration: store.convictionCalibration) {
                     // F29: show gross velocity labeled + net when non-nil so the
                     // floor de-rank reason is traceable to an actual number shown on this screen.

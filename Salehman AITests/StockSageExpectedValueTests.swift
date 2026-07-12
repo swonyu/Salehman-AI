@@ -41,6 +41,33 @@ struct StockSageExpectedValueTests {
                       spark: [])
     }
 
+    // Audit 2026-07-12 (ideas-card LANE 2 — "why this rank"): the RankExplanation decomposition MUST
+    // sum to the SAME rank key rankByEV sorts on — else the "why" breakdown is a fabricated story
+    // (the exact honesty-floor failure the whole audit fenced). This pins that invariant: total ==
+    // base + seasonality − earningsPenalty − liquidityPenalty, and each term matches its own function.
+    @Test func rankExplanationDecomposesToTheRealRankKey() {
+        let i = idea("AAPL", conviction: 0.7, stop: 90, target: 120)
+        // A thin-liquidity profile → a 3000 penalty term must appear and be subtracted.
+        let liq: [String: LiquidityProfile] = ["AAPL": LiquidityProfile(avgDollarVolume: 1, tier: .thin)]
+        let exp = EV.rankExplanation(for: i, liquidity: liq)
+        #expect(exp != nil)
+        let e = exp!
+        // The penalty term equals the ranker's own function (no re-derivation drift).
+        #expect(e.liquidityPenalty == EV.liquidityRankPenalty(for: i, liquidity: liq))
+        #expect(e.liquidityPenalty == 3000)
+        #expect(e.earningsPenalty == 0)          // no earnings supplied
+        // total = base − 3000 (seasonality 0, earnings 0) — the exact key rankByEV would use.
+        #expect(abs(e.total - (e.base + e.seasonalityBonus - e.earningsPenalty - e.liquidityPenalty)) < 1e-9)
+        // The active-adjustments summary names the thin-liquidity demotion with a NEGATIVE delta.
+        #expect(e.activeAdjustments.contains { $0.label.contains("liquidity") && $0.delta < 0 })
+    }
+
+    @Test func rankExplanationIsNilForANilEVIdea() {
+        // A stop-less idea has no EV key → the sheet must show nothing, not a fabricated breakdown.
+        let noStop = idea("AAPL", conviction: 0.7, stop: nil, target: 120)
+        #expect(EV.rankExplanation(for: noStop) == nil)
+    }
+
     // Audit 2026-07-12 (ideas-card laneCorrelation date-alignment): the dated overload aligns each
     // crypto×equity pair by CALENDAR DATE before correlating, so a crypto 7-day week vs an equity
     // 5-day week no longer correlates mismatched days (the tail-index bug). This test proves the

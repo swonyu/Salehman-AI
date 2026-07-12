@@ -724,6 +724,42 @@ enum StockSageExpectedValue {
         }
     }
 
+    /// Audit 2026-07-12 (ideas-card LANE 2 — "why this rank"): the DECOMPOSITION of an idea's EV
+    /// rank key into the exact terms `rankByEV` sums, so the detail sheet can show WHY an idea sits
+    /// where it does. This calls the SAME term functions the ranker uses (never a parallel
+    /// re-derivation), so `total` provably equals the real sort key — `base + seasonality −
+    /// earningsPenalty − liquidityPenalty` (matching `rankByEV.key` exactly). Display-only: it reads
+    /// the rank, it does not change it. `nil` for an idea with no EV key (a nil-EV row that sorts
+    /// last) — the caller shows nothing rather than a fabricated breakdown.
+    struct RankExplanation: Sendable, Equatable {
+        let base: Double            // regime-adjusted EV rank key (the dominant term)
+        let seasonalityBonus: Double   // + (owner-activated month tilt, capped ±0.03, may be −)
+        let earningsPenalty: Double    // ≥0, SUBTRACTED (imminent-earnings demotion)
+        let liquidityPenalty: Double   // ≥0, SUBTRACTED (thin-liquidity demotion)
+        nonisolated var total: Double { base + seasonalityBonus - earningsPenalty - liquidityPenalty }
+        /// The terms that ACTUALLY moved this idea off its raw EV, largest-magnitude first — for a
+        /// concise "why" line. Empty when only the base EV drove the rank (nothing to explain).
+        nonisolated var activeAdjustments: [(label: String, delta: Double)] {
+            var out: [(String, Double)] = []
+            if seasonalityBonus != 0 { out.append(("seasonal month tilt", seasonalityBonus)) }
+            if earningsPenalty != 0 { out.append(("earnings-soon demotion", -earningsPenalty)) }
+            if liquidityPenalty != 0 { out.append(("thin-liquidity demotion", -liquidityPenalty)) }
+            return out.sorted { abs($0.1) > abs($1.1) }
+        }
+    }
+
+    nonisolated static func rankExplanation(for idea: StockSageIdea, regime: MarketRegime? = nil,
+                                            earnings: [String: EarningsProximity] = [:],
+                                            liquidity: [String: LiquidityProfile] = [:],
+                                            seasonality: [String: MonthlySeasonality] = [:],
+                                            calibration: StockSageConvictionCalibration? = nil) -> RankExplanation? {
+        guard let base = regimeAdjustedEVRankKey(for: idea, regime: regime, calibration: calibration) else { return nil }
+        return RankExplanation(base: base,
+                               seasonalityBonus: seasonalityRankBonus(for: idea, seasonality: seasonality),
+                               earningsPenalty: earningsRankPenalty(for: idea, earnings: earnings),
+                               liquidityPenalty: liquidityRankPenalty(for: idea, liquidity: liquidity))
+    }
+
     /// Fast lane: positive-EV ideas that HAVE a velocity (crypto/equity), ranked by
     /// velocity (EV/day) desc — the fastest-compounding opportunities. Index/FX (no
     /// hold) and non-positive-EV ideas are excluded. Faster turnover = more cycles
