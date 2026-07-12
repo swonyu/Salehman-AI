@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
-"""Forward paper-trade gauge — the one LIVE edge-detector (operationalizes the 2026-07-12
-handoff watch item: "watch the lane you trade" + "re-check at n>=100 closes").
+"""Forward gauge — contrasts the ENGINE's auto-paper track vs the OWNER's own journal.
 
-Reads the owner's real paper-trade store from the app's UserDefaults domain and computes
-the forward R distribution on CLOSED trades, side-aware, from entry/exitPrice/stop.
-STATUS TOOL, not a research result: at n<~100 this is a status read, never a claim.
+Corrects the 2026-07-12 first read: the paper store (`stocksage.papertrades.v1`) is
+AUTO-FILLED by the engine from its own long-actionable ideas at every scan (StockSageStore
+.updatePaperTrades -> StockSagePaperTrader.step) — it is the ENGINE's forward track, NOT the
+owner's discretionary trades. The owner's own trades live in the JOURNAL
+(`stocksage.journal.v1`, filled by the manual add form). This tool reads BOTH and contrasts
+them — the honest "does the disciplined engine beat my gut" experiment. It is prospective:
+the journal is empty until the owner logs real trades.
 
-Usage: python3 tools/paper_gauge.py            # human-readable
-       python3 tools/paper_gauge.py --json     # machine-readable
+Two honesty caveats baked in:
+  - SELECTION BIAS: only a fraction of paper trades have closed, fast. Stop-outs hit a tight
+    boundary quickly; 2:1 targets take longer — so the early closers skew to losers. Below the
+    ~all-resolved point, a negative read OVERSTATES; it is a status, never a verdict.
+  - POWER: n<~100 closed-with-R => status read, not a claim (HLZ t>3 bar).
+
+Usage: python3 tools/paper_gauge.py [--detail] [--json]
 """
-import subprocess, plistlib, json, statistics, sys, datetime
+import subprocess, plistlib, json, statistics, sys, collections
 
 DOMAIN = "SA.Salehman-AI"
-KEY = "stocksage.papertrades.v1"
-POWER_N = 100          # ~HLZ t>3 needs ~100+ at the measured per-trade sd; below this = status only
+STORES = {"engine (auto paper)": "stocksage.papertrades.v1",
+          "owner (own journal)": "stocksage.journal.v1"}
+POWER_N = 100
 
 
 def _deep(v):
@@ -28,114 +37,84 @@ def _deep(v):
     return json.loads(v) if isinstance(v, str) else v
 
 
-def _daykey(v):
-    if isinstance(v, (int, float)):   # Cocoa reference date = 2001-01-01
-        return (datetime.datetime(2001, 1, 1) + datetime.timedelta(seconds=v)).strftime("%Y-%m-%d")
-    return str(v)[:10]
+def _R(t):
+    e, x, s = t.get("entry"), t.get("exitPrice"), t.get("stop")
+    side = (t.get("side") or "Long").lower()
+    if not (e and x and s) or e == s:
+        return None
+    return (x - e) / (e - s) if ("long" in side or "buy" in side) else (e - x) / (s - e)
 
 
-def gauge():
-    r = subprocess.run(["defaults", "export", DOMAIN, "-"], capture_output=True)
-    if r.returncode != 0:
-        return {"error": "app defaults domain not readable (app never run on this machine?)"}
-    d = plistlib.loads(r.stdout)
-    kk = next((k for k in d if "papertrade" in k.lower().replace(".", "")), KEY if KEY in d else None)
+def _exit_class(t):
+    e, x, s, tg = t.get("entry"), t.get("exitPrice"), t.get("stop"), t.get("target")
+    long = ("long" in (t.get("side") or "long").lower()) or ("buy" in (t.get("side") or "").lower())
+    if tg and ((long and x >= tg * 0.997) or (not long and x <= tg * 1.003)):
+        return "hit target"
+    if (long and x <= s * 1.003) or (not long and x >= s * 0.997):
+        return "hit/through stop"
+    return "closed early"
+
+
+def read_store(defaults, key):
+    kk = next((k for k in defaults if key.split(".")[1] in k.lower() or k == key), None)
     if not kk:
-        return {"error": "no paper-trade store key present"}
-    arr = _deep(d[kk])
+        return None
+    arr = _deep(defaults[kk])
     if not isinstance(arr, list):
-        return {"error": f"paper store present but unparsed (type {type(d[kk]).__name__})"}
+        return None
     closed = [t for t in arr if isinstance(t, dict) and t.get("closedAt")]
-    rs, days = [], {}
-    for t in closed:
-        e, x, s = t.get("entry"), t.get("exitPrice"), t.get("stop")
-        side = (t.get("side") or "Long").lower()
-        if not (e and x and s) or e == s:
-            continue
-        R = (x - e) / (e - s) if ("long" in side or "buy" in side) else (e - x) / (s - e)
-        rs.append(R)
-        days[_daykey(t["closedAt"])] = days.get(_daykey(t["closedAt"]), 0) + 1
-    out = {"records": len(arr), "closed": len(closed), "R_derivable": len(rs), "closes_by_day": days}
+    rows = [(t, _R(t)) for t in closed if _R(t) is not None]
+    st = {"total": len(arr), "closed": len(closed), "resolved_frac": len(closed) / len(arr) if arr else 0}
+    rs = [r for _, r in rows]
     if rs:
         mu, sd = statistics.mean(rs), statistics.pstdev(rs)
-        t = mu / (sd / len(rs) ** 0.5) if sd else 0.0
-        out.update({"win_rate": sum(1 for x in rs if x > 0) / len(rs), "avg_R": mu,
-                    "total_R": sum(rs), "t_stat": t,
-                    "median_R": statistics.median(rs), "min_R": min(rs), "max_R": max(rs),
-                    "powered": len(rs) >= POWER_N,
-                    "disposition": ("POWERED — treat as a real forward measurement" if len(rs) >= POWER_N
-                                    else f"UNPOWERED (n={len(rs)} < {POWER_N}) — status read, NOT a result")})
-    return out
+        st.update({"n": len(rs), "win": sum(1 for r in rs if r > 0) / len(rs), "avg_R": mu,
+                   "total_R": sum(rs), "t": mu / (sd / len(rs) ** 0.5) if sd else 0.0,
+                   "powered": len(rs) >= POWER_N,
+                   "rows": rows})
+    return st
 
 
-def _closed_rows():
-    """Closed trades with derived R + fields, for the behavioral breakdown."""
+def all_stores():
     r = subprocess.run(["defaults", "export", DOMAIN, "-"], capture_output=True)
     if r.returncode != 0:
-        return []
+        return {"error": "app defaults domain not readable"}
     d = plistlib.loads(r.stdout)
-    kk = next((k for k in d if "papertrade" in k.lower().replace(".", "")), KEY if KEY in d else None)
-    arr = _deep(d[kk]) if kk else None
-    if not isinstance(arr, list):
-        return []
-    out = []
-    for t in arr:
-        if not (isinstance(t, dict) and t.get("closedAt")):
-            continue
-        e, x, s = t.get("entry"), t.get("exitPrice"), t.get("stop")
-        side = (t.get("side") or "Long").lower()
-        if not (e and x and s) or e == s:
-            continue
-        long = "long" in side or "buy" in side
-        R = (x - e) / (e - s) if long else (e - x) / (s - e)
-        tg = t.get("target")
-        if tg and ((long and x >= tg * 0.997) or (not long and x <= tg * 1.003)):
-            how = "hit target"
-        elif (long and x <= s * 1.003) or (not long and x >= s * 0.997):
-            how = "hit/through stop"
-        else:
-            how = "closed early"
-        out.append({"R": R, "how": how, "conviction": t.get("conviction"), "symbol": t.get("symbol")})
-    return out
-
-
-def detail():
-    rows = _closed_rows()
-    if not rows:
-        print("no closed trades to break down"); return
-    import collections
-    n = len(rows)
-    exits = collections.Counter(r["how"] for r in rows)
-    print("\nBEHAVIORAL BREAKDOWN (descriptive — n too small for a verdict):")
-    print(f"  HOW they closed (target break-even at 2:1 needs ~33% hitting target):")
-    for how, c in exits.most_common():
-        rr = [r["R"] for r in rows if r["how"] == how]
-        print(f"    {how:18s} {c:2d}/{n} ({c/n:.0%})  avgR {statistics.mean(rr):+.2f}")
-    convs = [(r["conviction"], r["R"]) for r in rows if r["conviction"] is not None]
-    if len(convs) > 3 and len({c for c, _ in convs}) > 1:
-        cs = [c for c, _ in convs]; rs = [r for _, r in convs]
-        mc, mr = statistics.mean(cs), statistics.mean(rs)
-        sc, sr = statistics.pstdev(cs), statistics.pstdev(rs)
-        corr = sum((c - mc) * (r - mr) for c, r in convs) / (len(convs) * sc * sr) if sc and sr else 0
-        print(f"  CONVICTION vs result: corr {corr:+.2f}  "
-              f"({'your conviction has signal' if corr > 0.15 else 'conviction is NOT predicting your outcomes — the overconfidence trap, live'})")
+    return {label: read_store(d, key) for label, key in STORES.items()}
 
 
 def main():
-    g = gauge()
+    s = all_stores()
+    if "error" in s:
+        print(f"gauge: {s['error']}"); return
     if "--json" in sys.argv:
-        print(json.dumps(g, indent=1)); return
-    if "error" in g:
-        print(f"paper gauge: {g['error']}"); return
-    print(f"FORWARD PAPER GAUGE  ({g['records']} records, {g['closed']} closed, {g['R_derivable']} R-derivable)")
-    if g.get("R_derivable"):
-        print(f"  win-rate {g['win_rate']:.0%}  avgR {g['avg_R']:+.3f}  totalR {g['total_R']:+.2f}  t={g['t_stat']:.2f}")
-        print(f"  R spread: min {g['min_R']:+.2f} / median {g['median_R']:+.2f} / max {g['max_R']:+.2f}")
-        print(f"  {g['disposition']}")
-        print("  NOTE: this is the owner's own trading behavior, not an engine edge; at 1-3d holds "
-              "it tests the fenced short-horizon regime (week-horizon research: net-negative at retail).")
+        print(json.dumps({k: {kk: vv for kk, vv in (v or {}).items() if kk != "rows"}
+                          for k, v in s.items()}, indent=1)); return
+    for label, st in s.items():
+        if st is None:
+            print(f"{label:22s}  no store yet"); continue
+        if not st.get("n"):
+            print(f"{label:22s}  {st['total']} logged / {st['closed']} closed / 0 with R "
+                  + ("(empty — log real trades to start the contrast)" if st['total'] == 0 else ""))
+            continue
+        bias = "  ⚠ SELECTION BIAS: only %.0f%% resolved — early closers skew to fast stop-outs; overstates" % (
+            st['resolved_frac'] * 100) if st['resolved_frac'] < 0.5 else ""
+        print(f"{label:22s}  {st['total']} logged / {st['closed']} closed")
+        print(f"    win {st['win']:.0%}  avgR {st['avg_R']:+.2f}  totalR {st['total_R']:+.1f}  t={st['t']:.2f}"
+              f"  [{'POWERED' if st['powered'] else 'status only, n<%d' % POWER_N}]{bias}")
         if "--detail" in sys.argv:
-            detail()
+            ex = collections.Counter(_exit_class(t) for t, _ in st["rows"])
+            for how, c in ex.most_common():
+                rr = [r for t, r in st["rows"] if _exit_class(t) == how]
+                print(f"      {how:18s} {c}/{st['n']} ({c/st['n']:.0%})  avgR {statistics.mean(rr):+.2f}")
+    eng, own = s.get("engine (auto paper)"), s.get("owner (own journal)")
+    if eng and eng.get("n") and own and own.get("n"):
+        print(f"\nCONTRAST (engine vs your gut): engine avgR {eng['avg_R']:+.2f} vs yours {own['avg_R']:+.2f}"
+              f"  — {'discipline is ahead' if eng['avg_R'] > own['avg_R'] else 'your calls are ahead'} "
+              "(both n small; read when each reaches ~100 closed)")
+    elif eng and eng.get("n"):
+        print("\nCONTRAST: your own journal is empty — log discretionary trades (Markets → add a trade) "
+              "to measure YOUR edge against the engine's auto-paper track above.")
 
 
 if __name__ == "__main__":
