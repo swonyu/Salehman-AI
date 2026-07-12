@@ -17,12 +17,59 @@ Two honesty caveats baked in:
 
 Usage: python3 tools/paper_gauge.py [--detail] [--json]
 """
-import subprocess, plistlib, json, statistics, sys, collections
+import subprocess, plistlib, json, statistics, sys, collections, os
 
 DOMAIN = "SA.Salehman-AI"
 STORES = {"engine (auto paper)": "stocksage.papertrades.v1",
           "owner (own journal)": "stocksage.journal.v1"}
 POWER_N = 100
+CACHE = os.path.expanduser("~/Library/Application Support/salehman_history_cache.json")
+
+
+def _cache_bars():
+    """symbol -> [(epoch, high, low, close)] from the app's price cache (empty if absent)."""
+    try:
+        ents = json.load(open(CACHE))["entries"]
+    except Exception:
+        return {}
+    out = {}
+    for e in ents:
+        sym = (e.get("symbol") or "").upper()
+        if sym and e.get("dates") and e.get("highs") and e.get("lows") and e.get("closes"):
+            out[sym] = list(zip(e["dates"], e["highs"], e["lows"], e["closes"]))
+    return out
+
+
+def _mark_to_market(arr, bars):
+    """Full-book read: realized R for closed trades, else stop-first forward sim / latest-close mark
+    against the cache. Removes the closed-only selection bias (fast stop-outs resolve first).
+    Returns (marked_R_list, n_realized, n_unrealized) — unrealized marks lean OPTIMISTIC (open
+    winners can still reverse), so this brackets the realized-only read from above."""
+    full, realized, unreal = [], 0, 0
+    for t in arr:
+        e, s, tg = t.get("entry"), t.get("stop"), t.get("target")
+        side = (t.get("side") or "Long").lower(); L = "long" in side or "buy" in side
+        if not (e and s) or e == s:
+            continue
+        if t.get("closedAt") and t.get("exitPrice") is not None:
+            x = t["exitPrice"]; full.append((x - e) / (e - s) if L else (e - x) / (s - e)); realized += 1; continue
+        b = bars.get((t.get("symbol") or "").upper()); o = t.get("openedAt")
+        if not b or not isinstance(o, (int, float)):
+            continue
+        fwd = [(h, l, c) for d, h, l, c in b if isinstance(d, (int, float)) and d > o]
+        if not fwd:
+            continue
+        out = None
+        for h, l, c in fwd:                       # stop-first (conservative), then target
+            if (L and l <= s) or (not L and h >= s): out = -1.0; break
+            if tg and ((L and h >= tg) or (not L and l <= tg)):
+                out = (tg - e) / (e - s) if L else (e - tg) / (s - e); break
+        if out is None:                           # still open -> unrealized mark at latest close
+            c = fwd[-1][2]; out = (c - e) / (e - s) if L else (e - c) / (s - e); unreal += 1
+        else:
+            realized += 1
+        full.append(out)
+    return full, realized, unreal
 
 
 def _deep(v):
@@ -107,14 +154,28 @@ def main():
             for how, c in ex.most_common():
                 rr = [r for t, r in st["rows"] if _exit_class(t) == how]
                 print(f"      {how:18s} {c}/{st['n']} ({c/st['n']:.0%})  avgR {statistics.mean(rr):+.2f}")
-    eng, own = s.get("engine (auto paper)"), s.get("owner (own journal)")
-    if eng and eng.get("n") and own and own.get("n"):
-        print(f"\nCONTRAST (engine vs your gut): engine avgR {eng['avg_R']:+.2f} vs yours {own['avg_R']:+.2f}"
-              f"  — {'discipline is ahead' if eng['avg_R'] > own['avg_R'] else 'your calls are ahead'} "
-              "(both n small; read when each reaches ~100 closed)")
-    elif eng and eng.get("n"):
-        print("\nCONTRAST: your own journal is empty — log discretionary trades (Markets → add a trade) "
-              "to measure YOUR edge against the engine's auto-paper track above.")
+    # Full-book mark-to-market on the engine store — removes the closed-only selection bias.
+    bars = _cache_bars()
+    if bars:
+        r = subprocess.run(["defaults", "export", DOMAIN, "-"], capture_output=True)
+        d = plistlib.loads(r.stdout)
+        pk = next((k for k in d if "papertrade" in k.lower().replace(".", "")), None)
+        arr = _deep(d[pk]) if pk else None
+        if isinstance(arr, list):
+            full, real, unreal = _mark_to_market(arr, bars)
+            if full:
+                n = len(full); mu = statistics.mean(full); sd = statistics.pstdev(full)
+                t = mu / (sd / n ** 0.5) if sd else 0.0
+                print(f"\nENGINE FULL-BOOK (bias-removed): {n} evaluable ({real} realized + {unreal} open-marked)")
+                print(f"    positive {sum(1 for x in full if x > 0)/n:.0%}  avg {mu:+.3f}R  total {mu*n:+.1f}R  t={t:+.2f}")
+                print("    → brackets the closed-only read from ABOVE (open marks lean optimistic); the truth is"
+                      " between the two and converges as the book resolves. t<3 and avg≈0 ⇒ consistent with"
+                      " NO edge / value-is-risk-discipline — NOT a losing engine (the closed-only −R was fast-loser bias).")
+    else:
+        print("\n(price cache absent — run the app once to enable the full-book mark-to-market)")
+    own = s.get("owner (own journal)")
+    if not (own and own.get("n")):
+        print("Your own journal is empty — log discretionary trades (Markets → add a trade) to measure YOUR edge vs the engine.")
 
 
 if __name__ == "__main__":
