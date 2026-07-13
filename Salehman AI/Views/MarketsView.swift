@@ -4232,7 +4232,7 @@ struct MarketsView: View {
                 if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                    let rp = StockSageInput.percent(sizerRiskPct),
                    let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
-                    s += ". Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp, symbol: idea.symbol))"
+                    s += ". Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp, symbol: idea.symbol, pctOverride: pctOfAccountUSD(ps, symbol: idea.symbol, account: acct)))"
                 }
                 if !tomTiltDisclosureSuffix.isEmpty {
                     s += ". Ranking includes a small seasonal month tilt."
@@ -4342,7 +4342,7 @@ struct MarketsView: View {
                         // Blocked-fixture QA 2026-07-09: a green sized order directly under a
                         // DO-NOT-TRADE chip read as two voices — the size line now names the
                         // refusal itself (and drops the go-green tint) when the gate blocks.
-                        Text("Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp, symbol: idea.symbol))"
+                        Text("Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp, symbol: idea.symbol, pctOverride: pctOfAccountUSD(ps, symbol: idea.symbol, account: acct)))"
                              + (cardGate?.decision == .blocked ? " — gate: do NOT trade at this risk %" : ""))
                             .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(cardGate?.decision == .blocked ? DS.Palette.dangerSoft
@@ -4953,7 +4953,7 @@ struct MarketsView: View {
                    let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
                     // wave-2 #2: USD-correct pct so a non-USD winner isn't falsely flagged "exceeds account".
                     let pctUSD = pctOfAccountUSD(ps, symbol: idea.symbol, account: acct)
-                    return (StockSagePositionSizer.summaryLine(ps, riskPct: rp, symbol: idea.symbol), pctUSD > 100 || ps.shares == 0, pctUSD > 100)
+                    return (StockSagePositionSizer.summaryLine(ps, riskPct: rp, symbol: idea.symbol, pctOverride: pctUSD), pctUSD > 100 || ps.shares == 0, pctUSD > 100)
                 }
                 return ("Set account to size — add one in the position sizer below.", false, false)
             }()

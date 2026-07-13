@@ -56,6 +56,26 @@ struct StockSagePositionSizerTests {
     // to 0 shares (unfundable); stop-distance 1 → budget/risk = 1.0 → exactly 1 share (fundable,
     // right at the boundary) — genuinely brackets the disclosure condition, not just "both sides
     // nonzero".
+    // Audit 2026-07-13 (completeness-critic): the "% of acct" figure had the SAME currency-basis
+    // bug the F1 fix left behind — `ps.pctOfAccount` is native-notional ÷ USD-account, so a SAR/pence
+    // winner read ~3.75×/100× over. The view now passes the wave-2 #2 FX-corrected pct via
+    // `pctOverride`; nil (default) keeps the raw figure byte-identical.
+    // Hand-derived: account 10000 · 1% · entry 100 · stop 90 → 10 shares, notional 1000,
+    // ps.pctOfAccount = 1000/10000·100 = 10%. A SAR name's USD-correct pct ≈ 1000 SAR ÷ 3.75 ÷
+    // 10000 · 100 ≈ 2.67% → renders "3% of acct" at %.0f. 10% vs 3% straddle unambiguously.
+    @Test func summaryLinePctOfAcctHonorsFXCorrectedOverride() {
+        let ps = PS.size(account: 10000, riskFraction: 0.01, entry: 100, stop: 90)!
+        #expect(ps.shares == 10)
+        #expect(abs(ps.pctOfAccount - 10) < 1e-9)         // native-basis raw figure
+        // Default (nil) → the raw 10% renders (backward-compatible / USD / untracked-FX).
+        #expect(PS.summaryLine(ps, riskPct: 1).contains("10% of acct"))
+        #expect(PS.summaryLine(ps, riskPct: 1, symbol: "AAPL").contains("10% of acct"))
+        // Override → the FX-corrected pct renders instead of the ~3.75× native figure.
+        let corrected = PS.summaryLine(ps, riskPct: 1, symbol: "2222.SR", pctOverride: 2.67)
+        #expect(corrected.contains("3% of acct"))
+        #expect(!corrected.contains("10% of acct"))
+    }
+
     @Test func summaryLineDisclosesUnfundableAtZeroSharesButFundableJustAboveIt() {
         let unfundable = PS.size(account: 100, riskFraction: 0.01, entry: 100, stop: 98)!
         #expect(unfundable.shares == 0)

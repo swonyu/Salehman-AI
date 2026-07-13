@@ -53,11 +53,19 @@ enum StockSagePositionSizer {
     /// threaded so the amount renders in its true currency via the same tested `approxAmount` the
     /// idea-card "At risk" metric uses. `symbol` defaults to "" (→ "$") so any un-updated caller is
     /// byte-identical; every real caller passes it.
-    nonisolated static func summaryLine(_ ps: PositionSize, riskPct: Double, symbol: String = "") -> String {
+    ///
+    /// Audit 2026-07-13 (completeness-critic): the neighbouring "% of acct" figure had the SAME
+    /// currency-basis bug the F1 fix left behind — `ps.pctOfAccount` is native-notional ÷ USD-account
+    /// (~3.75×/100× wrong for SAR/pence), and the wave-2 #2 FX-corrected `pctOfAccountUSD` was wired
+    /// only into the leverage-warning FLAGS, never this rendered string. `pctOverride` lets the view
+    /// pass the already-computed USD-correct pct; nil (default) keeps `ps.pctOfAccount` so USD /
+    /// untracked-FX callers and the test-lock are byte-identical.
+    nonisolated static func summaryLine(_ ps: PositionSize, riskPct: Double, symbol: String = "",
+                                        pctOverride: Double? = nil) -> String {
         let atRisk = symbol.isEmpty ? String(format: "≈$%.0f", ps.dollarsAtRisk)
                                     : StockSageCurrency.approxAmount(ps.dollarsAtRisk, symbol: symbol)
         let base = String(format: "%d shares %@ at risk (%.0f%% of acct) at %.1f%%/trade — sizes the LOSS, not a profit promise.",
-               ps.shares, atRisk, ps.pctOfAccount, riskPct)
+               ps.shares, atRisk, pctOverride ?? ps.pctOfAccount, riskPct)
         guard ps.shares == 0 else { return base }
         return base + " Below the 1-share minimum at your account size — not fundable as sized."
     }
