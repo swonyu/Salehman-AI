@@ -63,13 +63,19 @@ Two value ratios, tested as SEPARATE arms (not blended — a blend is a post-hoc
   shares are moved onto the adjusted basis. A **PASS-BLOCKING selfcheck** in `value_factor.py` reproduces one name-date
   B/M for a known splitter (AAPL FY2013) from (adjClose, name splits, raw shares, equity) and asserts it equals the
   machinery-computed value to 1e-9 AND that AAPL 2013 does NOT land in the cheap tercile — the run aborts if this fails.
-- **FIX B (design-review SHOULD_FIX — shares source disambiguation):** 26% of names carry DIFFERENT us-gaap
-  `CommonStockSharesOutstanding` values at the SAME period-end (share-class members / post-split restated comparatives —
-  AAPL 2013-09-28 shows both 899,213,000 total AND 6,294,494,000 under one tag; measured). The `(end,tag)` earliest-filed
-  dedup would pick arbitrarily. RULE, pinned: **prefer `dei/EntityCommonStockSharesOutstanding` (cover-page total)** as
-  the primary shares source; use us-gaap `CommonStockSharesOutstanding` ONLY when dei is absent; when multiple us-gaap
-  values share a period-end, take the **MAX** (total-company, not a class/restated breakout) or drop the name as
-  ambiguous and census it. Census (ii) extended: dei-vs-us-gaap resolution counts + same-end us-gaap disagreement count.
+- **FIX B (design-review SHOULD_FIX — shares source disambiguation; HARDENED by the mandated AAPL-2013 ground-truth
+  reproduction, pre-decision-statistic):** 26% of names carry DIFFERENT us-gaap `CommonStockSharesOutstanding` values at
+  the SAME period-end (share-class members / post-split restated comparatives — AAPL 2013-09-28 shows both 899,213,000
+  total AND 6,294,494,000 restated under one tag; measured). RULE, pinned: **prefer `dei/EntityCommonStockSharesOutstanding`
+  (cover-page total)**, matched to the FY-end within **[end, end+45 days]** — dei is dated to the filing's
+  "shares outstanding as of" cover-page date, typically days-to-weeks AFTER the FY-end (AAPL dei end 2013-10-18 vs FY-end
+  2013-09-28), so an exact-end match silently misses it and falls through to the corrupt gaap value (caught by the AAPL
+  reproduction BEFORE any decision statistic — the original exact-match returned the 6.29B restated figure). us-gaap
+  `CommonStockSharesOutstanding` (exact-end) is used ONLY when dei is absent; when same-end us-gaap values **disagree by
+  >2×** (a class breakout / restated comparative) the name is **DROPPED as ambiguous** at that end (NOT MAX-picked — MAX
+  takes the corrupt 6.29B); when they agree within 2× the value is used. Census (ii) extended: same-end us-gaap
+  disagreement count. (The `MAX` wording in the pre-review draft is superseded by drop-if->2×, which is strictly safer:
+  it never admits a class-inflated share count.)
 - **FIX C (design-review SHOULD_FIX — joint availability across FYs):** book value + shares + net income may come from
   different FYs; availability must not use a shares count before it was public. RULE, pinned: **availability(p) = first
   master bar STRICTLY AFTER max(`filed`) taken JOINTLY over the EXACT StockholdersEquity, shares, and NetIncomeLoss
@@ -111,11 +117,20 @@ Two value ratios, tested as SEPARATE arms (not blended — a blend is a post-hoc
   lag-robustness is the coherent leak test, matching the GP/A ruling.)
   **S1″ placebo (machinery veto):** value ratios shuffled cross-sectionally at each rebalance, 3 seeds (1,2,3); if ANY
   placebo arm clears DSR>0.95 the run is INVALID (machinery leak).
-  **S1‴ placebo (FIX D — design-review SHOULD_FIX; the price-leak detector S1″ is blind to):** shuffle only
-  `shares_asof` (or Equity) across names and RE-DERIVE the ratio per name from THAT name's own as-of price path — so a
-  residual price-based leak WOULD fire it (S1″ shuffles the finished scalar, carrying any price contamination WITH it,
-  so it cannot detect a price leak). 3 seeds; if ANY S1‴ arm clears DSR>0.95 the run is INVALID. With FIX A applied
-  the price leak is gone at source, so S1‴ is a confirming guard; committed before results regardless.
+  **S1‴ placebo (FIX D — design-review SHOULD_FIX):** a SECOND, mechanically-distinct null. 3 seeds; if ANY S1″ OR
+  S1‴ arm clears DSR>0.95 the run is INVALID.
+  **PLACEBO CORRECTION (2026-07-13, discovered by the placebo FIRING at DSR 1.000 on the first run — pre-decision, the
+  run was INVALID so no decision statistic was recorded):** the initial S1″/S1‴ shuffled only the (numerator, shares)
+  scalar and RE-DERIVED the ratio with each name's REAL price in the denominator — so the real 1/price factor SURVIVED
+  the shuffle, low-price names still clustered in the "random" top tercile, and the placebo cohort−EQW diff was
+  spuriously positive (maxing DSR — exactly the price-residual the design review's Lens-2 flagged the scalar-shuffle
+  could not break). CORRECTED to two TRUE nulls for a price-based ratio: **S1″ = permute the FULLY-COMPUTED ratio
+  (price included) across names** (randomizes the cohort vs returns completely); **S1‴ = keep each name's REAL ratio
+  (real cohort) but permute the forward block RETURNS across the eligible names** (breaks the ratio→return link from the
+  return side — a distinct mechanism). Both must give diff ≈ 0 on a clean machinery; verified on a 464-name subset both
+  max DSR ≤ 0.73 (H252 residual is the pre-registered underpowered-arm caveat, n=14, < 0.95). This is a correction to
+  make the veto a genuine null, NOT a change to the decision rule or the base arms (the base ratio legitimately uses
+  price — B/M IS price-dependent).
   **S2a** winsorized ±100% both books. **S2b** no-integrity-screen + winsorized.
   **S4** Shumway −30% on delisting-truncated exits.
   **S5** freshness relaxed to 504 bars (~24 months) — context, never qualifying.
