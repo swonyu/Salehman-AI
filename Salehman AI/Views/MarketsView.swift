@@ -5934,6 +5934,13 @@ struct MarketsView: View {
         var plan = StockSageTradePlan.text(symbol: idea.symbol, market: idea.market, price: idea.price,
                                            advice: a, rewardRisk: rr, size: size, flags: riskFlags,
                                            ladder: planLadder, chandelierLevel: planChandelier)
+        // First-real-trade review (2026-07-16): Tadawul rejects off-grid prices — the exported
+        // plan (the broker ticket source) carries the placeable equivalents for .SR orders.
+        // Display-only; the engine's stop/target (and every EV/R:R derived from them) unchanged.
+        if let tickNote = StockSageTickSize.placeabilityNote(symbol: idea.symbol, entry: idea.price,
+                                                             stop: a.stopPrice, target: a.targetPrice) {
+            plan += "\n⚠ " + tickNote
+        }
         // F04: StockSageTradePlan.text silently OMITS the "Size:" line when size is nil — which
         // used to happen for a typed "10,000" (Double() choking on the comma), reading as "no
         // size available" with no hint why. Say so explicitly when there's a stop to size against.

@@ -53,7 +53,18 @@ enum StockSageExecutionTiming {
                        "more of this edge than a mid-session entry."
             // The measured microstructure numbers are US-only; show them only for US-listed symbols.
             let isUS = symbol.isEmpty || StockSageCurrency.currencyForSymbol(symbol) == "USD"
-            guard isUS else { return base }
+            guard isUS else {
+                // First-real-trade review (2026-07-16): give Tadawul names their OWN session facts
+                // so "near the close" is actionable in Riyadh time (static exchange schedule,
+                // sourced 2026-07-16: Sun–Thu, continuous 10:00–15:00 AST, closing auction to
+                // ~15:10 — saudiexchange.sa Trading Cycle and Times). Display-only, no US numbers.
+                if symbol.uppercased().hasSuffix(".SR") {
+                    return base + " Tadawul session: Sun–Thu, continuous 10:00–15:00 Riyadh with the " +
+                           "closing auction to ~15:10 — \"near the close\" here means ~14:40–15:00 " +
+                           "or the auction."
+                }
+                return base
+            }
             return base + " Measured on this US universe (2026-07, 64 names): the close has the " +
                    "session's deepest liquidity (~20% of volume) at minute-ranges slightly above midday; " +
                    "the open is the costliest window (~3× midday ranges) — avoid it for these entries."
