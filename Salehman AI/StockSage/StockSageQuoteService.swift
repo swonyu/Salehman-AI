@@ -108,7 +108,7 @@ enum StockSageQuoteService {
     /// GET a request, returning the 200 body. On a 429/503 (Yahoo's keyless endpoint
     /// rate-limits under load — the dominant failure mode as the universe grows), back
     /// off ~1.5s and retry ONCE before giving up. Any other status / transport error → nil.
-    private static func get(_ req: URLRequest) async -> Data? {
+    private nonisolated static func get(_ req: URLRequest) async -> Data? {
         for attempt in 0..<2 {
             guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return nil }
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
@@ -157,7 +157,7 @@ enum StockSageQuoteService {
 
     /// Fetch ~1 year of daily OHLC bars for one symbol — enough for the 200-day
     /// trend and every indicator. `nil` on failure / when external access is off.
-    static func fetchHistory(_ symbol: String, range: String = "1y", interval: String = "1d") async -> StockSagePriceHistory? {
+    nonisolated static func fetchHistory(_ symbol: String, range: String = "1y", interval: String = "1d") async -> StockSagePriceHistory? {
         guard ToolPolicy.isExternalAllowed else { return nil }
         // .urlHostAllowed for the same reason as fetchOne (F38 2026-07-02) — stricter set,
         // path-safe for all curated symbols, consistent with StockSageEarnings.fetchNextEarnings.
@@ -180,7 +180,7 @@ enum StockSageQuoteService {
 
     /// Fetch candle histories for many symbols concurrently (bounded fan-out),
     /// keyed by uppercased requested symbol. `[:]` when external access is off.
-    static func fetchHistories(for symbols: [String], range: String = "1y", concurrency: Int = 6,
+    nonisolated static func fetchHistories(for symbols: [String], range: String = "1y", concurrency: Int = 6,
                                onProgress: ((Int) async -> Void)? = nil) async -> [String: StockSagePriceHistory] {
         guard ToolPolicy.isExternalAllowed, !symbols.isEmpty else { return [:] }
         var out: [String: StockSagePriceHistory] = [:]
@@ -210,7 +210,7 @@ enum StockSageQuoteService {
     /// Decode Yahoo `v8/chart` time-series JSON into a candle history. Yahoo emits
     /// `null` for non-trading gaps; those bars are dropped so the parallel arrays
     /// stay aligned and indicator math never meets a NaN. Newest bar LAST.
-    static func parseHistory(_ data: Data, symbol: String) -> StockSagePriceHistory? {
+    nonisolated static func parseHistory(_ data: Data, symbol: String) -> StockSagePriceHistory? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let chart = root["chart"] as? [String: Any],
               let result = (chart["result"] as? [[String: Any]])?.first,
@@ -246,7 +246,7 @@ enum StockSageQuoteService {
     /// Coax a JSON numeric (Double / Int / NSNumber / numeric String) into a
     /// Double — `JSONSerialization` hands numbers back as `NSNumber`, and a few
     /// fields occasionally arrive as strings.
-    private static func number(_ any: Any?) -> Double? {
+    private nonisolated static func number(_ any: Any?) -> Double? {
         let value: Double?
         switch any {
         case let d as Double:   value = d
