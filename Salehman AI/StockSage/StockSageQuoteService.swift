@@ -419,8 +419,120 @@ enum StockSageUniverse {
         ("🇺🇸 US Other (2000-expansion)", ["BRK-A", "BRK-B", "GEV", "FERG", "KSPI", "TPGXL", "CAE", "CBC", "IDCC", "NOVT", "OGC", "AUGO", "OTF", "DLB", "QS", "BELFB", "EMAT", "GEF", "NATL", "ARIS", "FLNC", "RUN", "AAUC", "BELFA", "VGNT", "DBD", "NMFCZ", "BGSI", "NOVTU", "TE", "ATKR", "PBI"]),
     ]
 
+    // ── OWNER DIRECTIVE (2026-07-16): "ONLY KEEP TADAWUL AND NASDAQ" ────────────────────────
+    // The live universe is restricted to Tadawul (`.SR`) + NASDAQ-listed US names. The full
+    // curated `groups`/`catalogExtra` literals are KEPT below as the historical source of truth
+    // (rollback = delete this filter); `build(_:)` — the single choke point every accessor
+    // (`worldwide`/`catalog`/`core`) routes through — applies the filter, so all views of the
+    // universe stay consistent. NASDAQ membership is BAKED (the app carries no per-symbol
+    // exchange metadata): classified 2026-07-16 against AlphaVantage LISTING_STATUS (state=
+    // active, 14,189 rows; sanity anchors AAPL/MSFT/QQQ→NASDAQ, JPM/SPY/BRK-B→NYSE). Of the
+    // prior universe's 2,218 US names: 872 NASDAQ (kept), 1,341 other-exchange (dropped),
+    // 5 not in the active listing (AYA, BMNP, GOOGM, GOOGN, STRD — dropped). Everything else
+    // (other countries, crypto, FX, indices, non-NASDAQ ETFs) leaves the universe. FX needed
+    // for SAR conversions is fetched as INFRA by StockSageStore (never an idea/feed row);
+    // ^GSPC/^VIX regime+benchmark fetches are direct-by-symbol and unaffected.
+    nonisolated static let nasdaqListed: Set<String> = [
+        "AAL", "AAOI", "AAON", "AAPL", "ABCL", "ABNB", "ABTC", "ABVX", "ACAD", "ACGL",
+        "ACGLN", "ACGLO", "ACHC", "ACIW", "ACLS", "ACMR", "ACT", "ADAMI", "ADAML", "ADAMM",
+        "ADAMN", "ADBE", "ADEA", "ADI", "ADMA", "ADP", "ADPT", "ADSK", "AEHR", "AEIS",
+        "AEP", "AFRM", "AGIO", "AGNC", "AGNCL", "AGNCM", "AGNCN", "AGNCO", "AGNCP", "AGNCZ",
+        "AGYS", "AKAM", "ALAB", "ALGM", "ALGN", "ALGT", "ALHC", "ALKS", "ALM", "ALMS",
+        "ALNY", "ALRM", "AMAT", "AMBA", "AMD", "AMGN", "AMKR", "AMRX", "AMZN", "ANDE",
+        "APA", "APGE", "APLD", "APP", "APPF", "ARCB", "ARCC", "ARGX", "ARLP", "ARM",
+        "ARQT", "ARWR", "ARXS", "ASML", "ASND", "ASO", "ASTH", "ASTS", "ATAT", "ATRO",
+        "AUGO", "AUR", "AVAH", "AVAV", "AVGO", "AVPT", "AVT", "AXGN", "AXON", "AXSM",
+        "AXTI", "BANF", "BANR", "BATRA", "BATRK", "BBIO", "BCPC", "BCRX", "BDRX", "BEAM",
+        "BELFA", "BELFB", "BGC", "BHF", "BIDU", "BIIB", "BILI", "BKNG", "BKR", "BLBD",
+        "BLLN", "BLTE", "BMRN", "BND", "BNTX", "BOKF", "BPOP", "BPYPM", "BPYPN", "BPYPO",
+        "BPYPP", "BRKR", "BRKRP", "BRZE", "BSY", "BTDR", "BTSG", "BTSGU", "BULL", "BUSE",
+        "BUSEP", "BWIN", "BZ", "CACC", "CAI", "CAKE", "CALM", "CAMT", "CAR", "CARG",
+        "CART", "CASY", "CATY", "CBC", "CBRS", "CBSH", "CCC", "CCEP", "CDNL", "CDNS",
+        "CDW", "CECO", "CEG", "CELC", "CELH", "CENT", "CENTA", "CENX", "CG", "CGABL",
+        "CGNX", "CGON", "CHA", "CHDN", "CHEF", "CHKP", "CHRD", "CHRN", "CHRW", "CHTR",
+        "CHYM", "CIFR", "CIGI", "CINF", "CLBK", "CLBT", "CLDX", "CLMT", "CLOV", "CLSK",
+        "CMCSA", "CME", "CMPR", "COCO", "COGT", "COHU", "COIN", "COKE", "COLB", "COLM",
+        "COO", "CORT", "CORZ", "CORZW", "CORZZ", "COST", "CPB", "CPRT", "CPRX", "CRDO",
+        "CRNX", "CROX", "CRSP", "CRUS", "CRVL", "CRWD", "CRWV", "CSCO", "CSGP", "CSQ",
+        "CSX", "CTAS", "CTSH", "CVBF", "CVCO", "CVLT", "CWST", "CYTK", "CZR", "DASH",
+        "DAVE", "DBX", "DDOG", "DFTX", "DGII", "DHC", "DHCNI", "DIOD", "DJT", "DKNG",
+        "DLO", "DLTR", "DNLI", "DNTH", "DOCU", "DOO", "DORM", "DOX", "DPZ", "DRH",
+        "DRS", "DRVN", "DSC", "DSGX", "DUOL", "DVY", "DXCM", "DXPE", "DYN", "EA",
+        "EBAY", "EBC", "ECHO", "EEFT", "EFSC", "ELVN", "EMAT", "ENLT", "ENPH", "ENSG",
+        "ENTG", "EQIX", "EQPT", "ERAS", "ERIC", "ERIE", "ESLT", "ESTA", "ETOR", "EVRG",
+        "EWBC", "EWTX", "EXC", "EXE", "EXEL", "EXLS", "EXPE", "EXPO", "EXTR", "EZPW",
+        "FA", "FANG", "FAST", "FBNC", "FBYD", "FCFS", "FCNCA", "FELE", "FER", "FFBC",
+        "FFIN", "FFIV", "FHB", "FIBK", "FIGR", "FISV", "FITB", "FIVE", "FIZZ", "FLEX",
+        "FLNC", "FLY", "FLYW", "FORM", "FOX", "FOXA", "FRHC", "FRME", "FRMI", "FROG",
+        "FRPT", "FRSH", "FRVO", "FSLR", "FSLY", "FSV", "FTAI", "FTAIM", "FTDR", "FTNT",
+        "FULT", "FULTP", "FUTU", "FWONA", "FWONK", "GBDC", "GCMG", "GDS", "GEHC", "GEN",
+        "GENB", "GFS", "GGAL", "GH", "GILD", "GLBE", "GLNG", "GLPI", "GLXY", "GMAB",
+        "GNTX", "GOOG", "GOOGL", "GPCR", "GRAB", "GRAL", "GRFS", "GSAT", "GTLB", "GTX",
+        "HALO", "HAPN", "HAS", "HBAN", "HBANL", "HBANM", "HBANP", "HBANZ", "HIMX", "HLNE",
+        "HON", "HONA", "HOOD", "HQY", "HRMY", "HSAI", "HSIC", "HST", "HTFL", "HTHT",
+        "HTO", "HUBG", "HUT", "HWC", "HWKN", "HYMC", "IBKR", "IBOC", "IBRX", "ICHR",
+        "ICLR", "ICUI", "IDCC", "IDXX", "IDYA", "IEF", "IEP", "IESC", "ILMN", "IMNM",
+        "IMOS", "IMVT", "INCY", "INDB", "INDV", "INIO", "INOD", "INSM", "INTA", "INTC",
+        "INTR", "INTU", "IONS", "IPAR", "IPGP", "IRDM", "IREN", "IRON", "IRTC", "ISRG",
+        "ITRI", "JAZZ", "JBHT", "JBLU", "JD", "JKHY", "JOYY", "KALU", "KARD", "KC",
+        "KDP", "KEEL", "KHC", "KLAC", "KLIC", "KLRA", "KMB", "KNSA", "KOD", "KRYS",
+        "KSPI", "KTOS", "KYIV", "KYMR", "LAMR", "LASR", "LAUR", "LBRDA", "LBRDK", "LBRDP",
+        "LBTYA", "LBTYB", "LBTYK", "LCID", "LECO", "LEGN", "LFST", "LFTO", "LFUS", "LGN",
+        "LGND", "LI", "LIF", "LILAP", "LIN", "LINE", "LITE", "LIVN", "LKQ", "LLYVA",
+        "LLYVK", "LMAT", "LNT", "LNTH", "LOGI", "LOPE", "LPLA", "LQDA", "LRCX", "LSCC",
+        "LSTR", "LULU", "LUNR", "LYFT", "MAAS", "MANH", "MAR", "MARA", "MAT", "MBIN",
+        "MBLY", "MBX", "MCHB", "MCHP", "MCHPP", "MCRI", "MDB", "MDGL", "MDLN", "MDLZ",
+        "MEDP", "MELI", "MEOH", "META", "MGEE", "MGNI", "MGRC", "MIDD", "MIRM", "MKSI",
+        "MKTX", "MLCO", "MLYS", "MMED", "MMSI", "MMYT", "MNDY", "MNST", "MORN", "MPWR",
+        "MQ", "MRCY", "MRNA", "MRVL", "MRX", "MSFT", "MSTR", "MTCH", "MTSI", "MU",
+        "MWH", "MXL", "MYRG", "MZTI", "NAMS", "NATL", "NAVN", "NBIS", "NBIX", "NBTB",
+        "NDAQ", "NDSN", "NESR", "NFLX", "NICE", "NIPG", "NKTR", "NMFCZ", "NMIH", "NMRK",
+        "NN", "NOVT", "NOVTU", "NRIX", "NSIT", "NTAP", "NTCT", "NTES", "NTLA", "NTNX",
+        "NTRA", "NTRS", "NTRSO", "NTSK", "NUVL", "NVDA", "NVMI", "NVTS", "NWBI", "NWE",
+        "NWL", "NWS", "NWSA", "NXPI", "NXST", "NXT", "NYAX", "OCTV", "OCUL", "ODFL",
+        "OKTA", "OLED", "OLLI", "OMAB", "ON", "ONB", "ONBPO", "ONBPP", "ONC", "ONDS",
+        "OPCH", "OPEN", "ORKA", "ORLY", "OSIS", "OSW", "OTEX", "OTTR", "OUST", "OXLCL",
+        "OXLCM", "OXLCN", "OXLCO", "OXLCZ", "OZK", "PAA", "PAGP", "PANW", "PATK", "PAYO",
+        "PAYP", "PAYX", "PBLS", "PCAR", "PCTY", "PCVX", "PDD", "PDFS", "PECO", "PEGA",
+        "PENG", "PENN", "PEP", "PFG", "PGNY", "PHVS", "PI", "PLBL", "PLMR", "PLTR",
+        "PLUG", "PLUS", "PLXS", "PODD", "PONY", "POOL", "POWI", "POWL", "POWWP", "PPC",
+        "PPLI", "PPTA", "PRAX", "PRDO", "PRVA", "PSKY", "PSMT", "PSNY", "PTC", "PTCT",
+        "PTEN", "PTGX", "PTON", "PTRN", "PYPL", "QCOM", "QLYS", "QNT", "QQQ", "QRVO",
+        "QS", "QUBT", "QURE", "RARE", "RDNT", "REG", "REGCO", "REGCP", "REGN", "RELY",
+        "REYN", "RGC", "RGEN", "RGLD", "RGTI", "RGTIW", "RIOT", "RIVN", "RKLB", "RLAY",
+        "RMBS", "RNW", "ROAD", "ROIV", "ROKU", "ROP", "ROST", "RPRX", "RRR", "RUM",
+        "RUN", "RUSHA", "RUSHB", "RVMD", "RVMDW", "RXRX", "RYAAY", "RYTM", "SAIA", "SAIC",
+        "SAIL", "SANM", "SATA", "SBAC", "SBCF", "SBLK", "SBRA", "SBUX", "SEDG", "SEIC",
+        "SEZL", "SFD", "SFM", "SFNC", "SGRY", "SHC", "SHOO", "SHOP", "SIGI", "SIMO",
+        "SIRI", "SITM", "SKWD", "SKYW", "SLAB", "SLBT", "SLDE", "SLM", "SLMBP", "SLS",
+        "SMCI", "SMCIP", "SMH", "SMMT", "SMTC", "SNDK", "SNEX", "SNPS", "SNY", "SOFI",
+        "SOLS", "SOUN", "SOXX", "SPCX", "SPSC", "SRAD", "SRRK", "SSNC", "SSRM", "STEP",
+        "STLD", "STNE", "STRC", "STRF", "STRK", "STRL", "STX", "SUPN", "SWKS", "SYBT",
+        "SYM", "SYNA", "SYRE", "TARS", "TBBK", "TCBI", "TCOM", "TEAM", "TECH", "TEM",
+        "TENB", "TER", "TFSL", "TGTX", "TIGO", "TLN", "TLT", "TLX", "TMDX", "TMUS",
+        "TNGX", "TOWN", "TPG", "TPGXL", "TRI", "TRMB", "TRMD", "TRMK", "TROW", "TRVI",
+        "TSCO", "TSEM", "TSLA", "TTAN", "TTD", "TTEK", "TTMI", "TTWO", "TVTX", "TW",
+        "TWST", "TXG", "TXN", "TXRH", "UAL", "UBSI", "UCTT", "UFPI", "UFPT", "ULTA",
+        "UMBF", "UNIT", "UPST", "URBN", "USAR", "USLM", "UTHR", "VC", "VCEL", "VCTR",
+        "VCYT", "VECO", "VEON", "VERA", "VERX", "VFS", "VIAV", "VICR", "VISN", "VKTX",
+        "VLY", "VLYPN", "VLYPO", "VLYPP", "VNET", "VNOM", "VOD", "VRNS", "VRSK", "VRSN",
+        "VRTX", "VSAT", "VSEC", "VSNT", "VTRS", "WAFD", "WAY", "WBD", "WDAY", "WDC",
+        "WDFC", "WERN", "WFRD", "WING", "WIX", "WMG", "WMT", "WSBC", "WSBCO", "WSC",
+        "WSE", "WSFS", "WTFC", "WTW", "WULF", "WWD", "WYNN", "XE", "XEL", "XENE",
+        "XMTR", "XNDU", "XP", "XRAY", "Z", "ZBRA", "ZG", "ZION", "ZIONP", "ZLAB",
+        "ZM", "ZS"
+    ]
+
+    /// The universe-membership rule: Tadawul (`.SR`) or baked-NASDAQ. Everything else is out.
+    nonisolated static func isAllowedUniverseSymbol(_ symbol: String) -> Bool {
+        let up = symbol.uppercased()
+        return up.hasSuffix(".SR") || nasdaqListed.contains(up)
+    }
+
     private static func build(_ gs: [(label: String, tickers: [String])]) -> [StockSageSymbol] {
-        gs.flatMap { g in g.tickers.map { StockSageSymbol(symbol: $0, market: g.label) } }
+        gs.flatMap { g in
+            g.tickers.filter(isAllowedUniverseSymbol).map { StockSageSymbol(symbol: $0, market: g.label) }
+        }
     }
 
     /// Equity-2000 promotion (PLAN_2026-07-08_equity2000.md Stage 2): the analyzed universe
@@ -444,7 +556,10 @@ enum StockSageUniverse {
     /// `worldwide.count` right beside it ("N market groups (M names)"), so the honest total
     /// universe size is already shown separately — this stays the honest count of curated,
     /// always-live-quoted groupings, not a claim about catalogExtra's group structure.
-    static let marketCount: Int = groups.count
+    // Post-restriction (2026-07-16): the honest count of groups that still carry ≥1 kept
+    // name (Tadawul + the US sector groups' NASDAQ subsets) — `groups.count` (35) would
+    // overstate coverage ~2.3× after the Tadawul+NASDAQ restriction.
+    static let marketCount: Int = groups.filter { g in g.tickers.contains(where: isAllowedUniverseSymbol) }.count
 
     /// The curated Saudi-first CORE only (`groups`, pre-promotion's whole universe) — no dedup
     /// needed (`groups` alone has no cross-list collisions to resolve, unlike `worldwide`/`catalog`

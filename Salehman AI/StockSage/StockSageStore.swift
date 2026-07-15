@@ -89,6 +89,13 @@ final class StockSageStore: ObservableObject {
     static let shared = StockSageStore()
 
     @Published private(set) var symbols: [StockSageSymbol] = []
+    /// OWNER DIRECTIVE (2026-07-16, Tadawul+NASDAQ restriction): FX pairs left the universe, but
+    /// the SAR→USD rate still powers every .SR honesty correction (holdingValue, pctOfAccountUSD,
+    /// USD portfolio totals). Fetched as INFRA — direct-by-symbol like the regime's ^VIX — never
+    /// a feed row or idea. Keyed by uppercased symbol ("USDSAR=X" → last price). Kept on failure
+    /// (a stale rate beats the raw-native fallback); empty until the first refresh completes
+    /// (callers already handle the no-rate case honestly: exclusion + raw-value fallback).
+    @Published private(set) var infraFX: [String: Double] = [:]
     /// Distinguishes the built-in demo data from a real feed, so the UI/tool can
     /// say "sample data" honestly rather than implying live quotes.
     @Published private(set) var isSampleData = true
@@ -333,6 +340,19 @@ final class StockSageStore: ObservableObject {
     /// pull all 2,420 names every cycle (feed-cooldown risk). See `StockSageMonitor.start`'s loop.
     enum TrackedScope { case full, core }
 
+    /// The FX pairs the engine needs for currency conversions of KEPT-universe names
+    /// (post-restriction: `.SR` ⇒ SAR is the only non-USD currency). Fetched by
+    /// `refreshInfraFX()`, consumed by MarketsView's `fxRatesToUSD` as the fallback when the
+    /// pair isn't user-tracked. Legacy holdings in OTHER currencies keep the existing honest
+    /// degradation (excluded from USD totals + disclosed as untracked).
+    nonisolated static let infraFXSymbols = ["USDSAR=X"]
+
+    /// Best-effort infra FX refresh (1 request; failure keeps the last known rate).
+    private func refreshInfraFX() async {
+        let quotes = await StockSageQuoteService.fetchQuotes(for: Self.infraFXSymbols)
+        for (sym, q) in quotes where q.price > 0 { infraFX[sym.uppercased()] = q.price }
+    }
+
     /// Every tracked instrument definition: the curated universe + the user's
     /// added tickers (deduped). Drives both the live feed and the ideas analysis,
     /// so user picks survive refreshes and get analyzed too.
@@ -461,6 +481,7 @@ final class StockSageStore: ObservableObject {
         let journalTrades = StockSageJournalStore.shared.trades   // read on the main actor before ANY await
         // Benchmark fetched ONCE up front, shared by every chunk's buildIdeas call.
         let benchmark = await StockSageQuoteService.fetchHistory("^GSPC", range: "1y")
+        await refreshInfraFX()   // SAR rate for .SR conversions (infra — FX left the universe 2026-07-16)
         guard !Task.isCancelled else { lastScanCancelled = true; return }
 
         // ALERTS FIX (review round 1): snapshot the board BEFORE the chunk loop starts
@@ -1800,6 +1821,7 @@ final class StockSageStore: ObservableObject {
         feedError = nil
         let universe = trackedDefs(scope: scope)
         let quotes = await StockSageQuoteService.fetchQuotes(for: universe.map(\.symbol))
+        await refreshInfraFX()   // SAR rate for .SR conversions (infra — FX left the universe 2026-07-16)
         isRefreshing = false
 
         // Merge each curated symbol (keeps the friendly market label) with its

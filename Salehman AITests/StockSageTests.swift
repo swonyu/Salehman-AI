@@ -223,29 +223,47 @@ struct StockSageHistoryTests {
 
 struct StockSageUniverseTests {
 
-    @Test func spansManyMarketsWithUniqueTickers() {
+    // OWNER DIRECTIVE (2026-07-16, verbatim "I WANT ONLY NASDAQ AND TADAWUL ONLY"): the universe
+    // is restricted to Tadawul (.SR) + NASDAQ-listed names. Every assertion below is re-ratified
+    // to the NEW spec (the legitimate spec-change path — the old "worldwide" pins were correct
+    // for the old spec, not bent toward an implementation). marketCount == 9 is HAND-DERIVED by
+    // standalone extraction of the source literals (Tadawul + US Mega-cap Tech / Semis / Software
+    // / Health / Consumer / Energy&Industrials survivors + ETFs [QQQ/TLT, both NASDAQ-listed per
+    // AlphaVantage LISTING_STATUS 2026-07-16] + World indices [^TASI.SR — Tadawul's own index
+    // passes the .SR rule]), never by calling the code under test.
+    @Test func spansOnlyTadawulAndNasdaqWithUniqueTickers() {
         let u = StockSageUniverse.worldwide
-        #expect(u.count > 30)                                   // genuinely global, not a token list
+        #expect(u.count > 800)                                  // regression guard: silent group loss
         #expect(Set(u.map(\.symbol)).count == u.count)          // no duplicate tickers
-        #expect(StockSageUniverse.marketCount >= 10)            // 10+ distinct exchanges/regions
+        #expect(StockSageUniverse.marketCount == 9)             // hand-derived post-filter group count
     }
 
-    @Test func leadsWithSaudiAndCoversEveryContinent() {
+    @Test func leadsWithSaudiAndExcludesEveryOtherExchange() {
         let u = StockSageUniverse.worldwide
         #expect(u.first?.symbol == "2222.SR")                   // Aramco — owner's home market first
         let tickers = Set(u.map(\.symbol))
-        // A representative name from each major region must be present. (^GSPC is the benchmark
-        // index — fetched separately for relative-strength, never a tradeable universe member.)
-        for t in ["AAPL", "SHEL.L", "7203.T", "0700.HK", "RELIANCE.NS", "BHP.AX"] {
-            #expect(tickers.contains(t))
+        #expect(tickers.contains("AAPL"))                       // NASDAQ kept (AV: NASDAQ)
+        #expect(tickers.contains("MSFT"))                       // NASDAQ kept (AV: NASDAQ)
+        // Former universe members that must now be ABSENT: London/Tokyo/HK/India/Australia,
+        // and NYSE-listed US names (JPM and SPY are NYSE per AV LISTING_STATUS).
+        for t in ["SHEL.L", "7203.T", "0700.HK", "RELIANCE.NS", "BHP.AX", "JPM", "SPY"] {
+            #expect(!tickers.contains(t), "\(t) must be OUT post-restriction")
+        }
+        // The membership rule itself, checked over the WHOLE universe: .SR or baked-NASDAQ.
+        for s in tickers {
+            #expect(s.uppercased().hasSuffix(".SR") || StockSageUniverse.nasdaqListed.contains(s.uppercased()),
+                    "\(s) violates the Tadawul+NASDAQ rule")
         }
     }
 
-    @Test func includesForexAndCrypto() {
+    @Test func excludesForexAndCryptoButKeepsSARInfraRate() {
         let tickers = Set(StockSageUniverse.worldwide.map(\.symbol))
+        // Forex + crypto left the universe with the restriction…
         for t in ["EURUSD=X", "USDSAR=X", "BTC-USD", "ETH-USD"] {
-            #expect(tickers.contains(t))
+            #expect(!tickers.contains(t), "\(t) must be OUT post-restriction")
         }
+        // …but the SAR conversion rate survives as engine INFRA (direct fetch, never an idea):
+        #expect(StockSageStore.infraFXSymbols == ["USDSAR=X"])
     }
 
     // PLAN_2026-07-08_equity2000.md Stage 2 tests below — hand-derived independently of the
@@ -261,17 +279,20 @@ struct StockSageUniverseTests {
     // the contract — groups + catalogExtra with zero overlap — and the pinned numbers live in
     // the body where a change forces re-derivation, not in a test name that churns per removal.
     @Test func worldwideIsExactlyTheHandDerivedGroupsPlusCatalogExtraSum() {
-        // RE-DERIVED 2026-07-09 (full-catalog CFNetwork sweep, 2,419 probed, double-probed
-        // failures): groups = 210 − ROG.SW (404, dead) − SQ (404; Block trades as XYZ, already
-        // in catalogExtra) = 208. catalogExtra unchanged at 2,210 (neither corpse appears in it;
-        // zero-overlap premise re-checked by grep). 208 + 2,210 = 2,418 — every one of which
-        // returned HTTP 200 + parseable price in the same sweep.
-        let groupsCount = 208
-        let catalogExtraCount = 2_210
-        let expected = groupsCount + catalogExtraCount
-        #expect(expected == 2_418)
+        // RE-DERIVED 2026-07-16 under the OWNER DIRECTIVE ("only keep Tadawul and NASDAQ"):
+        // the literals are UNCHANGED (the historical source of truth); `build(_:)` now filters
+        // to `.SR` ∪ `nasdaqListed`. Standalone extraction over the source literals (never the
+        // code under test): kept .SR = 29 (the 28-name Tadawul group + ^TASI.SR, Tadawul's own
+        // index in World indices, which passes the .SR rule) + kept NASDAQ = 872 (the AlphaVantage
+        // LISTING_STATUS classification of the prior 2,218 US names; anchors AAPL/MSFT/QQQ→NASDAQ,
+        // JPM/SPY/BRK-B→NYSE). Zero .SR∩NASDAQ overlap by construction; the groups/catalogExtra
+        // zero-overlap premise holds for subsets. 29 + 872 = 901.
+        let keptSR = 29
+        let keptNasdaq = 872
+        let expected = keptSR + keptNasdaq
+        #expect(expected == 901)
         #expect(StockSageUniverse.worldwide.count == expected)
-        #expect(StockSageUniverse.worldwide.count > 2_300)   // regression guard: silent group loss
+        #expect(StockSageUniverse.worldwide.count > 800)     // regression guard: silent group loss
     }
 
     // Dedup regression-catcher: whatever `worldwide`'s build does, the RESULT must never contain
@@ -295,7 +316,7 @@ struct StockSageUniverseTests {
     // future reordering of `build(groups) + build(catalogExtra)` fails a test that says why).
     @Test func worldwideFirstElementIsStillAramcoPostPromotion() {
         #expect(StockSageUniverse.worldwide.first?.symbol == "2222.SR")
-        #expect(StockSageUniverse.worldwide.count == 2_418)   // 208 + 2,210 (ROG.SW + SQ removals, 2026-07-09)
+        #expect(StockSageUniverse.worldwide.count == 901)   // 29 .SR + 872 NASDAQ (restriction, 2026-07-16)
     }
 
     // Review round-2 finding 2: the Markets ideas-header literal ("≈2,330 equities") was WRONG
@@ -326,10 +347,12 @@ struct StockSageUniverseTests {
         // MarketsView.worldwideEquityCount performs.
         let viaClassifier = StockSageUniverse.worldwide.filter { StockSageAllocation.assetClass($0.symbol) == "Equity" }.count
         #expect(equities == viaClassifier)
-        // Regression guard: the OLD wrong literal was ≈2,330; the reviewer's recount was ≈2,370.
-        // Bound (not an exact pin — the universe can grow) so a silent classifier/universe change
-        // that swings the count far from the reviewed ballpark fails loudly.
-        #expect(viaClassifier > 2_300 && viaClassifier < 2_420)
+        // Re-ratified 2026-07-16 (owner directive: Tadawul+NASDAQ only): universe = 901, of which
+        // exactly 1 is an index (^TASI.SR — the only ^-prefix survivor), 0 forex (=X all out),
+        // 0 crypto (-USD all out) ⇒ equities = 901 − 1 = 900 by hand-derivation. Bound (not an
+        // exact pin — the universe can drift with listing changes) so a silent classifier or
+        // universe change that swings the count far from the derived ballpark fails loudly.
+        #expect(viaClassifier > 800 && viaClassifier < 950)
     }
 
     // Review round-2 finding 1: the monitor's UNATTENDED background auto-cycle now scopes to

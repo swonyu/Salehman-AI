@@ -28,7 +28,9 @@ struct StockSageUniverseCatalogTests {
     @Test func searchRanksExactThenPrefixThenSubstring() {
         #expect(U.search("AAPL").first?.symbol == "AAPL")              // exact match first
         #expect(U.search("aap").contains { $0.symbol == "AAPL" })      // case-insensitive prefix
-        #expect(U.search("BTC").contains { $0.symbol == "BTC-USD" })   // crypto discoverable
+        // OWNER DIRECTIVE 2026-07-16 (Tadawul+NASDAQ only): crypto left the catalog — the old
+        // "crypto discoverable" pin is re-ratified to its inverse under the new spec.
+        #expect(!U.search("BTC-USD").contains { $0.symbol == "BTC-USD" })   // crypto NOT discoverable
         #expect(U.search("A", limit: 5).count <= 5)                    // bounded by limit
         #expect(U.search("").isEmpty)                                  // empty query → nothing
         #expect(U.search("ZZZZNOPE").isEmpty)                          // no match → nothing

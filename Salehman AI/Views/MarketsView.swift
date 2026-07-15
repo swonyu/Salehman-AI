@@ -312,7 +312,7 @@ struct MarketsView: View {
             monitoring = StockSageMonitor.shared.isRunning
         }
         .task {
-            // Auto-pull a live worldwide snapshot on open — skipped under the QA
+            // Auto-pull a live Tadawul+NASDAQ snapshot on open — skipped under the QA
             // snapshot harness so captures stay deterministic and offline.
             guard !ProcessInfo.processInfo.arguments.contains("--qa") else { return }
             await store.refresh()
@@ -407,7 +407,7 @@ struct MarketsView: View {
         let tint = stale ? DS.Palette.warningSoft : DS.Palette.successSoft
         let text = (stale && asOf != nil)
             ? "Prices are the last close as of \(asOf!.formatted(date: .abbreviated, time: .shortened)) — markets may be closed; NOT live. Educational, not financial advice."
-            : "Live worldwide quotes across \(StockSageUniverse.marketCount) market groups (\(StockSageUniverse.worldwide.count) names). Prices may be delayed ~15 min — educational, not financial advice."
+            : "Live Tadawul + NASDAQ quotes across \(StockSageUniverse.marketCount) market groups (\(StockSageUniverse.worldwide.count) names). Prices may be delayed ~15 min — educational, not financial advice."
         return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: DS.Space.sm) {
                 Circle().fill(tint).frame(width: 7, height: 7)
@@ -664,7 +664,7 @@ struct MarketsView: View {
             // D5 (rotation-3 triage): `feedError ?? sample` hid the sample-data truth whenever a
             // feed error was ALSO present — both facts are true simultaneously (on sample data
             // AND the live feed errored) and the reader needs both, not whichever one won ??.
-            Text("Sample data — connecting to the live worldwide feed… The signals show the engine running on illustrative prices."
+            Text("Sample data — connecting to the live Tadawul + NASDAQ feed… The signals show the engine running on illustrative prices."
                  + (store.feedError.map { " \($0)" } ?? ""))
                 .font(.caption).foregroundStyle(.white.opacity(0.85))
                 .fixedSize(horizontal: false, vertical: true)
@@ -995,11 +995,18 @@ struct MarketsView: View {
     }
 
     /// CCY→USD rates for every currency held (direct CCYUSD=X, else inverse 1/USDCCY=X; USD = 1).
+    /// 2026-07-16 (Tadawul+NASDAQ restriction): FX pairs left the tracked universe, so the
+    /// tracked-quote lookups now normally miss — `store.infraFX` (the engine's direct infra
+    /// fetch, currently USDSAR=X) is the fallback that keeps the .SR conversions honest.
+    /// Currencies with no rate from EITHER source keep the existing honest degradation
+    /// (excluded from USD totals via `untrackedFXCurrencies`, never summed 1:1).
     private var fxRatesToUSD: [String: Double] {
         var rates: [String: Double] = ["USD": 1]
         for ccy in Set(portfolio.positions.map { StockSageCurrency.currencyForSymbol($0.symbol) }) where ccy != "USD" {
             if let r = currentPrice("\(ccy)USD=X"), r > 0 { rates[ccy] = r }
             else if let inv = currentPrice("USD\(ccy)=X"), inv > 0 { rates[ccy] = 1 / inv }
+            else if let r = store.infraFX["\(ccy)USD=X".uppercased()], r > 0 { rates[ccy] = r }
+            else if let inv = store.infraFX["USD\(ccy)=X".uppercased()], inv > 0 { rates[ccy] = 1 / inv }
         }
         return rates
     }
