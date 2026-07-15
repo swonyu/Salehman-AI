@@ -47,9 +47,11 @@ struct BrowseMarketsView: View {
             .union(StockSageUniverse.worldwide.map { $0.symbol.uppercased() })
     }
 
-    private func matches(_ s: StockSageSymbol) -> Bool {
+    /// Pure classifier (static so the data-driven filter list below is testable — the instance
+    /// method delegates). One rule per asset class, mirroring StockSageAllocation's suffix rules.
+    static func matches(_ s: StockSageSymbol, filter: AssetFilter) -> Bool {
         let sym = s.symbol.uppercased()
-        switch asset {
+        switch filter {
         case .all:    return true
         case .crypto: return sym.hasSuffix("-USD")
         case .fx:     return sym.hasSuffix("=X")
@@ -58,6 +60,17 @@ struct BrowseMarketsView: View {
         case .stocks: return !sym.hasSuffix("-USD") && !sym.hasSuffix("=X") && !sym.hasPrefix("^")
                           && !s.market.localizedCaseInsensitiveContains("ETF")
         }
+    }
+
+    private func matches(_ s: StockSageSymbol) -> Bool { Self.matches(s, filter: asset) }
+
+    /// Post-restriction (2026-07-16, "only keep Tadawul and NASDAQ"): offer ONLY the asset-class
+    /// filters that match ≥1 catalog name — the Crypto/Forex segments became permanently empty
+    /// when those markets left the universe, and a filter that can never match is a stale
+    /// affordance. Data-driven (computed once off the static catalog): if the universe changes
+    /// again, the filter row follows automatically.
+    static let availableFilters: [AssetFilter] = AssetFilter.allCases.filter { f in
+        f == .all || StockSageUniverse.catalog.contains { matches($0, filter: f) }
     }
 
     private var sections: [(market: String, rows: [StockSageSymbol])] {
@@ -98,7 +111,7 @@ struct BrowseMarketsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Asset class").font(.caption2).foregroundStyle(.secondary)
                 Picker("Asset class", selection: $asset) {
-                    ForEach(AssetFilter.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(Self.availableFilters) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented).labelsHidden()
             }

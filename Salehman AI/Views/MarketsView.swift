@@ -5059,10 +5059,16 @@ struct MarketsView: View {
                     Image(systemName: "hare.fill").font(.system(size: mvFont11)).foregroundStyle(DS.Palette.accent)
                     Text("Fast lane — fastest compounding").font(.system(size: mvFont11, weight: .bold)).foregroundStyle(.white)
                     Spacer()
-                    Picker("", selection: $fastLaneBoard) {
-                        ForEach(FastLaneBoard.allCases) { b in Text(b.rawValue).tag(b) }
-                    }.labelsHidden().pickerStyle(.segmented).frame(width: 170)
-                    .accessibilityLabel("Fast-lane board filter")
+                    // Post-restriction (2026-07-16): the board picker is a stale affordance when
+                    // no crypto lane exists (crypto left the universe; it reappears only via a
+                    // watchlisted crypto name that yields ideas) — data-driven visibility, so the
+                    // "Crypto" segment is offered exactly when a crypto lane can render.
+                    if !split.crypto.isEmpty {
+                        Picker("", selection: $fastLaneBoard) {
+                            ForEach(FastLaneBoard.allCases) { b in Text(b.rawValue).tag(b) }
+                        }.labelsHidden().pickerStyle(.segmented).frame(width: 170)
+                        .accessibilityLabel("Fast-lane board filter")
+                    }
                 }
                 // Why the order can differ from raw EV/day: it's ranked by growth RATE.
                 Text("Ranked by growth rate (log-growth at ½-Kelly) — a steady compounder can out-rank a higher-EV/day but higher-variance lottery setup.")
@@ -5071,7 +5077,11 @@ struct MarketsView: View {
                 if fastLaneBoard != .equities {
                     fastLaneBoardSection(title: "Crypto fast lane (base ~\(Int(cryptoHoldDays))d, 24/7)", ideas: split.crypto)
                 }
-                if fastLaneBoard != .crypto {
+                // `|| split.crypto.isEmpty`: a persisted "Crypto" selection from before the
+                // 2026-07-16 restriction must never blank the whole strip — with no crypto lane,
+                // equities ALWAYS show (the picker above is hidden in that state, so the stale
+                // @AppStorage value is unreachable-to-change yet must not act).
+                if fastLaneBoard != .crypto || split.crypto.isEmpty {
                     fastLaneBoardSection(title: "Equity swing lane (base ~\(Int(equityHoldDays))d)", ideas: split.equity)
                 }
 
