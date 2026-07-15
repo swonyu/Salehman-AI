@@ -152,7 +152,7 @@ final class StockSageStore: ObservableObject {
     /// THROTTLE FALLBACK (Stage 1/2, PLAN_2026-07-08_equity2000.md): true when a chunk beyond
     /// the first returned < 30% coverage (429-storm signature) and the scan stopped launching
     /// further chunks. Completed chunks' results stay on the board; `ideasMissing` names the
-    /// rest. Post-Stage-2's ~10-chunk 2,420-name universe, this is live-reachable (Stage 1
+    /// rest. Post-restriction's ~4-chunk 901-name universe (Tadawul+NASDAQ 2026-07-16), this is live-reachable (Stage 1
     /// shipped it dormant at n=210's single chunk); still directly exercised via
     /// `StockSageScanChunking.shouldThrottle` in tests.
     @Published private(set) var scanThrottled = false
@@ -333,11 +333,11 @@ final class StockSageStore: ObservableObject {
     }
 
     /// Which base universe `trackedDefs(scope:)` draws from before the user's watchlist is
-    /// appended. `.full` (default) is Stage 2's whole 2,420-name `worldwide` — used by every
+    /// appended. `.full` (default) is the whole 901-name `worldwide` (Tadawul+NASDAQ since 2026-07-16; was Stage 2's 2,420) — used by every
     /// USER-INITIATED path (manual refresh, Find-Ideas scan) and by `refresh()`'s default.
     /// `.core` is the curated ~210-name `groups`-derived set — used ONLY by the monitor's
     /// unattended background auto-cycle (review round-2 finding 1) so a ~45s unpaced loop can't
-    /// pull all 2,420 names every cycle (feed-cooldown risk). See `StockSageMonitor.start`'s loop.
+    /// pull the whole universe every cycle (feed-cooldown risk). See `StockSageMonitor.start`'s loop.
     enum TrackedScope { case full, core }
 
     /// The FX pairs the engine needs for currency conversions of KEPT-universe names
@@ -421,7 +421,7 @@ final class StockSageStore: ObservableObject {
     /// when the board is empty (`if store.ideas.isEmpty { await store.refreshIdeas() }`), on top
     /// of the explicit "Find ideas" button and "Retry failed" affordance — self-guards re-entry
     /// via `isLoadingIdeas` either way. Whether that auto-trigger should still pull the FULL
-    /// n=2,420 universe on every empty-board tab-open, vs. a smaller scope, is an OPEN OWNER
+    /// whole-universe scan on every empty-board tab-open, vs. a smaller scope, is an OPEN OWNER
     /// QUESTION as of this writing — not resolved by this comment fix. Non-destructive on
     /// failure. No-op-with-reason when external access is off.
     func refreshIdeas() async {
@@ -451,7 +451,7 @@ final class StockSageStore: ObservableObject {
     /// (~250 wide; chunk 0 is always the array's natural head, so the curated Saudi-first core
     /// scans and appears on the board first). Each chunk is fetched, built, and MERGED into
     /// `ideas` independently — replace-by-symbol, re-sorted, board published — so the board
-    /// grows live instead of waiting for the whole universe. Post-Stage-2 the universe is 2,420
+    /// grows live instead of waiting for the whole universe. Post-restriction the universe is 901
     /// names (~10 chunks); the merge loop that was single-shot-equivalent at Stage 1's n=210 now
     /// runs its full multi-chunk streaming path live.
     /// SCAN-END-ONCE semantics (delta baseline with the DEG-01 missing-but-tracked carry-forward,
@@ -786,7 +786,7 @@ final class StockSageStore: ObservableObject {
     /// Re-fetch ONLY the symbols the last scan couldn't price and merge them in, re-ranking.
     /// Cheap relative to a full refresh; user-triggered from the "Retry failed" affordance.
     ///
-    /// CHUNKED RETRY (review round-2 finding 3): at Stage 2's ~2,420-name universe, `ideasMissing`
+    /// CHUNKED RETRY (review round-2 finding 3): at the full-universe scan scale (901 names post-restriction; was 2,420), `ideasMissing`
     /// can hold up to ~2,100 names (everything past a throttle trip) — retrying that as one
     /// un-chunked `fetchHistories` call was an unpaced hammer with no per-chunk watchdog/throttle/
     /// cancel of its own. Now routed through the SAME `runChunkedScan` the full scan uses (chunks +
@@ -917,7 +917,7 @@ final class StockSageStore: ObservableObject {
 
     /// What a CANCELLED scan's best-effort `HistoryCache` save should write, if anything.
     /// `StockSageHistoryCache.save()` atomically REPLACES the whole on-disk file — so a cancel
-    /// after chunk 0 of a midday re-scan (prior cache already same-day-fresh, ~2,420 entries)
+    /// after chunk 0 of a midday re-scan (prior cache already same-day-fresh, one entry per universe name)
     /// blindly saving just `scan.accumulatedHistories` (~250 entries) would DESTROY the other
     /// ~2,170 same-day-fresh entries, inverting the very 429-protection this best-effort save
     /// exists for (`partitionByCacheFreshness` would re-fetch everything the cancel just erased).
@@ -1801,7 +1801,7 @@ final class StockSageStore: ObservableObject {
     /// (sample or last-good) data stays on screen rather than blanking out.
     ///
     /// `scope` (review round-2 finding 1, orchestrator-flagged safe default — OWNER REVIEW
-    /// PENDING): defaults to `.full` (Stage 2's whole 2,420-name universe) — every USER-INITIATED
+    /// PENDING): defaults to `.full` (the whole restricted universe) — every USER-INITIATED
     /// call site (the manual refresh button, the .task onAppear pull, the "check now" alert test)
     /// uses this default unchanged, matching the "verified-gentle" one-shot pulls the review
     /// cleared. ONLY `StockSageMonitor`'s unattended ~45s background auto-cycle passes `.core`,

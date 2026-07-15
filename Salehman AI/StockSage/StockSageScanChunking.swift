@@ -6,13 +6,13 @@ import Foundation
 // single-shot fetch+build+publish to a chunked fetch→build→merge→publish loop, so Stage 2's
 // universe promotion (worldwide now 2,420 names, groups+catalogExtra) streams results onto a
 // live board instead of a single multi-minute block. NOW that Stage 2 has landed, the analyzed
-// universe (`StockSageUniverse.worldwide`) is 2,420 names — ~10 chunks at the 250-wide size
+// universe (`StockSageUniverse.worldwide`) is 901 names post the 2026-07-16 Tadawul+NASDAQ restriction — ~4 chunks at the 250-wide size
 // below, not the single Stage-1-era chunk.
 
 nonisolated enum StockSageScanChunking {
     /// Symbols per chunk. `~250` per the plan — was large enough that Stage 1's n=210 universe
     /// was ONE chunk (byte-identical scan shape to the pre-chunking store); post-Stage-2's
-    /// 2,420-name universe streams in ~10 chunks.
+    /// 901-name universe (Tadawul+NASDAQ, 2026-07-16) streams in ~4 chunks.
     static let chunkSize = 250
 
     /// Split `defs` into ordered, contiguous, non-overlapping chunks of at most `size`

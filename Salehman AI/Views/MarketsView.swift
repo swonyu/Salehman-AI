@@ -994,19 +994,30 @@ struct MarketsView: View {
         StockSageCurrency.approxAmount(v, symbol: symbol)
     }
 
-    /// CCY→USD rates for every currency held (direct CCYUSD=X, else inverse 1/USDCCY=X; USD = 1).
-    /// 2026-07-16 (Tadawul+NASDAQ restriction): FX pairs left the tracked universe, so the
-    /// tracked-quote lookups now normally miss — `store.infraFX` (the engine's direct infra
-    /// fetch, currently USDSAR=X) is the fallback that keeps the .SR conversions honest.
-    /// Currencies with no rate from EITHER source keep the existing honest degradation
-    /// (excluded from USD totals via `untrackedFXCurrencies`, never summed 1:1).
+    /// THE one CCY→USD rate resolver (post-restriction review, 2026-07-16): tracked quote first
+    /// (direct CCYUSD=X, else inverse 1/USDCCY=X), then `store.infraFX` the same two ways.
+    /// FX pairs left the tracked universe with the Tadawul+NASDAQ restriction, so the tracked
+    /// lookups now normally miss and infraFX (the engine's direct fetch, currently USDSAR=X)
+    /// carries the .SR conversions. nil = genuinely no rate → callers exclude, never sum 1:1.
+    /// EVERY FX-resolution site routes through here — the adversarial review found the heat
+    /// gauge and the currency-exposure card each had a private COPY of this logic that missed
+    /// the infraFX fallback (the heat copy silently DROPPED open .SR trades → under-reported
+    /// risk, the dangerous direction). One resolver = the drift is structurally impossible.
+    private func fxRateToUSD(_ ccy: String) -> Double? {
+        if ccy == "USD" { return 1 }
+        if let r = currentPrice("\(ccy)USD=X"), r > 0 { return r }
+        if let inv = currentPrice("USD\(ccy)=X"), inv > 0 { return 1 / inv }
+        if let r = store.infraFX["\(ccy)USD=X".uppercased()], r > 0 { return r }
+        if let inv = store.infraFX["USD\(ccy)=X".uppercased()], inv > 0 { return 1 / inv }
+        return nil
+    }
+
+    /// CCY→USD rates for every currency held (via `fxRateToUSD`; USD = 1). Currencies with no
+    /// rate keep the honest degradation (excluded from USD totals via `untrackedFXCurrencies`).
     private var fxRatesToUSD: [String: Double] {
         var rates: [String: Double] = ["USD": 1]
         for ccy in Set(portfolio.positions.map { StockSageCurrency.currencyForSymbol($0.symbol) }) where ccy != "USD" {
-            if let r = currentPrice("\(ccy)USD=X"), r > 0 { rates[ccy] = r }
-            else if let inv = currentPrice("USD\(ccy)=X"), inv > 0 { rates[ccy] = 1 / inv }
-            else if let r = store.infraFX["\(ccy)USD=X".uppercased()], r > 0 { rates[ccy] = r }
-            else if let inv = store.infraFX["USD\(ccy)=X".uppercased()], inv > 0 { rates[ccy] = 1 / inv }
+            if let r = fxRateToUSD(ccy) { rates[ccy] = r }
         }
         return rates
     }
@@ -1534,11 +1545,10 @@ struct MarketsView: View {
             }
             let fxRates: [String: Double] = Dictionary(uniqueKeysWithValues:
                 Set(ccyHoldings.map(\.currency)).subtracting(["USD"]).compactMap { ccy -> (String, Double)? in
-                    // Prefer the direct CCYUSD=X rate; fall back to the inverse USDCCY=X (1/rate),
-                    // since the tracked FX universe often quotes the USD-leading pair (USDSAR=X, …).
-                    if let r = currentPrice("\(ccy)USD=X"), r > 0 { return (ccy, r) }
-                    if let inv = currentPrice("USD\(ccy)=X"), inv > 0 { return (ccy, 1.0 / inv) }
-                    return nil
+                    // Review fix 2026-07-16: was a private COPY of the rate resolution that missed
+                    // the infraFX fallback (post-restriction a .SR holding showed "unpriced" here
+                    // while the headline total priced it) — now the ONE shared resolver.
+                    fxRateToUSD(ccy).map { (ccy, $0) }
                 })
             // Show the FX section whenever there is real FX risk, not just when the book spans
             // multiple currencies: a 100%-GBP book has count == 1 but hasFXRisk is true and the
@@ -2070,12 +2080,11 @@ struct MarketsView: View {
                                 // USD, so the exposure leg would re-multiply by the rate (rate²), inflating open
                                 // heat and skewing the risk gate that feeds sizing. Same root cause as A/B/C.
                                 let ccy = conversionCurrencyForSymbol(t.symbol)
-                                var rate: Double = 1
-                                if ccy != "USD" {
-                                    if let r = currentPrice("\(ccy)USD=X"), r > 0 { rate = r }
-                                    else if let inv = currentPrice("USD\(ccy)=X"), inv > 0 { rate = 1 / inv }
-                                    else { return nil }   // no tracked rate — exclude rather than 1:1
-                                }
+                                // Review fix 2026-07-16 (DANGEROUS direction): this was a private
+                                // COPY of the rate resolution missing the infraFX fallback — post-
+                                // restriction an open .SR trade was silently EXCLUDED from heat
+                                // (the gauge read cooler than the real book). Now the ONE resolver.
+                                guard let rate = fxRateToUSD(ccy) else { return nil }   // no rate — exclude, never 1:1
                                 let e = StockSageCurrency.majorUnitValue(symbol: t.symbol, rawValue: t.entry) * rate
                                 let s = StockSageCurrency.majorUnitValue(symbol: t.symbol, rawValue: t.stop) * rate
                                 return (shares: t.shares, entry: e, stop: s)
