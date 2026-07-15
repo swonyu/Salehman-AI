@@ -21,31 +21,17 @@ struct MarketsView: View {
     @AppStorage("marketsWatchSort") private var sort: MarketSort = .feed
     @State private var showBrowseMarkets = false
     /// Ideas board ordering: by expected value, EV-per-day velocity, or signal rank.
-    enum IdeaSort: String, CaseIterable {
-        case ev = "Expected value", velocity = "EV / day", conviction = "Conviction",
-             rr = "Reward:risk", signal = "Signal rank", momentumWeighted = "Momentum-weighted"
-        /// Shown name. `conviction`'s rawValue stays "Conviction" as the stable
-        /// @AppStorage("marketsIdeaSort") identity key; F08 renames only the label.
-        var label: String { self == .conviction ? "Signal strength" : rawValue }
-        /// Audit 2026-07-12 (ideas-card): the picker OFFERS only these. `momentumWeighted` is EXCLUDED
-        /// because its momentum multiplier is inert with the default empty `closes` — it produced a
-        /// list byte-identical to `.velocity` while the UI claimed a momentum factor was applied (a
-        /// mislabel). The case stays in the enum so a previously-persisted @AppStorage value still
-        /// decodes and works (falls through to the velocity order it always produced); it just can't be
-        /// newly selected. Re-add it here only once per-symbol closes are actually threaded into the rank.
-        static var pickerCases: [IdeaSort] { allCases.filter { $0 != .momentumWeighted } }
-    }
+    /// F19/F20 (2026-07-15): moved to the engine (StockSageIdeaProjection.Sort) so the board's
+    /// sort/filter contract is testable. Raw values unchanged → @AppStorage identity intact.
+    typealias IdeaSort = StockSageIdeaProjection.Sort
     // Default to money-velocity (EV per day) — the "fastest money" objective: a quick small edge
     // compounds faster than a slow large one. (Existing users keep whatever they last picked.)
     @AppStorage("marketsIdeaSort") private var ideaSort: IdeaSort = .velocity
     /// Hide ideas below this conviction (0 = show all).
     @AppStorage("marketsIdeaMinConv") private var ideaMinConv = 0.0
 
-    /// Ideas board action filter — jump straight to the strongest setups.
-    enum IdeaFilter: String, CaseIterable, Identifiable {
-        case all = "All", strongBuy = "Strong Buy", buys = "Buys", sells = "Sells"
-        var id: String { rawValue }
-    }
+    /// F19/F20 (2026-07-15): moved to the engine (StockSageIdeaProjection.Filter) — see IdeaSort.
+    typealias IdeaFilter = StockSageIdeaProjection.Filter
     @AppStorage("marketsIdeaFilter") private var ideaFilter: IdeaFilter = .all
     /// Live name filter over the ideas list (by symbol / market).
     @State private var ideaSearch = ""
@@ -3339,30 +3325,14 @@ struct MarketsView: View {
         }
     }
 
+    /// F19/F20 (2026-07-15): delegates to the engine projection — the body moved VERBATIM to
+    /// StockSageIdeaProjection.displayed so the sort/filter/search contract is testable (F16 pins).
     private var displayedIdeas: [StockSageIdea] {
-        let sorted: [StockSageIdea]
-        switch ideaSort {
-        case .ev:         sorted = StockSageExpectedValue.rankByEV(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, seasonality: store.seasonality, calibration: store.convictionCalibration)
-        case .velocity:   sorted = StockSageExpectedValue.rankByVelocity(store.ideas, holds: velocityHolds, earnings: store.earnings, liquidity: store.liquidity, calibration: store.convictionCalibration)
-        case .conviction: sorted = store.ideas.sorted { $0.advice.conviction > $1.advice.conviction }
-        case .rr:         sorted = store.ideas.sorted { rewardRisk($0) > rewardRisk($1) }
-        case .signal:     sorted = store.ideas
-        // Momentum-weighted velocity rank: with the default empty `closes` the quality
-        // multiplier is inert and this IS fastLane's earnings/liquidity-aware order —
-        // momentum weighting activates when per-symbol closes are threaded in a future pass.
-        case .momentumWeighted: sorted = StockSageExpectedValue.rankByVelocityWeighted(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity)
-        }
-        var result: [StockSageIdea]
-        switch ideaFilter {
-        case .all:       result = sorted
-        case .strongBuy: result = sorted.filter { $0.advice.action == .strongBuy }
-        case .buys:      result = sorted.filter { $0.advice.action == .strongBuy || $0.advice.action == .buy }
-        case .sells:     result = sorted.filter { $0.advice.action == .sell || $0.advice.action == .reduce }
-        }
-        if ideaMinConv > 0 { result = result.filter { $0.advice.conviction >= ideaMinConv } }
-        let q = ideaSearch.trimmingCharacters(in: .whitespaces).lowercased()
-        if !q.isEmpty { result = result.filter { $0.symbol.lowercased().contains(q) || $0.market.lowercased().contains(q) } }
-        return result
+        StockSageIdeaProjection.displayed(store.ideas, sort: ideaSort, filter: ideaFilter,
+                                          minConviction: ideaMinConv, search: ideaSearch,
+                                          regime: store.regime, earnings: store.earnings,
+                                          liquidity: store.liquidity, seasonality: store.seasonality,
+                                          holds: velocityHolds, calibration: store.convictionCalibration)
     }
 
     /// Why the filtered ideas list is empty — names the active constraint so the user knows what to relax.
@@ -3373,12 +3343,10 @@ struct MarketsView: View {
         return "No ideas in this scan."
     }
 
-    /// Reward:risk for an idea — symmetric so it works for SHORT (sell/reduce) setups too,
-    /// matching the detail sheet's `ev.rewardR`. 0 only when a leg is missing or stop == price.
+    /// F19/F20 (2026-07-15): body moved to the engine (see StockSageIdeaProjection.rewardRisk);
+    /// this thin wrapper keeps the view's 3 call sites diff-free.
     private func rewardRisk(_ idea: StockSageIdea) -> Double {
-        guard let stop = idea.advice.stopPrice, let target = idea.advice.targetPrice,
-              abs(idea.price - stop) > 0 else { return 0 }
-        return min(abs(target - idea.price) / abs(idea.price - stop), 50)
+        StockSageIdeaProjection.rewardRisk(idea)
     }
 
     private var ideasHeader: some View {
