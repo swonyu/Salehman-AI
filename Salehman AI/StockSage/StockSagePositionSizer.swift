@@ -41,6 +41,27 @@ enum StockSagePositionSizer {
             riskPerShare: riskPerShare)
     }
 
+    /// First-real-trade review F3 (2026-07-16): the share COUNT itself was currency-mixed —
+    /// `size()` divides a USD risk budget by a risk-per-share in the symbol's RAW quote unit
+    /// (SAR for .SR, pence for .L), so a 1%-of-account .SR plan floored to ~3.75× fewer shares
+    /// and actually risked ~0.27% — the "at 1%/trade" claim was false by the FX rate. (The
+    /// 2026-07-12/13 audits fixed only the LABELS; `ps` itself was documented unchanged.)
+    /// This overload converts the account into raw quote units first, making every derived
+    /// field self-consistent: shares hit the stated risk fraction, `dollarsAtRisk`/`notional`
+    /// stay raw-native (displays already render them via `approxAmount`), and `pctOfAccount`
+    /// becomes native÷native — now AGREEING with the view's FX-corrected `pctOfAccountUSD`.
+    ///
+    /// `rawUnitToUSD` = USD value of ONE raw quote unit (e.g. ~0.2667 for a SAR quote;
+    /// 0.01 × GBPUSD for a pence quote). Pass 1 → byte-identical to `size()`. Callers with
+    /// no tracked FX rate must call the plain `size()` (prior behavior), never guess a rate.
+    nonisolated static func size(accountUSD: Double, riskFraction: Double,
+                                 entry: Double, stop: Double,
+                                 rawUnitToUSD: Double) -> PositionSize? {
+        guard rawUnitToUSD > 0, rawUnitToUSD.isFinite else { return nil }
+        return size(account: accountUSD / rawUnitToUSD, riskFraction: riskFraction,
+                    entry: entry, stop: stop)
+    }
+
     /// One-line "size it now" summary — shares, at-risk amount, % of account — with the
     /// honesty caveat that this sizes the LOSS at the stop, not a profit.
     /// F1/F3 (2026-07-09): whole-share flooring can round a real setup down to 0 shares at a

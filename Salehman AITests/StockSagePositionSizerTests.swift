@@ -125,4 +125,49 @@ struct StockSagePositionSizerTests {
         #expect(PS.size(account: 10_000, riskFraction: 0, entry: 100, stop: 90) == nil)
         #expect(PS.size(account: 10_000, riskFraction: 0.01, entry: -1, stop: 90) == nil)
     }
+
+    // ── First-real-trade review F3 (2026-07-16): FX-correct share count ─────────────────
+    // Hand-derived from the sizer's own contract ("size so a stop-out loses ≈ riskFraction
+    // of account"), never from the implementation.
+
+    @Test func fxOverloadSizesTheStatedRiskFractionInTheSymbolsOwnCurrency() {
+        // $10,000 account · 1% risk → $100 budget. 2222.SR entry 29.00, stop 28.50 →
+        // risk/share 0.50 SAR. USDSAR = 3.75 → 1 SAR = $0.2666667.
+        // Correct: budget 375 SAR ÷ 0.50 = 750 shares; at-risk 375 SAR ≈ $100 = the stated 1%.
+        // (The old currency-mixed path gave 200 shares → 100 SAR ≈ $26.67 = 0.27%, not 1%.)
+        let ps = PS.size(accountUSD: 10_000, riskFraction: 0.01, entry: 29.00, stop: 28.50,
+                         rawUnitToUSD: 1.0 / 3.75)!
+        #expect(ps.shares == 750)
+        #expect(abs(ps.dollarsAtRisk - 375) < 1e-9)                 // raw SAR — display converts
+        #expect(abs(ps.dollarsAtRisk * (1.0 / 3.75) - 100) < 1e-9)  // = the stated 1% of $10k
+        // pctOfAccount is now native÷native: notional 750×29 = 21,750 SAR of a 37,500 SAR
+        // account = 58% — the same number the view's pctOfAccountUSD computes.
+        #expect(abs(ps.pctOfAccount - 58) < 1e-9)
+    }
+
+    @Test func fxOverloadWithRateOneIsByteIdenticalToThePlainSizer() {
+        let plain = PS.size(account: 10_000, riskFraction: 0.01, entry: 100, stop: 90)!
+        let fx = PS.size(accountUSD: 10_000, riskFraction: 0.01, entry: 100, stop: 90,
+                         rawUnitToUSD: 1)!
+        #expect(plain == fx)
+    }
+
+    @Test func fxOverloadHandlesMinorUnitQuotesGenerically() {
+        // Pence-quoted symbol: rawUnitToUSD = 0.01 GBP × 1.25 GBPUSD = $0.0125/penny.
+        // $10,000 · 1% = $100 budget = 8,000 pence. Entry 500p, stop 460p → 40p/share
+        // → 200 shares, at-risk 8,000 pence = £80 = $100 = the stated 1%. Hand-derived.
+        let ps = PS.size(accountUSD: 10_000, riskFraction: 0.01, entry: 500, stop: 460,
+                         rawUnitToUSD: 0.0125)!
+        #expect(ps.shares == 200)
+        #expect(abs(ps.dollarsAtRisk - 8_000) < 1e-9)
+    }
+
+    @Test func fxOverloadRejectsUnusableRatesInsteadOfGuessing() {
+        // A zero/negative/non-finite rate must nil out — callers fall back to the plain
+        // sizer for untracked FX; the overload never invents a conversion.
+        #expect(PS.size(accountUSD: 10_000, riskFraction: 0.01, entry: 29, stop: 28.5, rawUnitToUSD: 0) == nil)
+        #expect(PS.size(accountUSD: 10_000, riskFraction: 0.01, entry: 29, stop: 28.5, rawUnitToUSD: -1) == nil)
+        #expect(PS.size(accountUSD: 10_000, riskFraction: 0.01, entry: 29, stop: 28.5, rawUnitToUSD: .infinity) == nil)
+        #expect(PS.size(accountUSD: 10_000, riskFraction: 0.01, entry: 29, stop: 28.5, rawUnitToUSD: .nan) == nil)
+    }
 }

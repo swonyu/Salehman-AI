@@ -1081,6 +1081,25 @@ struct MarketsView: View {
         return StockSageCurrency.majorUnitValue(symbol: symbol, rawValue: ps.notional) * rate / account * 100
     }
 
+    /// First-real-trade review F3 (2026-07-16): THE sizing path for every "Size it now" /
+    /// copy-plan / what-if surface. The share count was currency-mixed — a USD risk budget
+    /// divided by a native-currency risk/share under-sized .SR ~3.75× vs the stated risk%
+    /// (the 07-12/07-13 audits fixed only labels). When the symbol's quote currency has a
+    /// tracked FX rate, the account is converted into RAW quote units (pence-aware via
+    /// majorUnitValue) so a 1%/trade plan genuinely risks 1%; USD symbols and untracked-FX
+    /// currencies keep the prior behavior byte-identical (never guess a rate).
+    private func sizedPosition(account: Double, riskFraction: Double, symbol: String,
+                               entry: Double, stop: Double) -> PositionSize? {
+        let ccy = conversionCurrencyForSymbol(symbol)
+        if ccy != "USD", let rate = fxRateToUSD(ccy) {
+            let rawUnitToUSD = StockSageCurrency.majorUnitValue(symbol: symbol, rawValue: 1) * rate
+            return StockSagePositionSizer.size(accountUSD: account, riskFraction: riskFraction,
+                                               entry: entry, stop: stop, rawUnitToUSD: rawUnitToUSD)
+        }
+        return StockSagePositionSizer.size(account: account, riskFraction: riskFraction,
+                                           entry: entry, stop: stop)
+    }
+
     /// Portfolio cost & value in USD. Each holding's value AND cost go through holdingValue (so the
     /// .L-pence ÷100 is applied to BOTH — the P&L unit matches) then × its CCY→USD rate, so we never
     /// sum GBP + USD at 1:1. Holdings whose currency has no tracked rate are EXCLUDED (see
@@ -3621,7 +3640,7 @@ struct MarketsView: View {
         let atRisk: PositionSize? = {
             guard let stop = a.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                   let rp = StockSageInput.percent(sizerRiskPct) else { return nil }
-            return StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop)
+            return sizedPosition(account: acct, riskFraction: rp / 100, symbol: idea.symbol, entry: idea.price, stop: stop)
         }()
         let hovered = hoveredIdeaID == idea.id
         // Per-card staleness — adds a clock badge when the board is stale, same TRIGGER as
@@ -4200,7 +4219,7 @@ struct MarketsView: View {
                 }
                 if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                    let rp = StockSageInput.percent(sizerRiskPct),
-                   let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop),
+                   let ps = sizedPosition(account: acct, riskFraction: rp / 100, symbol: idea.symbol, entry: idea.price, stop: stop),
                    pctOfAccountUSD(ps, symbol: idea.symbol, account: acct) > 100 {   // wave-2 #2: USD-correct, no false leverage
                     s += ". Size warning: position exceeds account balance."
                 }
@@ -4215,7 +4234,7 @@ struct MarketsView: View {
                 }
                 if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                    let rp = StockSageInput.percent(sizerRiskPct),
-                   let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
+                   let ps = sizedPosition(account: acct, riskFraction: rp / 100, symbol: idea.symbol, entry: idea.price, stop: stop) {
                     s += ". Size it now: \(StockSagePositionSizer.summaryLine(ps, riskPct: rp, symbol: idea.symbol, pctOverride: pctOfAccountUSD(ps, symbol: idea.symbol, account: acct)))"
                 }
                 if !tomTiltDisclosureSuffix.isEmpty {
@@ -4322,7 +4341,7 @@ struct MarketsView: View {
                     }
                     if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                        let rp = StockSageInput.percent(sizerRiskPct),
-                       let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
+                       let ps = sizedPosition(account: acct, riskFraction: rp / 100, symbol: idea.symbol, entry: idea.price, stop: stop) {
                         // Blocked-fixture QA 2026-07-09: a green sized order directly under a
                         // DO-NOT-TRADE chip read as two voices — the size line now names the
                         // refusal itself (and drops the go-green tint) when the gate blocks.
@@ -4934,7 +4953,7 @@ struct MarketsView: View {
             let sizeInfo: (text: String, isWarning: Bool, exceedsAccount: Bool) = {
                 if let stop = idea.advice.stopPrice, let acct = StockSageInput.positiveAmount(sizerAccount),
                    let rp = StockSageInput.percent(sizerRiskPct),
-                   let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop) {
+                   let ps = sizedPosition(account: acct, riskFraction: rp / 100, symbol: idea.symbol, entry: idea.price, stop: stop) {
                     // wave-2 #2: USD-correct pct so a non-USD winner isn't falsely flagged "exceeds account".
                     let pctUSD = pctOfAccountUSD(ps, symbol: idea.symbol, account: acct)
                     return (StockSagePositionSizer.summaryLine(ps, riskPct: rp, symbol: idea.symbol, pctOverride: pctUSD), pctUSD > 100 || ps.shares == 0, pctUSD > 100)
@@ -5685,7 +5704,7 @@ struct MarketsView: View {
                         .accessibilityLabel("Risk percent per trade")
                 }
                 if let acct = parsedAccount, let rf = parsedRiskFraction,
-                   let ps = StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: entry, stop: stop) {
+                   let ps = sizedPosition(account: acct, riskFraction: rf, symbol: idea.symbol, entry: entry, stop: stop) {
                     // F4 (audit 2026-07-12): ps.notional/dollarsAtRisk/pctOfAccount and `entry` are in the
                     // SYMBOL's own currency, but `acct` is USD. A native-vs-USD compare inflates ~100× for a
                     // pence stock → false leverage/liquidation warnings on an unleveraged cash position, and
@@ -5924,7 +5943,7 @@ struct MarketsView: View {
         }
         let size: PositionSize? = a.stopPrice.flatMap { s in
             guard let acct = parsedAccount, let rf = parsedRiskFraction else { return nil }
-            return StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: idea.price, stop: s)
+            return sizedPosition(account: acct, riskFraction: rf, symbol: idea.symbol, entry: idea.price, stop: s)
         }
         let planLadder: PartialLadder? = {
             guard let stop = a.stopPrice, let target = a.targetPrice else { return nil }
@@ -5980,7 +5999,7 @@ struct MarketsView: View {
                 if costs.perOrderMinimum > 0,
                    let acct = StockSageInput.positiveAmount(sizerAccount),
                    let rp = StockSageInput.percent(sizerRiskPct),
-                   let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop),
+                   let ps = sizedPosition(account: acct, riskFraction: rp / 100, symbol: idea.symbol, entry: idea.price, stop: stop),
                    ps.shares > 0,
                    let neSized = StockSageNetEdge.evaluate(
                        entry: idea.price, stop: stop, target: target,
@@ -6507,7 +6526,7 @@ struct MarketsView: View {
                                 guard costs.perOrderMinimum > 0,
                                       let acct = StockSageInput.positiveAmount(sizerAccount),
                                       let rp = StockSageInput.percent(sizerRiskPct),
-                                      let ps = StockSagePositionSizer.size(account: acct, riskFraction: rp / 100, entry: idea.price, stop: stop),
+                                      let ps = sizedPosition(account: acct, riskFraction: rp / 100, symbol: idea.symbol, entry: idea.price, stop: stop),
                                       ps.shares > 0,
                                       let neSized = StockSageNetEdge.evaluate(
                                           entry: idea.price, stop: stop, target: target,
@@ -6785,7 +6804,7 @@ struct MarketsView: View {
                     let bookTotal = whatIfHoldings.reduce(0) { $0 + $1.value }
                     let sizedNotional: Double? = {
                         if let stop = a.stopPrice, let acct = parsedAccount, let rf = parsedRiskFraction,
-                           let ps = StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: idea.price, stop: stop) {
+                           let ps = sizedPosition(account: acct, riskFraction: rf, symbol: idea.symbol, entry: idea.price, stop: stop) {
                             // Normalize pence-quoted symbols (.L/.JO) to major-unit value so
                             // the what-if concentration check isn't ~100× overstated.
                             return StockSageCurrency.majorUnitValue(symbol: idea.symbol, rawValue: ps.notional)
