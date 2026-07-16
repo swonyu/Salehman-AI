@@ -2539,6 +2539,20 @@ struct MarketsView: View {
                     }.buttonStyle(LuxPressStyle()).disabled(!closeIsValid)
                     Spacer(minLength: 0)
                 }
+                // First-real-trade review cycle-1 (2026-07-16): closing was blind — the owner typed
+                // an exit and only saw the realized P&L AFTER confirming. Preview it at the typed
+                // exit: currency-correct P&L (signedAmount — a .SR exit reads SAR, not "$") + the
+                // R-multiple, colored by sign. Pure display over the tested trade.profit/rMultiple;
+                // nil (no note) until the exit parses, so it never shows a fabricated number.
+                if let exit = StockSageInput.positiveAmount(closeExitText) {
+                    let pnl = trade.profit(at: exit)
+                    let rStr = trade.rMultiple(at: exit).map { String(format: " · %+.2fR", $0) } ?? ""
+                    Text("Closing here: \(StockSageCurrency.signedAmount(pnl, symbol: trade.symbol))\(rStr)")
+                        .font(.system(size: mvFont9, weight: .semibold))
+                        .foregroundStyle(pnl >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
+                        .accessibilityLabel("Closing at \(adaptivePrice(exit)) realizes \(StockSageCurrency.signedAmount(pnl, symbol: trade.symbol))"
+                            + (trade.rMultiple(at: exit).map { String(format: ", %+.2f R", $0) } ?? ""))
+                }
             }
         }
         .padding(.vertical, 2)

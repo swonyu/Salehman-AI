@@ -533,6 +533,23 @@ struct StockSageJournalTests {
         #expect(StockSageCurrency.signedAmount(400, symbol: "SHEL.L") == "+4.00 GBP")   // pence ÷100
     }
 
+    // First-real-trade review cycle-1 (2026-07-16): the close-form P&L preview pins the exact
+    // number the owner sees before confirming a close. HAND-DERIVED: long 2222.SR, entry 30.00,
+    // stop 28.00 (riskPerShare 2.00), 100 shares, exit 33.00 → profit (33-30)*100 = +300 SAR;
+    // R = (33-30)/2.00 = +1.50; signedAmount(300,"2222.SR") = "+300.00 SAR". The rendered preview
+    // string ("Closing here: +300.00 SAR · +1.50R") is asserted piecewise (the same pieces the
+    // view interpolates) so a currency- or R-math regression fails here, not in pixels.
+    @Test func closeFormPreviewShowsCurrencyCorrectPnLAndR() {
+        let t = TradeRecord(symbol: "2222.SR", side: .long, entry: 30, stop: 28, target: nil,
+                            shares: 100, openedAt: Date(timeIntervalSince1970: 0))
+        #expect(t.profit(at: 33) == 300)                               // (33-30)*100 SAR
+        #expect(abs(t.rMultiple(at: 33)! - 1.5) < 1e-9)                // (33-30)/2.00
+        #expect(StockSageCurrency.signedAmount(t.profit(at: 33), symbol: t.symbol) == "+300.00 SAR")
+        // A losing exit colors/labels negative and keeps the currency.
+        #expect(StockSageCurrency.signedAmount(t.profit(at: 27), symbol: t.symbol) == "-300.00 SAR")
+        #expect(abs(t.rMultiple(at: 27)! + 1.5) < 1e-9)               // (27-30)/2.00 = -1.5
+    }
+
     @Test func streakSingleWinTradeIsStreakOfOne() {
         let single = [TradeRecord(symbol: "AAPL", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
                                  openedAt: Date(timeIntervalSince1970: 0),
