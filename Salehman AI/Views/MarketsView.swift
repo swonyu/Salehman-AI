@@ -2445,7 +2445,7 @@ struct MarketsView: View {
         // Build the spoken label as a plain String OUTSIDE the ViewBuilder — the multi-clause `+`
         // concatenation was tipping journalOpenRow over the SwiftUI type-checker complexity budget.
         var a11y = "\(trade.side.rawValue) \(trade.symbol), entry \(adaptivePrice(trade.entry))"
-        a11y += pnl.map { String(format: ", unrealized %+.2f", $0) } ?? ", no live price"
+        a11y += pnl.map { ", unrealized \(StockSageCurrency.signedAmount($0, symbol: trade.symbol))" } ?? ", no live price"
         if let r { a11y += String(format: ", %+.2f R", r) }
         if let act { a11y += ", \(act.kind.rawValue): \(act.detail)" }
         return VStack(alignment: .leading, spacing: 4) {
@@ -2456,7 +2456,10 @@ struct MarketsView: View {
                 Text("@ \(adaptivePrice(trade.entry))").font(.caption2).foregroundStyle(.secondary)
                 Spacer()
                 if let pnl, let r {
-                    Text(String(format: "%+.2f", pnl)).font(.system(size: mvFont11, weight: .semibold))
+                    // Journal leg of the first-real-trade review (2026-07-16): P&L is in the
+                    // symbol's OWN quote currency — a bare "+150.00" on a 2222.SR row reads as
+                    // dollars but is SAR. signedAmount keeps USD rows byte-identical.
+                    Text(StockSageCurrency.signedAmount(pnl, symbol: trade.symbol)).font(.system(size: mvFont11, weight: .semibold))
                         .foregroundStyle(pnl >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                     Text(String(format: "%+.2fR", r)).font(.caption2).foregroundStyle(.secondary).frame(width: 48, alignment: .trailing)
                 } else {
@@ -2545,7 +2548,7 @@ struct MarketsView: View {
         let pnlText: String
         let pnlColor: Color
         if let pnl = trade.realizedProfit {
-            pnlText = String(format: "%+.2f", pnl)
+            pnlText = StockSageCurrency.signedAmount(pnl, symbol: trade.symbol)
             pnlColor = pnl >= 0 ? DS.Palette.successSoft : DS.Palette.danger
         } else {
             pnlText = "—"
@@ -4558,15 +4561,14 @@ struct MarketsView: View {
     /// account currency. Each position's notional is in its own currency, so a raw sum across
     /// SAR/USD/pence is meaningless; this converts each (pence-normalized × rate) and reports how many
     /// positions had no tracked FX rate (excluded from the sum rather than added 1:1). Pure.
+    /// F3 review fix (2026-07-16): converts via `usdAmount` (the shared fxRateToUSD RESOLVER) —
+    /// the portfolio-only dict lacked SAR on an empty book, so this total EXCLUDED the very `.SR`
+    /// position the card had just FX-sized and called it "untracked". Same exclusion semantics;
+    /// "untracked" now means genuinely no rate anywhere.
     private func deployPlanTotalUSD(_ plan: CapitalAllocation) -> (usd: Double, untracked: Int) {
-        let fx = fxRatesToUSD
         var usd = 0.0, untracked = 0
         for pos in plan.positions {
-            if let rate = fx[conversionCurrencyForSymbol(pos.symbol)] {
-                usd += StockSageCurrency.majorUnitValue(symbol: pos.symbol, rawValue: pos.notional) * rate
-            } else {
-                untracked += 1
-            }
+            if let v = usdAmount(pos.notional, symbol: pos.symbol) { usd += v } else { untracked += 1 }
         }
         return (usd, untracked)
     }
@@ -4592,9 +4594,10 @@ struct MarketsView: View {
             // F2 (audit 2026-07-12): compare the notional to the account in the SAME currency (USD) —
             // a native SAR/pence notional vs a USD account either falsely trips (pence ~100×) or misses.
             // When the symbol's FX rate is untracked, fall back to the raw compare (prior behavior).
-            let notionalUSD = fxRatesToUSD[conversionCurrencyForSymbol(p.symbol)].map {
-                StockSageCurrency.majorUnitValue(symbol: p.symbol, rawValue: p.notional) * $0
-            } ?? p.notional
+            // F3 review fix (2026-07-16): via `usdAmount` (resolver-backed) — the portfolio-only dict
+            // lacked SAR on an empty book, so an FX-sized .SR plan position compared raw SAR vs USD
+            // and false-fired this chip (worse post-F3: native counts rose ~3.75×).
+            let notionalUSD = usdAmount(p.notional, symbol: p.symbol) ?? p.notional
             if notionalUSD > planAccount {
                 Text("⚠︎ exceeds account")
                     .font(.system(size: mvFont9, weight: .semibold)).foregroundStyle(DS.Palette.warningSoft)
@@ -6071,9 +6074,9 @@ struct MarketsView: View {
             let gapSide: TradeSide = (a.action == .sell || a.action == .reduce) ? .short : .long
             // F4 (audit 2026-07-12): gap loss is native-currency, so the account must be in the same
             // currency for an honest loss-vs-equity ratio (export parity with the on-screen fix above).
-            let usdFactor = fxRatesToUSD[conversionCurrencyForSymbol(idea.symbol)].map {
-                StockSageCurrency.majorUnitValue(symbol: idea.symbol, rawValue: 1) * $0
-            } ?? 1
+            // F3 review fix (2026-07-16): via `usdAmount` (resolver-backed) — the portfolio-only dict
+            // fell to factor 1 for an unheld .SR, overstating the exported gap verdict ~3.75×.
+            let usdFactor = usdAmount(1, symbol: idea.symbol) ?? 1
             if let gap = StockSageGapRisk.scenario(side: gapSide, entry: idea.price, stop: stop,
                                                    shares: Double(ps.shares), gapPct: 0.20, accountEquity: acct / usdFactor) {
                 plan += "\n⚠ " + gap.verdict

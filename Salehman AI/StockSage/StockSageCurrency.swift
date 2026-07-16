@@ -116,6 +116,18 @@ enum StockSageCurrency {
         return ccy == "USD" ? String(format: "≈$%.0f", mv) : String(format: "≈%.0f %@", mv, ccy)
     }
 
+    /// First-real-trade review journal leg (2026-07-16): signed P&L figure in the symbol's own
+    /// quote currency — the same L10N-01 rule as `approxAmount` (a bare number beside USD-labeled
+    /// surfaces misreads as dollars; a 2222.SR fill's "+150.00" is SAR), keeping the journal's
+    /// signed 2-dp format. USD stays the familiar bare "+150.00" (byte-identical for the whole
+    /// US universe); non-USD suffixes the code ("+150.00 SAR"). Pence-quoted raw amounts are
+    /// normalized to major units exactly like `approxAmount` (a pence P&L labeled GBP must be pounds).
+    nonisolated static func signedAmount(_ v: Double, symbol: String) -> String {
+        let ccy = currencyForSymbol(symbol)
+        let mv = majorUnitValue(symbol: symbol, rawValue: v)
+        return ccy == "USD" ? String(format: "%+.2f", mv) : String(format: "%+.2f %@", mv, ccy)
+    }
+
     /// ALERT-FMT-1: single shared adaptive price formatter — was quadruplicated byte-identically
     /// across `MarketsView.adaptivePrice`, `MarketsTodayActionsCard.adaptivePrice`,
     /// `StockSageTodayPlan.fmt`, and `StockSageTradePlan.adaptivePrice`. A SUB-DOLLAR value never

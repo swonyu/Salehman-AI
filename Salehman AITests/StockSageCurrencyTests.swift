@@ -193,4 +193,15 @@ struct StockSageCurrencyTests {
         // signature so a regression (reverting the key) fails here.
         #expect(StockSageCurrency.currencyForSymbol(holding) != StockSageCurrency.conversionCurrencyForSymbol(holding))
     }
+
+    // Journal leg of the first-real-trade review (2026-07-16). Hand-derived from the L10N-01
+    // rule, never the implementation: USD rows keep the exact bare signed format the journal
+    // always showed; non-USD suffixes the quote-currency code; pence raw amounts normalize
+    // to major units (−4000 raw pence = −£40.00).
+    @Test func signedAmountLabelsNonUSDAndKeepsUSDByteIdentical() {
+        #expect(StockSageCurrency.signedAmount(150, symbol: "AAPL") == "+150.00")
+        #expect(StockSageCurrency.signedAmount(-27.5, symbol: "AAPL") == "-27.50")
+        #expect(StockSageCurrency.signedAmount(150, symbol: "2222.SR") == "+150.00 SAR")
+        #expect(StockSageCurrency.signedAmount(-4000, symbol: "SHEL.L") == "-40.00 GBP")
+    }
 }
