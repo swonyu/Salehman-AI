@@ -62,6 +62,23 @@ enum StockSagePositionSizer {
                     entry: entry, stop: stop)
     }
 
+    /// F3 wave-A (2026-07-16): map-convenience form for the PURE engine callers (TodayPlan,
+    /// DecisionSnapshot, ExpectedValue's unfundable-row qualifier) that can't reach the view's
+    /// FX resolver. Resolves the symbol's quote currency and per-raw-unit USD value here — ONE
+    /// place — from a caller-supplied ccy→USD rate map (the view's `fxRatesToUSD` idiom).
+    /// USD symbols, an empty map, or an untracked currency → the plain `size()` byte-identical
+    /// (same never-guess-a-rate rule as the view helper).
+    nonisolated static func size(account: Double, riskFraction: Double,
+                                 entry: Double, stop: Double,
+                                 symbol: String, fxRatesToUSD: [String: Double]) -> PositionSize? {
+        let ccy = StockSageCurrency.conversionCurrencyForSymbol(symbol)
+        if ccy != "USD", let rate = fxRatesToUSD[ccy] {
+            return size(accountUSD: account, riskFraction: riskFraction, entry: entry, stop: stop,
+                        rawUnitToUSD: StockSageCurrency.majorUnitValue(symbol: symbol, rawValue: 1) * rate)
+        }
+        return size(account: account, riskFraction: riskFraction, entry: entry, stop: stop)
+    }
+
     /// One-line "size it now" summary — shares, at-risk amount, % of account — with the
     /// honesty caveat that this sizes the LOSS at the stop, not a profit.
     /// F1/F3 (2026-07-09): whole-share flooring can round a real setup down to 0 shares at a

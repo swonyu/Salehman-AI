@@ -180,7 +180,10 @@ enum StockSageDecisionSnapshotBuilder {
         account: Double? = nil,
         riskFraction: Double? = nil,
         regime: MarketRegime? = nil,
-        maxRiskFraction: Double = 0.02
+        maxRiskFraction: Double = 0.02,
+        // F3 wave-A (2026-07-16): ccy→USD map for an FX-correct share count in the journaled
+        // snapshot (.SR was under-sized ~3.75×); empty default = byte-identical.
+        fxRatesToUSD: [String: Double] = [:]
     ) -> StockSageDecisionSnapshot {
         let ev = StockSageExpectedValue.ev(for: idea, calibration: calibration)
         let velocityGross = StockSageExpectedValue.velocity(for: idea, holds: holds, calibration: calibration)
@@ -229,7 +232,8 @@ enum StockSageDecisionSnapshotBuilder {
             guard let account, account > 0,
                   let rf = riskFraction, rf > 0,
                   let stop = idea.advice.stopPrice else { return nil }
-            return StockSagePositionSizer.size(account: account, riskFraction: rf, entry: idea.price, stop: stop)
+            return StockSagePositionSizer.size(account: account, riskFraction: rf, entry: idea.price, stop: stop,
+                                                symbol: idea.symbol, fxRatesToUSD: fxRatesToUSD)
         }()
 
         var reasons: [StockSageDecisionSnapshot.RankReason] = []

@@ -170,4 +170,26 @@ struct StockSagePositionSizerTests {
         #expect(PS.size(accountUSD: 10_000, riskFraction: 0.01, entry: 29, stop: 28.5, rawUnitToUSD: .infinity) == nil)
         #expect(PS.size(accountUSD: 10_000, riskFraction: 0.01, entry: 29, stop: 28.5, rawUnitToUSD: .nan) == nil)
     }
+
+    @Test func mapOverloadResolvesTheSymbolsCurrencyFromTheRateMap() {
+        // Same hand-derived 2222.SR case as the rawUnitToUSD test, resolved via the map:
+        // SAR→USD 1/3.75 ⇒ 750 shares, 375 SAR at risk (= the stated 1% of $10k).
+        let ps = PS.size(account: 10_000, riskFraction: 0.01, entry: 29.00, stop: 28.50,
+                         symbol: "2222.SR", fxRatesToUSD: ["SAR": 1.0 / 3.75])!
+        #expect(ps.shares == 750)
+        #expect(abs(ps.dollarsAtRisk - 375) < 1e-9)
+    }
+
+    @Test func mapOverloadFallsBackToThePlainSizerForUSDEmptyMapAndUntrackedCurrencies() {
+        let plain = PS.size(account: 10_000, riskFraction: 0.01, entry: 29.00, stop: 28.50)!
+        // USD symbol: map ignored.
+        #expect(PS.size(account: 10_000, riskFraction: 0.01, entry: 29.00, stop: 28.50,
+                        symbol: "AAPL", fxRatesToUSD: ["SAR": 1.0 / 3.75]) == plain)
+        // Empty map: prior behavior, never guess.
+        #expect(PS.size(account: 10_000, riskFraction: 0.01, entry: 29.00, stop: 28.50,
+                        symbol: "2222.SR", fxRatesToUSD: [:]) == plain)
+        // Untracked currency (map lacks SAR): prior behavior.
+        #expect(PS.size(account: 10_000, riskFraction: 0.01, entry: 29.00, stop: 28.50,
+                        symbol: "2222.SR", fxRatesToUSD: ["JPY": 0.0065]) == plain)
+    }
 }

@@ -24,11 +24,15 @@ enum StockSageTodayPlan {
     /// scan has `isSample == false` yet can still carry a prior-UTC-day price. Mirrors the
     /// board card's `Self.cardIsStale`/detail sheet's `utcDayKey` staleness check so the ONE
     /// artifact that gets pasted into a broker can't present a stale close as a live quote.
+    // F3 wave-A (2026-07-16): `fxRatesToUSD` (ccy→USD) makes the share count FX-correct for
+    // non-USD names (.SR was under-sized ~3.75× vs the stated risk%); empty map (the default)
+    // keeps every existing caller byte-identical — never guess a rate.
     nonisolated static func build(idea: StockSageIdea, ev: ExpectedValue?,
                                   account: Double?, riskFraction: Double?,
                                   daysToEarnings: Int? = nil, isSample: Bool = false,
                                   positions: [PortfolioPosition] = [],
-                                  priceAsOf: Date? = nil) -> String {
+                                  priceAsOf: Date? = nil,
+                                  fxRatesToUSD: [String: Double] = [:]) -> String {
         let a = idea.advice
         let entry = idea.price
         let rf = Swift.max(0, riskFraction ?? 0)
@@ -108,7 +112,8 @@ enum StockSageTodayPlan {
         if let s = a.stopPrice {
             var size = ""
             if let acct = account, acct > 0, rf > 0,
-               let ps = StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: entry, stop: s) {
+               let ps = StockSagePositionSizer.size(account: acct, riskFraction: rf, entry: entry, stop: s,
+                                                    symbol: idea.symbol, fxRatesToUSD: fxRatesToUSD) {
                 // Audit 2026-07-12 (wave-2 #1): currency-correct at-risk (native currency + pence ÷100).
                 size = " — \(ps.shares) shares \(StockSageCurrency.approxAmount(ps.dollarsAtRisk, symbol: idea.symbol)) at risk (\(Int(ps.pctOfAccount.rounded()))% of acct)"
                 // F-review export-parity fix (2026-07-10, wave-7 rule): the on-screen row already
@@ -160,7 +165,8 @@ enum StockSageTodayPlan {
                                          positions: [PortfolioPosition] = [],
                                          journalTrades: [TradeRecord] = [],
                                          mode: RankedMode = .fastestCompounding,
-                                         max: Int = 3) -> [TodayActionPlan] {
+                                         max: Int = 3,
+                                         fxRatesToUSD: [String: Double] = [:]) -> [TodayActionPlan] {
         let rf = Swift.max(0, riskFraction ?? 0)
         let maxCount = Swift.max(0, max)
         let lane = StockSageExpectedValue.fastLane(ideas, holds: holds, calibration: calibration, earnings: earnings, liquidity: liquidity)
@@ -186,7 +192,8 @@ enum StockSageTodayPlan {
                 earnings: earnings,
                 liquidity: liquidity,
                 account: account,
-                riskFraction: riskFraction
+                riskFraction: riskFraction,
+                fxRatesToUSD: fxRatesToUSD
             )
             var shares: Int? = nil
             var dollarsAtRisk: Double? = nil

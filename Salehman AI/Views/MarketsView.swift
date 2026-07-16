@@ -1100,6 +1100,18 @@ struct MarketsView: View {
                                            entry: entry, stop: stop)
     }
 
+    /// F3 wave-A (2026-07-16): ccy→USD rate map for the PURE plan/snapshot builders (TodayPlan,
+    /// DecisionSnapshot, the unfundable-row qualifier) — resolver-backed like `sizedPosition`,
+    /// so .SR resolves via infraFX even with no .SR position held. Only tracked rates enter
+    /// the map; the builders treat a missing entry as "never guess" (prior behavior).
+    private func sizingFXRates(for symbols: [String]) -> [String: Double] {
+        var rates: [String: Double] = [:]
+        for ccy in Set(symbols.map { conversionCurrencyForSymbol($0) }) where ccy != "USD" {
+            if let r = fxRateToUSD(ccy) { rates[ccy] = r }
+        }
+        return rates
+    }
+
     /// Portfolio cost & value in USD. Each holding's value AND cost go through holdingValue (so the
     /// .L-pence ÷100 is applied to BOTH — the P&L unit matches) then × its CCY→USD rate, so we never
     /// sum GBP + USD at 1:1. Holdings whose currency has no tracked rate are EXCLUDED (see
@@ -3609,7 +3621,8 @@ struct MarketsView: View {
             liquidity: store.liquidity,
             account: parsedAccount ?? 10_000,
             riskFraction: parsedRiskFraction ?? 0.01,
-            regime: store.regime)
+            regime: store.regime,
+            fxRatesToUSD: sizingFXRates(for: [idea.symbol]))
         let cardVM = snapshot.cardViewModel
         let earningsBadge = cardVM.earningsWarningBadge
         let hasFloorWarning = cardVM.hasFloorWarning
@@ -4374,7 +4387,8 @@ struct MarketsView: View {
                         // board's Held chip already carry — display-only.
                         positions: portfolio.positions,
                         // Round-H: flags a cache-stale price in the copied plan itself.
-                        priceAsOf: idea.priceAsOf)
+                        priceAsOf: idea.priceAsOf,
+                        fxRatesToUSD: sizingFXRates(for: [idea.symbol]))
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(plan, forType: .string)
                 } label: {
@@ -4785,7 +4799,7 @@ struct MarketsView: View {
                         // F4 (2026-07-09): the $/week figure above is byte-identical math — this
                         // only adds an honest qualifier when it dollarizes a setup that floors to
                         // 0 shares at this account size (F1/F3's silent-unfundable-#1 finding).
-                        if StockSageExpectedValue.weeklyDollarsIncludesUnfundableRow(lane: velocityLane, account: acct, riskFraction: rp / 100) {
+                        if StockSageExpectedValue.weeklyDollarsIncludesUnfundableRow(lane: velocityLane, account: acct, riskFraction: rp / 100, fxRatesToUSD: sizingFXRates(for: velocityLane.map(\.symbol))) {
                             Text("⚠︎ At least one of the top setups summed above is below the 1-share minimum at this account size — the $/week figure overstates what you can actually place. See 'Size it now' on each idea.")
                                 .font(.system(size: mvFont8)).foregroundStyle(DS.Palette.warningSoft).fixedSize(horizontal: false, vertical: true)
                         }
@@ -4871,7 +4885,7 @@ struct MarketsView: View {
                     }
                     // F4 a11y parity with the visible unfundable-row warning above.
                     if let acct = StockSageInput.positiveAmount(sizerAccount), let rp = StockSageInput.percent(sizerRiskPct),
-                       StockSageExpectedValue.weeklyDollarsIncludesUnfundableRow(lane: velocityLane, account: acct, riskFraction: rp / 100) {
+                       StockSageExpectedValue.weeklyDollarsIncludesUnfundableRow(lane: velocityLane, account: acct, riskFraction: rp / 100, fxRatesToUSD: sizingFXRates(for: velocityLane.map(\.symbol))) {
                         t += ". Warning: at least one of the top setups summed is below the 1-share minimum at this account size; the dollar-per-week figure overstates what you can actually place."
                     }
                     return t
@@ -4943,7 +4957,8 @@ struct MarketsView: View {
                 holds: velocityHolds, calibration: store.convictionCalibration, marketRegime: store.regime,
                 earnings: store.earnings, liquidity: store.liquidity,
                 positions: portfolio.positions, journalTrades: journal.trades,
-                mode: .equityExecutableFirst, max: 1).first?.symbol
+                mode: .equityExecutableFirst, max: 1,
+                fxRatesToUSD: sizingFXRates(for: store.ideas.map(\.symbol))).first?.symbol
             let crownDivergenceSuffix = (todayFirstSymbol != nil && todayFirstSymbol != idea.symbol)
                 ? " Today's plan leads with \(todayFirstSymbol!) — different lens." : ""
             // Settle S1 review fix: isWarning drives the TINT (over-account OR unfundable 0-share);
@@ -5041,7 +5056,8 @@ struct MarketsView: View {
                         // board's Held chip already carry — display-only.
                         positions: portfolio.positions,
                         // Round-H: flags a cache-stale price in the copied plan itself.
-                        priceAsOf: idea.priceAsOf)
+                        priceAsOf: idea.priceAsOf,
+                        fxRatesToUSD: sizingFXRates(for: [idea.symbol]))
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(plan, forType: .string)
                 },
@@ -5271,7 +5287,8 @@ struct MarketsView: View {
             // already carry — display-only (see TodayActionPlan.heldShares doc).
             positions: portfolio.positions,
             journalTrades: journal.trades,
-            mode: .equityExecutableFirst)
+            mode: .equityExecutableFirst,
+            fxRatesToUSD: sizingFXRates(for: store.ideas.map(\.symbol)))
         // F8 (2026-07-09): the global "Do this now" CTA's own pick, so this card can disclose it
         // when it names a different symbol than this list's own #1 row — the SAME bestOpportunity
         // call bestOpportunityCTA already makes (byte-identical inputs), just for its symbol.
@@ -6108,7 +6125,8 @@ struct MarketsView: View {
             liquidity: store.liquidity,
             account: parsedAccount ?? 10_000,
             riskFraction: parsedRiskFraction ?? 0.01,
-            regime: store.regime)
+            regime: store.regime,
+            fxRatesToUSD: sizingFXRates(for: [idea.symbol]))
         let detailVM = snapshot.detailViewModel
         let hasEarningsWarning = detailVM.hasEarningsWarning
         let hasFloorWarning = detailVM.hasFloorWarning

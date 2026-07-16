@@ -1255,11 +1255,17 @@ enum StockSageExpectedValue {
     /// false (never flags) when account/riskFraction is unusable, or a lane idea has no stop to
     /// size against — only-real-data, matches this file's "unknown ⇒ no penalty" convention.
     nonisolated static func weeklyDollarsIncludesUnfundableRow(lane: [StockSageIdea], account: Double,
-                                                               riskFraction: Double, maxConcurrent: Int = 3) -> Bool {
+                                                               riskFraction: Double, maxConcurrent: Int = 3,
+                                                               fxRatesToUSD: [String: Double] = [:]) -> Bool {
+        // F3 wave-A (2026-07-16): fxRatesToUSD (ccy→USD) sizes non-USD rows FX-correctly —
+        // the currency-mixed count over-flagged .SR rows as unfundable (~3.75× fewer shares).
+        // Empty map (the default) = prior behavior byte-identical.
         guard account > 0, riskFraction > 0, account.isFinite, riskFraction.isFinite else { return false }
         for idea in lane.prefix(Swift.max(0, maxConcurrent)) {
             guard let stop = idea.advice.stopPrice,
-                  let ps = StockSagePositionSizer.size(account: account, riskFraction: riskFraction, entry: idea.price, stop: stop)
+                  let ps = StockSagePositionSizer.size(account: account, riskFraction: riskFraction,
+                                                       entry: idea.price, stop: stop,
+                                                       symbol: idea.symbol, fxRatesToUSD: fxRatesToUSD)
             else { continue }
             if ps.shares == 0 { return true }
         }
