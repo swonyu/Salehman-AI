@@ -68,9 +68,14 @@ struct MarketsRiskAllocationSection: View {
     }
 
     /// CCY→USD rates for every currency held (direct CCYUSD=X, else inverse 1/USDCCY=X; USD = 1).
+    /// H2 (kept in sync with MarketsView.fxRatesToUSD): built over BOTH exposure and quote legs so a
+    /// cross FX pair's quote-leg rate is fetched (else the value conversion silently drops it).
     private var fxRatesToUSD: [String: Double] {
         var rates: [String: Double] = ["USD": 1]
-        for ccy in Set(portfolio.positions.map { StockSageCurrency.currencyForSymbol($0.symbol) }) where ccy != "USD" {
+        let needed = Set(portfolio.positions.flatMap {
+            [StockSageCurrency.currencyForSymbol($0.symbol), StockSageCurrency.conversionCurrency(for: $0.symbol)]
+        })
+        for ccy in needed where ccy != "USD" {
             if let r = currentPrice("\(ccy)USD=X"), r > 0 { rates[ccy] = r }
             else if let inv = currentPrice("USD\(ccy)=X"), inv > 0 { rates[ccy] = 1 / inv }
         }
@@ -155,7 +160,8 @@ struct MarketsRiskAllocationSection: View {
                 // a possibly years-old basis price distorts every weight and trade size with no caveat.
                 let parityHoldings: [(symbol: String, value: Double)] = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
                     guard let price = currentPrice(p.symbol),
-                          let rate = parityFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
+                          // H1 (kept in sync with MarketsView): quote-leg key — exposure leg rate²-inflates =X pairs.
+                          let rate = parityFX[StockSageCurrency.conversionCurrency(for: p.symbol)] else { return nil }
                     return (symbol: p.symbol,
                             value: holdingValue(p.symbol, perShare: price, shares: p.shares) * rate)
                 }

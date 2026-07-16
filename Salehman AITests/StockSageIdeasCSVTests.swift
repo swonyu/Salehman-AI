@@ -58,22 +58,41 @@ struct StockSageIdeasCSVTests {
     // Base fields (unchanged from rankReflectsListOrderAndFieldsAreCorrect):
     //   1,NVDA,M,200.0,Strong Buy,0.90,180.0,260.0,12.0,Bullish trend,
     // heldShares["NVDA"] = 10 → "10.0"; closedTrades["NVDA"] = 3 → "3".
-    // Full row: 1,NVDA,M,200.0,Strong Buy,0.90,180.0,260.0,12.0,Bullish trend,,10.0,3
+    // A2: the idea() helper sets no priceAsOf ⇒ trailing empty priceAsOf column.
+    // Full row: 1,NVDA,M,200.0,Strong Buy,0.90,180.0,260.0,12.0,Bullish trend,,10.0,3,
     @Test func heldAndClosedTrailingColumnsPopulateFromContext() {
         let csv = StockSageIdeasCSV.csv(
             [idea("NVDA", 200, .strongBuy, conviction: 0.9, stop: 180, target: 260, weight: 0.12)],
             heldShares: ["NVDA": 10],
             closedTrades: ["NVDA": 3])
         let rows = csv.split(separator: "\n").map(String.init)
-        #expect(rows[0].hasSuffix(",heldShares,closedTrades"))
-        #expect(rows[1] == "1,NVDA,M,200.0,Strong Buy,0.90,180.0,260.0,12.0,Bullish trend,,10.0,3")
+        #expect(rows[0].hasSuffix(",closedTrades,priceAsOf"))
+        #expect(rows[1] == "1,NVDA,M,200.0,Strong Buy,0.90,180.0,260.0,12.0,Bullish trend,,10.0,3,")
     }
 
     @Test func heldAndClosedTrailingColumnsEmptyWhenUnresolved() {
         let csv = StockSageIdeasCSV.csv([idea("AAPL", 100, .buy)])
-        // no context passed → defaults to [:] → rationale, heldShares, closedTrades all empty:
-        // 1,AAPL,M,100.0,Buy,0.50,,,5.0,Bullish trend,,,
+        // no context passed → defaults to [:] → rationale, heldShares, closedTrades, priceAsOf all empty:
+        // 1,AAPL,M,100.0,Buy,0.50,,,5.0,Bullish trend,,,,
         let rows = csv.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        #expect(rows[1] == "1,AAPL,M,100.0,Buy,0.50,,,5.0,Bullish trend,,,")
+        #expect(rows[1] == "1,AAPL,M,100.0,Buy,0.50,,,5.0,Bullish trend,,,,")
+    }
+
+    // A2: price-freshness column. Date(timeIntervalSince1970: 1_704_067_200) is exactly
+    // 2024-01-01T00:00:00Z (54*365 + 13 leap days = 19723 days * 86400), so
+    // .iso8601.year().month().day() in the GMT default renders "2024-01-01". nil ⇒ empty.
+    @Test func priceAsOfColumnRendersUTCDateAndEmptyWhenNil() {
+        let dated = StockSageIdea(
+            symbol: "AAPL", market: "M", price: 100,
+            advice: TradeAdvice(action: .buy, conviction: 0.5, regime: .bullTrend,
+                                rationale: [], stopPrice: nil, targetPrice: nil,
+                                suggestedWeight: 0.05, caveat: "x"),
+            spark: [], priceAsOf: Date(timeIntervalSince1970: 1_704_067_200))
+        let rows = StockSageIdeasCSV.csv([dated]).split(separator: "\n").map(String.init)
+        #expect(rows[0].hasSuffix(",priceAsOf"))
+        #expect(rows[1].hasSuffix(",2024-01-01"))
+        // nil priceAsOf (the idea() helper) ⇒ trailing empty field, never a fabricated date.
+        let undated = StockSageIdeasCSV.csv([idea("NVDA", 200, .buy)]).split(separator: "\n").map(String.init)
+        #expect(undated[1].hasSuffix("Bullish trend,,,,"))
     }
 }

@@ -915,7 +915,7 @@ struct MarketsView: View {
         let hovered = hoveredAlertSymbol == s.symbol
         return HStack(spacing: 10) {
             Text(s.symbol).font(.system(size: mvFont14, weight: .bold, design: .rounded)).foregroundStyle(.white)
-            Text(s.reason).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Text(s.reason).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(s.reason)
             Spacer(minLength: 8)
             Text(s.recommendation.rawValue)
                 .font(.system(size: mvFont11, weight: .bold)).foregroundStyle(recTextColor(s.recommendation))
@@ -996,9 +996,17 @@ struct MarketsView: View {
     }
 
     /// CCY→USD rates for every currency held (direct CCYUSD=X, else inverse 1/USDCCY=X; USD = 1).
+    /// H2: built over BOTH the exposure leg (currencyForSymbol — used by the currency-exposure
+    /// slices) AND the quote leg (conversionCurrencyForSymbol — the key portfolioTotals/rebalance/
+    /// allocation VALUE conversions use). Keying only on the exposure leg left a cross FX pair's
+    /// quote-leg rate (e.g. GBP for EURGBP=X) unfetched, so portfolioTotals' quote-leg lookup missed
+    /// it and the holding was silently dropped from the USD total even when GBPUSD=X was tracked.
     private var fxRatesToUSD: [String: Double] {
         var rates: [String: Double] = ["USD": 1]
-        for ccy in Set(portfolio.positions.map { StockSageCurrency.currencyForSymbol($0.symbol) }) where ccy != "USD" {
+        let needed = Set(portfolio.positions.flatMap {
+            [StockSageCurrency.currencyForSymbol($0.symbol), conversionCurrencyForSymbol($0.symbol)]
+        })
+        for ccy in needed where ccy != "USD" {
             if let r = currentPrice("\(ccy)USD=X"), r > 0 { rates[ccy] = r }
             else if let inv = currentPrice("USD\(ccy)=X"), inv > 0 { rates[ccy] = 1 / inv }
         }
@@ -1006,9 +1014,12 @@ struct MarketsView: View {
     }
 
     /// Currencies in the book with NO tracked FX rate — EXCLUDED from the USD total (never summed 1:1).
+    /// H2: keyed on conversionCurrencyForSymbol (the quote leg), the SAME key portfolioTotals excludes
+    /// by, so the "Excludes X — no FX rate" disclaimer names exactly what's dropped and can't diverge
+    /// (the exposure-leg key would name EUR while GBP was the actually-missing quote-leg rate).
     private var untrackedFXCurrencies: [String] {
         let rates = fxRatesToUSD
-        return Set(portfolio.positions.map { StockSageCurrency.currencyForSymbol($0.symbol) })
+        return Set(portfolio.positions.map { conversionCurrencyForSymbol($0.symbol) })
             .filter { rates[$0] == nil }.sorted()
     }
 
@@ -1047,14 +1058,9 @@ struct MarketsView: View {
     /// the exposure leg there would multiply an already-USD amount by the rate again — rate²).
     /// Non-=X symbols fall back to currencyForSymbol as before.
     private func conversionCurrencyForSymbol(_ symbol: String, base: String = "USD") -> String {
-        let s = symbol.uppercased()
-        if s.hasSuffix("=X") {
-            let pair = String(s.dropLast(2))
-            guard pair.count == 6 else { return base }
-            // Quote leg = trailing 3 characters (e.g. EURUSD=X → "USD"; USDJPY=X → "JPY")
-            return String(pair.suffix(3))
-        }
-        return StockSageCurrency.currencyForSymbol(symbol, base: base)
+        // Thin alias onto the pure, tested StockSageCurrency.conversionCurrency (call-site shape
+        // unchanged); the satellite MarketsRiskAllocationSection calls that shared function directly.
+        StockSageCurrency.conversionCurrency(for: symbol, base: base)
     }
 
     /// Portfolio cost & value in USD. Each holding's value AND cost go through holdingValue (so the
@@ -1413,7 +1419,8 @@ struct MarketsView: View {
         let rebalHoldings = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
             guard targetSymbols.contains(p.symbol.uppercased()),
                   let price = currentPrice(p.symbol),
-                  let rate = rebalFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
+                  // H1: quote-leg key (mirrors portfolioTotals) — the exposure leg rate²-inflates =X pairs.
+                  let rate = rebalFX[conversionCurrencyForSymbol(p.symbol)] else { return nil }
             return (symbol: p.symbol,
                     value: holdingValue(p.symbol, perShare: price, shares: p.shares) * rate)
         }
@@ -1479,7 +1486,8 @@ struct MarketsView: View {
         // These holdings are already named by unpricedHoldings at the headline total.
         let holdings = portfolio.positions.compactMap { p -> (symbol: String, value: Double)? in
             guard let price = currentPrice(p.symbol),
-                  let rate = allocFX[StockSageCurrency.currencyForSymbol(p.symbol)] else { return nil }
+                  // H1: quote-leg key (mirrors portfolioTotals) — the exposure leg rate²-inflates =X pairs.
+                  let rate = allocFX[conversionCurrencyForSymbol(p.symbol)] else { return nil }
             return (symbol: p.symbol,
                     value: holdingValue(p.symbol, perShare: price, shares: p.shares) * rate)
         }
@@ -1656,6 +1664,15 @@ struct MarketsView: View {
 
     // MARK: Trade journal
 
+    /// H3: closed-trade quote currencies. `StockSageJournal.stats.totalProfit` sums each trade's
+    /// realizedProfit in its RAW quote units (no FX conversion, no pence normalization), so a
+    /// journal spanning >1 currency blends SAR/USD/pence into a meaningless total — surfaced as a
+    /// caveat + neutral color (the sign of a cross-currency blend carries no information).
+    private var journalIsMixedCurrency: Bool {
+        Set(journal.trades.filter { $0.realizedProfit != nil }
+            .map { StockSageCurrency.currencyForSymbol($0.symbol) }).count > 1
+    }
+
     private var tradeJournalPanel: some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
             HStack(spacing: DS.Space.sm) {
@@ -1712,8 +1729,12 @@ struct MarketsView: View {
                     ideaMetric("Avg R", String(format: "%+.2f", s.avgR),
                                color: s.avgR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                     ideaMetric("Realized P&L", String(format: "%+.2f", s.totalProfit),
-                               color: s.totalProfit >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
-                        .help("Closed trades only — a record, not a promise of future results.")
+                               // H3: neutral when mixed-currency — a green/red sign on a blended
+                               // SAR+USD+pence sum would falsely imply a meaningful gain/loss.
+                               color: journalIsMixedCurrency ? DS.Palette.textSecondary
+                                        : (s.totalProfit >= 0 ? DS.Palette.successSoft : DS.Palette.danger),
+                               sub: journalIsMixedCurrency ? "mixed ccy — approx" : nil, subColor: .secondary)
+                        .help("Closed trades only — a record, not a promise of future results." + (journalIsMixedCurrency ? " Your journal spans multiple currencies; this sums prices AS ENTERED (raw quote units) and does NOT convert them — treat the total as approximate." : ""))
                     Spacer(minLength: 0)
                 }
                 let edge = journal.edgeStats
@@ -2135,21 +2156,24 @@ struct MarketsView: View {
             // honest regardless of which gate fired. Daily R is the precise engine value; weekly
             // loss is shown in dollars (the only weekly figure the state exposes) so the trader
             // can see the actual weekly exposure even when daily R is near-zero.
-            let dailyDown  = -state.dailyRealizedR
-            let weeklyDown = -state.weeklyRealized      // dollars (negative = loss)
+            // Signs come from the raw realized values, NOT a hardcoded "−": the warn can fire
+            // from the daily-R gate while the week is net positive (or vice versa), so a fixed
+            // minus would render "−-0.3R" / "−$-350". Negative = loss; the U+2212 glyph is kept.
+            let dailyR    = state.dailyRealizedR
+            let weeklyUsd = state.weeklyRealized      // dollars (negative = loss)
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill").font(.system(size: mvFont11)).foregroundStyle(DS.Palette.warningSoft)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Approaching your loss limit \u{2014} ease off and size down.")
                         .font(.caption2).foregroundStyle(.secondary)
-                    Text(String(format: "Today: \u{2212}%.1fR (daily limit 3R) \u{B7} This week: \u{2212}$%.0f (weekly limit varies by account).",
-                                dailyDown, weeklyDown))
+                    Text(String(format: "Today: %@%.1fR (daily limit 3R) \u{B7} This week: %@$%.0f (weekly limit varies by account).",
+                                dailyR < 0 ? "\u{2212}" : "+", abs(dailyR), weeklyUsd < 0 ? "\u{2212}" : "+", abs(weeklyUsd)))
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(.vertical, 4)
-            .accessibilityLabel(String(format: "Approaching loss limit. Down %.1fR today and $%.0f this week. Ease off and size down.",
-                                       dailyDown, weeklyDown))
+            .accessibilityLabel(String(format: "Approaching loss limit. %@ %.1fR today and %@ $%.0f this week. Ease off and size down.",
+                                       dailyR < 0 ? "Down" : "Up", abs(dailyR), weeklyUsd < 0 ? "down" : "up", abs(weeklyUsd)))
         }
     }
 
@@ -3122,6 +3146,7 @@ struct MarketsView: View {
                             Button { ideaSearch = "" } label: {
                                 Image(systemName: "xmark.circle.fill").font(.system(size: mvFont10)).foregroundStyle(.secondary)
                             }.buttonStyle(.plain)
+                                .accessibilityLabel("Clear idea search").help("Clear search")
                         }
                     }
                     .padding(.horizontal, 8).padding(.vertical, 4)
@@ -3212,7 +3237,7 @@ struct MarketsView: View {
         HStack(alignment: .top, spacing: 6) {
             Image(systemName: "calendar.badge.exclamationmark").font(.system(size: mvFont11))
                 .foregroundStyle(ep.severity == .imminent ? DS.Palette.dangerSoft : DS.Palette.warningSoft)
-            Text(ep.note).font(.caption2).accessibilityLabel("Earnings risk — see detail sheet")
+            Text(ep.note).font(.caption2).accessibilityLabel("Earnings risk: \(ep.note)")
                 .foregroundStyle(ep.severity == .imminent ? DS.Palette.dangerSoft : DS.Palette.warningSoft)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -3358,7 +3383,7 @@ struct MarketsView: View {
                     .shadow(color: DS.Palette.accent.opacity(0.25), radius: 4, y: 1)
                 }
                 .buttonStyle(LuxPressStyle()).disabled(store.isLoadingIdeas)
-                .help("First scan of the day covers ~2,400 names and takes several minutes — results stream in as they complete.")
+                .help("First scan of the day covers all \(StockSageUniverse.worldwide.count) names and takes several minutes — results stream in as they complete.")
                 // POST2420-COPY item 7: this button is the ONLY progress indicator for the
                 // minutes-long scan — give it an explicit label + a value that tracks "N of M"
                 // as ideasProgress updates, so VoiceOver's value-change announcements carry the
@@ -4049,6 +4074,20 @@ struct MarketsView: View {
     @ViewBuilder private var bestOpportunityCard: some View {
         if let best = StockSageExpectedValue.bestOpportunity(store.ideas, regime: store.regime, earnings: store.earnings, liquidity: store.liquidity, seasonality: store.seasonality, calibration: store.convictionCalibration) {
             let idea = best.idea, ev = best.ev
+            // D1 (2026-07-16 review): on the Ideas tab THIS card is the crown surface (the
+            // bestOpportunityCTA is hidden here, section != .ideas), so it — not the CTA — must
+            // carry the F8 crown-divergence disclosure when Today's plan #1 (fastest net EV/day,
+            // equities-first) names a different symbol than this highest-gross-EV pick. Same
+            // inputs the CTA (L4753) and todaysActionsCard use.
+            let todayFirstSymbol = StockSageTodayPlan.rankedActions(
+                store.ideas, account: StockSageInput.positiveAmount(sizerAccount),
+                riskFraction: StockSageInput.percent(sizerRiskPct).map { $0 / 100 },
+                holds: velocityHolds, calibration: store.convictionCalibration, marketRegime: store.regime,
+                earnings: store.earnings, liquidity: store.liquidity,
+                positions: portfolio.positions, journalTrades: journal.trades,
+                mode: .equityExecutableFirst, max: 1).first?.symbol
+            let crownDivergenceSuffix = (todayFirstSymbol != nil && todayFirstSymbol != idea.symbol)
+                ? " Today's plan leads with \(todayFirstSymbol!) — different lens." : ""
             // Round-H: this card presents a sized, placeable order (Entry/Stop/Target + "Size it
             // now") off `idea.price`, which can be a cache-served prior-UTC-day close even when
             // the scan itself just ran — same gap the board card (`Self.cardIsStale`) and detail
@@ -4115,6 +4154,12 @@ struct MarketsView: View {
                 }
                 if !tomTiltDisclosureSuffix.isEmpty {
                     s += ". Ranking includes a small seasonal month tilt."
+                }
+                // D1: same crown-divergence disclosure the CTA speaks (L4803) — suffix carries its
+                // own leading space + trailing period; add one separator only if `s` lacks it.
+                if !crownDivergenceSuffix.isEmpty {
+                    if !s.hasSuffix(".") { s += "." }
+                    s += crownDivergenceSuffix
                 }
                 return s
             }()
@@ -4228,7 +4273,7 @@ struct MarketsView: View {
                                              : (ps.pctOfAccount > 100 || ps.shares == 0 ? DS.Palette.warningSoft : DS.Palette.successSoft))
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    Text(MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix)
+                    Text(MoneyVelocityCopy.bestOpportunity + tomTiltDisclosureSuffix + crownDivergenceSuffix)
                         .font(.system(size: mvFont9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(DS.Space.sm).frame(maxWidth: .infinity, alignment: .leading)
@@ -4250,7 +4295,9 @@ struct MarketsView: View {
                         // board's Held chip already carry — display-only.
                         positions: portfolio.positions,
                         // Round-H: flags a cache-stale price in the copied plan itself.
-                        priceAsOf: idea.priceAsOf)
+                        priceAsOf: idea.priceAsOf,
+                        // A3: carry the same analysis-stale flag the card's pixels show.
+                        analysisStale: analysisStaleOnly)
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(plan, forType: .string)
                 } label: {
@@ -4581,7 +4628,9 @@ struct MarketsView: View {
                         // F03/F44: dollars line follows the headline — net when available,
                         // labeled gross fallback otherwise (never a fabricated net).
                         let usd = wk * acct * (rp / 100)
-                        Text(String(format: "≈ +$%.0f/week at $%.0f acct, %.1f%% risk — %@", usd, acct, rp, s.weeklyRNet != nil ? MoneyVelocityCopy.weeklyDollarsNet : MoneyVelocityCopy.weeklyDollars))
+                        // Sign from the value (matches the %+.1fR headline): a net-cost-demoted
+                        // lane can sum to a negative weekly $, which "+$" would render "+$-42".
+                        Text(String(format: "≈ %@$%.0f/week at $%.0f acct, %.1f%% risk — %@", usd < 0 ? "-" : "+", abs(usd), acct, rp, s.weeklyRNet != nil ? MoneyVelocityCopy.weeklyDollarsNet : MoneyVelocityCopy.weeklyDollars))
                             .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)   // neutral: an estimate, not a realized gain
                             .help((s.weeklyRNet != nil ? "Net of est. costs — weekly R × the dollar value of 1R. " : "Gross, before costs — weekly R × the dollar value of 1R. ") + "Can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. NOT income.")
@@ -4694,7 +4743,12 @@ struct MarketsView: View {
             HStack(spacing: 6) {
                 Spacer()
                 Button {
-                    let plan = StockSageExpectedValue.playbook(s)
+                    var plan = StockSageExpectedValue.playbook(s)
+                    if store.isSampleData {
+                        // Parity with every sibling export (allocation copy L4361, plan L5801,
+                        // TodayPlan.build/copyAllText): a sample-data playbook must carry the flag.
+                        plan = "⚠ SAMPLE DATA — illustrative prices, NOT live quotes. Re-price before any order.\n" + plan
+                    }
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(plan, forType: .string)
                 } label: {
@@ -4831,7 +4885,9 @@ struct MarketsView: View {
                         // board's Held chip already carry — display-only.
                         positions: portfolio.positions,
                         // Round-H: flags a cache-stale price in the copied plan itself.
-                        priceAsOf: idea.priceAsOf)
+                        priceAsOf: idea.priceAsOf,
+                        // A3: carry the same analysis-stale flag the card's pixels show.
+                        analysisStale: analysisStaleOnly)
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(plan, forType: .string)
                 },
@@ -4847,6 +4903,27 @@ struct MarketsView: View {
     // Fast lane — the highest-turnover positive-EV setups, split into a crypto (24/7, ~3d hold)
     // board and an equity (9:30–4, ~12d hold) board, since blending them hides that the two run
     // on entirely different clocks (FASTMONEY_BACKLOG #7).
+    /// The fast-lane strip's "$/week" sentence, built as a plain String OUTSIDE the ViewBuilder so
+    /// its arithmetic + the same-basket-gross engine call don't tip `fastLaneStrip`'s body over the
+    /// Swift type-check budget. Net-first (net when available, labeled gross beside); the gross
+    /// parenthetical is the SAME-BASKET aware gross (F9 / engine's weeklyRGrossSameBasket path,
+    /// L1123), never the unaware `wk` which can print gross below net across the 0.70 haircut; signs
+    /// come from the values so a net-cost-demoted (negative) lane never renders "+$-42" (B1).
+    private func fastLaneWeeklyDollarLine(wk: Double, netWkOpt: Double?, lane: [StockSageIdea],
+                                          tradingDays: Double, acct: Double, rp: Double) -> String {
+        let usd = (netWkOpt ?? wk) * acct * (rp / 100)
+        let grossPart: String
+        if netWkOpt != nil {
+            let grossSame = StockSageExpectedValue.expectedWeeklyR(lane: lane, ideas: store.ideas, tradingDays: tradingDays, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity) ?? wk
+            let g = grossSame * acct * (rp / 100)
+            grossPart = String(format: " (gross %@$%.0f)", g < 0 ? "-" : "+", abs(g))
+        } else {
+            grossPart = ""
+        }
+        return String(format: "≈ %@$%.0f/week at $%.0f account, %.1f%% risk — %@%@; estimate, high variance, NOT income.",
+                      usd < 0 ? "-" : "+", abs(usd), acct, rp, netWkOpt != nil ? "net of est. costs" : "gross, before costs", grossPart)
+    }
+
     @ViewBuilder private var fastLaneStrip: some View {
         let lane = StockSageExpectedValue.fastLane(store.ideas, holds: velocityHolds, calibration: store.convictionCalibration, earnings: store.earnings, liquidity: store.liquidity)
         if lane.count >= 2 {
@@ -4892,6 +4969,10 @@ struct MarketsView: View {
                                         c >= 0.5 ? "moving together — poor hedge" : (c <= -0.2 ? "genuinely offsetting" : "loosely related")))
                                 .font(.system(size: mvFont9, weight: .medium))
                                 .foregroundStyle(c >= 0.5 ? DS.Palette.warningSoft : DS.Palette.textSecondary)
+                        } else if store.laneCorrelationCompleted {
+                            // G1: attempt finished with no value (failed/policy-blocked) — say so
+                            // instead of a "fetching…" spinner that would never resolve.
+                            Text("Correlation unavailable").font(.system(size: mvFont9)).foregroundStyle(.secondary)
                         } else {
                             Text("Correlation — fetching…").font(.system(size: mvFont9)).foregroundStyle(.secondary)
                         }
@@ -4929,12 +5010,10 @@ struct MarketsView: View {
                     // tradingDays, holds, calibration), so this avoids a second full fastLane recompute
                     // for arithmetic StockSageInput already guarded (acct/rp finite and positive).
                     if let acct = StockSageInput.positiveAmount(sizerAccount), let rp = StockSageInput.percent(sizerRiskPct) {
-                        // C1 wave: same net-first convention as the money-velocity card — the two
-                        // $/week answers to the SAME question on one screen must not silently
-                        // diverge 2× on different bases. Net when available; labeled gross beside.
-                        let usd = (netWkOpt ?? wk) * acct * (rp / 100)
-                        let grossPart = netWkOpt != nil ? String(format: " (gross +$%.0f)", wk * acct * (rp / 100)) : ""
-                        Text(String(format: "≈ +$%.0f/week at $%.0f account, %.1f%% risk — %@%@; estimate, high variance, NOT income.", usd, acct, rp, netWkOpt != nil ? "net of est. costs" : "gross, before costs", grossPart))
+                        // C1/B1 arithmetic + the same-basket-gross engine call are hoisted into
+                        // fastLaneWeeklyDollarLine (a plain func) so they don't tip fastLaneStrip's
+                        // ViewBuilder body over the Swift type-check budget (it timed out inline).
+                        Text(fastLaneWeeklyDollarLine(wk: wk, netWkOpt: netWkOpt, lane: lane, tradingDays: tradingDays, acct: acct, rp: rp))
                             .font(.system(size: mvFont9, weight: .medium))
                             .foregroundStyle(DS.Palette.textSecondary).fixedSize(horizontal: false, vertical: true)   // neutral: estimate, not a realized gain
                             .help((netWkOpt != nil ? "Net of est. costs — weekly R × the dollar value of 1R. " : "Gross, before costs — weekly R × the dollar value of 1R. ") + "Can include ideas the net-cost floor demotes on the boards; the 'Fastest' pick excludes them. NOT income.")

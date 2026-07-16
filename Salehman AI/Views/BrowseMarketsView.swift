@@ -38,9 +38,14 @@ struct BrowseMarketsView: View {
         var id: String { rawValue }
     }
 
-    /// The set the engine validates against in `addSymbol` (StockSageStore ~239-242):
+    /// The set the engine validates against in `addSymbol` (StockSageStore.validateNewSymbol):
     /// store.symbols ∪ userSymbols ∪ worldwide. Using the SAME union here prevents showing
     /// a '+' button for any symbol the engine would immediately refuse as "already tracked."
+    /// NOTE (2026-07-16): post-equity-2000 promotion `catalog` == `worldwide`, so every browsed
+    /// row is in this set ⇒ the '+'/spinner branches in `row(_for:)` are currently unreachable
+    /// (all rows show the tracked checkmark). They are kept, not deleted: they self-reactivate the
+    /// moment `catalog` re-gains an un-promoted long-tail beyond `worldwide`. The header copy no
+    /// longer advertises "+ to track" precisely because it cannot fire today.
     private var tracked: Set<String> {
         Set(store.symbols.map { $0.symbol.uppercased() })
             .union(store.userSymbols.map { $0.uppercased() })
@@ -74,11 +79,12 @@ struct BrowseMarketsView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Browse markets").font(DS.Typography.titleM).foregroundStyle(.white)
-                    Text("\(StockSageUniverse.catalog.count) instruments · tap + to track (fetches one live quote)")
-                        .font(.system(size: bmFont12)).foregroundStyle(.secondary)
+                    Text("\(StockSageUniverse.catalog.count) instruments — the full analyzed universe, all covered by Find ideas. Browse and search here.")
+                        .font(.system(size: bmFont12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 Button("Done") { dismiss() }.buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+                    .keyboardShortcut(.cancelAction).help("Close (Esc)")
             }
 
             HStack(spacing: 8) {

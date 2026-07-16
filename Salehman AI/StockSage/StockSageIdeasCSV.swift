@@ -10,7 +10,7 @@ import Foundation
 // comma or quote inside a reason can't corrupt the file.
 enum StockSageIdeasCSV {
     nonisolated static let header =
-        "rank,symbol,market,price,action,conviction,stop,target,weightPct,regime,rationale,heldShares,closedTrades"
+        "rank,symbol,market,price,action,conviction,stop,target,weightPct,regime,rationale,heldShares,closedTrades,priceAsOf"
 
     /// EXPORT-04: optional held/journal context so the exported spreadsheet doesn't lose the
     /// doubling flag the on-screen card/sheet already carry. Keyed by uppercased symbol, same
@@ -42,6 +42,11 @@ enum StockSageIdeasCSV {
             f.append(a.rationale.joined(separator: "; "))
             f.append(heldShares[sym].map { String($0) } ?? "")
             f.append(closedTrades[sym].map { String($0) } ?? "")
+            // A2: price-freshness column — the price bar's own UTC date (yyyy-MM-dd, GMT), so a
+            // cache-served prior-day close isn't pasted into a spreadsheet as if it were live
+            // (parity with every other broker-pasteable export's PRICE-NOT-LIVE flag). nil ⇒
+            // empty (unknown, never a fabricated date — HONESTY_FLOOR).
+            f.append(idea.priceAsOf.map { $0.formatted(.iso8601.year().month().day()) } ?? "")
             rows.append(f.map(escape).joined(separator: ","))
         }
         return rows.joined(separator: "\n")

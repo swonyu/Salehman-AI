@@ -77,6 +77,28 @@ struct StockSageCurrencyTests {
         #expect(CC.currencyForSymbol("BTC-USD") == "USD")    // crypto unaffected
     }
 
+    // H1 (2026-07-16): conversionCurrency returns the QUOTE (denomination) leg for a USD-VALUE
+    // conversion key — the leg price×shares is actually denominated in — NOT the exposure leg.
+    // Keying a value conversion on the exposure leg (currencyForSymbol) re-multiplies an
+    // already-USD amount by the rate → rate². These assertions pin BOTH the quote leg AND its
+    // divergence from the exposure leg exactly where the rate² inflation used to live.
+    @Test func conversionCurrencyUsesQuoteLegForFXPairs() {
+        // EURUSD=X price is in USD (quote leg) → key "USD" (rate 1), NOT the exposure "EUR".
+        #expect(CC.conversionCurrency(for: "EURUSD=X") == "USD")
+        #expect(CC.currencyForSymbol("EURUSD=X") == "EUR")   // the exposure leg the buggy sites used
+        // USDJPY=X price is in JPY (quote leg) → "JPY" (here quote == exposure, no divergence).
+        #expect(CC.conversionCurrency(for: "USDJPY=X") == "JPY")
+        // Cross EURGBP=X price is in GBP (quote leg) → "GBP"; exposure leg would say "EUR".
+        #expect(CC.conversionCurrency(for: "EURGBP=X") == "GBP")
+        #expect(CC.currencyForSymbol("EURGBP=X") == "EUR")
+        // Non-=X symbols delegate to currencyForSymbol verbatim (no divergence).
+        #expect(CC.conversionCurrency(for: "AAPL") == CC.currencyForSymbol("AAPL"))     // "USD"
+        #expect(CC.conversionCurrency(for: "BP.L") == CC.currencyForSymbol("BP.L"))     // "GBP"
+        #expect(CC.conversionCurrency(for: "2222.SR") == CC.currencyForSymbol("2222.SR")) // "SAR"
+        // A malformed =X (not a 6-char pair) falls back to base, never a bogus 3-char leg.
+        #expect(CC.conversionCurrency(for: "USD=X") == "USD")
+    }
+
     // MARK: - L10N-01: approxAmount currency-suffix rendering
     //
     // Hand-derived per L10N-01 (critique fleet #2): a figure in a symbol's own quote currency

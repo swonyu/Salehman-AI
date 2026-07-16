@@ -82,6 +82,24 @@ enum StockSageCurrency {
         return currencyForSuffix[suffix] ?? suffix
     }
 
+    /// The currency `price × shares` is DENOMINATED in — the QUOTE (trailing) leg for an FX pair
+    /// (`…=X`), else the exposure leg from `currencyForSymbol`. For a `…USD=X` pair the quote leg
+    /// is USD, so the holding is already in USD and needs no re-conversion; using the EXPOSURE leg
+    /// as a USD-conversion key (as `currencyForSymbol` returns) would multiply an already-USD amount
+    /// by the rate again → rate², inflating value ~8–27%. Every portfolio USD-VALUE conversion
+    /// (`portfolioTotals`, the rebalance plan, the allocation slices) MUST key on this, never on the
+    /// exposure leg. (Lifted from MarketsView's private `conversionCurrencyForSymbol` 2026-07-16 so
+    /// the UNWIRED MarketsRiskAllocationSection satellite can share ONE tested definition.)
+    nonisolated static func conversionCurrency(for symbol: String, base: String = "USD") -> String {
+        let s = symbol.uppercased()
+        if s.hasSuffix("=X") {
+            let pair = String(s.dropLast(2))
+            guard pair.count == 6 else { return base }
+            return String(pair.suffix(3))   // quote leg (…USD=X → "USD")
+        }
+        return currencyForSymbol(symbol, base: base)
+    }
+
     /// L10N-01: format a figure in a SYMBOL's own quote currency (not converted) so it never
     /// misreads as USD. USD keeps the familiar "≈$188" prefix; any other currency renders
     /// "≈188 SAR"-style (code suffix) — a 1120.SR risk number in raw SAR shown with a bare "$"

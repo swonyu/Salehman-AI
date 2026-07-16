@@ -28,7 +28,12 @@ enum StockSageTodayPlan {
                                   account: Double?, riskFraction: Double?,
                                   daysToEarnings: Int? = nil, isSample: Bool = false,
                                   positions: [PortfolioPosition] = [],
-                                  priceAsOf: Date? = nil) -> String {
+                                  priceAsOf: Date? = nil,
+                                  // A3 (2026-07-16): the card's own pixels show "Analysis over 4h old"
+                                  // (cardIsStale's analysis axis); the caller passes that same bool so
+                                  // the copied plan carries it too. Defaulted false ⇒ callers/tests
+                                  // that don't pass it are byte-unchanged (like isSample/priceAsOf).
+                                  analysisStale: Bool = false) -> String {
         let a = idea.advice
         let entry = idea.price
         let rf = Swift.max(0, riskFraction ?? 0)
@@ -77,6 +82,9 @@ enum StockSageTodayPlan {
             if let priceAsOf, StockSageScanChunking.utcDayKey(priceAsOf) != StockSageScanChunking.utcDayKey(Date()) {
                 blocked = "⚠ PRICE NOT LIVE — as of \(fmtDate(priceAsOf)); re-price before any order.\n" + blocked
             }
+            if analysisStale {
+                blocked = "⚠ ANALYSIS OVER 4H OLD — re-scan before ordering.\n" + blocked
+            }
             return blocked
         }
 
@@ -92,6 +100,11 @@ enum StockSageTodayPlan {
         // false warning.
         if let priceAsOf, StockSageScanChunking.utcDayKey(priceAsOf) != StockSageScanChunking.utcDayKey(Date()) {
             lines.insert("⚠ PRICE NOT LIVE — as of \(fmtDate(priceAsOf)); re-price before any order.", at: 0)
+        }
+        // A3: the analysis (advice/EV) can be >4h stale even when the price bar is today's — the
+        // card shows this; the exported plan must too. Caller passes the same cardIsStale bool.
+        if analysisStale {
+            lines.insert("⚠ ANALYSIS OVER 4H OLD — re-scan before ordering.", at: 0)
         }
         var n = 1
         lines.append("\(n). Best bet: \(idea.symbol) (\(a.action.rawValue))"

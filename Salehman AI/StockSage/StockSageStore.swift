@@ -1494,6 +1494,11 @@ final class StockSageStore: ObservableObject {
     // pure StockSageExpectedValue.laneCorrelation over fetched histories (no new fetch code — reuses
     // StockSageQuoteService.fetchHistories, the SAME call refreshPrecheck uses).
     @Published private(set) var laneCorrelationValue: Double?
+    /// G1: true once a fetch ATTEMPT has finished for the current membership (success, nil result,
+    /// or policy-blocked) — lets the view show "Correlation unavailable" instead of a permanent
+    /// "fetching…" spinner when the value is nil but nothing is in flight (mirrors the MTF row's
+    /// mtfFetchCompleted fix). Reset to false when a new fetch starts.
+    @Published private(set) var laneCorrelationCompleted: Bool = false
     private var laneCorrelationFingerprint: String?
 
     /// Fetch history for the CURRENT crypto+equity fast-lane symbols and compute their average
@@ -1508,12 +1513,17 @@ final class StockSageStore: ObservableObject {
         let symbols = (split.crypto + split.equity).map(\.symbol)
         let fingerprint = symbols.sorted().joined(separator: ",")
         guard laneCorrelationFingerprint != fingerprint else { return }
-        guard ToolPolicy.webToolsDisabledReason() == nil else { return }
+        guard ToolPolicy.webToolsDisabledReason() == nil else {
+            // G1: web tools off — no fetch possible. Mark the attempt DONE so the view shows
+            // "Correlation unavailable", not a permanent "fetching…" spinner that never resolves.
+            laneCorrelationValue = nil; laneCorrelationCompleted = true; return
+        }
         // Membership just changed (fingerprint guard above passed) — clear the stale value BEFORE
         // the await so the view falls back to the honest "Correlation — fetching…" placeholder
         // during the in-flight window instead of showing the OLD symbol set's number (which can
         // even invert the hedge-quality qualifier band). Mirrors the empty-side clear at L1356.
         laneCorrelationValue = nil
+        laneCorrelationCompleted = false   // G1: a fresh fetch is now in flight
         let histories = await StockSageQuoteService.fetchHistories(for: symbols)
         guard !Task.isCancelled else { return }
         let result = StockSageExpectedValue.laneCorrelation(
@@ -1525,6 +1535,7 @@ final class StockSageStore: ObservableObject {
         // Mirrors the cache-on-success pattern of refreshTrailingStop/refreshLiquidity.
         laneCorrelationValue = result
         laneCorrelationFingerprint = (result != nil) ? fingerprint : nil
+        laneCorrelationCompleted = true   // G1: attempt finished (success or nil result → "unavailable")
     }
 
     // Symbols whose latest quote had no real previousClose (a brand-new listing) — Yahoo's
