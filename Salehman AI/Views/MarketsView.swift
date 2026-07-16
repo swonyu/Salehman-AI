@@ -8,11 +8,12 @@ import AppKit   // NSPasteboard for the trade-plan copy
 /// (sample seed until a live feed lands — honestly flagged). Sections not yet
 /// built show a clear "coming soon".
 struct MarketsView: View {
-    /// Equity count within `StockSageUniverse.worldwide`, computed ONCE (review round-2 finding
-    /// 2: the header's old "≈2,330 equities" literal was wrong — the classifier-consistent recount
-    /// is ≈2,370 — AND a literal regresses the auto-updating copy the moment the universe changes
-    /// again). A `static let` (not a per-render computed property) — `MarketsView` is a `View`
-    /// struct SwiftUI recreates on every body evaluation; filtering all 2,420 names on each render
+    /// Equity count within `StockSageUniverse.worldwide`, computed ONCE. The lesson this comment
+    /// records: NEVER hardcode a universe count in copy — a literal regresses the auto-updating
+    /// number the moment the universe changes (a past bug hardcoded "≈2,330 equities"; the
+    /// 2026-07-16 Tadawul+NASDAQ restriction to 901 names would have stranded any literal again).
+    /// A `static let` (not a per-render computed property) — `MarketsView` is a `View` struct
+    /// SwiftUI recreates on every body evaluation; filtering the whole universe on each render
     /// would be pure waste for a number that only changes when the universe itself does.
     private static let worldwideEquityCount = StockSageUniverse.worldwide
         .filter { StockSageAllocation.assetClass($0.symbol) == "Equity" }.count
@@ -705,7 +706,8 @@ struct MarketsView: View {
                     Image(systemName: "bell.badge.fill").font(.system(size: mvFont18)).foregroundStyle(DS.Palette.accent)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Strong-signal alerts").font(.system(size: mvFont15, weight: .semibold)).foregroundStyle(.white)
-                        // POST2420-COPY item 5: at the post-promotion ~2,420-name universe, an
+                        // POST2420-COPY item 5: across the full analyzed universe (901 names since
+                        // the 2026-07-16 restriction), an
                         // unqualified "appears" reads as "anywhere in the analyzed universe" —
                         // the monitor's unattended background cycle is scoped to
                         // StockSageUniverse.core (~210) + the user's watchlist (StockSageMonitor's
@@ -3646,7 +3648,7 @@ struct MarketsView: View {
                 HStack(alignment: .top, spacing: 6) {
                     // POST2420-COPY item 3: `missingAfterScan` (the source of `ideasMissing`) can't
                     // currently distinguish "fetched but failed" from "never attempted" — after a
-                    // throttle trip most of a ~2,420-name universe's misses are the latter (the scan
+                    // throttle trip most of the universe's misses are the latter (the scan
                     // stopped before reaching them), so "couldn't be fetched" overclaimed an attempt
                     // that didn't happen. "not analyzed this scan" is honest for both cases without
                     // adding attempted-set bookkeeping.
