@@ -59,11 +59,13 @@ struct MarketsTodayActionsCard: View {
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text("Within those buckets, faster NET EV/day (est. costs deducted; gross when net is unavailable) ranks first — unlike the Fast lane above, which ranks by growth rate (log-growth at ½-Kelly), so the two cards can order the same names differently.")
                     .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                // F8 (2026-07-09): cross-reference the OTHER direction — this list's own #1 vs
-                // the global "Do this now" CTA's pick (a different lens: highest gross EV, not
-                // fastest EV/day). Copy-only; renders nothing when either is nil or they agree.
+                // F8 (2026-07-09; referent fixed D1 2026-07-16): cross-reference the OTHER direction
+                // — this list's own #1 vs the highest-gross-EV crown pick (a different lens). This
+                // card renders on the Ideas tab, where that crown is the "Best opportunity" card
+                // above (the "Do this now" CTA is hidden on Ideas), so name THAT card, not the CTA.
+                // Copy-only; renders nothing when either is nil or they agree.
                 if let globalBestSymbol, let first = shownPlans.first?.symbol, globalBestSymbol != first {
-                    Text("The 'Do this now' CTA leads with \(globalBestSymbol) instead — different lens (highest gross EV, not fastest net EV/day).")
+                    Text("The Best opportunity card leads with \(globalBestSymbol) instead — different lens (highest gross EV, not fastest net EV/day).")
                         .font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if executableOnly {
@@ -162,7 +164,7 @@ struct MarketsTodayActionsCard: View {
                 if plan.isCrypto {
                     return "24/7 crypto — the equity near-close guidance does not apply; use a limit order and size for round-the-clock volatility. Estimates, not advice."
                 }
-                return "A patient limit near the close is ~10 bps cheaper when you are NOT chasing the move; acting urgently on a fresh conviction signal favors a marketable order (avoids chase/adverse-selection cost). Estimates, not advice."
+                return "Order TYPE: a patient limit is ~10 bps cheaper than marketable when you are NOT chasing the move; acting urgently on a fresh conviction signal favors a marketable order (avoids chase/adverse-selection cost). See the timing note for WHEN in the session to enter. Estimates, not advice."
             }()
             VStack(alignment: .leading, spacing: 2) {
                 Text(headline)

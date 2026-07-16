@@ -84,6 +84,24 @@ struct StockSageTodayPlanTests {
         #expect(!nilAsOf.uppercased().contains("PRICE NOT LIVE"))
     }
 
+    // A3: the analysis (advice/EV) can be >4h stale even when the price bar is today's — the
+    // card shows "Analysis over 4h old"; the exported plan carries the same flag when the caller
+    // passes analysisStale: true. Defaulted false ⇒ existing callers/tests are byte-unchanged.
+    @Test func staleAnalysisIsFlaggedInTheCopiedPlanIndependentOfPrice() {
+        let i = idea("AAPL", conviction: 0.9, stop: 90, target: 130)
+        let staleAnalysis = StockSageTodayPlan.build(idea: i, ev: StockSageExpectedValue.ev(for: i),
+                                                     account: 10_000, riskFraction: 0.01,
+                                                     isSample: false, priceAsOf: Date(),  // price fresh today
+                                                     analysisStale: true)
+        #expect(staleAnalysis.uppercased().contains("ANALYSIS OVER 4H OLD"))
+        #expect(!staleAnalysis.uppercased().contains("PRICE NOT LIVE"))   // price axis stayed fresh
+
+        // Default (analysisStale omitted) → no analysis flag.
+        let fresh = StockSageTodayPlan.build(idea: i, ev: StockSageExpectedValue.ev(for: i),
+                                             account: 10_000, riskFraction: 0.01)
+        #expect(!fresh.uppercased().contains("ANALYSIS OVER 4H OLD"))
+    }
+
     @Test func noStopWarnsAndGateBlocks() {
         let i = idea("X", conviction: 0.9, stop: nil, target: nil)
         // F04-parity (2nd-read hunt, 2026-07-08): riskFraction must be supplied for the gate to
