@@ -358,6 +358,10 @@ it cannot run tests, so test arithmetic is verified by hand and by adversarial r
 - **`StockSageDrawdownScenario.swift`** — `StockSageRiskOfRuin.scenario` → `DrawdownScenario`: k 1R stop-outs
   at risk f shrink the account by (1−f)^k; `isSteep` ≥20%. The velocity counterweight ("stay in the game").
   (Named `RiskOfRuin` to avoid colliding with the existing `StockSageDrawdown` underwater-curve engine.)
+- **`StockSageTickSize.swift`** — Tadawul tick-band table (Saudi Exchange regime effective 2025-06-29;
+  sourced Argaam #1823880 + Sahm Capital) + nearest-tick rounding; `placeabilityNote` appends a DISPLAY-ONLY
+  advisory to the copied `.SR` order plan when a displayed (2-dp) engine level is off the tick grid, each leg
+  rounded with its own band tick. Engine stop/target and all EV/R:R math untouched.
 - **`StockSageVelocityHistory.swift`** — `VelocitySnapshot`/`record`/`trend` (recent-half vs early-half
   weekly-R, rising/flat/fading, nil <4 days) + `@MainActor StockSageVelocityHistoryStore` (UserDefaults JSON,
   one snapshot per UTC day, capped 60). "Your own history, not a forecast."

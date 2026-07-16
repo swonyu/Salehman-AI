@@ -36,20 +36,38 @@ struct StockSageTickSizeTests {
         #expect(T.tadawulAligned(101.4))
     }
 
-    // The advisory fires ONLY for .SR AND only when a leg is off-grid; the engine's own
-    // numbers are quoted, the placeable equivalents suggested, drift disclosed.
+    // The advisory fires ONLY for .SR AND only when a leg's DISPLAYED (2-dp) price is off-grid;
+    // the engine's own numbers are quoted, the placeable equivalents suggested, drift disclosed.
     @Test func placeabilityNoteFiresOnlyForMisalignedTadawulLegs() {
         // Non-.SR: always nil (US ticks at $0.01 — any 2-dp price places).
         #expect(T.placeabilityNote(symbol: "AAPL", entry: 187.334, stop: 180.111, target: 200.999) == nil)
         // .SR, all legs aligned: nil (no noise on a clean plan).
         #expect(T.placeabilityNote(symbol: "2222.SR", entry: 28.64, stop: 27.50, target: 31.20) == nil)
-        // .SR with a misaligned stop: fires, names the leg, suggests 28.64.
+        // .SR with a misaligned stop: fires, names the leg, suggests 28.64 and the leg's band tick.
         let note = T.placeabilityNote(symbol: "2222.SR", entry: 29.00, stop: 28.63, target: 31.20)
         #expect(note != nil)
-        #expect(note!.contains("28.63"))
-        #expect(note!.contains("28.64"))
-        #expect(note!.contains("stop"))
+        #expect(note!.contains("stop 28.63 → place as 28.64 (0.02 tick)"))
         #expect(!note!.contains("target 31.20 →"))     // aligned legs are not listed
+    }
+
+    // 2026-07-16 review fixes, fixtures derived standalone (derive_tick2.swift, spec = the sourced
+    // band table at 2-dp display precision):
+    // • 23.456 displays as 23.46; EVERY 2-dp price < 25 SAR sits on the 0.01 grid → NO note.
+    //   (The raw-Double check used to fire a self-contradictory "23.46 → place as 23.46" here —
+    //   the score-100 review finding.) 19.784→19.78 and 24.999→25.00 (evaluated in the 0.02 band
+    //   it displays into) are aligned too.
+    // • 28.634 displays as 28.63 → 1431.5 → away-from-zero 1432 → 28.64, 0.02 tick.
+    // • Cross-band: 49.97 → 2498.5 → 49.98 (0.02 tick); 52.03 → 1040.6 → 52.05 (0.05 tick) —
+    //   ONE note carries BOTH band ticks (the former single-headline tick mislabeled one leg).
+    @Test func evaluatesLegsAtDisplayPrecisionWithPerLegTicks() {
+        #expect(T.placeabilityNote(symbol: "4001.SR", entry: 23.456, stop: 19.784, target: 24.999) == nil)
+        let one = T.placeabilityNote(symbol: "2222.SR", entry: 29.00, stop: 28.634, target: 31.20)
+        #expect(one != nil)
+        #expect(one!.contains("stop 28.63 → place as 28.64 (0.02 tick)"))
+        let cross = T.placeabilityNote(symbol: "1120.SR", entry: 49.97, stop: nil, target: 52.03)
+        #expect(cross != nil)
+        #expect(cross!.contains("entry 49.97 → place as 49.98 (0.02 tick)"))
+        #expect(cross!.contains("target 52.03 → place as 52.05 (0.05 tick)"))
     }
 
     // The .SR session line in the execution-timing advisory (static exchange schedule,

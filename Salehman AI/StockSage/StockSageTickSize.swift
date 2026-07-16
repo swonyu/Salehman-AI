@@ -41,20 +41,27 @@ enum StockSageTickSize {
     }
 
     /// DISPLAY-ONLY placeability advisory for a `.SR` order plan. nil for non-Tadawul symbols,
-    /// nil when every provided leg already sits on the grid. Rounds to the NEAREST tick (≤ half
-    /// a tick of drift, ≤ ~7bps at typical .SR prices — disclosed, never applied to the engine's
-    /// own numbers).
+    /// nil when every leg's DISPLAYED price already sits on the grid. Legs are evaluated at
+    /// 2-dp DISPLAY precision — the price the owner actually reads and types — so float noise
+    /// beyond the ticket's precision never fires the note (in the 0.01 band every 2-dp price is
+    /// placeable by construction; the raw-Double check used to fire "23.46 → place as 23.46"
+    /// there — 2026-07-16 review score-100 fix). Each leg is rounded with ITS OWN band tick and
+    /// the clause names that tick (legs can straddle band boundaries, so the former single
+    /// headline tick was wrong for one of them). Rounds to the NEAREST tick (≤ half a tick of
+    /// drift, ≤ ~7bps at typical .SR prices — disclosed, never applied to the engine's numbers).
     nonisolated static func placeabilityNote(symbol: String, entry: Double?, stop: Double?,
                                              target: Double?) -> String? {
         guard symbol.uppercased().hasSuffix(".SR") else { return nil }
         var parts: [String] = []
         for (label, value) in [("entry", entry), ("stop", stop), ("target", target)] {
-            guard let v = value, v > 0, !tadawulAligned(v) else { continue }
-            parts.append(String(format: "%@ %.2f → place as %.2f", label, v, tadawulRounded(v)))
+            guard let v = value, v > 0, v.isFinite else { continue }
+            let shown = (v * 100).rounded() / 100          // the 2-dp price the ticket displays
+            guard !tadawulAligned(shown) else { continue }
+            parts.append(String(format: "%@ %.2f → place as %.2f (%.2f tick)",
+                                label, shown, tadawulRounded(shown), tadawulTick(forPrice: shown)))
         }
         guard !parts.isEmpty else { return nil }
-        let tick = tadawulTick(forPrice: stop ?? entry ?? target ?? 0)
-        return String(format: "Tadawul tick %.2f SAR — engine levels off the grid: %@ (nearest tick; ≤½-tick drift, engine math unchanged).",
-                      tick, parts.joined(separator: "; "))
+        return "Tadawul tick grid — engine levels off the grid: " + parts.joined(separator: "; ")
+             + " (nearest tick; ≤½-tick drift, engine math unchanged)."
     }
 }
