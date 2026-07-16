@@ -2361,6 +2361,19 @@ struct MarketsView: View {
                 Spacer(minLength: 0)
             }
             journalField("Note (optional)", text: $draftNote, width: 280)
+            // Cycle-4 (2026-07-16): the copy plan and detail sheet both show the reward:risk of a
+            // setup, but the manual add form — where the owner types entry/stop/target — showed
+            // none, so they journal a trade without seeing its R:R or break-even win-rate. Same
+            // tested RewardRisk.assess/.note (labeled gross, carries the break-even honesty); nil
+            // (no line) until entry+stop+target all parse. Display-only; never changes the record.
+            if let e = StockSageInput.positiveAmount(draftEntry),
+               let st = StockSageInput.positiveAmount(draftStop),
+               let tg = StockSageInput.positiveAmount(draftTarget),
+               let rr = StockSageRewardRisk.assess(entry: e, stop: st, target: tg) {
+                Text(rr.note).font(.system(size: mvFont9))
+                    .foregroundStyle(rr.quality == .poor ? DS.Palette.warningSoft : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             // Cycle-3 (2026-07-16): the copy-plan export and the close form both flag off-grid
             // .SR prices; the manual add form is the third entry point and had no such feedback —
             // a stop/target typed from the idea card can be off the Tadawul grid and unplaceable.

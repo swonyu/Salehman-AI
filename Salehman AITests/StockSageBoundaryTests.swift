@@ -30,6 +30,15 @@ struct StockSageBoundaryTests {
         #expect(StockSageRewardRisk.assess(entry: 100, stop: 100, target: 110) == nil)  // zero risk → nil
     }
 
+    // The `.note` string is rendered directly on the manual add-trade form (24h-run cycle-4,
+    // 2026-07-16) and the copy plan/detail sheet, so its exact format (incl. the "gross" label
+    // and the break-even honesty companion) is load-bearing. HAND-DERIVED: entry 100/stop 90/
+    // target 130 → risk 10, reward 30, ratio 3.0 → Strong (≥2.5); breakeven 1/(1+3)=0.25=25.0%.
+    @Test func rewardRiskNoteFormatIsStableAndLabeledGross() {
+        let rr = StockSageRewardRisk.assess(entry: 100, stop: 90, target: 130)!
+        #expect(rr.note == "R:R 3.0 gross — Strong; needs a >25.0% win-rate just to break even.")
+    }
+
     @Test func riskOfRuinBoundaries() {
         // (1−f)^losses; fraction must be in (0,1).
         let s = StockSageRiskOfRuin.scenario(losses: 1, fraction: 0.99)!
