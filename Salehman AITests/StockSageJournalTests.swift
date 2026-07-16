@@ -224,6 +224,32 @@ struct StockSageJournalTests {
         #expect(abs(y26.totalR - 2) < 1e-9)
         #expect(y26.winRate == 1.0)
         #expect(StockSageJournal.yearlyPnL([]).isEmpty)
+        // First-real-trade review (2026-07-16): all "X" trades are USD → single-currency year,
+        // profitSymbol carried so the display renders the total labeled (byte-identical bare USD).
+        #expect(y25.profitSymbol == "X")
+        #expect(y26.profitSymbol == "X")
+    }
+
+    // First-real-trade review (2026-07-16): a year mixing currencies has a MEANINGLESS
+    // realizedDollars 1:1 sum → profitSymbol is nil so the row shows "mixed", never the number.
+    // Single-currency years keep a representative symbol. Hand-derived from conversionCurrencyForSymbol.
+    @Test func yearlyPnLProfitSymbolIsNilWhenAYearMixesCurrencies() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        func tr(_ symbol: String, _ entry: Double, _ exit: Double, year: Int) -> TradeRecord {
+            let d = cal.date(from: DateComponents(year: year, month: 6, day: 15))!
+            return TradeRecord(symbol: symbol, side: .long, entry: entry, stop: 90, target: nil, shares: 1,
+                               openedAt: d.addingTimeInterval(-86_400), exitPrice: exit, closedAt: d)
+        }
+        let y = StockSageJournal.yearlyPnL([
+            tr("AAPL", 100, 150, year: 2025),      // +50 USD
+            tr("2222.SR", 100, 130, year: 2025),   // +30 SAR — same year, different currency
+            tr("2222.SR", 100, 120, year: 2026),   // +20 SAR — a single-SAR year
+        ])
+        let y25 = y.first { $0.year == "2025" }!
+        #expect(y25.profitSymbol == nil)                  // mixed → display shows "mixed"
+        #expect(abs(y25.realizedDollars - 80) < 1e-9)     // raw 50+30 still computed, never shown
+        let y26 = y.first { $0.year == "2026" }!
+        #expect(y26.profitSymbol == "2222.SR")            // single currency → labeled
     }
 
     private func closedInMonth(_ y: Int, _ m: Int, exit: Double) -> TradeRecord {

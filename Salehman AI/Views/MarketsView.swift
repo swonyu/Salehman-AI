@@ -2062,8 +2062,15 @@ struct MarketsView: View {
                             Text(yr.year).font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white).frame(width: 48, alignment: .leading)
                             Text("\(yr.trades) tr · \(Int(yr.winRate * 100))% win").font(.caption2).foregroundStyle(.secondary)
                             Spacer()
-                            Text(yr.realizedDollars.formatted(.number.precision(.fractionLength(0)).sign(strategy: .always()))).font(.system(size: mvFont11, weight: .semibold))
-                                .foregroundStyle(yr.realizedDollars >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
+                            // First-real-trade review (2026-07-16): realizedDollars sums native
+                            // currency, so a year mixing .SR + NASDAQ is a meaningless 1:1 sum —
+                            // show "mixed" (never a fabricated number); single-currency renders
+                            // via signedAmount (USD byte-identical, pence ÷100, else labeled).
+                            Text(yr.profitSymbol.map { StockSageCurrency.signedAmount(yr.realizedDollars, symbol: $0) } ?? "mixed")
+                                .font(.system(size: mvFont11, weight: .semibold))
+                                .foregroundStyle(yr.profitSymbol == nil ? DS.Palette.warningSoft
+                                     : (yr.realizedDollars >= 0 ? DS.Palette.successSoft : DS.Palette.danger))
+                                .help(yr.profitSymbol == nil ? "This year's trades span multiple currencies — a single total can't be summed honestly." : "")
                             // width (NOT minWidth), unlike the month/side/sector R columns below: this
                             // is the only journal row where another figure (realizedDollars, just
                             // above, no frame of its own) precedes the trailing R text in the same

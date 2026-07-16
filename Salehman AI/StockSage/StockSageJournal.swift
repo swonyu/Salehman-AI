@@ -190,8 +190,15 @@ struct YearlyPnL: Sendable, Equatable, Identifiable {
     let trades: Int
     let wins: Int
     let winRate: Double         // 0–1
-    let realizedDollars: Double // sum of realized P&L (account currency)
+    let realizedDollars: Double // RAW sum of realized P&L in each trade's NATIVE currency — a
+                                // valid single figure ONLY when profitSymbol != nil (see below)
     let totalR: Double
+    /// First-real-trade review (2026-07-16): `realizedDollars` sums native-currency profit, so a
+    /// year mixing `.SR` (SAR) and NASDAQ (USD) trades is a meaningless 1:1 sum. Representative
+    /// closed-trade symbol when the YEAR's contributing trades are one currency (→ the display
+    /// renders it via `signedAmount`, pence-aware; USD byte-identical), nil = MIXED (the row shows
+    /// "mixed" not a fabricated number). Same rule as `JournalStats.profitSymbol`.
+    let profitSymbol: String?
     var id: String { year }
 }
 
@@ -365,10 +372,15 @@ enum StockSageJournal {
         }
         return byYear.map { year, ts in
             let wins = ts.filter { ($0.realizedProfit ?? 0) > 0 }.count
+            // Single currency this year's realizedDollars is in, or nil when the year mixes
+            // currencies (the raw sum is then meaningless); representative = sorted-first symbol.
+            let contributing = ts.filter { $0.realizedProfit != nil }
+            let currencies = Set(contributing.map { StockSageCurrency.conversionCurrencyForSymbol($0.symbol) })
             return YearlyPnL(year: year, trades: ts.count, wins: wins,
                              winRate: ts.isEmpty ? 0 : Double(wins) / Double(ts.count),
                              realizedDollars: ts.compactMap(\.realizedProfit).reduce(0, +),
-                             totalR: ts.compactMap(\.realizedR).reduce(0, +))
+                             totalR: ts.compactMap(\.realizedR).reduce(0, +),
+                             profitSymbol: currencies.count == 1 ? contributing.map(\.symbol).sorted().first : nil)
         }.sorted { $0.year > $1.year }
     }
 
