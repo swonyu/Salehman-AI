@@ -70,20 +70,47 @@ Do not trust compacted memories of numbers or line refs — re-grep the `file:li
 When unsure which row applies, it's the middle row. A wrong solo change to engine math
 costs real money; a queued question costs a day.
 
-**Workflow model split (owner directive 2026-07-07, 8th rev — supersedes the 2026-07-06
-Fable-impl/Sonnet-review split below):** when a multi-agent Workflow / subagent fleet runs,
-use exactly three Claude models, ALL at `effort:'xhigh'`, by role —
-**Fable 5 xhigh** = planner / adjudicator / verifier lenses (`{model:'fable', effort:'xhigh'}`);
-**Sonnet 5 xhigh** = implementation (`{model:'sonnet', effort:'xhigh'}`);
-**Opus 4.8 xhigh** = adversarial review / red-team / refactor (`{model:'opus', effort:'xhigh'}`).
-Orchestrator = the session model (owner's bar is Opus 4.8; a Fable 5 session exceeds it —
-fine as-is); the orchestrator ALWAYS runs the independent build+test gate + merge pipeline
-itself. **Fleet size ≤ 5 agents** (owner, 2026-07-07 — supersedes the earlier ≤30).
-DeepSeek/Gemini external relay DROPPED (owner: "forget the deepseek thing"); a flash-tier
-ask maps to Haiku recon only (never financial-math), and NEVER rig external API bridges.
-Never downgrade the subagent tiers to compensate for the orchestrator model. Full revision
-history + verbatim directives live in the `feedback-workflow-models` memory.
+**Workflow model split (9th rev, 2026-07-16 — owner-requested improvement ("can u make the
+model-split directive better?"), Claude-authored from this session's measured incidents;
+supersedes the 8th rev below):** when a multi-agent Workflow / subagent fleet runs:
 
+*Roles (core unchanged, fallback + effort tiering added):*
+- **Planner / adjudicator / final-verifier lenses: Fable 5 xhigh** (`{model:'fable', effort:'xhigh'}`).
+  **FALLBACK LADDER (new — encodes the 2026-07-11 weekly-limit incident, where all six critic
+  agents died mid-run):** Fable unavailable/limit-hit → **Opus 4.8 xhigh** takes these roles for
+  the rest of the session. Never Sonnet for adjudication; never stall the pipeline waiting for
+  Fable; record the substitution in the run's log entry.
+- **Implementation: Sonnet 5** — `effort:'xhigh'` for real implementation, **but tier the effort
+  to the stage (new):** mechanical stages (file copies, renames, enumeration, boilerplate,
+  log-scraping) run at `'low'`/Haiku; only genuinely hard code gets xhigh. Quality lives in the
+  verify stages, not in burning xhigh on `sed`.
+- **Adversarial review / red-team / refactor: Opus 4.8 xhigh** (unchanged), and reviews are
+  **bound to shapes, not vibes (new):** (a) engine-math / financial-display changes get a
+  falsifiability probe run at CLASS granularity — deep single-method `-only-testing` vacuously
+  passes (WHIPPYX, re-confirmed 2026-07-16); (b) research/measurement claims get 2-lens
+  verification (code audit + independent re-implementation); (c) copy/a11y changes get the
+  honesty-floor checklist (nil≠fabricated, gross/net labeled, assumed/measured provenance).
+- **Haiku = recon/enumeration only** — NEVER financial math or honesty copy; NEVER rig external
+  API bridges (DeepSeek/Gemini relay stays DROPPED).
+
+*Fleet discipline (new section — codifies what actually bit):*
+- **Fleet ≤ 5 concurrent agents** (owner 2026-07-07, unchanged).
+- **Single-writer monoliths:** agents never co-edit `MarketsView.swift` or any shared monolith.
+  Fleet agents produce self-contained NEW files + an exact wiring instruction (anchor + snippet);
+  the orchestrator applies all shared-file wiring serially.
+- **One build per DerivedData at a time:** concurrent typecheck/test/QA builds trip the build-DB
+  lock and report a FALSE `** TEST FAILED **` (incident 2026-07-16) — wait for builds to idle.
+- **Worktree isolation only when agents must mutate the same tree**; prefer disjoint-file
+  assignment (cheaper, no merge step).
+
+*Constants:* orchestrator = the session model and ALWAYS runs the independent build+test gate +
+merge pipeline itself; never downgrade subagent tiers to compensate for the orchestrator model;
+verification floor regardless of who implements — verdict lines pasted, tests fired BY NAME,
+probes fail BY NAME, pixels for UI-visible changes. Full revision history + verbatim directives
+live in the `feedback-workflow-models` memory.
+
+*Superseded 8th rev (2026-07-07):* three models all at xhigh by role (Fable plan/verify, Sonnet
+impl, Opus review); ≤5 fleet; no fallback ladder, no effort tiering, no fleet-discipline rules.
 *Superseded 7th rev (2026-07-06):* orchestrator = session model; impl = Fable 5 @ max;
 review/verify = Sonnet 5 @ xhigh.
 
