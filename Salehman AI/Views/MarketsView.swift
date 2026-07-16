@@ -2552,6 +2552,12 @@ struct MarketsView: View {
                         .foregroundStyle(pnl >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                         .accessibilityLabel("Closing at \(adaptivePrice(exit)) realizes \(StockSageCurrency.signedAmount(pnl, symbol: trade.symbol))"
                             + (trade.rMultiple(at: exit).map { String(format: ", %+.2f R", $0) } ?? ""))
+                    // Cycle-2 (2026-07-16): a .SR exit off the Tadawul tick grid would be rejected
+                    // by the broker — same guard the entry stop/target already carry. Display-only.
+                    if let tickNote = StockSageTickSize.exitPlaceabilityNote(symbol: trade.symbol, exit: exit) {
+                        Text("⚠ " + tickNote).font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }

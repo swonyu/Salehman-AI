@@ -64,4 +64,19 @@ enum StockSageTickSize {
         return "Tadawul tick grid — engine levels off the grid: " + parts.joined(separator: "; ")
              + " (nearest tick; ≤½-tick drift, engine math unchanged)."
     }
+
+    /// DISPLAY-ONLY placeability advisory for a SINGLE typed price (the close-form exit) on a
+    /// `.SR` order. nil for non-Tadawul symbols and nil when the DISPLAYED (2-dp) price already
+    /// sits on the grid — same display-precision rule as `placeabilityNote` (the owner types a
+    /// 2-dp price, so float noise beyond that never fires; in the 0.01 band every 2-dp price is
+    /// placeable). Cycle-1/24h-run (2026-07-16): the entry side already warned on off-grid
+    /// stop/target; the close form's exit price got no such guard — a Tadawul broker rejects an
+    /// off-tick exit just as it does an off-tick entry.
+    nonisolated static func exitPlaceabilityNote(symbol: String, exit: Double) -> String? {
+        guard symbol.uppercased().hasSuffix(".SR"), exit > 0, exit.isFinite else { return nil }
+        let shown = (exit * 100).rounded() / 100
+        guard !tadawulAligned(shown) else { return nil }
+        return String(format: "Tadawul tick grid — exit %.2f is off the grid: place as %.2f (%.2f tick).",
+                      shown, tadawulRounded(shown), tadawulTick(forPrice: shown))
+    }
 }

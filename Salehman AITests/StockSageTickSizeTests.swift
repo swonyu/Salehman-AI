@@ -78,8 +78,27 @@ struct StockSageTickSizeTests {
         #expect(sr != nil)
         #expect(sr!.contains("Sun–Thu"))
         #expect(sr!.contains("10:00–15:00"))
-        let us = StockSageExecutionTiming.sessionNote(action: .buy, regime: .bullTrend, symbol: "AAPL")
-        #expect(us != nil && !us!.contains("Sun–Thu"))
+        let usSession = StockSageExecutionTiming.sessionNote(action: .buy, regime: .bullTrend, symbol: "AAPL")
+        #expect(usSession != nil && !usSession!.contains("Sun–Thu"))
         #expect(StockSageExecutionTiming.sessionNote(action: .buy, regime: .range, symbol: "2222.SR") == nil)
+    }
+
+    // Close-form exit-price placeability (24h-run cycle-2, 2026-07-16). Expected values
+    // HAND-DERIVED standalone (swift /tmp/derive_exit.swift), never from the code:
+    //   AAPL any → nil (note is .SR-only; US ticks at $0.01);
+    //   2222.SR 33.00 → aligned in the 0.02 band (25–50) → nil;
+    //   2222.SR 23.456 → 2-dp display 23.46 is on the 0.01 grid (below 25) → nil (score-100 rule);
+    //   2222.SR 33.01 → off-grid, (33.01/0.02).rounded()=1650 → 33.00 (0.02 tick);
+    //   2222.SR 100.07 → 100–250 band 0.10 tick, off-grid → 100.10.
+    @Test func exitPlaceabilityNoteFiresOnlyForOffGridSRExits() {
+        #expect(T.exitPlaceabilityNote(symbol: "AAPL", exit: 33.01) == nil)     // not .SR
+        #expect(T.exitPlaceabilityNote(symbol: "2222.SR", exit: 33.00) == nil)  // aligned
+        #expect(T.exitPlaceabilityNote(symbol: "2222.SR", exit: 23.456) == nil) // 2-dp 23.46 placeable in 0.01 band
+        let n1 = T.exitPlaceabilityNote(symbol: "2222.SR", exit: 33.01)
+        #expect(n1 != nil)
+        #expect(n1!.contains("33.01") && n1!.contains("33.00") && n1!.contains("0.02 tick"))
+        let n2 = T.exitPlaceabilityNote(symbol: "2222.SR", exit: 100.07)
+        #expect(n2 != nil)
+        #expect(n2!.contains("100.07") && n2!.contains("100.10") && n2!.contains("0.10 tick"))
     }
 }
