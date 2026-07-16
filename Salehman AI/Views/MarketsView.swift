@@ -2361,6 +2361,18 @@ struct MarketsView: View {
                 Spacer(minLength: 0)
             }
             journalField("Note (optional)", text: $draftNote, width: 280)
+            // Cycle-3 (2026-07-16): the copy-plan export and the close form both flag off-grid
+            // .SR prices; the manual add form is the third entry point and had no such feedback —
+            // a stop/target typed from the idea card can be off the Tadawul grid and unplaceable.
+            // Same tested placeabilityNote (entry+stop+target); nil unless .SR + a leg off-grid.
+            if let tickNote = StockSageTickSize.placeabilityNote(
+                symbol: draftSymbol,
+                entry: StockSageInput.positiveAmount(draftEntry),
+                stop: StockSageInput.positiveAmount(draftStop),
+                target: StockSageInput.positiveAmount(draftTarget)) {
+                Text("⚠ " + tickNote).font(.system(size: mvFont9)).foregroundStyle(DS.Palette.warningSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 10) {
                 Button { saveDraftTrade() } label: {
                     Text("Save").font(.system(size: mvFont11, weight: .semibold)).foregroundStyle(.white)
