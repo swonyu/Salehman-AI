@@ -71,12 +71,21 @@ enum StockSagePositionSizer {
     nonisolated static func size(account: Double, riskFraction: Double,
                                  entry: Double, stop: Double,
                                  symbol: String, fxRatesToUSD: [String: Double]) -> PositionSize? {
-        let ccy = StockSageCurrency.conversionCurrencyForSymbol(symbol)
-        if ccy != "USD", let rate = fxRatesToUSD[ccy] {
+        if let rawUnit = rawQuoteUnitToUSD(symbol: symbol, fxRatesToUSD: fxRatesToUSD) {
             return size(accountUSD: account, riskFraction: riskFraction, entry: entry, stop: stop,
-                        rawUnitToUSD: StockSageCurrency.majorUnitValue(symbol: symbol, rawValue: 1) * rate)
+                        rawUnitToUSD: rawUnit)
         }
         return size(account: account, riskFraction: riskFraction, entry: entry, stop: stop)
+    }
+
+    /// F3 wave-B (2026-07-16): USD value of ONE raw quote unit for `symbol` given a ccy→USD
+    /// rate map — the single resolution the map overload and the allocator's USD-normalized
+    /// heat ledger both use. nil when the symbol quotes in USD or its currency isn't in the
+    /// map (callers take the plain path / treat the ledger entry as already-USD — never guess).
+    nonisolated static func rawQuoteUnitToUSD(symbol: String, fxRatesToUSD: [String: Double]) -> Double? {
+        let ccy = StockSageCurrency.conversionCurrencyForSymbol(symbol)
+        guard ccy != "USD", let rate = fxRatesToUSD[ccy] else { return nil }
+        return StockSageCurrency.majorUnitValue(symbol: symbol, rawValue: 1) * rate
     }
 
     /// One-line "size it now" summary — shares, at-risk amount, % of account — with the

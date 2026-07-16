@@ -386,4 +386,45 @@ struct StockSageCapitalAllocatorTests {
         let x = pos("AAA", risk: 0.02, dollars: 995, notional: 9950)
         #expect(!CA.positionOrder(x, x))
     }
+
+    // ── F3 wave-B (2026-07-16): FX-correct sizing + USD-normalized heat ledger ──────────
+    // Hand-derived off the existing python-verified fixture math (conviction 0.5, 100/90/130
+    // → p 0.465, payoff 3, halfKelly 0.1433333; cost gate clears easily: p* ≈ 0.26 ≪ 0.465).
+
+    @Test func fxMapSizesSRAtTheStatedFractionAndNormalizesHeatToUSD() {
+        // $10k account, maxHeat 0.50 (no scaling; requested 2×0.14333 = 0.28667 < cap).
+        // AAPL (USD): budget 1433.33/10 → 143 shares, $1430 at risk (the pinned math).
+        // 2222.SR with SAR→USD = 1/3.75: account 37,500 SAR → budget 5,375 SAR/10 →
+        // 537 shares, 5,370 SAR at risk = $1,432 — the stated 14.33% fraction, not 1/3.75 of it.
+        // Heat ledger must be USD: (1430 + 5370/3.75)/10000 = 0.28620.
+        let a = Alloc.allocate(ideas: [idea("AAPL", price: 100, stop: 90, target: 130, conviction: 0.5),
+                                       idea("2222.SR", price: 100, stop: 90, target: 130, conviction: 0.5)],
+                               account: 10_000, maxHeat: 0.50, fxRatesToUSD: ["SAR": 1.0 / 3.75])
+        #expect(a.positions.count == 2)
+        let sr = a.positions.first { $0.symbol == "2222.SR" }
+        let us = a.positions.first { $0.symbol == "AAPL" }
+        #expect(sr?.shares == 537)
+        #expect(abs((sr?.dollarsAtRisk ?? 0) - 5_370) < 1e-9)     // raw SAR — displays convert
+        #expect(us?.shares == 143)
+        #expect(abs((us?.dollarsAtRisk ?? 0) - 1_430) < 1e-9)
+        #expect(abs(a.totalHeat - 0.28620) < 1e-9)                // USD-normalized, hand-derived
+        #expect(a.totalHeat <= a.maxHeat + 1e-9)
+        // Definitional identity: heat re-derived from the returned positions' native at-risk
+        // × each symbol's rawQuoteUnitToUSD (×1 for USD) must equal the reported totalHeat.
+        let rederived = a.positions.reduce(0.0) { acc, p in
+            acc + p.dollarsAtRisk * (StockSagePositionSizer.rawQuoteUnitToUSD(symbol: p.symbol,
+                                                                              fxRatesToUSD: ["SAR": 1.0 / 3.75]) ?? 1)
+        } / 10_000
+        #expect(abs(a.totalHeat - rederived) < 1e-12)
+    }
+
+    @Test func emptyMapKeepsAllocateByteIdenticalIncludingTheOldMixedSRBehavior() {
+        let ideas = [idea("AAPL", price: 100, stop: 90, target: 130, conviction: 0.5),
+                     idea("2222.SR", price: 100, stop: 90, target: 130, conviction: 0.5)]
+        let bare = Alloc.allocate(ideas: ideas, account: 10_000, maxHeat: 0.50)
+        let empt = Alloc.allocate(ideas: ideas, account: 10_000, maxHeat: 0.50, fxRatesToUSD: [:])
+        #expect(bare == empt)
+        // Prior (currency-mixed) behavior preserved by default: .SR sizes like a USD name.
+        #expect(bare.positions.first { $0.symbol == "2222.SR" }?.shares == 143)
+    }
 }

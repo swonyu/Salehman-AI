@@ -1075,10 +1075,21 @@ struct MarketsView: View {
     /// account" / leverage warning on an unleveraged cash position. This returns the notional as a %
     /// of the account in ONE currency: notional (pence-normalized × FX rate) ÷ account. Untracked FX
     /// → falls back to the raw `ps.pctOfAccount` (prior behavior). Display-only; `ps` is unchanged.
+    /// F3 follow-up (2026-07-16): ONE raw-quote-unit→USD converter for display math, backed by
+    /// the shared `fxRateToUSD` RESOLVER (portfolio dict + infraFX), not the portfolio-only
+    /// `fxRatesToUSD` dict — the dict silently lacked SAR whenever no .SR position was held,
+    /// reverting "FX-corrected" figures to the wrong basis. nil = untracked (caller falls back).
+    private func usdAmount(_ raw: Double, symbol: String) -> Double? {
+        let ccy = conversionCurrencyForSymbol(symbol)
+        if ccy == "USD" { return raw }
+        guard let rate = fxRateToUSD(ccy) else { return nil }
+        return StockSageCurrency.majorUnitValue(symbol: symbol, rawValue: raw) * rate
+    }
+
     private func pctOfAccountUSD(_ ps: PositionSize, symbol: String, account: Double) -> Double {
         guard account > 0 else { return ps.pctOfAccount }
-        guard let rate = fxRatesToUSD[conversionCurrencyForSymbol(symbol)] else { return ps.pctOfAccount }
-        return StockSageCurrency.majorUnitValue(symbol: symbol, rawValue: ps.notional) * rate / account * 100
+        guard let notionalUSD = usdAmount(ps.notional, symbol: symbol) else { return ps.pctOfAccount }
+        return notionalUSD / account * 100
     }
 
     /// First-real-trade review F3 (2026-07-16): THE sizing path for every "Size it now" /
@@ -3910,7 +3921,7 @@ struct MarketsView: View {
                 // any unparseable/missing input ⇒ nothing new renders.
                 if let stop = a.stopPrice, let ps = atRisk, let acct = StockSageInput.positiveAmount(sizerAccount) {
                     ideaMetric("At risk", "\(approxAmount(ps.dollarsAtRisk, symbol: idea.symbol)) · \(ps.shares) sh", color: DS.Palette.warningSoft)
-                        .help("Sizes the LOSS: a stop-out at \(adaptivePrice(stop)) costs ~\(approxAmount(ps.dollarsAtRisk, symbol: idea.symbol).dropFirst()) (\(String(format: "%.2f", ps.dollarsAtRisk / acct * 100))% of the account). Not a profit promise.")
+                        .help("Sizes the LOSS: a stop-out at \(adaptivePrice(stop)) costs ~\(approxAmount(ps.dollarsAtRisk, symbol: idea.symbol).dropFirst()) (\(String(format: "%.2f", (usdAmount(ps.dollarsAtRisk, symbol: idea.symbol) ?? ps.dollarsAtRisk) / acct * 100))% of the account). Not a profit promise.")
                 }
                 if let target = a.targetPrice {
                     ideaMetric("Target", adaptivePrice(target), color: DS.Palette.successSoft)
@@ -4407,7 +4418,8 @@ struct MarketsView: View {
     // account AND at least one fundable position — never a manufactured plan.
     @ViewBuilder private var capitalAllocationCard: some View {
         if let acct = StockSageInput.positiveAmount(sizerAccount) {
-            let plan = StockSageCapitalAllocator.allocate(ideas: store.ideas, account: acct, calibration: store.convictionCalibration, regime: store.regime)
+            let plan = StockSageCapitalAllocator.allocate(ideas: store.ideas, account: acct, calibration: store.convictionCalibration, regime: store.regime,
+                                                          fxRatesToUSD: sizingFXRates(for: store.ideas.map(\.symbol)))
             // F5 (2026-07-09): allocate() silently drops every position that floors to 0 shares —
             // this card used to just vanish when ALL of them did, indistinguishable from "nothing
             // qualified". Name the reason instead when there WERE fundable candidates.
@@ -5728,7 +5740,9 @@ struct MarketsView: View {
                     // over-/under-states the "% of account". Convert the native amounts to USD (pence-normalized
                     // × FX rate) before every account comparison; untracked FX → factor 1 (prior behavior).
                     let usdFactor: Double = {
-                        guard let rate = fxRatesToUSD[conversionCurrencyForSymbol(idea.symbol)] else { return 1 }
+                        // F3 follow-up (2026-07-16): resolver-backed (was the portfolio-only dict,
+                        // which lacked SAR whenever no .SR position was held → factor fell to 1).
+                        guard let rate = fxRateToUSD(conversionCurrencyForSymbol(idea.symbol)) else { return 1 }
                         // majorUnitValue handles the pence ÷100; divide by the raw amount to get a pure scale.
                         let normalized = StockSageCurrency.majorUnitValue(symbol: idea.symbol, rawValue: 1)
                         return normalized * rate

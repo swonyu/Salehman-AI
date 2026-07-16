@@ -23,7 +23,7 @@ struct AllocatedPosition: Sendable, Equatable, Identifiable {
 
 struct CapitalAllocation: Sendable, Equatable {
     let positions: [AllocatedPosition]   // desc by riskFraction, tie-break asc symbol
-    let totalHeat: Double                // Σ dollarsAtRisk ÷ account — ≤ maxHeat
+    let totalHeat: Double                // Σ USD-normalized dollarsAtRisk ÷ account — ≤ maxHeat (F3 wave-B: per-position native×rawQuoteUnitToUSD; ×1 when no tracked rate)
     let requestedHeat: Double            // Σ of the fundable weights AFTER the correlation haircut, BEFORE heat-scaling
     let scaleApplied: Double             // ≤1 when the cap bound; 1 otherwise
     let account: Double
@@ -45,9 +45,13 @@ enum StockSageCapitalAllocator {
     /// already encodes the edge — bigger win·payoff ⇒ bigger fraction), scale uniformly so the
     /// summed risk fits `maxHeat`, then floor to whole shares. Empty plan on invalid inputs or
     /// when nothing is fundable.
+    // F3 wave-B (2026-07-16): `fxRatesToUSD` (ccy→USD) sizes non-USD names FX-correctly and
+    // USD-normalizes the heat ledger (see step 4/5). Empty map (the default) keeps every
+    // existing caller and the test-lock byte-identical — never guess a rate.
     nonisolated static func allocate(ideas: [StockSageIdea], account: Double, maxHeat: Double = 0.08,
                                      calibration: StockSageConvictionCalibration? = nil,
-                                     regime: MarketRegime? = nil) -> CapitalAllocation {
+                                     regime: MarketRegime? = nil,
+                                     fxRatesToUSD: [String: Double] = [:]) -> CapitalAllocation {
         let cap = Swift.min(Swift.max(0, maxHeat), 1)
         func empty() -> CapitalAllocation {
             CapitalAllocation(positions: [], totalHeat: 0, requestedHeat: 0, scaleApplied: 1,
@@ -122,19 +126,30 @@ enum StockSageCapitalAllocator {
         let scaleApplied = requestedHeat > cap ? cap / requestedHeat : 1
 
         // Step 4: the sizer is the ONLY place dollars/shares are produced; it floors shares DOWN,
-        // so realized dollarsAtRisk ≤ scaledFraction·account ⇒ summed realized heat ≤ the cap.
+        // so realized dollarsAtRisk ≤ scaledFraction·account (in USD terms once normalized below)
+        // ⇒ summed realized heat ≤ the cap. F3 wave-B: with a tracked FX rate the sizing runs in
+        // the symbol's own currency (the F3 map overload — .SR was under-sized ~3.75× vs the
+        // stated fraction), and the HEAT ledger converts each position's native dollarsAtRisk
+        // back to USD (`rawQuoteUnitToUSD`; untracked/USD → ×1 = prior behavior). Fields on
+        // AllocatedPosition stay RAW-NATIVE — every consumer already renders them through
+        // `approxAmount(symbol:)` / converts via `majorUnitValue`×rate.
         var positions: [AllocatedPosition] = []
+        var usdAtRisk = 0.0
         for f in fundable {
             let scaled = f.weight * scaleApplied
-            guard let ps = StockSagePositionSizer.size(account: account, riskFraction: scaled, entry: f.entry, stop: f.stop),
+            guard let ps = StockSagePositionSizer.size(account: account, riskFraction: scaled,
+                                                       entry: f.entry, stop: f.stop,
+                                                       symbol: f.symbol, fxRatesToUSD: fxRatesToUSD),
                   ps.shares > 0 else { continue }
+            let rawUnit = StockSagePositionSizer.rawQuoteUnitToUSD(symbol: f.symbol, fxRatesToUSD: fxRatesToUSD) ?? 1
+            usdAtRisk += ps.dollarsAtRisk * rawUnit
             positions.append(AllocatedPosition(symbol: f.symbol, riskFraction: scaled, shares: ps.shares,
                                                dollarsAtRisk: ps.dollarsAtRisk, notional: ps.notional,
                                                halfKelly: f.halfKelly, evR: f.evR))
         }
 
-        // Step 5: realized heat + deterministic order (desc risk, tie-break asc symbol).
-        let totalHeat = positions.reduce(0) { $0 + $1.dollarsAtRisk } / account
+        // Step 5: realized heat (USD-normalized) + deterministic order (desc risk, tie-break asc symbol).
+        let totalHeat = usdAtRisk / account
         let sorted = positions.sorted(by: positionOrder)
         var finalCaveat = caveat
         if deweightedForCorrelation { finalCaveat += " A correlated cluster was de-weighted to count as ~one bet, not several." }
