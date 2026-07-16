@@ -1086,6 +1086,16 @@ struct MarketsView: View {
         return StockSageCurrency.majorUnitValue(symbol: symbol, rawValue: raw) * rate
     }
 
+    /// First-real-trade review (2026-07-16): the "Realized P&L" stat's display string. When the
+    /// closed book is a single currency it renders `totalProfit` through the tested
+    /// `signedAmount` (USD → byte-identical bare "+150.00", else "+150.00 SAR", pence ÷100); when
+    /// it mixes currencies (`profitSymbol == nil`) the raw 1:1 sum is meaningless, so it shows
+    /// "mixed" instead of a fabricated number. Pure display.
+    private func realizedProfitText(_ s: JournalStats) -> String {
+        guard let sym = s.profitSymbol else { return "mixed" }
+        return StockSageCurrency.signedAmount(s.totalProfit, symbol: sym)
+    }
+
     private func pctOfAccountUSD(_ ps: PositionSize, symbol: String, account: Double) -> Double {
         guard account > 0 else { return ps.pctOfAccount }
         guard let notionalUSD = usdAmount(ps.notional, symbol: symbol) else { return ps.pctOfAccount }
@@ -1865,9 +1875,17 @@ struct MarketsView: View {
                                color: s.totalR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
                     ideaMetric("Avg R", String(format: "%+.2f", s.avgR),
                                color: s.avgR >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
-                    ideaMetric("Realized P&L", String(format: "%+.2f", s.totalProfit),
-                               color: s.totalProfit >= 0 ? DS.Palette.successSoft : DS.Palette.danger)
-                        .help("Closed trades only — a record, not a promise of future results.")
+                    // First-real-trade review (2026-07-16): totalProfit sums each trade's profit
+                    // in its NATIVE currency, so a mixed-currency closed book (SAR + USD) is a
+                    // meaningless 1:1 sum — never show it as one number. profitCurrency is the
+                    // single ISO code when the book is one currency (USD → byte-identical bare;
+                    // else labeled), nil when mixed (show "mixed", route to the per-row P&L).
+                    ideaMetric("Realized P&L", realizedProfitText(s),
+                               color: s.profitSymbol == nil ? DS.Palette.warningSoft
+                                    : (s.totalProfit >= 0 ? DS.Palette.successSoft : DS.Palette.danger))
+                        .help(s.profitSymbol == nil
+                            ? "Closed trades span multiple currencies — a single total can't be summed honestly; see each trade's own P&L below."
+                            : "Closed trades only — a record, not a promise of future results.")
                     Spacer(minLength: 0)
                 }
                 let edge = journal.edgeStats

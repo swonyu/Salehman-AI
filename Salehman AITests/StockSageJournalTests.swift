@@ -460,6 +460,53 @@ struct StockSageJournalTests {
         #expect(StockSageJournal.stats([]).closed == 0)
     }
 
+    // First-real-trade review (2026-07-16): totalProfit sums each closed trade's profit in its
+    // NATIVE currency, so it's only a valid single figure when the book is one currency. stats()
+    // now reports profitCurrency (single ISO code, else nil=mixed) + profitSymbol (representative,
+    // for pence normalization). Expected values HAND-DERIVED: profit(at:) = (exit-entry)*shares
+    // for a long; conversionCurrencyForSymbol: no-dot → USD, .SR → SAR, .L → GBP (pence, ÷100).
+    @Test func statsProfitCurrencyIsSingleCodeOrNilWhenMixed() {
+        // All-USD closed book: single currency "USD", representative symbol carried.
+        let usd = StockSageJournal.stats([tSym("AAPL", .long, entry: 100, stop: 90, shares: 1, exit: 150)])
+        #expect(usd.totalProfit == 50)            // (150-100)*1
+        #expect(usd.profitCurrency == "USD")
+        #expect(usd.profitSymbol == "AAPL")
+
+        // All-.SR: single currency "SAR".
+        let sar = StockSageJournal.stats([tSym("2222.SR", .long, entry: 100, stop: 90, shares: 1, exit: 130)])
+        #expect(sar.totalProfit == 30)
+        #expect(sar.profitCurrency == "SAR")
+        #expect(sar.profitSymbol == "2222.SR")
+
+        // All-.L (pence): currency "GBP"; totalProfit is RAW pence (display ÷100 via signedAmount).
+        let gbp = StockSageJournal.stats([tSym("SHEL.L", .long, entry: 500, stop: 400, shares: 1, exit: 900)])
+        #expect(gbp.totalProfit == 400)           // 400 pence raw
+        #expect(gbp.profitCurrency == "GBP")
+        #expect(gbp.profitSymbol == "SHEL.L")
+
+        // Mixed USD + SAR: raw sum still computed (80) but profitCurrency/Symbol are nil — the
+        // display must refuse to present the meaningless 1:1 sum as one number.
+        let mixed = StockSageJournal.stats([
+            tSym("AAPL", .long, entry: 100, stop: 90, shares: 1, exit: 150),      // +50 USD
+            tSym("2222.SR", .long, entry: 100, stop: 90, shares: 1, exit: 130),   // +30 SAR
+        ])
+        #expect(mixed.totalProfit == 80)
+        #expect(mixed.profitCurrency == nil)
+        #expect(mixed.profitSymbol == nil)
+
+        // Empty closed set: nil (no currency to name).
+        #expect(StockSageJournal.stats([]).profitCurrency == nil)
+        #expect(StockSageJournal.stats([]).profitSymbol == nil)
+    }
+
+    // The signedAmount rendering the display uses over totalProfit: pence normalizes, SAR labels,
+    // USD stays bare. (Guards that the .L raw-pence total is not shown ~100× over.)
+    @Test func realizedProfitRendersInBookCurrencyWithPenceNormalized() {
+        #expect(StockSageCurrency.signedAmount(50, symbol: "AAPL") == "+50.00")
+        #expect(StockSageCurrency.signedAmount(30, symbol: "2222.SR") == "+30.00 SAR")
+        #expect(StockSageCurrency.signedAmount(400, symbol: "SHEL.L") == "+4.00 GBP")   // pence ÷100
+    }
+
     @Test func streakSingleWinTradeIsStreakOfOne() {
         let single = [TradeRecord(symbol: "AAPL", side: .long, entry: 100, stop: 90, target: nil, shares: 1,
                                  openedAt: Date(timeIntervalSince1970: 0),
